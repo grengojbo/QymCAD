@@ -10,4 +10,5 @@
 //! A module, not a workbench: no words of the interface, no egui, no dependency on any workbench. A name shown to a
 //! person is asked of the caller, which knows the language.
 
+pub mod brep;
 pub mod regen;
