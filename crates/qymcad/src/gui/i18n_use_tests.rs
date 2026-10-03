@@ -653,7 +653,7 @@ fn every_code_the_libraries_emit_has_words_in_every_language() {
                 stack.push(p);
                 continue;
             }
-            if p.extension().is_none_or(|x| x != "rs") || !p.components().any(|c| c.as_os_str() == "src") {
+            if p.extension().is_none_or(|x| x != "rs") || !qymcad_i18n::ratchet::in_crate_src(&p) {
                 continue;
             }
             let text = std::fs::read_to_string(&p).expect("the file reads");
@@ -735,7 +735,7 @@ fn the_watched_prefixes_cover_every_code_the_libraries_hand_to_the_dictionary() 
                 stack.push(p);
                 continue;
             }
-            if p.extension().is_none_or(|x| x != "rs") || !p.components().any(|c| c.as_os_str() == "src") {
+            if p.extension().is_none_or(|x| x != "rs") || !qymcad_i18n::ratchet::in_crate_src(&p) {
                 continue;
             }
             let text = std::fs::read_to_string(&p).expect("the file reads");

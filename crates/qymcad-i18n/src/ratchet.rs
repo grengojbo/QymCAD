@@ -94,12 +94,32 @@ pub fn every_crate_src() -> Vec<std::path::PathBuf> {
     v
 }
 
+/// Whether a file sits in the `src` of a crate: `crates/<crate>/src/...`.
+///
+/// Judged on the part of the path BELOW the directory of the crates. A test of components on the whole
+/// absolute path also matches every directory ABOVE the checkout, so a repository under `/Users/<name>/src`
+/// or a container mount at `/src` counted `crates/*/tests/` as `src` too. The directory of the crates is
+/// `crates_root()` for this repository; for any other path it is the last component named `crates`.
+pub fn in_crate_src(path: &std::path::Path) -> bool {
+    let inner = match path.strip_prefix(crates_root()) {
+        Ok(rel) => rel.to_path_buf(),
+        Err(_) => {
+            let comps: Vec<_> = path.components().collect();
+            match comps.iter().rposition(|c| c.as_os_str() == "crates") {
+                Some(i) => comps[i + 1..].iter().collect(),
+                None => return false,
+            }
+        }
+    };
+    // `<crate>/src/...`: the second component and nothing deeper, so a `src` inside `tests/` does not count
+    inner.components().nth(1).is_some_and(|c| c.as_os_str() == "src")
+}
+
 pub fn is_working_code(path: &std::path::Path) -> bool {
     let n = path.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
     // `src/` ONLY: the integration tests in `tests/` describe behaviour and are read by whoever
     // works on the code.
-    let in_src = path.components().any(|c| c.as_os_str() == "src");
-    in_src
+    in_crate_src(path)
         && path.extension().is_some_and(|x| x == "rs")
         && n != "tests.rs"
         && n != "ratchet.rs"
@@ -208,5 +228,17 @@ pub mod tests {
              slack piles up silently and one day a whole screen hides under it.\nWhere most of them are:\n{}",
             top.join("\n")
         );
+    }
+
+    /// `src` is judged inside the repository, not on the whole absolute path: a checkout under a
+    /// directory named `src` (`/Users/<name>/src/...`, a container mount at `/src`) made every file of
+    /// `crates/*/tests/` count as working code, and the ratchet read 28 instead of 0.
+    #[test]
+    fn a_src_above_the_checkout_does_not_make_tests_working_code() {
+        let tests = std::path::Path::new("/x/src/repo/crates/qymcad-core/tests/a.rs");
+        let code = std::path::Path::new("/x/src/repo/crates/qymcad-core/src/a.rs");
+        assert!(!super::is_working_code(tests), "{} is a test, not working code", tests.display());
+        assert!(super::is_working_code(code), "{} is working code", code.display());
+        assert!(!super::in_crate_src(tests) && super::in_crate_src(code));
     }
 }
