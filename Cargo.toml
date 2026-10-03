@@ -20,6 +20,7 @@ members = [
     "crates/qymcad-update",
     "crates/qymcad-meshfit",
     "crates/qymcad-acceptance",
+    "crates/qymcad-doc",
 ]
 
 # THE BAN ON "WRITTEN AND NEVER WIRED UP" - THE MOST IMPORTANT THING IN THIS FILE.
@@ -76,6 +77,7 @@ qymcad-core = { path = "crates/qymcad-core" }
 qymcad-kernel = { path = "crates/qymcad-kernel" }
 qymcad-meshfit = { path = "crates/qymcad-meshfit" }
 qymcad-io = { path = "crates/qymcad-io" }
+qymcad-doc = { path = "crates/qymcad-doc" }
 
 # --- external (wired in per crate as each phase starts) ---
 serde = { version = "1", features = ["derive"] }

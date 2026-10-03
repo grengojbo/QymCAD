@@ -1,0 +1,18 @@
+[package]
+name = "qymcad-doc"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The document without a window: rebuild, undo, import and export over the real OCCT kernel"
+
+[dependencies]
+qymcad-core.workspace = true
+qymcad-kernel.workspace = true
+qymcad-io.workspace = true
+qymcad-meshfit.workspace = true
+
+[lints]
+workspace = true

@@ -3220,6 +3220,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "qymcad-doc"
+version = "0.1.0"
+dependencies = [
+ "qymcad-core",
+ "qymcad-io",
+ "qymcad-kernel",
+ "qymcad-meshfit",
+]
+
+[[package]]
 name = "qymcad-help"
 version = "0.1.0"
 dependencies = [
