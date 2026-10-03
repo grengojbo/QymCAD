@@ -68,6 +68,43 @@ fn only_features_mentioning_the_parameter_get_dirty() {
     assert!(!dirty.contains(&b), "the feature whose expression uses W*2 is left alone: {dirty:?}");
 }
 
+/// A name is found whatever its case, as `eval` reads it. The rebuild compares `param_map`, whose keys are
+/// lower-cased, and asks for the dependents of `h`. Reported behaviour: a parameter `H` used as `H` in an extrude
+/// height left the extrude at its old height when `H` changed; a lower-case name worked.
+#[test]
+fn a_parameter_is_found_whatever_its_case() {
+    let mut p = Project::default();
+    p.new_document();
+    p.parameters.push(Param { name: "H".into(), expr: "10".into(), value: 10.0 });
+    p.parameters.push(Param { name: "Width".into(), expr: "20".into(), value: 20.0 });
+    let (s1, _) = line_sketch(&mut p, "Sketch 1");
+    let a = p.add_extrude_multi(s1, Vec::new(), 10.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());
+    let (s2, _) = line_sketch(&mut p, "Sketch 2");
+    let b = p.add_extrude_multi(s2, Vec::new(), 20.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());
+    p.set_feat_dim(a, "height", "H".into());
+    p.set_feat_dim(b, "height", "Width*2".into());
+    let clean = |p: &mut Project| {
+        for n in p.timeline.iter_mut() {
+            n.dirty = false;
+        }
+    };
+    let dirty = |p: &Project| -> Vec<u64> { p.timeline.iter().filter(|n| n.dirty).map(|n| n.id).collect() };
+
+    clean(&mut p);
+    p.mark_param_dependents_dirty_for("h");
+    assert!(dirty(&p).contains(&a), "the feature whose expression is H is not marked by h: {:?}", dirty(&p));
+    assert!(!dirty(&p).contains(&b), "the feature whose expression is Width*2 is marked by h: {:?}", dirty(&p));
+
+    clean(&mut p);
+    p.mark_param_dependents_dirty_for("width");
+    assert!(dirty(&p).contains(&b), "the feature whose expression is Width*2 is not marked by width: {:?}", dirty(&p));
+    assert!(!dirty(&p).contains(&a), "the feature whose expression is H is marked by width: {:?}", dirty(&p));
+
+    // the boundary of a name holds in any case: `h` is not found inside `Height`
+    assert!(!qymcad_core::expr::mentions("Height/2", "h"), "h is not part of Height");
+    assert!(qymcad_core::expr::mentions("2*WIDTH", "width"));
+}
+
 /// The name of a parameter must not be found inside another name: `L` is not mentioned in `Length`.
 #[test]
 fn parameter_name_is_matched_as_a_whole_identifier() {

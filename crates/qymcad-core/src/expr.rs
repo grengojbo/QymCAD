@@ -297,9 +297,6 @@ fn call_fn(name: &str, args: &[f64]) -> Result<f64, ExprError> {
     }
 }
 
-/// Whether the parameter `name` is mentioned in an expression as an identifier of its own rather than as part
-/// of another name — `L` must not be found inside `Length`. Needed for targeted rebuilds: editing a parameter
-/// marks dirty only the features that actually reference it.
 /// A number as a string, written the way a person writes it: at most four decimals, no trailing zeros and no
 /// dot at the end.
 ///
@@ -321,33 +318,46 @@ pub fn fmt_num(v: f64) -> String {
     }
 }
 
+/// Whether the parameter `name` is mentioned in an expression as an identifier of its own rather than as part
+/// of another name — `L` must not be found inside `Length`. Needed for targeted rebuilds: editing a parameter
+/// marks dirty only the features that actually reference it.
+///
+/// The case is ignored, as [`eval`] ignores it: `H` in an expression is the parameter `h`.
 pub fn mentions(expr: &str, name: &str) -> bool {
     !occurrences(expr, name).is_empty()
 }
 
-/// The places where `name` stands in an expression as a name rather than as part of another word. Both
-/// [`mentions`] and [`rename_ident`] grow from here: the boundary rule has to be single, or what gets renamed
-/// is not what was found.
-fn occurrences(expr: &str, name: &str) -> Vec<usize> {
+/// The places where `name` stands in an expression as a name rather than as part of another word, as byte
+/// ranges. Both [`mentions`] and [`rename_ident`] grow from here: the boundary rule has to be single, or what gets
+/// renamed is not what was found.
+///
+/// A name is a whole run of identifier characters, compared without case: [`eval`] lower-cases every identifier,
+/// so `H`, `h` and `Width`, `width` are one parameter each. The rebuild asks by the lower-cased key of
+/// `Project::param_map`, and a case-sensitive search finds no `h` in `H`. A range is the run as written: a
+/// lower-cased letter may be of another byte length than the original one.
+fn occurrences(expr: &str, name: &str) -> Vec<(usize, usize)> {
     let mut out = Vec::new();
     if name.is_empty() {
         return out;
     }
+    let want = name.to_lowercase();
     let bytes = expr.as_bytes();
+    // Every byte of a multi-byte letter is >= 0x80, so a run never ends in the middle of a letter.
     let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c >= 0x80;
-    let mut from = 0;
-    while let Some(pos) = expr[from..].find(name) {
-        let i = from + pos;
-        let j = i + name.len();
-        let left_ok = i == 0 || !ident(bytes[i - 1]);
-        let right_ok = j >= bytes.len() || !ident(bytes[j]);
-        if left_ok && right_ok {
-            out.push(i);
+    let mut i = 0;
+    while i < bytes.len() {
+        if !ident(bytes[i]) {
+            i += 1;
+            continue;
         }
-        // The step advances by a whole character rather than by a byte. `from = i + 1` in the middle of a
-        // multi-byte letter crashes the parse; the same fault lived in the earlier `mentions` and surfaced only
-        // when the first match was rejected by the boundary check.
-        from = i + expr[i..].chars().next().map_or(1, char::len_utf8);
+        let mut j = i;
+        while j < bytes.len() && ident(bytes[j]) {
+            j += 1;
+        }
+        if expr[i..j].to_lowercase() == want {
+            out.push((i, j));
+        }
+        i = j;
     }
     out
 }
@@ -357,6 +367,7 @@ fn occurrences(expr: &str, name: &str) -> Vec<usize> {
 /// Renaming a parameter has to reach the formulas: otherwise renaming `w` to `shirina` leaves expressions such
 /// as `w*2+5` across the project, pointing at a name that no longer exists, and the model breaks silently. The
 /// boundaries are those of [`mentions`]: a `w` inside `wall`, `pow` or `w2` is not a name and is left alone.
+/// A `W` is the name `w`, as [`eval`] reads it, and is replaced too.
 pub fn rename_ident(expr: &str, old: &str, new: &str) -> String {
     let at = occurrences(expr, old);
     if at.is_empty() {
@@ -364,10 +375,10 @@ pub fn rename_ident(expr: &str, old: &str, new: &str) -> String {
     }
     let mut out = String::with_capacity(expr.len() + at.len() * new.len());
     let mut cut = 0;
-    for i in at {
+    for (i, j) in at {
         out.push_str(&expr[cut..i]);
         out.push_str(new);
-        cut = i + old.len();
+        cut = j;
     }
     out.push_str(&expr[cut..]);
     out
