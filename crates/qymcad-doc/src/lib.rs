@@ -11,4 +11,5 @@
 //! person is asked of the caller, which knows the language.
 
 pub mod brep;
+pub mod history;
 pub mod regen;
