@@ -18,7 +18,7 @@ mod tests {
     /// The help articles present on disk (both languages must have the same one).
     fn article_exists(path: &str) -> bool {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/help");
-        ["ru", "en"].iter().all(|lang| root.join(lang).join(format!("{path}.md")).exists())
+        ["ru", "uk", "en"].iter().all(|lang| root.join(lang).join(format!("{path}.md")).exists())
     }
 
     #[test]

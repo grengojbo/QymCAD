@@ -15,7 +15,7 @@ fn help_dir() -> std::path::PathBuf {
 /// Every picture link in every article of every language: (article file, link).
 fn image_refs() -> Vec<(String, String)> {
     let mut out = Vec::new();
-    for lang in ["ru", "en"] {
+    for lang in ["ru", "uk", "en"] {
         let base = help_dir().join(lang);
         let mut stack = vec![base.clone()];
         while let Some(d) = stack.pop() {

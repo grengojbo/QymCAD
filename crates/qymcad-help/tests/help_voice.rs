@@ -47,8 +47,8 @@ fn articles() -> Vec<(String, String)> {
 /// Every row of the list comes from a real article rather than being invented just in case. On the
 /// left is what stood there, on the right why it is bad for a reader.
 ///
-/// The Russian entries stay in Cyrillic: they are SEARCH KEYS into the Russian articles, and a
-/// translation would find nothing. The help itself is bilingual and stays as it is.
+/// The Russian and Ukrainian entries stay in Cyrillic: they are SEARCH KEYS into the articles of those
+/// languages, and a translation would find nothing.
 #[test]
 fn the_help_does_not_talk_like_a_developer() {
     // (the forbidden thing, why it is bad)
@@ -80,10 +80,13 @@ fn the_help_does_not_talk_like_a_developer() {
         ("built from the same place", "a story about how the help itself is made"),
         ("that was exactly the stumble", "development history"),
     ];
+    // The Ukrainian rows live in a data file: they are search keys, and a Cyrillic literal in the code is
+    // counted against the ratchet that wants the code free of them.
+    let ukrainian: Vec<(&str, &str)> = include_str!("developer_words_uk.txt").lines().filter_map(|l| l.split_once('\t')).collect();
     let mut sins: Vec<String> = Vec::new();
     for (path, text) in articles() {
         let low = text.to_lowercase();
-        for (word, why) in BANNED {
+        for (word, why) in BANNED.iter().chain(ukrainian.iter()) {
             if low.contains(word) {
                 let line = text.lines().find(|l| l.to_lowercase().contains(word)).unwrap_or("");
                 sins.push(format!("{path}: \"{word}\" — {why}\n    {}", line.trim()));
@@ -122,7 +125,7 @@ fn both_languages_tell_the_same_story() {
     let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs/help");
     let mut sins: Vec<String> = Vec::new();
     for (path, text) in articles() {
-        let Some(rest) = path.strip_prefix("ru/") else { continue };
+        let Some((lang, rest)) = path.split_once('/').filter(|(lang, _)| *lang != "en") else { continue };
         let en = root.join("en").join(rest);
         let Ok(other) = std::fs::read_to_string(&en) else {
             sins.push(format!("{path}: there is no English version at all"));
@@ -130,7 +133,7 @@ fn both_languages_tell_the_same_story() {
         };
         let count = |s: &str| s.lines().filter(|l| l.starts_with("## ")).count();
         if count(&text) != count(&other) {
-            sins.push(format!("{path}: {} sections in Russian, {} in English", count(&text), count(&other)));
+            sins.push(format!("{path}: {} sections in \"{lang}\", {} in English", count(&text), count(&other)));
         }
     }
     assert!(sins.is_empty(), "the languages of the help have drifted apart ({}):\n{}", sins.len(), sins.join("\n"));
