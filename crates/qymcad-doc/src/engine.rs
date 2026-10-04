@@ -4,7 +4,7 @@
 //!
 //! THE DOOR IS ONE: the document is read freely and changed only through [`DocEngine::edit`]. A change made past it
 //! would leave no undo step and no rebuild, and the next reading would measure a document nobody built.
-use crate::{brep, history, import, regen};
+use crate::{brep, export, history, import, regen};
 use qymcad_core::feature::{FeatureKind, RegenReport};
 use qymcad_core::model::{Id, Project};
 use qymcad_kernel::Shape;
@@ -36,6 +36,15 @@ pub struct Imported {
     pub unitless: bool,
     /// The sides of the box of everything that came in, as the file has it, before the factor.
     pub span: [f64; 3],
+}
+
+/// What a file was written with.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Exported {
+    pub written: export::Written,
+    /// The bodies sorted by what could go into the file: into an exact file only `brep` went; into a mesh file the rest
+    /// went as their stored meshes.
+    pub plan: export::Plan,
 }
 
 /// THE DOCUMENT AND EVERYTHING LIVE BESIDE IT.
@@ -194,6 +203,44 @@ impl DocEngine {
         self.rebuild();
         self.history.commit();
         Ok(Imported { root: landed.root, bodies: landed.bodies, unitless: landed.unitless, span: landed.span })
+    }
+
+    /// WRITE `target` AS A MESH FILE at `deflection` mm: every visible body, a live B-rep tessellated to that detail,
+    /// a body with none as its stored mesh. glTF and 3MF go out as the tree of parts under the names `shown` gives,
+    /// placed, in their colours; the rest flat. The answer tells what went as a mesh only.
+    pub fn export_mesh(&mut self, path: &str, format: import::MeshFormat, target: export::ExportTarget, deflection: f64, shown: &dyn Fn(&str) -> String) -> Result<Exported, DocError> {
+        self.ensure_brep();
+        let plan = export::plan(&self.project, target, |b| self.shapes.contains_key(&b));
+        let bodies = plan.mesh_bodies();
+        if bodies.is_empty() {
+            return Err(DocError::File(format!("io-mesh-no-bodies#{}", format.entry().name())));
+        }
+        let out = export::MeshOut { format, deflection, tree: export::mesh_tree(&self.project, format, target, &bodies, shown) };
+        let solids = export::placed_solids(&self.project, &self.shapes, &bodies);
+        let stored = bodies.iter().filter(|b| !self.shapes.contains_key(b)).filter_map(|&b| export::stored_mesh(&self.project, b)).collect();
+        let written = export::write_mesh(&out, &solids, stored, path).map_err(DocError::File)?;
+        Ok(Exported { written, plan })
+    }
+
+    /// WRITE `target` AS AN EXACT FILE: every visible body with a live B-rep; a STEP as the document's tree under the
+    /// names `shown` gives, an IGES flat. A body with none - a mesh, a failed rebuild - does not reach the file, and the
+    /// answer tells which.
+    pub fn export_exact(&mut self, path: &str, format: qymcad_kernel::ExactFormat, target: export::ExportTarget, shown: &dyn Fn(&str) -> String) -> Result<Exported, DocError> {
+        self.ensure_brep();
+        let plan = export::plan(&self.project, target, |b| self.shapes.contains_key(&b));
+        if plan.brep.is_empty() {
+            let named = match format {
+                qymcad_kernel::ExactFormat::Step => qymcad_io::Format::Step,
+                qymcad_kernel::ExactFormat::Iges => qymcad_io::Format::Iges,
+            }
+            .name();
+            let code = if plan.mesh_only.len() + plan.stale.len() > 0 { "io-exact-no-brep" } else { "io-exact-no-bodies" };
+            return Err(DocError::File(format!("{code}#{named}")));
+        }
+        let tree = export::exact_tree(&self.project, format, target, &plan.brep, shown);
+        let solids = export::placed_solids(&self.project, &self.shapes, &plan.brep);
+        let written = export::write_exact(format, &tree, &solids, path).map_err(DocError::File)?;
+        Ok(Exported { written, plan })
     }
 
     /// One step back; the name of the step taken back, or nothing when there is none.
