@@ -3937,6 +3937,7 @@ mod a_tool_that_needs_a_sketch_asks_for_one;
 mod the_sketch_mirror_asks_about_what;
 mod which_button_moves_the_view;
 mod hints_are_readable;
+mod ukrainian_letters_are_drawn;
 mod renaming_starts_with_f2;
 mod the_scale_is_stepped_not_dragged;
 mod the_camera_finds_the_model_on_opening;
