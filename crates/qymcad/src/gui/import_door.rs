@@ -654,7 +654,7 @@ pub(crate) mod tests {
         let _ = frame(&mut app, &ctx, key(egui::Key::Enter));
         settle(&mut app, &ctx);
         assert!((size_after(&app, before) - 5.0).abs() < 1e-6, "the solid came in at {} mm, not ten times half a millimetre", size_after(&app, before));
-        let restored = crate::gui::restore_import_shapes_for(&app.project);
+        let restored = qymcad_doc::brep::import_shapes(&app.project);
         assert_eq!(restored.len(), 1, "reopened, the document has {} solids", restored.len());
         let b = restored[0].1.bbox().expect("a box");
         // the kernel's box is widened by 1e-6 on every side
@@ -955,7 +955,7 @@ pub(crate) mod tests {
         assert!((live(&app) - 100.0).abs() < 1e-4, "the live solid is {} mm", live(&app));
         assert_eq!(app.disk.edits.undo.len(), steps + 1, "asking again is not one step of undo");
         assert_eq!(app.project.import_scale(body), Some(10.0), "the node does not keep the factor");
-        let restored = crate::gui::restore_import_shapes_for(&app.project);
+        let restored = qymcad_doc::brep::import_shapes(&app.project);
         let b = restored.iter().find(|(id, _)| *id == body).and_then(|(_, s)| s.bbox()).expect("reopened, the solid is there");
         assert!(((b[3] - b[0]).abs() - 100.0).abs() < 1e-4, "reopened, the solid is {} mm, not the 100 mm chosen", (b[3] - b[0]).abs());
     }

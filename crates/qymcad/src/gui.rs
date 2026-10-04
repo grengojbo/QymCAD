@@ -361,57 +361,6 @@ impl ExportPlan {
     }
 }
 
-/// Restore the B-rep shapes of the imported STEP solids from the embedded sources (`sources/`): parse each
-/// source's embedded STEP once and lay its solids out across the bodies.
-/// A free function rather than a method: it is called from a worker thread while a project loads, without
-/// `&mut App`. The imported bodies are stripped on saving as outputs of the timeline; their geometry lives in the
-/// original file.
-fn restore_import_shapes_for(project: &Project) -> Vec<(Id, qymcad_kernel::Shape)> {
-    use qymcad_core::feature::FeatureKind;
-    use std::collections::HashMap;
-    let imports: Vec<(Id, Id, u32, f64)> = project
-        .timeline
-        .iter()
-        .filter_map(|n| match n.kind {
-            FeatureKind::Import { body, source, solid, scale } => Some((body, source, solid, scale)),
-            _ => None,
-        })
-        .collect();
-    let mut out = Vec::new();
-    if imports.is_empty() {
-        return out;
-    }
-    // group by source, so that each STEP is unpacked only once
-    let mut by_src: HashMap<Id, Vec<(Id, u32, f64)>> = HashMap::new();
-    for (body, src, solid, scale) in imports {
-        by_src.entry(src).or_default().push((body, solid, scale));
-    }
-    for (src, items) in by_src {
-        let Some(sf) = project.sources.iter().find(|s| s.id == src) else { continue };
-        if sf.data.is_empty() {
-            continue;
-        }
-        let ext = if sf.ext.is_empty() { "step" } else { sf.ext.as_str() };
-        let tmp = std::env::temp_dir().join(format!("qym_import_{src}.{ext}"));
-        if std::fs::write(&tmp, &sf.data).is_err() {
-            continue;
-        }
-        // the Option wrapper: a shape is moved (it is not Clone), and each solid is taken by index exactly once
-        // read by what the source is: an IGES source read as STEP gave nothing, and the part opened with no live body
-        let format = qymcad_kernel::ExactFormat::of_extension(ext);
-        let mut shapes: Vec<Option<qymcad_kernel::Shape>> = qymcad_kernel::exact_solids(format, tmp.to_string_lossy().as_ref()).unwrap_or_default().into_iter().map(Some).collect();
-        let _ = std::fs::remove_file(&tmp);
-        for (body, solid, scale) in items {
-            if let Some(s) = shapes.get_mut(solid as usize).and_then(|o| o.take()) {
-                // at the factor given when the file came in: a file can name the wrong unit
-                let s = if (scale - 1.0).abs() > 1e-12 { s.transformed(&crate::gui::import_scale::scale_matrix(scale)).unwrap_or(s) } else { s };
-                out.push((body, s));
-            }
-        }
-    }
-    out
-}
-
 /// Toggle the parts library window; on the first opening it builds the catalogue tree.
 pub(crate) fn toggle_parts_library(parts: &mut PartsLibrary, win: &mut Windows) {
     win.toggle(WinKind::PartsLibrary);

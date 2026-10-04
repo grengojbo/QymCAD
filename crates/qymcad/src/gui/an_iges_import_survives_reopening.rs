@@ -20,7 +20,7 @@ mod tests {
         let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::import_iges(&path.to_string_lossy(), 0.5).expect("imports").remove(0);
         let body = p.add_mesh(mesh);
         p.import_tree_as_parts(vec![qymcad_core::model::ImportNode { name: "cube".into(), body: Some(body), ..Default::default() }], source, "cube");
-        let raised = crate::gui::restore_import_shapes_for(&p);
+        let raised = qymcad_doc::brep::import_shapes(&p);
         assert!(raised.iter().any(|(id, s)| *id == body && (s.volume() - 1000.0).abs() < 5.0), "the IGES part came back with no live body ({} raised)", raised.len());
     }
 }

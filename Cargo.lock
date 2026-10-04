@@ -3162,6 +3162,7 @@ dependencies = [
  "pollster",
  "qymcad-assembly",
  "qymcad-core",
+ "qymcad-doc",
  "qymcad-help",
  "qymcad-i18n",
  "qymcad-io",

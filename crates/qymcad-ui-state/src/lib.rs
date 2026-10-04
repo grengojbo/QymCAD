@@ -13743,16 +13743,8 @@ pub fn lineage_delete_ti(project: &qymcad_core::model::Project, body: Id) -> Opt
 /// The principle: faces are derived from the B-rep, and mesh detection applies only where there is no
 /// B-rep at all.
 pub fn detect_missing_faces(live: &mut LiveGeom, project: &mut Project) {
-    for i in 0..project.bodies.len() {
-        let has_brep = project.mesh_id(i).is_some_and(|id| live.shapes.contains_key(&id));
-        let empty = project.bodies.get(i).is_none_or(|b| b.faces.is_empty());
-        if !has_brep && empty {
-            let f = project.bodies[i].mesh.detect_faces(8.0);
-            project.bodies[i].faces = f.clone();
-            if let Some(body) = project.mesh_id(i) {
-                live.faces.insert(body, f); // mesh detection goes into the cache by body Id as well
-            }
-        }
+    for (body, f) in qymcad_doc::brep::detect_missing_faces(project, &live.shapes) {
+        live.faces.insert(body, f); // mesh detection goes into the cache by body Id as well
     }
 }
 

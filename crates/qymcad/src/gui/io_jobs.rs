@@ -82,7 +82,7 @@ impl App {
         let project = self.project.clone();
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let shapes = restore_import_shapes_for(&project);
+            let shapes = qymcad_doc::brep::import_shapes(&project);
             let _ = tx.send(JobResult::ImportShapes { shapes, regen });
         });
         if regen {
@@ -108,34 +108,16 @@ impl App {
         // parameter changed - opening a file used to schedule a full parametric rebuild for itself, and
         // without a live B-rep at that.
         qymcad_ui_state::settle_params_seen(&mut self.params_seen, &mut self.project);
-        // LIVE BODIES FROM THE FILE GO INTO THE CACHE rather than `clear()`. This used to be an
-        // unconditional wipe: there was no live B-rep in the bundle at all, so there was nothing to wipe.
-        // Now there is - and the first operation stopped paying with a full rebuild of the timeline. If it
-        // is empty (a file written without bodies) everything is as before: `ensure_brep` fills the cache
-        // on demand.
-        self.live.shapes = shapes.into_iter().collect();
-        // the faces came INSIDE the bodies (Body.faces) - there is nothing left to spread over a parallel
-        // list.
-        // GEOMETRY FROM THE BUNDLE rather than a rebuild from scratch. A full forced regen on opening cost
-        // 31 s of tessellation (1170 imported solids) right on the UI thread - the window went "not
-        // responding". The B-rep faces go back into `regen_faces` (associativity: sketches and features
-        // resolve faces by id), and only what has no geometry in the file IS REBUILT.
-        self.live.faces.clear();
-        for (i, f) in self.project.bodies.iter().map(|b| &b.faces).enumerate() {
-            if let (Some(body), false) = (self.project.mesh_id(i), f.is_empty()) {
-                self.project.regen_faces.insert(body, f.clone());
-                self.live.faces.insert(body, f.clone()); // a cache keyed by body Id survives edits to the topology
-            }
-        }
-        let missing: Vec<Id> = self.project.timeline.iter().filter_map(|n| n.kind.body()).filter(|b| self.project.mesh_index(*b).is_none()).collect();
-        for n in &mut self.project.timeline {
-            if n.kind.body().is_some_and(|b| missing.contains(&b)) {
-                n.dirty = true;
-            }
-        }
+        // THE GEOMETRY COMES FROM THE FILE rather than from a rebuild from scratch: the live bodies into the cache, the
+        // faces back where references resolve them, and only what the file has no geometry for is marked to be rebuilt
+        // (`qymcad_doc::brep::adopt_loaded`).
+        self.live.shapes.clear();
+        let adopted = qymcad_doc::brep::adopt_loaded(&mut self.project, &mut self.live.shapes, shapes);
+        // a cache keyed by body Id survives edits to the topology
+        self.live.faces = self.project.bodies.iter().filter(|b| !b.faces.is_empty()).map(|b| (b.id, b.faces.clone())).collect();
         // to rebuild, imported solids need the live B-rep from the embedded STEP: with no geometry in the
         // file, restore first (a modal spinner); otherwise fetch quietly in the background after the show
-        let needs_import_shapes = self.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Import { .. }));
+        let (missing, needs_import_shapes) = (adopted.missing, adopted.imports);
         if missing.is_empty() {
             // the geometry comes entirely from the file: the live B-rep is built lazily, when really needed
             self.live.ready = false;
