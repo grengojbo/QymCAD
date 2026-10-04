@@ -64,23 +64,33 @@ mod tests {
 mod cores {
     #[test]
     fn every_rebuild_tells_the_kernel_how_many_cores_it_may_take() {
-        let src = include_str!("../../../qymcad-ui-state/src/lib.rs");
+        // the window's background rebuild, and the rebuild every caller runs (the window's synchronous one included)
+        let ui = include_str!("../../../qymcad-ui-state/src/lib.rs");
+        let doc = include_str!("../../../qymcad-doc/src/regen.rs");
         let mut built = 0usize;
         let mut told = 0usize;
-        for (n, line) in src.lines().enumerate() {
-            if line.trim_start().starts_with("//") || !line.contains("qymcad_kernel::OcctKernel {") {
-                continue;
-            }
-            built += 1;
-            // within the dozen lines above, the setting must have been handed over
-            let from = n.saturating_sub(12);
-            let window = src.lines().skip(from).take(n - from).collect::<Vec<_>>().join("\n");
-            if window.contains("set_parallel(") {
-                told += 1;
+        for src in [ui, doc] {
+            for (n, line) in src.lines().enumerate() {
+                if line.trim_start().starts_with("//") || !line.contains("OcctKernel {") {
+                    continue;
+                }
+                built += 1;
+                // within the dozen lines above, the setting must have been handed over
+                let from = n.saturating_sub(12);
+                let window = src.lines().skip(from).take(n - from).collect::<Vec<_>>().join("\n");
+                if window.contains("set_parallel(") {
+                    told += 1;
+                }
             }
         }
         assert!(built >= 2, "the places that build a kernel for work are no longer found by this check ({built})");
         assert_eq!(built, told, "a rebuild builds a kernel without saying how many cores it may take");
+        // the rebuild of the document module says it only when the caller hands the number over: the window always does
+        let runs: Vec<&str> = ui.lines().filter(|l| !l.trim_start().starts_with("//") && l.contains("qymcad_doc::regen::run(")).collect();
+        assert!(!runs.is_empty(), "the window's rebuild through the document module is no longer found by this check");
+        for l in runs {
+            assert!(l.contains("Some(rc.set.kernel_threads)"), "the window rebuilds without handing over how many cores the kernel may take: {}", l.trim());
+        }
     }
 
     /// AND OUT OF THE BOX THE REBUILD GETS MORE THAN ONE CORE.

@@ -7862,13 +7862,7 @@ pub fn edit_key(dc: &DrawCtx) -> u64 {
 /// END, and to no purpose: it has no live B-rep yet, so every such rebuild failed with "the source
 /// body has not been built" and left that error in the status line.
 pub fn mark_changed_params_dirty(params_seen: &std::collections::HashMap<String, f64>, project: &mut Project) {
-    let vars = project.param_map();
-    let mut changed: Vec<String> = vars.iter().filter(|(k, v)| params_seen.get(*k).is_none_or(|old| (*old - **v).abs() > 1e-12)).map(|(k, _)| k.clone()).collect();
-    // a name that was seen and is gone - a parameter deleted - changes whatever was counted from it
-    changed.extend(params_seen.keys().filter(|k| !vars.contains_key(*k)).cloned());
-    for name in &changed {
-        project.mark_param_dependents_dirty_for(name);
-    }
+    qymcad_doc::regen::mark_changed_params_dirty(params_seen, project);
 }
 
 /// AN ANGULAR DIMENSION AS IT STANDS ON THE SCREEN - one geometry for drawing it and for taking its label, so the label
@@ -9871,48 +9865,18 @@ pub fn mesh_world_bounds(pn: &Painting, mi: usize) -> Option<WorldBox> {
 /// embedded STEP again (tens of seconds), so their shape is kept even while the body does not build (a rollback or a
 /// suppression): move the rollback bar back, and the import is on screen at once.
 pub fn keep_live_shapes(live: &mut LiveGeom, project: &Project) {
-    let imports: std::collections::HashSet<Id> = project
-        .timeline
-        .iter()
-        .filter_map(|n| match n.kind {
-            qymcad_core::feature::FeatureKind::Import { body, .. } => Some(body),
-            _ => None,
-        })
-        .collect();
-    live.shapes.retain(|body, _| imports.contains(body) || project.mesh_index(*body).is_some());
+    qymcad_doc::regen::keep_live_shapes(&mut live.shapes, project);
 }
 
 pub fn regenerate_now(rc: &mut RebuildCtx) {
-    prune_dangling_features(rc.live, rc.project); // anti-ghost: on EVERY regen, orphan meshes and dangling features go
-                                                  // THE REBUILD GRAPH: a parameter may have changed (including a named sketch dimension - those are in
-                                                  // `param_map`) -> ONLY the features that refer to it are rebuilt. This used to mark ALL features
-                                                  // carrying expressions, and it fired on EVERY rebuild: any trifle dragged the whole parametrics of
-                                                  // the project through a recount.
-    mark_changed_params_dirty(rc.params_seen, rc.project);
-    let _gate = qymcad_kernel::kernel_gate();
-    // HOW MANY CORES THE KERNEL MAY TAKE, said where a rebuild starts rather than remembered somewhere.
-    //
-    // One atomic store, and it cannot fall out of step with the setting. One core means single-threaded, which
-    // is the switch a person reaches for when a parallel pass is suspected of lying.
-    qymcad_kernel::set_parallel(rc.set.kernel_threads != 1, rc.set.kernel_threads);
-    let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut rc.live.shapes)), quality_k: rc.project.geom_quality.deflection_k(), ..Default::default() };
-    // HOW OFTEN THE GEOMETRIC FALLBACK FIRED is counted AROUND the rebuild. This is an event of a
-    // different kind from rebinding a reference: there a name was found and moved, here no name was
-    // found at all and the element was identified BY PLACE, by resemblance. Staying silent about it is
-    // not allowed - that is exactly how a reference lands on a neighbouring face, and it is discovered
-    // three operations later.
-    let snaps_before = rc.project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed);
-    let report = rc.project.regenerate(&kernel);
-    let snaps = rc.project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed).saturating_sub(snaps_before);
-    rc.live.shapes = kernel.shapes.into_inner();
-    settle_params_seen(rc.params_seen, rc.project); // the rebuild HAPPENED - only now are the values "seen"
-                                                    // the cache of live B-rep must match what the project actually holds. A regen REMOVES the mesh of a
-                                                    // body that stopped building (a rollback, a suppression, a cascade of an error) - while its former
-                                                    // shape stayed in the cache as a ghost: a foreign volume in the counts, wasted memory, and the risk
-                                                    // of handing dead geometry outside.
-    keep_live_shapes(rc.live, rc.project);
-    for (body, faces) in report.built {
-        set_body_faces(rc.live, rc.project, body, faces); // both into the index-parallel `faces` and into the cache by body Id
+    // THE REBUILD ITSELF is the one every headless caller runs: the ghosts pruned, what reads a changed parameter
+    // marked, the kernel under its gate at the cores the settings give (one is the switch a person reaches for when a
+    // parallel pass is suspected of lying), the parameters seen, the live shapes kept to what the project holds, the
+    // faces of a rebuilt body put into the body.
+    let done = qymcad_doc::regen::run(rc.project, &mut rc.live.shapes, rc.params_seen, Some(rc.set.kernel_threads));
+    let (mut report, snaps) = (done.report, done.snaps);
+    for (body, faces) in std::mem::take(&mut report.built) {
+        set_body_faces(rc.live, rc.project, body, faces); // the window's own caches: the face cache by body Id, and a stale blob dropped
     }
     // REBINDS OF GEOMETRY REFERENCES ARE VISIBLE. A lost reference used to latch onto a "similar" face
     // again on every rebuild, silently - now it is an event that gets announced.
