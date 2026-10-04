@@ -49,9 +49,9 @@ pub(crate) fn command_search_hits(workbench: qymcad_ui_state::Workbench, query: 
     let mut mine: Vec<(usize, &'static crate::command_catalog::Command)> = Vec::new();
     let mut other: Vec<(usize, &'static crate::command_catalog::Command)> = Vec::new();
     for c in crate::command_catalog::COMMANDS {
-        // SEARCH IN BOTH LANGUAGES. Someone working in a translated interface often remembers
+        // SEARCH IN EVERY LANGUAGE. Someone working in a translated interface often remembers
         // `fillet`: that is how other manuals, videos and forums write it.
-        let names = [c.name().to_lowercase(), c.name_in("ru").to_lowercase(), c.name_in("en").to_lowercase()];
+        let names = [c.name().to_lowercase(), c.name_in("ru").to_lowercase(), c.name_in("uk").to_lowercase(), c.name_in("en").to_lowercase()];
         let hit = names.iter().filter(|n| !n.is_empty()).find_map(|n| n.find(&q));
         // and by code: `part.fillet` is found by "fillet" even without a name
         let hit = hit.or_else(|| c.code.to_lowercase().find(&q));

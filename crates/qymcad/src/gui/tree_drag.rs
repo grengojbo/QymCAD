@@ -391,6 +391,10 @@ mod tests {
     /// own place and as a copy at the cursor — and the copy lies on top of everything else.
     #[test]
     fn the_carried_row_is_drawn_under_the_cursor() {
+        // PINNED TO ENGLISH. The check looks for the letter C in the frame's texts, and the English caption
+        // "Components" holds one; left to the machine's language it passes or fails with the system locale.
+        let prev = crate::i18n::language();
+        crate::i18n::set_language("en");
         let mut app = App::default();
         app.project.new_document();
         let (asm, [a, _b, c]) = asm_with_three(&mut app.project);
@@ -423,6 +427,7 @@ mod tests {
             super::super::screen_keys::tests::collect_text(&cs.shape, &mut texts);
         }
         let seen = texts.iter().filter(|t| t.contains('C')).count();
+        crate::i18n::set_language(&prev);
         assert!(seen >= 2, "the row being carried is not visible under the cursor: the frame holds {texts:?}");
     }
 

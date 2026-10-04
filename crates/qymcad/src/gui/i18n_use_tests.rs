@@ -13,16 +13,18 @@ use qymcad_i18n::*;
 #[test]
 fn languages_come_from_the_catalogue_not_from_code() {
     let list = qymcad_i18n::available();
-    assert!(list.len() >= 2, "the catalogue must hold at least ru and en, and out came {list:?}");
+    assert!(list.len() >= 3, "the catalogue must hold at least ru, uk and en, and out came {list:?}");
     let codes: Vec<&str> = list.iter().map(|(c, _)| c.as_str()).collect();
-    assert!(codes.contains(&"ru") && codes.contains(&"en"), "the language codes: {codes:?}");
+    assert!(codes.contains(&"ru") && codes.contains(&"uk") && codes.contains(&"en"), "the language codes: {codes:?}");
 
     // THE NAME OF A LANGUAGE IS IN THAT LANGUAGE ITSELF: that is how it is recognised by somebody who
     // does not read the other one. The expected values are deliberate test data — a Latin string here
     // would stop checking the very thing the assertion is about.
     let ru = list.iter().find(|(c, _)| c == "ru").expect("ru");
+    let uk = list.iter().find(|(c, _)| c == "uk").expect("uk");
     let en = list.iter().find(|(c, _)| c == "en").expect("en");
     assert_eq!(ru.1, "Русский", "the Russian language must be named in Russian");
+    assert!(!uk.1.is_ascii() && uk.1 != ru.1, "the Ukrainian language must be named in Ukrainian, not in Latin letters or as the Russian one: {}", uk.1);
     assert_eq!(en.1, "English", "and English in English");
 }
 
@@ -392,7 +394,7 @@ fn every_core_error_has_words_in_every_language() {
 #[test]
 fn numbers_in_errors_use_a_dot() {
     use qymcad_core::errors::CoreError as E;
-    for code in ["ru", "en"] {
+    for code in ["ru", "uk", "en"] {
         qymcad_i18n::set_language(code);
         let t = crate::gui::error_words::error_text(&E::AugerOuterNotBigger { outer: 12.5, shaft: 20.25 });
         assert!(t.contains("12.5"), "in {code} a number must carry a dot: {t}");
@@ -783,7 +785,7 @@ fn the_watched_prefixes_cover_every_code_the_libraries_hand_to_the_dictionary() 
 #[test]
 fn default_names_become_words_and_given_names_stay_as_typed() {
     let prev = qymcad_i18n::language();
-    for code in ["ru", "en"] {
+    for code in ["ru", "uk", "en"] {
         qymcad_i18n::set_language(code);
         for k in ["name-sketch", "name-plane", "name-assembly", "name-part", "name-instance", "name-datum-point", "name-datum-axis"] {
             let t = qymcad_i18n::name(k);
@@ -954,7 +956,7 @@ fn a_key_handed_to_anything_at_all_still_needs_words() {
 /// keys in the status line).
 #[test]
 fn the_fallback_speaks_words_not_a_key() {
-    for lang in ["ru", "en"] {
+    for lang in ["ru", "uk", "en"] {
         qymcad_i18n::set_language(lang);
         let s = qymcad_i18n::tr1("io-rebound-by-place", "n", "3");
         assert_ne!(s, "io-rebound-by-place", "{lang}: the string about the fallback degenerated into a key");
@@ -985,13 +987,17 @@ fn the_catalogue_speaks_like_a_program() {
         "выбери", "кликни", "нажми", "укажи", "поставь", "возьми", "потяни", "открой", "закрой", "введи", "наведи", "щёлкни", "щелкни", "перетащи", "отпусти", "начни", "проверь", "задай", "жми",
         "ткни", "двигай", "тяни", "смотри", "сделай", "изволь",
     ];
+    // the same, in Ukrainian: the bare second-person imperative, never the polite plural. A data file: the
+    // words are search keys, and a Cyrillic literal in the code counts against the ratchet that wants none.
+    let familiar_uk: Vec<&str> = include_str!("familiar_words_uk.txt").lines().collect();
+    let familiar_for = |lang: &str| if lang == "uk" { familiar_uk.clone() } else { FAMILIAR.to_vec() };
     let mut bad: Vec<String> = Vec::new();
-    for lang in ["ru", "en"] {
+    for lang in ["ru", "uk", "en"] {
         for (key, value) in catalogue(lang) {
             let low = value.to_lowercase();
-            for w in FAMILIAR {
+            for w in familiar_for(lang) {
                 // word boundaries: the bare imperative is caught, its polite form is not
-                let found = low.split(|c: char| !c.is_alphabetic()).any(|t| t == *w);
+                let found = low.split(|c: char| !c.is_alphabetic()).any(|t| t == w);
                 if found {
                     bad.push(format!("{lang}/{key}: familiar address - \"{w}\" in \"{value}\""));
                 }

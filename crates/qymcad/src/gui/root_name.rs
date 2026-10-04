@@ -53,7 +53,7 @@ mod tests {
         let mut app = project_with_a_frozen_root_name();
         app.project.ensure_document();
         let mut seen = Vec::new();
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             i18n::set_language(code);
             let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| {
                 let mut asks = Vec::new();

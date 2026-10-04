@@ -91,7 +91,7 @@ pub(in crate::gui) mod tests {
         let prev = i18n::language();
         let mut leaks: Vec<String> = Vec::new();
         let mut drawn = 0usize;
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             i18n::set_language(code);
             // the Part tools with fields at the geometry: fillet, chamfer, shell, hole, patterns
             for cmd in [4u8, 5, 6, 7, 17, 18] {
@@ -273,7 +273,7 @@ pub(in crate::gui) mod tests {
         // passes: the check then covers it in name only. Adding five windows to this list is exactly when
         // that would have gone unnoticed.
         let mut per_surface: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             i18n::set_language(code);
             for Surface { name, draw } in surfaces {
                 let mut app = populated();

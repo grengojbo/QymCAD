@@ -143,7 +143,7 @@ mod tests {
     #[test]
     fn every_command_has_a_human_name_in_both_languages() {
         let prev = crate::i18n::language();
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             crate::i18n::set_language(code);
             crate::help::set_lang(code);
             for c in COMMANDS {

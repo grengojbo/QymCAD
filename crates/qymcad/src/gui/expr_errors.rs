@@ -27,7 +27,7 @@ mod tests {
     #[test]
     fn every_kind_of_expression_error_speaks_words() {
         let prev = crate::i18n::language();
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             crate::i18n::set_language(code);
             for e in [
                 ExprError::UnknownChar("§".into()),

@@ -38,7 +38,7 @@ mod tests {
     #[test]
     fn the_search_finds_a_setting_by_its_label_in_both_languages() {
         let prev = i18n::language();
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             i18n::set_language(code);
             for sec in Sec::all() {
                 for k in sec.row_keys() {

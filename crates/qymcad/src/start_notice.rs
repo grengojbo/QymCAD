@@ -38,7 +38,7 @@ mod tests {
     /// nothing but a check will notice the day one of these lines is a catalogue key.
     #[test]
     fn the_door_speaks_in_both_languages() {
-        for lang in ["ru", "en"] {
+        for lang in ["ru", "uk", "en"] {
             crate::i18n::set_language(lang);
             for key in ["start-failed-title", "start-failed-no-adapter", "start-failed-other"] {
                 let text = crate::i18n::tr(key);
@@ -55,7 +55,7 @@ mod tests {
     /// start failed for an unknown reason wastes the one case they could have fixed themselves.
     #[test]
     fn a_missing_driver_is_not_told_the_same_as_anything_else() {
-        for lang in ["ru", "en"] {
+        for lang in ["ru", "uk", "en"] {
             crate::i18n::set_language(lang);
             assert_ne!(crate::i18n::tr("start-failed-no-adapter"), crate::i18n::tr("start-failed-other"), "[{lang}] both cases say the same thing");
         }

@@ -82,7 +82,7 @@ mod tests {
         let prev = crate::i18n::language();
         let mut leaks: Vec<String> = Vec::new();
         let mut drawn = 0usize;
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             crate::i18n::set_language(code);
             for Surface { name, arm } in surfaces {
                 let mut app = App::default();

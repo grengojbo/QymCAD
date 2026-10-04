@@ -67,7 +67,7 @@ mod tests {
     /// it. A slow viewport nobody explained is reported as a fault in the program.
     #[test]
     fn drawing_on_the_processor_is_said_in_words() {
-        for lang in ["ru", "en"] {
+        for lang in ["ru", "uk", "en"] {
             crate::i18n::set_language(lang);
             let said = crate::i18n::tr1("gpu-on-the-processor", "name", "llvmpipe");
             assert_ne!(said, "gpu-on-the-processor", "[{lang}] the line is missing from the catalogue");

@@ -78,7 +78,7 @@ mod tests {
     #[test]
     fn no_rebuild_line_in_either_language_hangs_out() {
         let app = App::default();
-        for lang in ["ru", "en"] {
+        for lang in ["ru", "uk", "en"] {
             crate::i18n::set_language(lang);
             for (key, arg) in [
                 ("io-rebuilding-heavy-n", Some(("n", "28"))),

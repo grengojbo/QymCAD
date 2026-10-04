@@ -277,7 +277,7 @@ mod tests {
     fn every_section_has_a_name_in_every_language() {
         let prev = crate::i18n::language();
         let dirs: Vec<String> = help::sections().into_iter().map(|(d, _)| d).filter(|d| !d.is_empty()).collect();
-        for code in ["ru", "en"] {
+        for code in ["ru", "uk", "en"] {
             crate::i18n::set_language(code);
             for d in &dirs {
                 let key = format!("help-section-{d}");
