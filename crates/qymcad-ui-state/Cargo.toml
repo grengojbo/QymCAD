@@ -12,8 +12,9 @@ edition = "2021"
 # crate holding the god object, which is the very dependency the rebuild is undoing.
 #
 # The dependencies are the document (records hold ids, planes, references), the kernel (a live shape is
-# cached by body), the shell (the layout of panels travels in the settings) and egui (a texture handle
-# and a couple of screen types). Nothing here reaches for the application.
+# cached by body), the document's own steps (an undo restored the way every headless caller restores it), the
+# shell (the layout of panels travels in the settings) and egui (a texture handle and a couple of screen
+# types). Nothing here reaches for the application.
 [dependencies]
 ab_glyph = "0.2.32"
 egui = "0.35"
@@ -22,6 +23,7 @@ serde = { version = "1", features = ["derive"] }
 bytemuck = { version = "1", features = ["derive"] }
 qymcad-core = { path = "../qymcad-core" }
 qymcad-kernel = { path = "../qymcad-kernel" }
+qymcad-doc = { path = "../qymcad-doc" }
 qymcad-shell = { path = "../qymcad-shell" }
 qymcad-scheme = { path = "../qymcad-scheme" }
 qymcad-i18n = { path = "../qymcad-i18n" }

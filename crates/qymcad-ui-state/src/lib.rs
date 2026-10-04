@@ -10226,59 +10226,15 @@ pub fn edit_over<'a>(rc: RebuildCtx<'a>, name: impl Into<String>) -> Edit<'a> {
 /// it is still there - a step is taken back and put again where it was made.
 #[must_use]
 pub fn restore(rc: &mut RebuildCtx, snap: Snapshot) -> Vec<Id> {
-    // A snapshot carries THE MESHES but not the live B-rep (`Shape` is not cloneable). `shapes` used
-    // to be left over from the undone state: old geometry on screen, new geometry in the kernel, and
-    // the NEXT operation built on the undone shape. Silently, because nodes are not dirty after an
-    // undo. What gets rebuilt is exactly the bodies whose RECIPE differs between the states (not a
-    // forced pass over the whole document — on an assembly of a thousand imports that is tens of
-    // seconds).
-    let mut changed = rc.project.changed_bodies_vs(&snap.project);
-    // A PIECE OF A MESH IS ITS OWN GEOMETRY: the snapshot brings its mesh and faces back as they were, and there is
-    // nothing to rebuild it from. Counted as changed, its node is marked and a rebuild of nothing is started.
-    let pieces: Vec<Id> = changed.iter().copied().filter(|&b| snap.project.timeline.iter().any(|n| n.kind.owns_body(b) && !n.kind.waits_for_brep())).collect();
-    changed.retain(|b| !pieces.contains(b));
-    let mut restored = snap.project;
-    // THE PARAMETERS THAT DIFFER between the two states change whatever reads them, though no recipe changed: the
-    // node still says "k". A snapshot taken when an edit closed holds the new expression beside the old value and the
-    // old geometry - both are counted by the rebuild, which comes after - and restored as it was, a chamfer driven by
-    // k kept the size of the k before. Measured by the check of undo and redo after every step: k written as 3 came
-    // back holding 1.5, the chamfer with it. Asked by the expression as well as the value for that reason.
-    // the values counted again from the expressions first: the snapshot may hold an expression its value never caught up
-    // with, the value being counted when the table's edit is applied
-    let _ = restored.eval_parameters();
-    let said = |p: &Project| p.parameters.iter().map(|q| (q.name.to_lowercase(), (q.expr.clone(), q.value.to_bits()))).collect::<std::collections::HashMap<_, _>>();
-    let (was, now) = (said(rc.project), said(&restored));
-    let moved: Vec<String> = was.keys().chain(now.keys()).filter(|k| was.get(*k) != now.get(*k)).cloned().collect();
-    shelve_source_data(rc.live, rc.project, &mut restored);
-    restored.take_source_data_from(rc.project); // the source bytes come from the live document
-    restored.keep_ids_past(rc.project); // an id handed out once is never handed out again
-                                        // the derived topology caches never went into the snapshot — bring them back from the live state
-                                        // for the bodies the edit did not touch (the changed ones are rebuilt below anyway)
-    let (rf, re) = (std::mem::take(&mut rc.project.regen_faces), std::mem::take(&mut rc.project.regen_edges));
-    shelve_imports(rc.live, rc.project, &restored);
-    *rc.project = restored;
-    rc.project.regen_faces = rf;
-    rc.project.regen_edges = re;
-    // THE LIVE BODIES OF THE CHANGED ONES STAY until the rebuild below replaces them: every node of theirs is marked
-    // dirty and built again, and one that no longer builds keeps its last good body, as a partial rebuild keeps it.
-    // Reported behaviour: a sketch deleted under its extrusion left the body with 12 edges to pick; the same step
-    // undone and done again had none - the body thrown away here, and the red node built nothing to put back.
+    // the document half - what is marked to be rebuilt, the shelf of imports and sources, the parameters that moved -
+    // is the one every headless caller takes too
+    let shelf = qymcad_doc::history::Shelf { shapes: &mut rc.live.shelved, sources: &mut rc.live.shelved_sources };
+    let restored = qymcad_doc::history::restore_snapshot(rc.project, &mut rc.live.shapes, shelf, snap.project);
     // a piece's face cache comes back with it: a stale one is laid over its faces at the next change of topology
-    for &b in &pieces {
+    for &b in &restored.pieces {
         if let Some(i) = rc.project.mesh_index(b) {
             rc.live.faces.insert(b, rc.project.bodies[i].faces.clone());
         }
-    }
-    // every body of the node counts: a pattern of parts and a split body have several and no single `body()`, and a
-    // pattern brought back by redo kept its copies without a live shape - no edges to pick on any of them
-    let dirty: Vec<Id> = rc.project.timeline.iter().filter(|n| n.kind.bodies().iter().any(|b| changed.contains(b))).map(|n| n.id).collect();
-    for n in &mut rc.project.timeline {
-        if dirty.contains(&n.id) {
-            n.dirty = true;
-        }
-    }
-    for name in &moved {
-        rc.project.mark_param_dependents_dirty_for(name);
     }
     *rc.sel = Sel::None;
     rc.regen.geom_rev = rc.regen.geom_rev.wrapping_add(1);
@@ -10289,57 +10245,11 @@ pub fn restore(rc: &mut RebuildCtx, snap: Snapshot) -> Vec<Id> {
     // camera. And so it did, by this line: a constraint button that does not fit the current selection
     // is the ordinary way of working - press the button, then pick - and it ends in `abort_edit`, that
     // is here. `view.initialized = false` made the next frame re-fit the whole sketch.
-    if !changed.is_empty() {
+    if !restored.changed.is_empty() {
         regenerate_all(rc); // bring the B-rep of the changed bodies up to the restored state
     }
     let worked_in = rc.project.active_component.filter(|&c| rc.project.components.iter().any(|x| x.id == c));
     worked_in.map_or_else(|| rc.active_path.clone(), |c| context_path_to(rc.project, c))
-}
-
-/// The imported bodies of `p`.
-fn import_bodies(p: &Project) -> std::collections::HashSet<Id> {
-    p.timeline
-        .iter()
-        .filter_map(|n| match n.kind {
-            qymcad_core::feature::FeatureKind::Import { body, .. } => Some(body),
-            _ => None,
-        })
-        .collect()
-}
-
-/// Between two states of the document: the live shapes of the imports leaving it go to the shelf, those of the
-/// imports coming back are taken off it, so the rebuild after the restore tessellates them with named faces.
-fn shelve_imports(live: &mut LiveGeom, was: &Project, now: &Project) {
-    let (before, after) = (import_bodies(was), import_bodies(now));
-    for b in before.difference(&after) {
-        if let Some(s) = live.shapes.remove(b) {
-            live.shelved.insert(*b, s);
-        }
-    }
-    for b in &after {
-        if !live.shapes.contains_key(b) {
-            if let Some(s) = live.shelved.remove(b) {
-                live.shapes.insert(*b, s);
-            }
-        }
-    }
-}
-
-/// Between two states of the document: the bytes of the sources leaving it go to the shelf, those of the sources
-/// coming back without bytes are taken off it.
-fn shelve_source_data(live: &mut LiveGeom, was: &mut Project, now: &mut Project) {
-    for src in &mut was.sources {
-        if !src.data.is_empty() && !now.sources.iter().any(|n| n.id == src.id) {
-            live.shelved_sources.insert(src.id, std::mem::take(&mut src.data));
-        }
-    }
-    for src in &mut now.sources {
-        if src.data.is_empty() {
-            if let Some(d) = live.shelved_sources.remove(&src.id) {
-                src.data = d;
-            }
-        }
-    }
 }
 
 /// After a component's placement changes: with external references present, rebuild the consumers
