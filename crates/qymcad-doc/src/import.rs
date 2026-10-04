@@ -205,12 +205,29 @@ fn settle_names(project: &mut Project, root: Option<Id>, shown: &dyn Fn(&str) ->
     came.into_iter().map(|c| (c, project.component_transform(c))).collect()
 }
 
+/// WHAT A FACTOR IS TAKEN FROM, borrowed: the meshes and shapes as the file has them, and where the file places the
+/// components. A file just landed lends its [`Landed`]; an import asked about again from its node lends what it stands
+/// at now divided by its factor.
+#[derive(Clone, Copy)]
+pub struct AsRead<'a> {
+    pub meshes: &'a [(Id, Mesh, Vec<MeshFace>)],
+    pub solids: &'a [(Id, Shape)],
+    pub places: &'a [(Id, [f64; 12])],
+}
+
+impl Landed {
+    /// What a factor is taken from.
+    pub fn as_read(&self) -> AsRead<'_> {
+        AsRead { meshes: &self.meshes, solids: &self.solids, places: &self.places }
+    }
+}
+
 /// PUT EVERYTHING THAT CAME IN AT `factor` from the file's own numbers: a mesh from its copy as read, a solid from its
 /// shape as read, with the factor kept by its import node; every component that came in stands at the factor too,
 /// about the file's zero. Returns whether solids changed, which then need a rebuild to be shown.
-pub fn apply_scale(project: &mut Project, shapes: &mut HashMap<Id, Shape>, landed: &Landed, factor: f64) -> bool {
+pub fn apply_scale(project: &mut Project, shapes: &mut HashMap<Id, Shape>, read: AsRead, factor: f64) -> bool {
     let f = factor;
-    for (id, mesh, faces) in &landed.meshes {
+    for (id, mesh, faces) in read.meshes {
         project.set_import_scale(*id, f); // the mesh piece keeps the factor its mesh stands at
         let Some(i) = project.bodies.iter().position(|b| b.id == *id) else { continue };
         let mut m = mesh.clone();
@@ -218,20 +235,20 @@ pub fn apply_scale(project: &mut Project, shapes: &mut HashMap<Id, Shape>, lande
         project.bodies[i].mesh = m;
         project.set_body_faces(*id, scaled_faces(faces, f));
     }
-    for (id, shape) in &landed.solids {
+    for (id, shape) in read.solids {
         if let Some(s) = shape.transformed(&scale_matrix(f)) {
             shapes.insert(*id, s);
         }
         project.set_import_scale(*id, f);
     }
-    for (id, place) in &landed.places {
+    for (id, place) in read.places {
         let mut m = *place;
         for k in [3, 7, 11] {
             m[k] *= f;
         }
         project.set_component_transform(*id, m);
     }
-    !landed.solids.is_empty()
+    !read.solids.is_empty()
 }
 
 /// No part a person imports is this size: under `SMALLEST_MM` or over `LARGEST_MM` on its largest side.

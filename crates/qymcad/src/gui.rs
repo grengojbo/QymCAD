@@ -2780,12 +2780,7 @@ pub(crate) fn feat_default_name(kind: &qymcad_core::feature::FeatureKind) -> Str
 }
 
 /// Embed the original of an imported file into the document and return its Id.
-pub(crate) fn embed_source(project: &mut qymcad_core::model::Project, path: &str) -> Option<Id> {
-    match std::fs::read(path) {
-        Ok(bytes) => Some(project.add_source(file_name(path), bytes)),
-        Err(_) => None,
-    }
-}
+pub(crate) use qymcad_doc::import::embed_source;
 
 fn snapshot(project: &qymcad_core::model::Project) -> Snapshot {
     // THE BYTES OF THE EMBEDDED SOURCES DO NOT GO INTO A SNAPSHOT. They never change (they are the
@@ -2844,14 +2839,7 @@ pub(crate) fn sel_delete_label(project: &qymcad_core::model::Project, sel: Sel) 
 
 /// The entry of a mesh format in the table of formats: its name and extensions live there, once.
 pub(crate) fn mesh_entry(format: qymcad_ui_state::MeshFormat) -> qymcad_io::Format {
-    match format {
-        qymcad_ui_state::MeshFormat::Stl => qymcad_io::Format::Stl,
-        qymcad_ui_state::MeshFormat::Obj => qymcad_io::Format::Obj,
-        qymcad_ui_state::MeshFormat::Ply => qymcad_io::Format::Ply,
-        qymcad_ui_state::MeshFormat::Glb => qymcad_io::Format::Gltf,
-        qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::Format::ThreeMf,
-        qymcad_ui_state::MeshFormat::Amf => qymcad_io::Format::Amf,
-    }
+    format.entry()
 }
 
 pub(super) fn open_mesh(regen: &mut Rebuilding, path: String, format: qymcad_ui_state::MeshFormat) {
@@ -2860,22 +2848,8 @@ pub(super) fn open_mesh(regen: &mut Rebuilding, path: String, format: qymcad_ui_
     let (tx, rx) = std::sync::mpsc::channel();
     let p = path.clone();
     std::thread::spawn(move || {
-        let read = match format {
-            qymcad_ui_state::MeshFormat::Stl => qymcad_io::import_stl_named(&p),
-            qymcad_ui_state::MeshFormat::Obj => qymcad_io::import_obj(&p),
-            qymcad_ui_state::MeshFormat::Ply => qymcad_io::import_ply_coloured(&p).map(|n| vec![n]),
-            qymcad_ui_state::MeshFormat::Glb => qymcad_io::import_gltf(&p),
-            qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::import_3mf(&p),
-            qymcad_ui_state::MeshFormat::Amf => qymcad_io::import_amf(&p),
-        };
-        let res = match read {
-            Ok(meshes) => {
-                let pieces = meshes.into_iter().map(|n| {
-                    let faces = n.mesh.detect_faces(8.0);
-                    qymcad_ui_state::MeshPiece { name: n.name, mesh: n.mesh, faces, color: n.color, place: n.place, tri_colors: n.tri_colors, within: n.within }
-                });
-                JobResult::MeshImported { path: p, format, pieces: pieces.collect() }
-            }
+        let res = match qymcad_doc::import::read_mesh(&p, format) {
+            Ok(pieces) => JobResult::MeshImported { path: p, format, pieces },
             Err(e) => JobResult::Failed(crate::i18n::tr2("g-mesh-error", "format", name, "error", &crate::i18n::name(&e))),
         };
         let _ = tx.send(res);

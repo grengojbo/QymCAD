@@ -8,65 +8,43 @@
 //! imported.
 
 use super::ph;
-use qymcad_core::geom::{Built, Mesh, MeshFace, Point3};
 use qymcad_core::model::Id;
+use qymcad_doc::import::{scaled_faces, world_span, AsRead, LARGEST_MM, SMALLEST_MM};
 use qymcad_io::FileUnit;
 use qymcad_ui_state::{ImportScale, MeshFormat, WinCtx};
-
-/// A model whose largest side is under this, or over `LARGEST_MM`, is asked about even when its file names a unit:
-/// both ends were met in sample files, and no part a person imports is either size.
-const SMALLEST_MM: f64 = 1.0;
-const LARGEST_MM: f64 = 10_000.0;
 
 /// The factors offered as buttons, beside the field for any other.
 const FACTORS: [f64; 7] = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0];
 
 /// A uniform scale about the origin as a 3x4 row-major matrix, the form the kernel takes a placement in.
-pub(crate) fn scale_matrix(f: f64) -> [f64; 12] {
-    [f, 0.0, 0.0, 0.0, 0.0, f, 0.0, 0.0, 0.0, 0.0, f, 0.0]
-}
+pub(crate) use qymcad_doc::brep::scale_matrix;
 
 /// Lay in the meshes read from `path`, then ask about their scale or keep them as they are.
 pub(crate) fn land_mesh(wc: &mut WinCtx, path: String, format: MeshFormat, pieces: Vec<qymcad_ui_state::MeshPiece>) {
     keep_pending(wc);
     *wc.dxf_path = Some(path.clone()); // the next file chooser opens where this file was
     let said = super::io_jobs::mesh_added(format, &pieces);
-    let span = span_of(pieces.iter().map(|p| &p.mesh));
-    let read: Vec<Built> = pieces.iter().map(|p| Built { mesh: p.mesh.clone(), faces: p.faces.clone() }).collect();
-    let first = wc.project.bodies.len();
-    qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr1("io-import-mesh", "format", super::mesh_entry(format).name())); // an EDIT of the document: bodies are added to the current one
-    let source = super::embed_source(wc.project, &path).unwrap_or(0);
-    let stem = super::io_jobs::stem_of(&path);
-    // EVERY PIECE A PART, as a solid comes in: under its own name or the file's, numbered, in the file's colour.
-    // Reported behaviour: a mesh came in as bodies with no part, seen only at the top of the assembly.
-    let many = pieces.len() > 1;
-    let mut tops: Vec<Entry> = Vec::new();
-    for (k, qymcad_ui_state::MeshPiece { name: own, mesh, faces, color, place, tri_colors, within }) in pieces.into_iter().enumerate() {
-        let body = wc.project.add_mesh(mesh);
-        wc.live.faces.insert(body, faces.clone()); // a face cache keyed by body Id, for quick access
-        wc.project.set_body_faces(body, faces);
-        if !own.is_empty() {
-            wc.project.set_mesh_name(wc.project.bodies.len() - 1, own.clone());
+    // an EDIT of the document: bodies are added to the current one
+    qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr1("io-import-mesh", "format", super::mesh_entry(format).name()));
+    // every piece a part, under its own name or the file's, numbered, in the file's colour; the file's groups as
+    // subassemblies (one tested topology operation of the core underneath)
+    let landed = qymcad_doc::import::land_mesh(wc.project, &path, format, pieces, &crate::i18n::name);
+    came_in(wc, &landed);
+    *wc.status = said;
+    let qymcad_doc::import::Landed { unitless, span, meshes, solids, places, .. } = landed;
+    let ask = ImportScale { file: super::file_name(&path), format: super::mesh_entry(format).name().to_string(), unitless, factor: 1.0, applied: 1.0, span, meshes, solids, places, again: None };
+    ask_or_keep(wc, ask);
+}
+
+/// What the window does once a file has landed: the faces into its cache, the part that came in chosen, and the view
+/// sent where the file came in.
+fn came_in(wc: &mut WinCtx, landed: &qymcad_doc::import::Landed) {
+    for &b in &landed.bodies {
+        if let Some(i) = wc.project.mesh_index(b) {
+            wc.live.faces.insert(b, wc.project.bodies[i].faces.clone()); // a face cache keyed by body Id, for quick access
         }
-        let name = if !own.is_empty() {
-            own
-        } else if many {
-            format!("{stem} {}", k + 1)
-        } else {
-            stem.clone()
-        };
-        put(&mut tops, &within, qymcad_core::model::ImportNode { name, place, body: Some(body), solid: k as u32, color, tri_colors, mesh: true, ..Default::default() });
     }
-    // THE FILE'S GROUPS AS SUBASSEMBLIES: a glTF node that holds others, at its place in the group above it
-    let nodes = tops.into_iter().map(|e| e.node(&stem)).collect();
-    let created = wc.project.import_tree_as_parts(nodes, source, &stem); // one tested topology operation of the core
-                                                                         // a part of the file reads as one already here ("Part 1" of the file beside "Part 1" of the document): numbered
-    if let Some(root) = created {
-        let came: Vec<qymcad_core::model::Id> = std::iter::once(root).chain(wc.project.descendants(root)).collect();
-        wc.project.name_apart(&came, &crate::i18n::name);
-    }
-    // where every part stands, so a factor scales the assembly about the file's zero, not each part about its own
-    let places = created.map(|root| std::iter::once(root).chain(wc.project.descendants(root)).map(|c| (c, wc.project.component_transform(c))).collect()).unwrap_or_default();
+    let created = landed.root;
     if let Some(ci) = created.and_then(|cid| wc.project.components.iter().position(|c| c.id == cid)) {
         *wc.sel = super::Sel::Component(ci);
     }
@@ -79,48 +57,6 @@ pub(crate) fn land_mesh(wc: &mut WinCtx, path: String, format: MeshFormat, piece
     qymcad_ui_state::invalidate(wc.regen);
     wc.view.initialized = false;
     wc.cam.init = false;
-    *wc.status = said;
-    let meshes = (first..wc.project.bodies.len()).filter_map(|i| wc.project.mesh_id(i)).zip(read).map(|(id, Built { mesh: m, faces: f })| (id, m, f)).collect();
-    let unitless = matches!(format, MeshFormat::Stl | MeshFormat::Obj | MeshFormat::Ply);
-    let ask =
-        ImportScale { file: super::file_name(&path), format: super::mesh_entry(format).name().to_string(), unitless, factor: 1.0, applied: 1.0, span, meshes, solids: Vec::new(), places, again: None };
-    ask_or_keep(wc, ask);
-}
-
-/// A piece of a mesh file, or a group of the file with what stands in it, on the way to the document's tree.
-enum Entry {
-    Piece(qymcad_core::model::ImportNode),
-    Group { id: usize, name: String, place: [f64; 12], kids: Vec<Entry> },
-}
-
-/// `leaf` into `level`, under the groups `chain` names from the top down, each made where it is first met.
-fn put(level: &mut Vec<Entry>, chain: &[qymcad_core::model::FileGroup], leaf: qymcad_core::model::ImportNode) {
-    let Some((qymcad_core::model::FileGroup { index: id, name, place }, rest)) = chain.split_first() else {
-        level.push(Entry::Piece(leaf));
-        return;
-    };
-    let at = match level.iter().position(|e| matches!(e, Entry::Group { id: g, .. } if g == id)) {
-        Some(at) => at,
-        None => {
-            level.push(Entry::Group { id: *id, name: name.clone(), place: *place, kids: Vec::new() });
-            level.len() - 1
-        }
-    };
-    if let Entry::Group { kids, .. } = &mut level[at] {
-        put(kids, rest, leaf);
-    }
-}
-
-impl Entry {
-    /// The document's node: a group the file leaves unnamed takes the file's name, as an unnamed piece does.
-    fn node(self, stem: &str) -> qymcad_core::model::ImportNode {
-        match self {
-            Entry::Piece(n) => n,
-            Entry::Group { name, place, kids, .. } => {
-                qymcad_core::model::ImportNode { name: if name.is_empty() { stem.to_string() } else { name }, place, children: kids.into_iter().map(|k| k.node(stem)).collect(), ..Default::default() }
-            }
-        }
-    }
 }
 
 /// Lay in the solids read from `path` as the file's tree of subassemblies and parts, then ask about their scale or
@@ -136,72 +72,21 @@ pub(crate) fn land_exact(
     keep_pending(wc);
     *wc.dxf_path = Some(path.clone()); // the next file chooser opens where this file was
     let nbodies = bodies.len();
-    let tris: usize = bodies.iter().map(|Built { mesh: m, .. }| m.tris.len()).sum();
+    let tris: usize = bodies.iter().map(|b| b.mesh.tris.len()).sum();
     let named = qymcad_io::Format::of_path(&path).map(|f| f.name()).unwrap_or_default();
     qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr1("io-import-mesh", "format", named));
-    let source = super::embed_source(wc.project, &path).unwrap_or(0);
-    let stem = super::io_jobs::stem_of(&path);
-
-    // add the mesh, the faces and the shape of every solid, in the coordinates of its own part
-    let mut shapes = shapes.into_iter();
-    let mut ids = Vec::with_capacity(nbodies);
-    let mut read = Vec::with_capacity(nbodies);
-    for Built { mesh, faces: fs } in bodies {
-        let bid = wc.project.add_mesh(mesh);
-        wc.live.faces.insert(bid, fs.clone()); // a face cache keyed by body Id, for quick access
-        wc.project.set_body_faces(bid, fs);
-        if let Some(s) = shapes.next() {
-            if let Some(copy) = s.transformed(&scale_matrix(1.0)) {
-                read.push((bid, copy)); // the shape as read, which every factor is taken from
-            }
-            wc.live.shapes.insert(bid, s);
-        }
-        ids.push(bid);
-    }
-    // the file's subassemblies and parts in the active context, each where the file places it (one tested
-    // topology operation of the core)
-    let created = wc.project.import_tree_as_parts(qymcad_kernel::document_tree(&nodes, &ids, &stem), source, &stem);
-    if let Some(root) = created {
-        let came: Vec<qymcad_core::model::Id> = std::iter::once(root).chain(wc.project.descendants(root)).collect();
-        wc.project.name_apart(&came, &crate::i18n::name);
-    }
-    let places = created.map(|root| std::iter::once(root).chain(wc.project.descendants(root)).map(|c| (c, wc.project.component_transform(c))).collect()).unwrap_or_default();
+    // the file's subassemblies and parts in the active context, each where the file places it, every solid live in the
+    // coordinates of its own part (one tested topology operation of the core underneath)
+    let tree = qymcad_kernel::ExactTree { bodies, shapes, nodes };
+    let landed = qymcad_doc::import::land_exact(wc.project, &mut wc.live.shapes, &path, tree, &crate::i18n::name);
     qymcad_ui_state::regenerate_all(&mut wc.rebuild()); // re-tessellate the import nodes, and take faces and edges from the B-rep
-    if let Some(ci) = created.and_then(|cid| wc.project.components.iter().position(|c| c.id == cid)) {
-        *wc.sel = super::Sel::Component(ci);
-    }
-    // THE VIEW GOES WHERE THE FILE CAME IN when it cannot be seen from where it stands: a new part beside the one
-    // being worked in is not drawn from inside that one (a neighbour shows only in context), and a mesh brought in
-    // could be neither seen nor clicked. From the assembly above, where it can be seen, the view stays.
-    if let Some(cid) = created.filter(|&cid| !wc.project.component_is_within(cid, qymcad_ui_state::current_ctx_id(wc.active_path, wc.project))) {
-        *wc.active_path = qymcad_ui_state::context_path_to(wc.project, cid);
-    }
-    qymcad_ui_state::invalidate(wc.regen);
-    wc.view.initialized = false;
-    wc.cam.init = false;
+    came_in(wc, &landed);
     *wc.status = super::io_jobs::exact_imported(format, nbodies, tris);
-    // the size as it stands in the world: a body alone is in its part's coordinates
-    let span = world_span(wc.project, &ids);
-    let ask = ImportScale { file: super::file_name(&path), format: named.to_string(), unitless: false, factor: 1.0, applied: 1.0, span, meshes: Vec::new(), solids: read, places, again: None };
+    // the size as it stands in the world after the rebuild: a body alone is in its part's coordinates
+    let span = world_span(wc.project, &landed.bodies);
+    let qymcad_doc::import::Landed { solids, places, .. } = landed;
+    let ask = ImportScale { file: super::file_name(&path), format: named.to_string(), unitless: false, factor: 1.0, applied: 1.0, span, meshes: Vec::new(), solids, places, again: None };
     ask_or_keep(wc, ask);
-}
-
-/// The sides of the box of `bodies` as they stand in the world, each placed by its part.
-fn world_span(project: &qymcad_core::model::Project, bodies: &[Id]) -> [f64; 3] {
-    let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
-    for &id in bodies {
-        let Some(b) = project.mesh_index(id).and_then(|i| project.bodies[i].mesh.bounds()) else { continue };
-        let w = project.body_world_transform(id);
-        for corner in 0..8 {
-            let p = [if corner & 1 == 0 { b.min.x } else { b.max.x }, if corner & 2 == 0 { b.min.y } else { b.max.y }, if corner & 4 == 0 { b.min.z } else { b.max.z }];
-            for r in 0..3 {
-                let v = w[r * 4] * p[0] + w[r * 4 + 1] * p[1] + w[r * 4 + 2] * p[2] + w[r * 4 + 3];
-                lo[r] = lo[r].min(v);
-                hi[r] = hi[r].max(v);
-            }
-        }
-    }
-    std::array::from_fn(|k| (hi[k] - lo[k]).max(0.0))
 }
 
 /// A file still waiting for its answer when the next one comes in is kept as it stands, so its edit is not left
@@ -215,8 +100,7 @@ fn keep_pending(wc: &mut WinCtx) {
 /// Ask when the file names no unit, when the settings say always, or when what came in is no sensible size;
 /// otherwise keep it as it came, as one step of undo. A format without units starts at the unit chosen for it last.
 fn ask_or_keep(wc: &mut WinCtx, mut ask: ImportScale) {
-    let largest = ask.span.iter().copied().fold(0.0, f64::max);
-    if !(ask.unitless || wc.set.import_ask_always || largest < SMALLEST_MM || largest > LARGEST_MM) {
+    if !(ask.unitless || wc.set.import_ask_always || qymcad_doc::import::out_of_size(ask.span)) {
         qymcad_ui_state::commit_edit(&mut wc.rebuild());
         return;
     }
@@ -233,30 +117,14 @@ fn ask_or_keep(wc: &mut WinCtx, mut ask: ImportScale) {
 /// from its shape as read, with the factor kept by its import node.
 fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
     let f = ask.factor;
-    for (id, mesh, faces) in &ask.meshes {
-        wc.project.set_import_scale(*id, f); // the mesh piece keeps the factor its mesh stands at
-        let Some(i) = wc.project.bodies.iter().position(|b| b.id == *id) else { continue };
-        let mut m = mesh.clone();
-        m.scale(0.0, 0.0, 0.0, f);
-        let fs = scaled_faces(faces, f);
-        wc.project.bodies[i].mesh = m;
-        wc.live.faces.insert(*id, fs.clone());
-        wc.project.set_body_faces(*id, fs);
-    }
-    for (id, shape) in &ask.solids {
-        if let Some(s) = shape.transformed(&scale_matrix(f)) {
-            wc.live.shapes.insert(*id, s);
-        }
-        wc.project.set_import_scale(*id, f);
-    }
     // every component that came in stands at the factor too: the whole import is scaled about the file's zero, not
     // each part about its own
-    for (id, place) in &ask.places {
-        let mut m = *place;
-        for k in [3, 7, 11] {
-            m[k] *= f;
+    let read = AsRead { meshes: &ask.meshes, solids: &ask.solids, places: &ask.places };
+    let _ = qymcad_doc::import::apply_scale(wc.project, &mut wc.live.shapes, read, f);
+    for (id, _, _) in &ask.meshes {
+        if let Some(i) = wc.project.mesh_index(*id) {
+            wc.live.faces.insert(*id, wc.project.bodies[i].faces.clone());
         }
-        wc.project.set_component_transform(*id, m);
     }
     if !ask.solids.is_empty() {
         // now, not when the edit closes: the answer has to show while the window is still asking
@@ -266,11 +134,6 @@ fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
     wc.view.initialized = false;
     wc.cam.init = false;
     ask.applied = f;
-}
-
-/// Faces at factor `f` about the origin: a centroid moves with it, an area grows as its square.
-fn scaled_faces(faces: &[MeshFace], f: f64) -> Vec<MeshFace> {
-    faces.iter().map(|x| MeshFace { centroid: Point3::new(x.centroid.x * f, x.centroid.y * f, x.centroid.z * f), area: x.area * f * f, ..x.clone() }).collect()
 }
 
 /// ASKED AGAIN FROM ITS NODE: the units and scale of an import already in the document, opened by a double click on
@@ -423,18 +286,6 @@ fn unit_name(u: FileUnit) -> String {
 
 fn same(a: f64, b: f64) -> bool {
     (a - b).abs() <= 1e-9 * b.abs().max(1.0)
-}
-
-/// The sides of the box of every mesh.
-fn span_of<'a>(meshes: impl Iterator<Item = &'a Mesh>) -> [f64; 3] {
-    let (mut lo, mut hi) = ([f64::MAX; 3], [f64::MIN; 3]);
-    for b in meshes.filter_map(Mesh::bounds) {
-        for (k, (a, z)) in [(b.min.x, b.max.x), (b.min.y, b.max.y), (b.min.z, b.max.z)].into_iter().enumerate() {
-            lo[k] = lo[k].min(a);
-            hi[k] = hi[k].max(z);
-        }
-    }
-    std::array::from_fn(|k| (hi[k] - lo[k]).max(0.0))
 }
 
 /// The sides at factor `f`, as `a x b x c` with up to three decimals.

@@ -2973,19 +2973,9 @@ pub enum AxisHit {
 #[derive(Clone, Copy)]
 pub struct LabelKey(&'static str);
 
-/// A piece of a mesh file on its way into the document: a piece as the file names it (see `qymcad_io::NamedMesh`) with
-/// the faces found on its mesh.
-pub struct MeshPiece {
-    pub name: String,
-    pub mesh: qymcad_core::geom::Mesh,
-    pub faces: Vec<qymcad_core::geom::MeshFace>,
-    pub color: Option<[u8; 3]>,
-    pub place: [f64; 12],
-    /// the colour of every triangle, where the file gives one
-    pub tri_colors: Vec<[u8; 3]>,
-    /// the groups of the file the piece stands in, from the top down
-    pub within: Vec<qymcad_core::model::FileGroup>,
-}
+/// A piece of a mesh file on its way into the document, and the mesh formats: the document's own words for a file
+/// brought in, the same for the window and for every headless caller.
+pub use qymcad_doc::import::{MeshFormat, MeshPiece};
 
 /// The result of a background (worker thread) import or export, arriving at the interface over a channel.
 pub enum JobResult {
@@ -4390,18 +4380,6 @@ pub struct StatusCtx<'a> {
     pub status: &'a str,
     /// The badge leads to the window, so the line must be able to open it.
     pub win: &'a mut Windows,
-}
-
-/// THE MESH FORMATS a body can be written as. Their names and extensions live in the table of formats
-/// (`qymcad_io::Format`); this says only which one was asked for.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum MeshFormat {
-    Stl,
-    Obj,
-    Ply,
-    Glb,
-    ThreeMf,
-    Amf,
 }
 
 /// WHAT A FILE BROUGHT IN MAY BECOME, at the place the door was opened from.

@@ -790,12 +790,6 @@ fn busy_card(regen: &mut Rebuilding, live: &mut LiveGeom, status: &mut String, l
     true
 }
 
-/// The file's name without its folder and its extension - what an imported part is called.
-pub(super) fn stem_of(path: &str) -> String {
-    let base = crate::gui::file_name(path);
-    std::path::Path::new(&base).file_stem().map(|s| s.to_string_lossy().into_owned()).unwrap_or(base)
-}
-
 /// WHAT THE STATUS SAYS WHEN NOTHING CAN GO INTO AN EXACT FILE: bodies that are there but carry no B-rep are
 /// told apart from there being no bodies at all.
 fn nothing_exact_to_write(format: qymcad_kernel::ExactFormat, plan: &ExportPlan) -> String {

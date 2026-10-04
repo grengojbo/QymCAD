@@ -198,7 +198,7 @@ impl DocEngine {
             Read::Exact(tree) => import::land_exact(&mut self.project, &mut self.shapes, path, tree, shown),
         };
         if (factor - 1.0).abs() > 1e-12 && factor > 0.0 {
-            let _ = import::apply_scale(&mut self.project, &mut self.shapes, &landed, factor);
+            let _ = import::apply_scale(&mut self.project, &mut self.shapes, landed.as_read(), factor);
         }
         self.rebuild();
         self.history.commit();

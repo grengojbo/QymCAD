@@ -92,8 +92,8 @@ fn every_factor_is_taken_from_the_files_own_numbers() {
     let tree = qymcad_kernel::read_exact_tree(qymcad_kernel::ExactFormat::Step, &step, 0.5).expect("the STEP reads");
     let solid = import::land_exact(&mut p, &mut shapes, &step, tree, &same_name);
     for f in [25.4, 0.1, 1.0] {
-        let _ = import::apply_scale(&mut p, &mut shapes, &mesh, f);
-        assert!(import::apply_scale(&mut p, &mut shapes, &solid, f), "a solid taken at a factor was not said to need a rebuild");
+        let _ = import::apply_scale(&mut p, &mut shapes, mesh.as_read(), f);
+        assert!(import::apply_scale(&mut p, &mut shapes, solid.as_read(), f), "a solid taken at a factor was not said to need a rebuild");
         let m = side(&p, mesh.bodies[0]);
         assert!((m - 10.0 * f).abs() < 1e-9 * f.max(1.0), "the mesh taken at {f} stands at {m} mm, not {}", 10.0 * f);
         let v = shapes[&solid.bodies[0]].volume();
