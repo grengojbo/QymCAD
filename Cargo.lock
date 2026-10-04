@@ -3366,6 +3366,7 @@ name = "qymcad-testkit"
 version = "0.1.0"
 dependencies = [
  "qymcad-core",
+ "qymcad-doc",
  "qymcad-io",
  "qymcad-kernel",
  "ron",

@@ -10,6 +10,7 @@ description = "Headless repro harness: load a .qcad document and regenerate it w
 
 [dependencies]
 qymcad-core.workspace = true
+qymcad-doc.workspace = true
 qymcad-kernel.workspace = true
 qymcad-io.workspace = true
 ron.workspace = true
