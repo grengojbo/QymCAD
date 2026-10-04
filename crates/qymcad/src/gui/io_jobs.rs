@@ -217,15 +217,7 @@ impl App {
     /// of one project do not drift apart silently (STEP used to skip a body with no B-rep while STL quietly
     /// wrote out its last mesh).
     pub(super) fn export_plan(&self, target: ExportTarget) -> ExportPlan {
-        let mut plan = ExportPlan::default();
-        for b in crate::gui::visible_export_bodies(&self.draw_ctx(), target) {
-            match self.project.export_kind(b, self.live.shapes.contains_key(&b)) {
-                qymcad_core::model::ExportKind::Brep => plan.brep.push(b),
-                qymcad_core::model::ExportKind::MeshOnly => plan.mesh_only.push(b),
-                qymcad_core::model::ExportKind::Stale => plan.stale.push(b),
-            }
-        }
-        plan
+        ExportPlan(qymcad_doc::export::plan(&self.project, target, |b| self.live.shapes.contains_key(&b)))
     }
 
     /// Exporting a target into an exact file - STEP or IGES (exact B-rep, live `Shape`s from the core, every
@@ -624,38 +616,8 @@ pub(crate) struct MeshJob {
 /// under their names, 3MF as an object of parts under theirs, placed, in their colours. The rest go out flat, every
 /// body where it stands in the world.
 pub(crate) fn mesh_job(project: &Project, format: qymcad_ui_state::MeshFormat, target: ExportTarget, bodies: Vec<Id>, note: String, deflection: f64) -> MeshJob {
-    let tree = if matches!(format, qymcad_ui_state::MeshFormat::Glb | qymcad_ui_state::MeshFormat::ThreeMf) { tree_to_write(project, target, &bodies) } else { Vec::new() };
+    let tree = qymcad_doc::export::mesh_tree(project, format, target, &bodies, &crate::i18n::name);
     MeshJob { format, bodies, note, deflection, tree }
-}
-
-/// The colour, or none, of every triangle of `body`'s tessellation where the tree gives faces of it a colour of their
-/// own: the body's colour (none for a part in the palette, which goes out with none), and each coloured face's over it,
-/// by the face's persistent id. Empty where no face has one.
-fn tri_colours(tree: &[qymcad_core::model::ExportNode], body: Id, mesh: &qymcad_core::geom::Mesh, faces: &[qymcad_core::geom::MeshFace]) -> Vec<Option<[u8; 3]>> {
-    let Some(node) = tree.iter().find(|n| n.body == Some(body)).filter(|n| !n.face_colors.is_empty()) else { return Vec::new() };
-    let mut out = vec![node.color; mesh.tris.len()];
-    for f in faces.iter().filter(|f| f.id != 0) {
-        if let Some((_, c)) = node.face_colors.iter().find(|(id, _)| *id == f.id) {
-            for &t in &f.triangles {
-                if let Some(slot) = out.get_mut(t as usize) {
-                    *slot = Some(*c);
-                }
-            }
-        }
-    }
-    out
-}
-
-/// Write meshes in the format asked for.
-fn write_meshes(format: qymcad_ui_state::MeshFormat, meshes: &[qymcad_core::geom::Mesh], path: &str) -> Result<(), String> {
-    match format {
-        qymcad_ui_state::MeshFormat::Stl => qymcad_io::export_stl(meshes, path),
-        qymcad_ui_state::MeshFormat::Obj => qymcad_io::export_obj(meshes, path),
-        qymcad_ui_state::MeshFormat::Ply => qymcad_io::export_ply(meshes, path),
-        qymcad_ui_state::MeshFormat::Glb => qymcad_io::export_glb(meshes, path),
-        qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::export_3mf(meshes, path),
-        qymcad_ui_state::MeshFormat::Amf => qymcad_io::export_amf(meshes, path),
-    }
 }
 
 /// The chooser for writing a mesh: the suggested name with the format's extension, and the format's filter.
@@ -670,12 +632,6 @@ pub(super) fn mesh_added(format: qymcad_ui_state::MeshFormat, pieces: &[qymcad_u
     crate::i18n::trn("io-mesh-added", &[("format", crate::gui::mesh_entry(format).name()), ("bodies", &pieces.len().to_string()), ("n", &tris.to_string())])
 }
 
-/// A body's mesh in its own coordinates and where it stands in the world.
-struct Placed {
-    own: qymcad_core::model::ExportMesh,
-    place: [f64; 12],
-}
-
 pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, path: &std::path::Path, job: &MeshJob) {
     let (bodies, deflection, format) = (&job.bodies, job.deflection, job.format);
     let name = crate::gui::mesh_entry(format).name();
@@ -687,21 +643,13 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
         return;
     }
     let mut moved: Vec<(Id, qymcad_kernel::Shape, [f64; 12])> = Vec::new();
-    let mut raw: Vec<Placed> = Vec::new();
+    let mut raw: Vec<qymcad_doc::export::Placed> = Vec::new();
     for &b in bodies.iter() {
         let m = ed.project.body_world_transform(b);
         if let Some(s) = live.shapes.remove(&b) {
             moved.push((b, s, m));
-        } else if let Some(i) = ed.project.mesh_index(b) {
-            // a piece of a mesh coloured triangle by triangle keeps its colours on the way out
-            let tri = ed
-                .project
-                .tri_colors
-                .get(&ed.project.lineage_root(b))
-                .filter(|(_, places)| places.len() == ed.project.bodies[i].mesh.tris.len())
-                .map(|(palette, places)| places.iter().map(|&k| palette.get(k as usize).copied()).collect())
-                .unwrap_or_default();
-            raw.push(Placed { own: qymcad_core::model::ExportMesh { body: b, mesh: ed.project.bodies[i].mesh.clone(), tri_colors: tri }, place: m });
+        } else if let Some(stored) = qymcad_doc::export::stored_mesh(ed.project, b) {
+            raw.push(stored); // a piece of a mesh coloured triangle by triangle keeps its colours on the way out
         }
     }
     if moved.is_empty() && raw.is_empty() {
@@ -709,48 +657,22 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
         return;
     }
     let note = job.note.clone();
-    let tree = job.tree.clone();
+    let out = qymcad_doc::export::MeshOut { format, deflection, tree: job.tree.clone() };
     let p = path.to_string_lossy().into_owned();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        // every body's mesh in its own coordinates, and where it stands in the world
-        let mut own: Vec<Placed> = Vec::new();
-        let mut failed = 0usize; // a body whose tessellation failed is NOT dropped silently but reported
-        for (id, s, m) in &moved {
-            if let Some(qymcad_core::geom::Built { mesh, faces }) = s.tessellate_merged(deflection) {
-                let tri = tri_colours(&tree, *id, &mesh, &faces);
-                own.push(Placed { own: qymcad_core::model::ExportMesh { body: *id, mesh, tri_colors: tri }, place: *m });
-            } else {
-                failed += 1;
-            }
-        }
-        own.extend(raw);
-        let n = own.len();
+        // every live body tessellated at the detail, every stored mesh as it is; a tree goes out with every part in its
+        // own coordinates, placed by the tree, flat with every body where it stands in the world
+        let solids: Vec<(Id, &qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(id, s, m)| (*id, s, *m)).collect();
+        let written = qymcad_doc::export::write_mesh(&out, &solids, raw, &p);
+        drop(solids);
         // STL writes EVERYTHING that is on screen (B-rep plus meshes), but it must say that some of the
         // bodies have no B-rep: the same sort STEP uses, so that the contents of the two files do not
-        // drift apart SILENTLY.
-        let done = || crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
-        // a tree goes out with every part in its own coordinates, placed by the tree; flat, every body where it stands
-        let written = if tree.is_empty() {
-            let world: Vec<qymcad_core::geom::Mesh> = own
-                .into_iter()
-                .map(|Placed { own: qymcad_core::model::ExportMesh { mut mesh, .. }, place }| {
-                    mesh.transform(&place);
-                    mesh
-                })
-                .collect();
-            write_meshes(format, &world, &p)
-        } else {
-            let own: Vec<qymcad_core::model::ExportMesh> = own.into_iter().map(|p| p.own).collect();
-            match format {
-                qymcad_ui_state::MeshFormat::ThreeMf => qymcad_io::export_3mf_tree(&tree, &own, &p),
-                _ => qymcad_io::export_glb_tree(&tree, &own, &p), // `mesh_job` gives a tree to GLB and 3MF alone
-            }
-        };
+        // drift apart SILENTLY. A body whose tessellation failed is NOT dropped silently but reported.
         let said = match written {
-            Ok(()) if failed > 0 => format!("(!) {}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &n.to_string()), ("path", &p), ("failed", &failed.to_string())]), note),
-            Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
-            Ok(()) => done(),
+            Ok(w) if w.failed > 0 => format!("(!) {}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p), ("failed", &w.failed.to_string())]), note),
+            Ok(w) if !note.is_empty() => format!("(!) {}{}", crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p)]), note),
+            Ok(w) => crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p)]),
             Err(e) => crate::i18n::name(&e),
         };
         let shapes_back = moved.into_iter().map(|(id, s, _)| (id, s)).collect();
@@ -821,23 +743,7 @@ pub(crate) struct ExportJob {
 /// shows, their colours, every component in its place, a clone as a second occurrence of its original. IGES has no
 /// tree, and goes out flat as before. `bodies` are the ones that go out - visible, with a live B-rep.
 pub(crate) fn export_tree_of(project: &Project, format: qymcad_kernel::ExactFormat, target: ExportTarget, bodies: &[Id]) -> Vec<qymcad_core::model::ExportNode> {
-    if format != qymcad_kernel::ExactFormat::Step {
-        return Vec::new();
-    }
-    tree_to_write(project, target, bodies)
-}
-
-/// The tree under `target` as a file takes it, with the names the tree shows; `bodies` are the ones that go out.
-fn tree_to_write(project: &Project, target: ExportTarget, bodies: &[Id]) -> Vec<qymcad_core::model::ExportNode> {
-    let root = match target {
-        ExportTarget::Project => project.root,
-        ExportTarget::Component(c) => c,
-    };
-    let mut tree = project.export_tree(root, |b| bodies.contains(&b));
-    for n in &mut tree {
-        n.name = crate::i18n::name(&n.name); // the name the tree shows, not a catalogue key
-    }
-    tree
+    qymcad_doc::export::exact_tree(project, format, target, bodies, &crate::i18n::name)
 }
 
 pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: &mut Rebuilding, status: &mut String, path: &std::path::Path, job: &ExportJob) {
@@ -870,21 +776,17 @@ pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: 
     let tree = job.tree.clone();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let pairs: Vec<(&qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(_, s, m)| (s, *m)).collect();
+        let solids: Vec<(Id, &qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(id, s, m)| (*id, s, *m)).collect();
         // honest about what was skipped: a body with no live B-rep (an imported STL, a failed regen)
         // does not get into the STEP - such a file used to come out short of parts SILENTLY, and that
-        // was discovered only by whoever received it.
+        // was discovered only by whoever received it. A STEP goes out as the document's tree; a format with none, flat.
         let done = || crate::i18n::trn("io-exact-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
-        // a STEP goes out as the document's tree; a format with none, flat
-        let by_id: Vec<(Id, &qymcad_kernel::Shape)> = moved.iter().map(|(id, s, _)| (*id, s)).collect();
-        let written = if tree.is_empty() { qymcad_kernel::write_exact(format, &pairs, &p) } else { qymcad_kernel::write_step_tree(&tree, &by_id, &p) };
-        drop(by_id);
-        let status = match written {
-            Ok(()) if !note.is_empty() => format!("(!) {}{}", done(), note),
-            Ok(()) => done(),
+        let status = match qymcad_doc::export::write_exact(format, &tree, &solids, &p) {
+            Ok(_) if !note.is_empty() => format!("(!) {}{}", done(), note),
+            Ok(_) => done(),
             Err(e) => crate::i18n::name(&e),
         };
-        drop(pairs);
+        drop(solids);
         let shapes_back = moved.into_iter().map(|(id, s, _)| (id, s)).collect();
         let _ = tx.send(JobResult::Exported { status, shapes_back });
     });
@@ -1027,26 +929,5 @@ pub(crate) fn save_part_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
         if let Some(d) = wc.parts.save.take() {
             wc.tex_graveyard.extend(d.tex);
         }
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::tri_colours;
-    use qymcad_core::geom::{Mesh, MeshFace, Point3};
-    use qymcad_core::model::ExportNode;
-
-    /// A FACE WITH NO COLOUR ON A PART WITH NONE GOES OUT WITH NONE: the part is in the palette, its second face green -
-    /// the first face's triangle takes no colour, not one made up for it.
-    #[test]
-    fn a_face_with_no_colour_goes_out_with_none() {
-        let green = [26, 204, 26];
-        let place = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
-        let tree = [ExportNode { name: "plate".into(), parent: None, place, body: Some(7), same_as: None, color: None, face_colors: vec![(2, green)] }];
-        let p = |x: f64, y: f64| Point3::new(x, y, 0.0);
-        let mesh = Mesh { verts: vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0), p(1.0, 1.0)], tris: vec![[0, 1, 2], [1, 3, 2]] };
-        let face = |id: u32, t: u32| MeshFace { triangles: vec![t], normal: [0.0, 0.0, 1.0], centroid: p(0.5, 0.5), area: 0.5, id };
-        let out = tri_colours(&tree, 7, &mesh, &[face(1, 0), face(2, 1)]);
-        assert_eq!(out, [None, Some(green)], "a face with no colour goes out in one made up");
     }
 }

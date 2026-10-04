@@ -250,3 +250,24 @@ fn tri_colours(tree: &[ExportNode], body: Id, mesh: &Mesh, faces: &[MeshFace]) -
     }
     out
 }
+
+#[cfg(test)]
+mod tests {
+    use super::tri_colours;
+    use qymcad_core::geom::{Mesh, MeshFace, Point3};
+    use qymcad_core::model::ExportNode;
+
+    /// A FACE WITH NO COLOUR ON A PART WITH NONE GOES OUT WITH NONE: the part is in the palette, its second face green -
+    /// the first face's triangle takes no colour, not one made up for it.
+    #[test]
+    fn a_face_with_no_colour_goes_out_with_none() {
+        let green = [26, 204, 26];
+        let place = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0];
+        let tree = [ExportNode { name: "plate".into(), parent: None, place, body: Some(7), same_as: None, color: None, face_colors: vec![(2, green)] }];
+        let p = |x: f64, y: f64| Point3::new(x, y, 0.0);
+        let mesh = Mesh { verts: vec![p(0.0, 0.0), p(1.0, 0.0), p(0.0, 1.0), p(1.0, 1.0)], tris: vec![[0, 1, 2], [1, 3, 2]] };
+        let face = |id: u32, t: u32| MeshFace { triangles: vec![t], normal: [0.0, 0.0, 1.0], centroid: p(0.5, 0.5), area: 0.5, id };
+        let out = tri_colours(&tree, 7, &mesh, &[face(1, 0), face(2, 1)]);
+        assert_eq!(out, [None, Some(green)], "a face with no colour goes out in one made up");
+    }
+}

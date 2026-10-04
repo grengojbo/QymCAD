@@ -138,11 +138,7 @@ pub enum Sel {
 
 /// What to export in 3D (STEP or STL): the selected component (with every body nested in its subtree) or the whole
 /// project. In both cases ONLY the visible bodies are exported.
-#[derive(Clone, Copy)]
-pub enum ExportTarget {
-    Component(Id),
-    Project,
-}
+pub use qymcad_doc::export::ExportTarget;
 
 /// DERIVED STATE, NOT TRUTH: everything here can be thrown away, and the next frame rebuilds it.
 ///
@@ -5473,22 +5469,8 @@ pub fn sketch_shown_by_components(project: &qymcad_core::model::Project, sketch:
     !project.component_is_within(owner, ctx) || component_chain_visible(project, owner, Some(ctx))
 }
 
-pub fn component_chain_visible(project: &qymcad_core::model::Project, owner: Id, stop: Option<Id>) -> bool {
-    let mut cur = Some(owner);
-    while let Some(id) = cur {
-        if Some(id) == stop {
-            break;
-        }
-        let Some(c) = project.components.iter().find(|c| c.id == id) else {
-            break;
-        };
-        if !c.visible {
-            return false;
-        }
-        cur = c.parent;
-    }
-    true
-}
+/// Whether `owner` and every assembly above it, up to `stop`, is shown: one rule for the screen and the export.
+pub use qymcad_doc::export::component_chain_visible;
 
 /// `inv_d_eye = 1/d_eye` for perspective (0 in orthographic mode). `d_eye = world_half_h / tan(fov/2)`,
 /// where `world_half_h = half_h_points / scale`. The single source of the formula for `Screen::at` and for

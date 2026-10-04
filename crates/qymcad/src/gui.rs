@@ -322,20 +322,19 @@ pub(crate) fn rank_device_type(t: eframe::wgpu::DeviceType) -> u8 {
 /// STEP writes only `brep`; STL writes EVERYTHING that is on the screen (`brep` by tessellation plus the
 /// `mesh_only` and `stale` meshes). The difference must not be kept quiet: [`ExportPlan::note`] gives it in words,
 /// meaning the same thing in both statuses.
-#[derive(Default)]
-struct ExportPlan {
-    /// A live B-rep - the exact geometry.
-    brep: Vec<Id>,
-    /// An STL import: there never was a B-rep.
-    mesh_only: Vec<Id>,
-    /// A failed rebuild: the last good geometry is on the screen and there is no B-rep.
-    stale: Vec<Id>,
+struct ExportPlan(qymcad_doc::export::Plan);
+
+impl std::ops::Deref for ExportPlan {
+    type Target = qymcad_doc::export::Plan;
+    fn deref(&self) -> &Self::Target {
+        &self.0
+    }
 }
 
 impl ExportPlan {
     /// The bodies for STL: everything visible (a B-rep is re-tessellated, the rest go as their stored mesh).
     fn stl_bodies(&self) -> Vec<Id> {
-        self.brep.iter().chain(&self.mesh_only).chain(&self.stale).copied().collect()
+        self.0.mesh_bodies()
     }
     /// An honest note appended to the status: what exactly is missing and why. Empty means everything went out
     /// intact. `step=true` gives the wording for STEP (those bodies did NOT reach the file), otherwise for STL
@@ -3098,39 +3097,6 @@ pub(crate) fn draw_regen_overlay_over(dc: &qymcad_ui_state::DrawCtx, ctx: &egui:
 }
 
 // --- Exporting 3D (STEP, STL) and sketches (SVG, DXF) ------------------------------------
-/// The VISIBLE bodies of the target: for the whole document, every live body; for a component, the
-/// bodies of its subtree (itself plus its descendants). "Visible" means the body's own tick
-/// (`mesh_visible[idx]`) AND the owner's hierarchical visibility (`component_chain_visible` up to the
-/// root) — a hidden part or subassembly does not reach the export.
-pub(crate) fn visible_export_bodies(dc: &qymcad_ui_state::DrawCtx, target: ExportTarget) -> Vec<Id> {
-    let subtree: Option<std::collections::HashSet<Id>> = match target {
-        ExportTarget::Project => None,
-        ExportTarget::Component(cid) => {
-            let mut s: std::collections::HashSet<Id> = dc.project.descendants(cid).into_iter().collect();
-            s.insert(cid);
-            Some(s)
-        }
-    };
-    // CRITICAL: the CONSUMED bodies are excluded (the bases eaten by cuts, booleans and modifiers). In
-    // 3D they are hidden by a separate filter, `consumed_bodies`, not by `mesh_visible`, so the export
-    // used to pull them in TOGETHER with the final body — the bases covered the cuts, and the STEP or
-    // STL came out as a solid blank with nothing cut away.
-    let consumed = dc.project.consumed_bodies();
-    dc.project
-        .bodies
-        .iter()
-        .map(|b| b.id)
-        .enumerate()
-        .filter(|&(mi, _)| dc.project.bodies.get(mi).is_none_or(|b| b.visible))
-        .filter(|&(_, b)| !consumed.contains(&b))
-        .filter(|&(_, b)| dc.project.body_owner(b).is_none_or(|o| component_chain_visible(dc.project, o, None)))
-        .filter(|&(_, b)| match &subtree {
-            None => true,
-            Some(s) => dc.project.body_owner(b).is_some_and(|o| s.contains(&o)),
-        })
-        .map(|(_, b)| b)
-        .collect()
-}
 
 /// The axis of a gizmo with origin `o` and length `l` under the cursor — shared code for the COMPONENT
 /// gizmo (Assembly) and the BODY gizmo (Part). The axes are the world X, Y and Z from `o`.
