@@ -93,21 +93,32 @@ probe! {
     }
 }
 
+/// The autosave period set to `seconds` through the settings window, the window closed after.
+fn autosave_every(s: &mut Session, seconds: &str) {
+    let (windows, settings, every) = (s.word("menu-windows"), s.word("menu-settings"), s.word("settings-autosave"));
+    s.menu(&[&windows, &settings]);
+    s.fill(&every, seconds).key(Key::Enter);
+    let title = s.word("win-settings");
+    s.close_window(&title);
+}
+
 probe! {
     /// REAL TIME PASSES WHILE A PERSON WAITS: the autosave, timed by the wall clock, writes its copy.
+    ///
+    /// The edit is made under an hour's period, and only then is the period cut to 1 s. A 1 s period set
+    /// before the edit ticks while the document is still clean, so the tick after the edit falls anywhere
+    /// from 0 to 1 s after it, and a rebuild under load (the whole set on 4 CPUs, 1268 s) outlasts that: the
+    /// copy is on the disk before the look that says it is not. An hour's period leaves no tick inside the edit.
     fn the_wall_clock_moves_while_a_person_waits() {
         let path = scratch("the_wall_clock.qcad");
         let copy = std::path::Path::new(&path).with_extension("autosave.qcad");
         let mut s = Session::start();
         build::block(&mut s);
         build::save_as(&mut s, &path);
-        let (windows, settings, every) = (s.word("menu-windows"), s.word("menu-settings"), s.word("settings-autosave"));
-        s.menu(&[&windows, &settings]);
-        s.fill(&every, "1").key(Key::Enter);
-        let title = s.word("win-settings");
-        s.close_window(&title);
+        autosave_every(&mut s, "3600");
         extrude_to(&mut s, "20");
-        assert!(!copy.exists(), "the autosave copy was written before any time passed");
+        assert!(!copy.exists(), "the autosave copy was written by the edit itself, with an hour's period not up");
+        autosave_every(&mut s, "1");
         s.pause(Duration::from_millis(2500));
         assert!(copy.exists(), "2.5 s passed with a 1 s autosave and unsaved work, and {} was not written", copy.display());
     }
