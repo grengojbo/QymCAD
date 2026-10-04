@@ -4,7 +4,7 @@
 //!
 //! THE DOOR IS ONE: the document is read freely and changed only through [`DocEngine::edit`]. A change made past it
 //! would leave no undo step and no rebuild, and the next reading would measure a document nobody built.
-use crate::{brep, history, regen};
+use crate::{brep, history, import, regen};
 use qymcad_core::feature::{FeatureKind, RegenReport};
 use qymcad_core::model::{Id, Project};
 use qymcad_kernel::Shape;
@@ -23,6 +23,19 @@ pub enum DocError {
     Gone(Vec<Id>),
     /// The action itself refused, with its own code. The action is taken back whole.
     Refused(String),
+}
+
+/// What a file brought in.
+#[derive(Debug, Clone, PartialEq)]
+pub struct Imported {
+    /// The component the file's tree came in under.
+    pub root: Option<Id>,
+    /// Every body that came in.
+    pub bodies: Vec<Id>,
+    /// The file carries no unit: its numbers are millimetres only by guess.
+    pub unitless: bool,
+    /// The sides of the box of everything that came in, as the file has it, before the factor.
+    pub span: [f64; 3],
 }
 
 /// THE DOCUMENT AND EVERYTHING LIVE BESIDE IT.
@@ -140,6 +153,47 @@ impl DocEngine {
         self.rebuild();
         self.history.commit();
         Ok(r)
+    }
+
+    /// BRING A FILE IN as one action: a mesh (STL, OBJ, PLY, glTF, 3MF, AMF) or a solid (STEP, IGES), laid in as the
+    /// file's tree of parts with its original embedded, taken at `factor` from the file's own numbers. The file is
+    /// read before the action opens, so a file that cannot be read leaves no step.
+    ///
+    /// `shown` is how a name reads to a person, so a part of the file that reads as one already here is numbered
+    /// apart. The answer says what came in and how big the file has it, for the caller to judge the factor by
+    /// ([`import::out_of_size`]).
+    pub fn import(&mut self, path: &str, factor: f64, shown: &dyn Fn(&str) -> String) -> Result<Imported, DocError> {
+        enum Read {
+            Mesh(import::MeshFormat, Vec<import::MeshPiece>),
+            Exact(qymcad_kernel::ExactTree),
+        }
+        let read = if let Some(format) = import::MeshFormat::of_path(path) {
+            Read::Mesh(format, import::read_mesh(path, format).map_err(DocError::File)?)
+        } else {
+            let format = match qymcad_io::Format::of_path(path) {
+                Some(qymcad_io::Format::Step) => qymcad_kernel::ExactFormat::Step,
+                Some(qymcad_io::Format::Iges) => qymcad_kernel::ExactFormat::Iges,
+                _ => return Err(DocError::File(format!("import-unknown#{}", import::file_name(path)))),
+            };
+            let tree = qymcad_kernel::read_exact_tree(format, path, 0.5).map_err(DocError::File)?;
+            if tree.bodies.is_empty() {
+                let named = qymcad_io::Format::of_path(path).map(|f| f.name()).unwrap_or_default();
+                return Err(DocError::File(format!("io-exact-no-solids#{named}")));
+            }
+            Read::Exact(tree)
+        };
+        self.ensure_brep();
+        self.history.begin("name-import", &self.project); // a catalogue key: the step is named in the person's language
+        let landed = match read {
+            Read::Mesh(format, pieces) => import::land_mesh(&mut self.project, path, format, pieces, shown),
+            Read::Exact(tree) => import::land_exact(&mut self.project, &mut self.shapes, path, tree, shown),
+        };
+        if (factor - 1.0).abs() > 1e-12 && factor > 0.0 {
+            let _ = import::apply_scale(&mut self.project, &mut self.shapes, &landed, factor);
+        }
+        self.rebuild();
+        self.history.commit();
+        Ok(Imported { root: landed.root, bodies: landed.bodies, unitless: landed.unitless, span: landed.span })
     }
 
     /// One step back; the name of the step taken back, or nothing when there is none.

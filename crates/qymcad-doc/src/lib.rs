@@ -13,6 +13,7 @@
 pub mod brep;
 pub mod engine;
 pub mod history;
+pub mod import;
 pub mod regen;
 
-pub use engine::{DocEngine, DocError};
+pub use engine::{DocEngine, DocError, Imported};
