@@ -193,7 +193,7 @@ pub fn launch() -> eframe::Result<()> {
         // WHERE THE SETTINGS ARE KEPT IS OUR DECISION, not the framework's. Left to itself it derives a
         // folder from the application id and keeps a person's settings apart from their schemes, templates,
         // parts and crash reports - measured on Windows as `AppData\Roaming\qymcad\data` beside
-        // `AppData\Roaming\qymis\qymcad\data`, and on macOS as `qymcad` beside `tech.qymis.qymcad`.
+        // `AppData\Roaming\grengojbo\qymcad\data`, and on macOS as `qymcad` beside `io.github.grengojbo.qymcad`.
         persistence_path: qymcad_paths::settings_file(),
         ..Default::default()
     };

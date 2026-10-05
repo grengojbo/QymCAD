@@ -4,8 +4,8 @@
 //! naming the folder in `qymcad-paths` - and the repair covered only what goes through that door. THE
 //! SETTINGS DO NOT: they are written by the framework, which picks a folder of its own from the application
 //! id. So the program went on keeping a person's things in two places at once, measured on Windows as
-//! `AppData\Roaming\tech.qymis.cad\data\app.ron` for the settings against `AppData\Roaming\qymis\qymcad\` for
-//! the schemes, the templates, the parts library and the crash reports.
+//! `AppData\Roaming\<the whole id>\data\app.ron` for the settings against `AppData\Roaming\<organisation>\qymcad\`
+//! for the schemes, the templates, the parts library and the crash reports.
 #[cfg(test)]
 mod tests {
     /// THE SETTINGS FILE IS ONE OF THE PROGRAM'S OWN FILES, and lies with them.
@@ -41,7 +41,7 @@ mod tests {
     /// This is read out of the source on purpose. The paths that differ are not this machine's: on Linux the
     /// framework's own choice happens to land in the same folder, so a check that compared two paths here
     /// would be green while Windows kept `AppData\Roaming\qymcad\data` and
-    /// `AppData\Roaming\qymis\qymcad\data` side by side, and macOS `qymcad` beside `tech.qymis.qymcad`.
+    /// `AppData\Roaming\grengojbo\qymcad\data` side by side, and macOS `qymcad` beside `io.github.grengojbo.qymcad`.
     #[test]
     fn the_framework_is_not_left_to_pick_the_folder() {
         let src = include_str!("../gui.rs");

@@ -30,7 +30,7 @@ pub fn embedded_bytes(rel: &str) -> Option<&'static [u8]> {
 /// The path to the user's own (read-write) catalogue of parts. PORTABLE MODE takes priority: if a
 /// `library/` folder lies beside the executable, that is where the work goes (a self-contained .exe on a
 /// stick, with the parts beside it rather than in the data directory of the system). Otherwise it is
-/// `<system data dir>/library/parts` (`%APPDATA%\qymis\qym-cad\data\...` on Windows). `None` means
+/// `<system data dir>/library/parts` (`%APPDATA%\grengojbo\qymcad\data\...` on Windows). `None` means
 /// neither could be determined.
 pub fn user_parts_dir() -> Option<PathBuf> {
     if let Some(p) = portable_parts_dir() {

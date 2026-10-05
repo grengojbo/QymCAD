@@ -6,7 +6,7 @@
 # worse than none: it is a file that looks finished and installs the wrong thing. So the repository keeps
 # the shape, and this writes the copy that gets submitted.
 #
-# The result lands in dist/winget/manifests/q/QymIsTech/QymCAD/<version>/ - the exact path microsoft's
+# The result lands in dist/winget/manifests/g/grengojbo/QymCAD/<version>/ - the exact path microsoft's
 # repository uses, so submitting is a copy of one directory.
 #
 #   packaging/winget/update-manifests.sh v0.1.0
@@ -17,7 +17,7 @@ if [ -z "$TAG" ]; then
     echo "usage: $0 <release tag, e.g. v0.1.0>" >&2
     exit 2
 fi
-REPO=${QYMCAD_REPO:-QymIs-Tech/QymCAD}
+REPO=${QYMCAD_REPO:-grengojbo/QymCAD}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 
@@ -52,17 +52,17 @@ PY
 )
 product=$(python3 -c "
 import uuid, sys
-print(str(uuid.uuid5(uuid.UUID('DF949703-CA05-535F-80FD-8404D9704F33'), sys.argv[1])).upper())
+print(str(uuid.uuid5(uuid.UUID('B31DEA8B-A089-42A0-98E7-E37F1B94063F'), sys.argv[1])).upper())
 " "$msiver")
 
-OUT="$ROOT/dist/winget/manifests/q/QymIsTech/QymCAD/${relver}"
+OUT="$ROOT/dist/winget/manifests/g/grengojbo/QymCAD/${relver}"
 rm -rf "$OUT"
 mkdir -p "$OUT"
 for src in version locale.en-US installer; do
     case "$src" in
-        version)      dst="QymIsTech.QymCAD.yaml" ;;
-        locale.en-US) dst="QymIsTech.QymCAD.locale.en-US.yaml" ;;
-        installer)    dst="QymIsTech.QymCAD.installer.yaml" ;;
+        version)      dst="grengojbo.QymCAD.yaml" ;;
+        locale.en-US) dst="grengojbo.QymCAD.locale.en-US.yaml" ;;
+        installer)    dst="grengojbo.QymCAD.installer.yaml" ;;
     esac
     sed -e "s|@VERSION@|${relver}|g" \
         -e "s|@TAG@|${relver}|g" \

@@ -18,10 +18,10 @@
 <Wix xmlns="http://wixtoolset.org/schemas/v4/wxs">
   <Package
       Name="QymCAD"
-      Manufacturer="QymIsTech"
+      Manufacturer="grengojbo"
       Version="$(var.Version)"
       ProductCode="$(var.ProductCode)"
-      UpgradeCode="DF949703-CA05-535F-80FD-8404D9704F33"
+      UpgradeCode="B31DEA8B-A089-42A0-98E7-E37F1B94063F"
       Language="1033"
       Scope="perMachine"
       Compressed="yes">
@@ -39,7 +39,7 @@
     <!-- The licence shown by the installer, and the notices, travel inside the package as files. -->
     <Icon Id="qymcad.ico" SourceFile="$(var.IconPath)" />
     <Property Id="ARPPRODUCTICON" Value="qymcad.ico" />
-    <Property Id="ARPURLINFOABOUT" Value="https://github.com/QymIs-Tech/QymCAD" />
+    <Property Id="ARPURLINFOABOUT" Value="https://github.com/grengojbo/QymCAD" />
 
     <StandardDirectory Id="ProgramFiles64Folder">
       <Directory Id="INSTALLFOLDER" Name="QymCAD">
@@ -61,7 +61,7 @@
           value of its own to be counted as installed. Without it the component has no key path and the
           installer refuses to build.
         -->
-        <RegistryValue Root="HKLM" Key="Software\QymIsTech\QymCAD" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\grengojbo\QymCAD" Name="StartMenu" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
 
@@ -81,7 +81,7 @@
                   Target="[INSTALLFOLDER]qymcad.exe"
                   WorkingDirectory="INSTALLFOLDER"
                   Icon="qymcad.ico" />
-        <RegistryValue Root="HKLM" Key="Software\QymIsTech\QymCAD" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
+        <RegistryValue Root="HKLM" Key="Software\grengojbo\QymCAD" Name="Desktop" Type="integer" Value="1" KeyPath="yes" />
       </Component>
     </StandardDirectory>
   </Package>

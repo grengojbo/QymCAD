@@ -5,8 +5,9 @@
 //! and every crate arrives as a declared source - a build that tries to fetch anything simply stops.
 //!
 //! THE APPLICATION ID IS PERMANENT. It names the manifest, the desktop entry, the metainfo, the icon, the
-//! directory of a person's settings and the page in the store. `cad.qymis.tech` is the project's site, so
-//! the id is that backwards. Written in six places, and this is what keeps them one.
+//! directory of a person's settings and the page in the store. The project lives at github.com/grengojbo, so
+//! the id is `io.github.grengojbo.qymcad`, the form Flathub gives a project hosted there. Written in six places,
+//! and this is what keeps them one.
 #[cfg(test)]
 mod tests {
     /// IS THIS THE TREE THE WORK HAPPENS IN, or a published copy of it.
@@ -25,7 +26,7 @@ mod tests {
 
     use std::path::PathBuf;
 
-    const ID: &str = "tech.qymis.cad";
+    const ID: &str = "io.github.grengojbo.qymcad";
 
     fn root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -177,7 +178,7 @@ mod tests {
         if !in_the_working_tree() {
             return; // a published copy of the tree: nothing here to measure
         }
-        let xml = read("packaging/flatpak/tech.qymis.cad.metainfo.xml");
+        let xml = read("packaging/flatpak/io.github.grengojbo.qymcad.metainfo.xml");
         let images: Vec<&str> = xml.lines().filter_map(|l| l.trim().strip_prefix("<image>").and_then(|l| l.strip_suffix("</image>"))).collect();
         assert!(images.len() >= 3, "a store listing with fewer than three pictures: {}", images.len());
 

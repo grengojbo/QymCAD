@@ -2,8 +2,8 @@
 #
 # The version file of the winget manifest. Three files make one manifest: this, the default locale, and the
 # installer. They are copied into microsoft/winget-pkgs under
-# manifests/q/QymIsTech/QymCAD/<PackageVersion>/ and submitted as a pull request.
-PackageIdentifier: QymIsTech.QymCAD
+# manifests/g/grengojbo/QymCAD/<PackageVersion>/ and submitted as a pull request.
+PackageIdentifier: grengojbo.QymCAD
 PackageVersion: "@VERSION@"
 DefaultLocale: en-US
 ManifestType: version

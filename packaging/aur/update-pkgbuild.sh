@@ -18,7 +18,7 @@ if [ -z "$TAG" ]; then
     echo "usage: $0 <release tag, e.g. v0.1.0-dev.20260828>" >&2
     exit 2
 fi
-REPO=${QYMCAD_REPO:-QymIs-Tech/QymCAD}
+REPO=${QYMCAD_REPO:-grengojbo/QymCAD}
 HERE=$(cd "$(dirname "$0")" && pwd)
 
 relver=${TAG#v}

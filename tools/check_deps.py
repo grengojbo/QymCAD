@@ -65,7 +65,7 @@ def read_notes() -> dict[str, dict]:
 
 def latest(name: str) -> str | None:
     url = f"https://crates.io/api/v1/crates/{name}"
-    req = urllib.request.Request(url, headers={"User-Agent": "qymcad-dep-check (github.com/QymIs-Tech/QymCAD)"})
+    req = urllib.request.Request(url, headers={"User-Agent": "qymcad-dep-check (github.com/grengojbo/QymCAD)"})
     try:
         with urllib.request.urlopen(req, timeout=20) as r:
             return json.load(r)["crate"]["max_stable_version"]

@@ -1,4 +1,4 @@
-# Maintainer: QymIsTech
+# Maintainer: grengojbo
 #
 # NO ADDRESS HERE ON PURPOSE. The `# Maintainer` line is a comment of the Arch packaging guidelines, read
 # by people; the AUR does not parse it. Notifications - comments, orphan requests - go to the address of
@@ -21,7 +21,7 @@ _relver=0.1.0-dev.20261001
 pkgrel=2
 pkgdesc="Parametric associative B-rep CAD/CAM"
 arch=('x86_64')
-url="https://github.com/QymIs-Tech/QymCAD"
+url="https://github.com/grengojbo/QymCAD"
 license=('AGPL-3.0-or-later')
 # WHAT THE PACKAGE DOES NOT CARRY. The AppImage brings its own copies of the window libraries, but the
 # driver's side of the graphics stack must come from the system: a copy built elsewhere would talk to a

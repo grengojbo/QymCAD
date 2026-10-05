@@ -4,12 +4,12 @@
   screenshots and the history of releases. Flathub requires it and refuses a submission whose metainfo does
   not validate.
 
-  THE ID IS THE DOMAIN BACKWARDS, and it is permanent: it names this file, the desktop entry, the icon, the
-  directory of a person's settings and the page in the store. `cad.qymis.tech` is the project's own site, so
-  the id is `tech.qymis.cad`.
+  THE ID IS THE PROJECT'S ADDRESS BACKWARDS, and it is permanent: it names this file, the desktop entry, the
+  icon, the directory of a person's settings and the page in the store. The project lives at
+  github.com/grengojbo, so the id is `io.github.grengojbo.qymcad`.
 -->
 <component type="desktop-application">
-  <id>tech.qymis.cad</id>
+  <id>io.github.grengojbo.qymcad</id>
 
   <name>QymCAD</name>
   <summary>Parametric associative B-rep CAD/CAM</summary>
@@ -17,8 +17,8 @@
   <metadata_license>CC0-1.0</metadata_license>
   <project_license>AGPL-3.0-or-later</project_license>
 
-  <developer id="tech.qymis">
-    <name>QymIsTech</name>
+  <developer id="io.github.grengojbo">
+    <name>grengojbo</name>
   </developer>
 
   <description>
@@ -40,11 +40,11 @@
     </ul>
   </description>
 
-  <launchable type="desktop-id">tech.qymis.cad.desktop</launchable>
+  <launchable type="desktop-id">io.github.grengojbo.qymcad.desktop</launchable>
 
-  <url type="homepage">https://cad.qymis.tech/</url>
-  <url type="bugtracker">https://github.com/QymIs-Tech/QymCAD/issues</url>
-  <url type="vcs-browser">https://github.com/QymIs-Tech/QymCAD</url>
+  <url type="homepage">https://github.com/grengojbo/QymCAD</url>
+  <url type="bugtracker">https://github.com/grengojbo/QymCAD/issues</url>
+  <url type="vcs-browser">https://github.com/grengojbo/QymCAD</url>
 
   <!--
     THE ADDRESS IS PINNED TO A COMMIT, not to a branch. Flathub asks for "a link from a tag or a commit
@@ -68,23 +68,23 @@
   -->
   <screenshots>
     <screenshot type="default">
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/01-assembly.png</image>
+      <image>https://raw.githubusercontent.com/grengojbo/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/01-assembly.png</image>
       <caption>A CNC machine assembled from its components, with joints and their degrees of freedom</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/02-parametric.png</image>
+      <image>https://raw.githubusercontent.com/grengojbo/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/02-parametric.png</image>
       <caption>Named parameters and formulas driving the dimensions of a part</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/03-part.png</image>
+      <image>https://raw.githubusercontent.com/grengojbo/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/03-part.png</image>
       <caption>An imported STEP assembly of over a thousand bodies, ready for further operations</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/04-sketch.png</image>
+      <image>https://raw.githubusercontent.com/grengojbo/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/04-sketch.png</image>
       <caption>A fully defined sketch: dimensions, constraints and the degrees of freedom left</caption>
     </screenshot>
     <screenshot>
-      <image>https://raw.githubusercontent.com/QymIs-Tech/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/05-light.png</image>
+      <image>https://raw.githubusercontent.com/grengojbo/QymCAD/f5c049cb8a81aaae54d2cc22fa31e8d33bffc2f2/docs/screenshots/05-light.png</image>
       <caption>An assembly of a small robot, in the light colour scheme</caption>
     </screenshot>
   </screenshots>

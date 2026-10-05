@@ -42,7 +42,7 @@ if ($tag -match '^(\d+)\.(\d+)\.(\d+)-dev\.(\d{4})(\d{2})(\d{2})$') {
 # that - but then nobody knows the code afterwards, and winget wants it in the manifest to recognise what
 # it installed. Computing it from the upgrade code and the version gives both: different per version, and
 # knowable without opening the MSI.
-$upgradeCode = "DF949703-CA05-535F-80FD-8404D9704F33"
+$upgradeCode = "B31DEA8B-A089-42A0-98E7-E37F1B94063F"
 function New-DeterministicGuid([string]$namespace, [string]$name) {
     # RFC 4122 name-based UUID, version 5 (SHA-1), the same value Python's uuid5 gives for these inputs
     $ns = [guid]$namespace

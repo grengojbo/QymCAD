@@ -31,7 +31,7 @@ mod tests {
         let mut wrong = Vec::new();
         for f in files {
             let src = read(&format!("packaging/winget/templates/{f}"));
-            if !src.contains("PackageIdentifier: QymIsTech.QymCAD") {
+            if !src.contains("PackageIdentifier: grengojbo.QymCAD") {
                 wrong.push(format!("{f}: does not name the package identifier"));
             }
             if !src.contains("PackageVersion: \"@VERSION@\"") {
@@ -63,7 +63,7 @@ mod tests {
     /// scripts would need Windows for one of them.
     #[test]
     fn both_halves_compute_the_product_code_from_the_same_upgrade_code() {
-        const UPGRADE: &str = "DF949703-CA05-535F-80FD-8404D9704F33";
+        const UPGRADE: &str = "B31DEA8B-A089-42A0-98E7-E37F1B94063F";
         let ps = read("packaging/win/build-msi.ps1");
         let sh = read("packaging/winget/update-manifests.sh");
         let wxs = read("packaging/win/qymcad.wxs");
@@ -72,18 +72,19 @@ mod tests {
             assert!(src.contains(UPGRADE), "{name} does not use the upgrade code {UPGRADE}, so the three would describe different applications");
         }
         assert!(ps.contains("New-DeterministicGuid $upgradeCode $msiVersion"), "the installer no longer derives the product code from the version");
-        assert!(sh.contains("uuid5(uuid.UUID('DF949703-CA05-535F-80FD-8404D9704F33'), sys.argv[1])"), "the manifest no longer derives the product code the same way");
+        assert!(sh.contains("uuid5(uuid.UUID('B31DEA8B-A089-42A0-98E7-E37F1B94063F'), sys.argv[1])"), "the manifest no longer derives the product code the same way");
     }
 
     /// THE UPGRADE CODE NEVER CHANGES, and the check says so out loud.
     ///
     /// It is what tells Windows that this MSI and the one installed last month are the same application.
     /// Change it and every existing installation becomes a stranger: the new version installs beside the
-    /// old one instead of replacing it, and both sit in "Apps & features" for ever.
+    /// old one instead of replacing it, and both sit in "Apps & features" for ever. It was set once for this
+    /// program, apart from the one of the project it grew from, so the two never replace each other.
     #[test]
     fn the_upgrade_code_is_the_one_already_in_the_world() {
         let wxs = read("packaging/win/qymcad.wxs");
-        assert!(wxs.contains("UpgradeCode=\"DF949703-CA05-535F-80FD-8404D9704F33\""), "the upgrade code changed: every copy already installed would stop being recognised as this program");
+        assert!(wxs.contains("UpgradeCode=\"B31DEA8B-A089-42A0-98E7-E37F1B94063F\""), "the upgrade code changed: every copy already installed would stop being recognised as this program");
     }
 
     /// AND NO PLACEHOLDER MAY REACH A SUBMITTED MANIFEST.

@@ -5,12 +5,11 @@
 //! four places that cannot share a constant - Rust, a shell script, a YAML manifest, an XML description -
 //! so it is compared instead.
 //!
-//! MEASURED BEFORE IT WAS MADE ONE. Three different names were in the tree at once: `tech.qymis.qym-cad`
-//! written out in six places in the code, `tech.qymis.qymcad` in the macOS bundle, `tech.qymis.cad` in the
-//! Flatpak manifest. Nothing was broken by it - each half worked alone - which is exactly why it had gone
-//! unnoticed through two releases.
+//! MEASURED BEFORE IT WAS MADE ONE. Three different names were in the tree at once - one in the code, another
+//! in the macOS bundle, a third in the Flatpak manifest. Nothing was broken by it - each half worked alone -
+//! which is exactly why it had gone unnoticed through two releases.
 //!
-//! WHAT IS NOT COMPARED HERE, and deliberately: `QymIsTech.QymCAD` in the winget manifest and `qymcad-bin`
+//! WHAT IS NOT COMPARED HERE, and deliberately: `grengojbo.QymCAD` in the winget manifest and `qymcad-bin`
 //! in the AUR package. Those catalogues have naming rules of their own, `Publisher.Package` and the Arch
 //! convention, and forcing a reverse-DNS name on them would be wrong rather than consistent.
 #[cfg(test)]

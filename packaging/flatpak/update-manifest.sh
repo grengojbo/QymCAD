@@ -18,7 +18,7 @@ if [ -z "$TAG" ]; then
     echo "usage: $0 <release tag, e.g. v0.1.0-dev.20260908>" >&2
     exit 2
 fi
-REPO=${QYMCAD_REPO:-QymIs-Tech/QymCAD}
+REPO=${QYMCAD_REPO:-grengojbo/QymCAD}
 HERE=$(cd "$(dirname "$0")" && pwd)
 ROOT=$(cd "$HERE/../.." && pwd)
 
@@ -36,7 +36,7 @@ fi
 
 commit=${2:-$commit}
 
-sed -i -e "s|^        commit: .*|        commit: ${commit}|" "$HERE/tech.qymis.cad.yml"
+sed -i -e "s|^        commit: .*|        commit: ${commit}|" "$HERE/io.github.grengojbo.qymcad.yml"
 
 # --- the crates, as declared sources ---
 #
@@ -54,8 +54,8 @@ python3 "$GEN" "$ROOT/Cargo.lock" -o "$HERE/cargo-sources.json"
 # THE PICTURES ARE NOT TOUCHED HERE. Their addresses are pinned in the metainfo to the commit that
 # added them, once: they do not change from release to release, and naming the tag closed a circle -
 # an address would name the tag, and the tag has to stand on a commit whose file already carries that
-# address. See the comment in tech.qymis.cad.metainfo.xml.
+# address. See the comment in io.github.grengojbo.qymcad.metainfo.xml.
 
 echo ">>> the manifest now points at ${TAG} (${commit})"
-grep -E '^        commit:' "$HERE/tech.qymis.cad.yml"
+grep -E '^        commit:' "$HERE/io.github.grengojbo.qymcad.yml"
 echo ">>> crate sources: $(python3 -c "import json,sys; print(len(json.load(open('$HERE/cargo-sources.json'))))")"
