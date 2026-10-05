@@ -8,7 +8,7 @@
 
 Ескіз → деталь → збірка. Одна програма, один файл проєкту, без хмари й підписки.
 
-[cad.qymis.tech](https://cad.qymis.tech)
+[github.com/grengojbo/QymCAD](https://github.com/grengojbo/QymCAD)
 
 [English](README.md) · [Русский](README.ru.md) · **Українська**
 
@@ -122,4 +122,4 @@ Linux — `just pkg-linux`, потрібен Docker. Windows — MSVC, ядро 
 
 ---
 
-Майстерня **QymIs Tech** — [qymis.tech](https://qymis.tech). Автор: Денис Казаченков.
+Автор QymCAD: Денис Казаченков (QymIs Tech). Цей форк, спрямований на роботу через MCP і на 3D-друк: [grengojbo](https://github.com/grengojbo/QymCAD).

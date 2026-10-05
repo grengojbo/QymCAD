@@ -8,7 +8,7 @@
 
 Sketch → part → assembly. One program, one project file, no cloud and no subscription.
 
-[cad.qymis.tech](https://cad.qymis.tech)
+[github.com/grengojbo/QymCAD](https://github.com/grengojbo/QymCAD)
 
 **English** · [Русский](README.ru.md) · [Українська](README.uk.md)
 
@@ -122,4 +122,4 @@ package.
 
 ---
 
-**QymIs Tech** — [qymis.tech](https://qymis.tech). Author: Denis Kazachenkov.
+Author of QymCAD: Denis Kazachenkov (QymIs Tech). This fork, aimed at work through MCP and at 3D printing: [grengojbo](https://github.com/grengojbo/QymCAD).

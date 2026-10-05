@@ -7,7 +7,7 @@ else — [AGPL-3.0-or-later](LICENSE).
 
 ## Taking an issue
 
-The work is listed in the [issues](https://github.com/QymIs-Tech/QymCAD/issues), and nowhere else.
+The work is listed in the [issues](https://github.com/grengojbo/QymCAD/issues), and nowhere else.
 
 - **What can be taken** carries `help wanted`, or `good first issue` when it is small and lies in one place.
   An issue without either is a report or a proposal not yet agreed on: ask in it before starting.

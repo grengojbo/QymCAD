@@ -73,10 +73,10 @@ mod tests {
         let prev = crate::i18n::language();
         help::set_lang("en");
         let u = help::web_url("part/08-hole");
-        assert!(u.ends_with("/en/part/08-hole"), "the address does not lead to the same article in the same language: {u}");
+        assert!(u.ends_with("/en/part/08-hole.md"), "the address does not lead to the same article in the same language: {u}");
         assert!(u.starts_with("https://"), "the help address must be https: {u}");
         help::set_lang("ru");
-        assert!(help::web_url("part/08-hole").ends_with("/ru/part/08-hole"), "the help language did not reach the address");
+        assert!(help::web_url("part/08-hole").ends_with("/ru/part/08-hole.md"), "the help language did not reach the address");
         help::set_lang("");
         crate::i18n::set_language(&prev);
     }

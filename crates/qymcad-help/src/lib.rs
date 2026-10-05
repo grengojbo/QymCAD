@@ -142,13 +142,14 @@ pub fn title_in(lang: &str, path: &str) -> Option<String> {
     md.lines().find_map(|l| l.trim().strip_prefix("# ").map(|t| t.trim().to_string()))
 }
 
-/// THE ADDRESS OF THE SAME ARTICLE ON THE SITE.
+/// THE ADDRESS OF THE SAME ARTICLE ON THE WEB: the file itself in the program's repository, which GitHub shows
+/// as a page.
 ///
 /// The same path and the same language as in the program, because the source is ONE: the same files
-/// `docs/help/{language}/{path}.md` go into the window and onto the site. So the address need be kept as
-/// a list nowhere; it is derived from the path of the article, and there is nothing to diverge.
+/// `docs/help/{language}/{path}.md` go into the window and onto the web. So the address need be kept as a list
+/// nowhere; it is derived from the path of the article, and there is nothing to diverge.
 pub fn web_url(article: &str) -> String {
-    format!("https://cad.qymis.tech/help/{}/{}", lang(), article)
+    format!("https://github.com/grengojbo/QymCAD/blob/main/docs/help/{}/{}.md", lang(), article)
 }
 
 /// WHETHER AN ARTICLE IS VISIBLE in this state of the machining module.

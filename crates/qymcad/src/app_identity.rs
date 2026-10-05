@@ -73,6 +73,49 @@ mod tests {
         assert!(twice.is_empty(), "the program's own directory is decided outside qymcad-paths:\n{}", twice.join("\n"));
     }
 
+    /// NOTHING POINTS AT THE SITE OR THE REPOSITORY OF THE PROJECT THIS ONE GREW FROM.
+    ///
+    /// That site is not reachable from Ukraine, and every address the program, its help or its packages hand a
+    /// person - an update check, a help page, a tracker, a homepage - leads to this repository instead. A merge
+    /// of the upstream project brings its own addresses back with it; this says which file did. The author of
+    /// the original is still named, as text.
+    #[test]
+    fn nothing_points_at_the_project_this_one_grew_from() {
+        // put together here, so this file does not find itself
+        let banned = [concat!("qymis", ".tech"), concat!("QymIs", "-Tech/"), concat!("github.com/QymIs", "-Tech")];
+        let mut found = Vec::new();
+        let mut files: Vec<std::path::PathBuf> = ["Cargo.toml", "README.md", "README.ru.md", "README.uk.md", "CONTRIBUTING.md", "CONTRIBUTING.ru.md"].iter().map(|f| root().join(f)).collect();
+        for dir in ["crates", "docs", "i18n", "packaging", ".github", "tools"] {
+            files.extend(every_file(&root().join(dir)));
+        }
+        for p in files {
+            let text = std::fs::read_to_string(&p).unwrap_or_default();
+            for (n, line) in text.lines().enumerate() {
+                if banned.iter().any(|b| line.contains(b)) {
+                    found.push(format!("{}:{}", p.strip_prefix(root()).unwrap_or(&p).display(), n + 1));
+                }
+            }
+        }
+        assert!(found.is_empty(), "an address of the project this one grew from is back:\n{}", found.join("\n"));
+    }
+
+    /// Every file under a directory, the build output left out.
+    fn every_file(dir: &std::path::Path) -> Vec<std::path::PathBuf> {
+        let mut out = Vec::new();
+        let Ok(rd) = std::fs::read_dir(dir) else { return out };
+        for e in rd.flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                if !p.ends_with("target") {
+                    out.extend(every_file(&p));
+                }
+            } else {
+                out.push(p);
+            }
+        }
+        out
+    }
+
     /// Every `.rs` file under a directory.
     fn walk(dir: &std::path::Path) -> Vec<String> {
         let mut out = Vec::new();

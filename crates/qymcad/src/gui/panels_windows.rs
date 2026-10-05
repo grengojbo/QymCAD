@@ -202,7 +202,7 @@ pub(crate) fn about_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, c
             ui.add_space(8.0);
             ui.horizontal(|ui| {
                 ui.label(crate::i18n::tr("about-site"));
-                ui.hyperlink_to("cad.qymis.tech", "https://cad.qymis.tech");
+                ui.hyperlink_to("github.com/grengojbo/QymCAD", "https://github.com/grengojbo/QymCAD");
             });
             ui.horizontal(|ui| {
                 ui.label(crate::i18n::tr("about-author"));

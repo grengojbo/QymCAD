@@ -128,7 +128,7 @@ pub(crate) fn start_screen(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context
                         wc.win.open(WinKind::Hotkeys);
                         close = true;
                     }
-                    ui.hyperlink_to(format!("{}  {}", ph::BOOK_OPEN, crate::i18n::tr("start-help-site")), "https://cad.qymis.tech");
+                    ui.hyperlink_to(format!("{}  {}", ph::BOOK_OPEN, crate::i18n::tr("start-help-site")), crate::help::web_url("index"));
                 });
             });
             ui.separator();

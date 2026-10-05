@@ -16,7 +16,7 @@ use crate::gui::WinKind;
 
 /// The address of the public tracker. ONE constant, because the same address is used by the link in the
 /// window and by the guard that checks the form's field names against this.
-pub(crate) const ISSUES_NEW: &str = "https://github.com/QymIs-Tech/QymCAD/issues/new";
+pub(crate) const ISSUES_NEW: &str = "https://github.com/grengojbo/QymCAD/issues/new";
 
 /// What has been typed and what is to travel with it.
 pub(crate) struct ReportDraft {
