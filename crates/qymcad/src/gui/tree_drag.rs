@@ -398,11 +398,16 @@ mod tests {
         assert_eq!(order_in(&app.project, asm), before, "Escape did not cancel the drag — the tree got reordered all the same");
     }
 
-    /// THE ROW BEING CARRIED IS VISIBLE UNDER THE CURSOR.
+    /// THE ROW BEING CARRIED IS DRAWN UNDER THE CURSOR.
     ///
     /// Reported behaviour: while holding, there is no sign at all that an item has been taken and is
-    /// being moved. The check goes by the frame: while a row is dragged, its text is drawn TWICE — in its
-    /// own place and as a copy at the cursor — and the copy lies on top of everything else.
+    /// being moved. The row itself travels: it is drawn in a layer of its own that follows the cursor, so
+    /// its caption is in the frame ONCE, and the check is WHERE.
+    ///
+    /// The first edition counted the frame's texts holding a capital C and wanted two of them. The English
+    /// caption "Components" held one, so the check passed whether or not the row moved, and in any other
+    /// language it failed for a reason that had nothing to do with the drag. The row's own caption is
+    /// looked for now, and the check is that it left its place and stands at the cursor.
     #[test]
     fn the_carried_row_is_drawn_under_the_cursor() {
         let mut app = App::default();
@@ -420,24 +425,48 @@ mod tests {
         };
         let _ = ctx.run_ui(egui::RawInput { screen_rect: Some(screen), ..Default::default() }, |x| draw(&mut app, x));
         let rect_of = |app: &App, id: Id| app.tree.row_rects.iter().find(|(x, _)| *x == id).map(|(_, r)| *r);
-        let (start, end) = (rect_of(&app, c).expect("the row C").center(), rect_of(&app, a).expect("the row A").center());
+        let (row_c, row_a) = (rect_of(&app, c).expect("the row C"), rect_of(&app, a).expect("the row A"));
+        let (start, end) = (row_c.center(), row_a.center());
         let ev = |pos: egui::Pos2, pressed: bool| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // The caption of a row is its icon, a space and the name, so a caption ENDING in " C" is the row C: the
+        // header "Components" holds the same letters and is no row.
+        fn row_c_at(s: &egui::epaint::Shape, out: &mut Option<egui::Pos2>) {
+            match s {
+                egui::epaint::Shape::Text(t) if out.is_none() && t.galley.text().ends_with(" C") => *out = Some(t.pos + t.galley.size() * 0.5),
+                egui::epaint::Shape::Vec(v) => v.iter().for_each(|x| row_c_at(x, out)),
+                _ => {}
+            }
+        }
+        let caption_at = |out: &egui::FullOutput| {
+            let mut at = None;
+            for cs in &out.shapes {
+                row_c_at(&cs.shape, &mut at);
+            }
+            at
+        };
 
         let mut i2 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         i2.events.push(egui::Event::PointerMoved(start));
         i2.events.push(ev(start, true));
         let _ = ctx.run_ui(i2, |x| draw(&mut app, x));
 
+        // The drag is taken at the first frame the cursor has moved with the button held, and the row travels
+        // from the one after it, so the cursor moves in two steps - as a hand does.
         let mut i3 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
-        i3.events.push(egui::Event::PointerMoved(end));
-        let out = ctx.run_ui(i3, |x| draw(&mut app, x));
+        i3.events.push(egui::Event::PointerMoved(egui::pos2(start.x, (start.y + end.y) * 0.5)));
+        let _ = ctx.run_ui(i3, |x| draw(&mut app, x));
+        let mut i4 = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
+        i4.events.push(egui::Event::PointerMoved(end));
+        let out = ctx.run_ui(i4, |x| draw(&mut app, x));
 
-        let mut texts = Vec::new();
-        for cs in &out.shapes {
-            super::super::screen_keys::tests::collect_text(&cs.shape, &mut texts);
-        }
-        let seen = texts.iter().filter(|t| t.contains('C')).count();
-        assert!(seen >= 2, "the row being carried is not visible under the cursor: the frame holds {texts:?}");
+        let at = caption_at(&out).expect("the caption of the row C is not in the frame at all");
+        assert!(
+            (at.y - end.y).abs() < row_a.height(),
+            "the row being carried is not under the cursor: its caption is drawn at y={:.0}, the cursor is at y={:.0}, its own place was y={:.0}",
+            at.y,
+            end.y,
+            start.y
+        );
     }
 
     /// THE TREE NEITHER HIGHLIGHTS NOR ACCEPTS AN IMPERMISSIBLE TARGET.
