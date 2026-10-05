@@ -1735,8 +1735,24 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn prep_box3(&mut self, p: &Pass, dx: f64, dy: f64, dz: f64, body: Id) -> crate::feature::KernelJob {
         let (dx, dy, dz) = (p.dim("dx", dx), p.dim("dy", dy), p.dim("dz", dz));
-        let profile = rect_profile(dx, dy);
-        crate::feature::KernelJob::new(Vec::new(), move |k| k.extrude(body, &profile, dz, crate::feature::PLACE_IDENTITY))
+        self.named_prism_job(p.node, &rect_profile(dx, dy), dz, body)
+    }
+
+    /// A STRAIGHT PRISM OF A POLYGON - a box, a prism - built as an extrusion is built and named as one: a wall to
+    /// every side (`Role::Wall`, the side's number from 1 as its source) and the two caps. Its edges then take their
+    /// names from the faces they part. Built as a bare extrusion before, the six faces of a box carried positional
+    /// numbers and no edge had a name: "round every edge of the top" of a box found no edge, and a description that
+    /// finds nothing rounds nothing.
+    fn named_prism_job(&mut self, node: Id, xy: &[f64], h: f64, body: Id) -> crate::feature::KernelJob {
+        let points: Vec<crate::geom::Point2> = xy.as_chunks::<2>().0.iter().map(|c| crate::geom::Point2::new(c[0], c[1])).collect();
+        let sides = points.len() as Id;
+        let mut outline = crate::geom::Contour::closed(points);
+        outline.edge_src = (1..=sides).collect();
+        let walls: Vec<u32> = (1..=sides).map(|side| self.intern_name(node, crate::names::Role::Wall, side)).collect();
+        let profile = crate::geom::encode_profile_named(&outline, &[], &|src, _| walls.get((src as usize).wrapping_sub(1)).copied().unwrap_or(0));
+        let profiles = vec![profile];
+        let caps = self.region_cap_names(node, &profiles);
+        crate::feature::KernelJob::new(Vec::new(), move |k| k.combine_region_multi(BodyOp { src: 0, op: 1, body }, &profiles, h, crate::feature::PLACE_IDENTITY, &caps))
     }
 
     /// Cylinder: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1790,8 +1806,7 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn prep_prism(&mut self, p: &Pass, r: f64, n: u32, h: f64, body: Id) -> crate::feature::KernelJob {
         let (r, h) = (p.dim("r", r), p.dim("h", h));
-        let profile = polygon_profile(r, n);
-        crate::feature::KernelJob::new(Vec::new(), move |k| k.extrude(body, &profile, h, crate::feature::PLACE_IDENTITY))
+        self.named_prism_job(p.node, &polygon_profile(r, n), h, body)
     }
 
     /// Loft: one branch of the timeline rebuild. Returns whether the node's error record may

@@ -210,7 +210,14 @@ impl Kernel for MockKernel {
             self.need_src(src)?;
         }
         self.shapes.borrow_mut().insert(body);
-        Ok(Self::placed(height, place))
+        // a new body extruded from profiles carries the face a plain extrusion carries: a box is built this way, and a
+        // shell opening its face 1 has to find it
+        let Built { mesh, mut faces } = Self::placed(height, place);
+        if src == 0 && !self.no_faces {
+            let c = mesh.verts.first().copied().unwrap_or(Point3::new(0.0, 0.0, 0.0));
+            faces.push(MeshFace { triangles: vec![], normal: [0.0, 0.0, 1.0], centroid: c, area: 1.0, id: 1 });
+        }
+        Ok(Built { mesh, faces })
     }
     fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], _names: qymcad_core::feature::BlendNames) -> Result<Built, qymcad_core::errors::CoreError> {
         self.calls.borrow_mut().push(format!("fillet r={radius} n={}", edges.len()));
