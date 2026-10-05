@@ -1,39 +1,95 @@
 //! THE SERVER LAYS WHAT THE WINDOW LAYS. Every tool of the window that has a twin here is described by a contract
 //! (`qymcad_acceptance::tools`): its fields, the body its typical values give, and the body each field gives when it
 //! alone changes. The twin is called with the same numbers and its body is held to the same account, with the same
-//! allowances - so a primitive that drifts from the window turns this red, whichever side moved.
+//! allowances - so a tool that drifts from the window turns this red, whichever side moved. Where the contract names
+//! modes (symmetric, flipped, two-sided), each mode with a twin argument is held to the body the contract gives it.
 
 use qymcad_acceptance::contract::{Class, Outcome, Tool};
-use qymcad_acceptance::tools::primitives;
+use qymcad_acceptance::tools::{part, primitives};
 use qymcad_mcp::server::answer;
 use qymcad_mcp::tool::Ctx;
-use serde_json::{json, Map, Value};
+use serde_json::{json, Value};
 
 fn call(ctx: &mut Ctx, name: &str, arguments: Value) -> Value {
     let line = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": arguments } }).to_string();
     answer(ctx, &line).expect("a request is answered")["result"]["structuredContent"].clone()
 }
 
-/// A TOOL OF THE WINDOW AND ITS TWIN HERE: the twin's name and the argument each field of the contract goes to, in
-/// the contract's order.
+/// A TOOL OF THE WINDOW AND ITS TWIN HERE: the twin's name, the argument each field of the contract goes to (in the
+/// contract's order), what the contract's fixture is in calls of the server (it answers the arguments that point at
+/// it), and the arguments that put the twin in each mode of the contract.
 struct Twin {
     contract: &'static Tool,
     name: &'static str,
     args: &'static [&'static str],
+    fixture: fn(&mut Ctx) -> Value,
+    modes: &'static [ModeTwin],
+}
+
+/// A mode of the contract, by its word, and the arguments that put the twin in it.
+struct ModeTwin {
+    word: &'static str,
+    args: fn() -> Value,
+}
+
+/// The first part, empty: what a primitive is laid in.
+fn first_part(_: &mut Ctx) -> Value {
+    json!({})
+}
+
+/// THE RECTANGLE SKETCH: 40 x 30 from the origin on XY, the sketch finished.
+fn rectangle_sketch(ctx: &mut Ctx) -> Value {
+    let made = call(ctx, "create_sketch", json!({ "plane": "xy" }));
+    let sketch = made["sketch"].clone();
+    let drawn = call(ctx, "sketch_add", json!({ "sketch": sketch, "entities": [{ "rect": { "from": [0, 0], "to": [40, 30] } }] }));
+    assert_eq!(drawn["ok"], json!(true), "the rectangle sketch was not drawn: {drawn}");
+    json!({ "sketch": sketch })
+}
+
+/// The rectangle sketch, turned about its X axis.
+fn rectangle_about_x(ctx: &mut Ctx) -> Value {
+    let mut a = rectangle_sketch(ctx);
+    a["axis"] = json!("x");
+    a
 }
 
 const TWINS: &[Twin] = &[
-    Twin { contract: &primitives::BOX, name: "box", args: &["x", "y", "z"] },
-    Twin { contract: &primitives::CYLINDER, name: "cylinder", args: &["radius", "height"] },
-    Twin { contract: &primitives::SPHERE, name: "sphere", args: &["radius"] },
-    Twin { contract: &primitives::CONE, name: "cone", args: &["bottom_radius", "top_radius", "height"] },
-    Twin { contract: &primitives::TORUS, name: "torus", args: &["ring_radius", "tube_radius"] },
-    Twin { contract: &primitives::PRISM, name: "prism", args: &["radius", "height", "sides"] },
+    Twin { contract: &primitives::BOX, name: "box", args: &["x", "y", "z"], fixture: first_part, modes: &[] },
+    Twin { contract: &primitives::CYLINDER, name: "cylinder", args: &["radius", "height"], fixture: first_part, modes: &[] },
+    Twin { contract: &primitives::SPHERE, name: "sphere", args: &["radius"], fixture: first_part, modes: &[] },
+    Twin { contract: &primitives::CONE, name: "cone", args: &["bottom_radius", "top_radius", "height"], fixture: first_part, modes: &[] },
+    Twin { contract: &primitives::TORUS, name: "torus", args: &["ring_radius", "tube_radius"], fixture: first_part, modes: &[] },
+    Twin { contract: &primitives::PRISM, name: "prism", args: &["radius", "height", "sides"], fixture: first_part, modes: &[] },
+    Twin {
+        contract: &part::EXTRUDE,
+        name: "extrude",
+        args: &["distance"],
+        fixture: rectangle_sketch,
+        modes: &[
+            ModeTwin { word: "cmd-add", args: || json!({ "op": "join" }) },
+            ModeTwin { word: "cmd-to-length", args: || json!({}) },
+            ModeTwin { word: "cmd-symmetric", args: || json!({ "direction": "both" }) },
+            ModeTwin { word: "cmd-two-sides", args: || json!({ "second": 0.1 }) },
+            ModeTwin { word: "cmd-flip", args: || json!({ "direction": "backward" }) },
+        ],
+    },
+    Twin {
+        contract: &part::REVOLVE,
+        name: "revolve",
+        args: &["angle"],
+        fixture: rectangle_about_x,
+        modes: &[
+            ModeTwin { word: "cmd-add", args: || json!({ "op": "join" }) },
+            ModeTwin { word: "cmd-one-side", args: || json!({ "direction": "forward" }) },
+            ModeTwin { word: "cmd-symmetric", args: || json!({ "direction": "both" }) },
+            ModeTwin { word: "cmd-flip-btn", args: || json!({ "direction": "backward" }) },
+        ],
+    },
 ];
 
-/// The arguments of `twin` at the typical values, one field (by its place) set to `value`.
-fn arguments(twin: &Twin, changed: Option<Change>) -> Value {
-    let mut a = Map::new();
+/// The arguments of `twin` at the typical values over its fixture, one field (by its place) set to `value`.
+fn arguments(ctx: &mut Ctx, twin: &Twin, changed: Option<Change>) -> Value {
+    let Value::Object(mut a) = (twin.fixture)(ctx) else { panic!("{}: the fixture answers no object", twin.name) };
     for (i, f) in twin.contract.fields.iter().enumerate() {
         let v = changed.filter(|c| c.field == i).map_or(f.typical, |c| c.value);
         let v = if f.class == Class::Count { json!(v.round() as u64) } else { json!(v) };
@@ -73,9 +129,16 @@ fn held(reply: &Value, want: &Outcome) -> Result<(), String> {
     }
 }
 
-/// A value away from the typical one and inside the field's range: half as much again, or 5 where the typical is 0.
+/// A value away from the typical one and inside the field's range: half as much again, or half where that passes the
+/// top (a turn of 360), or 5 where the typical is 0.
 fn away(typical: f64, lo: f64, hi: f64) -> f64 {
-    let v = if typical > 0.0 { typical * 1.5 } else { 5.0 };
+    let v = if typical <= 0.0 {
+        5.0
+    } else if typical * 1.5 <= hi {
+        typical * 1.5
+    } else {
+        typical * 0.5
+    };
     v.clamp(lo, hi)
 }
 
@@ -87,20 +150,71 @@ fn a_primitive_is_the_body_the_window_lays() {
     for twin in TWINS {
         assert_eq!(twin.args.len(), twin.contract.fields.len(), "{}: the arguments do not follow the fields of {}", twin.name, twin.contract.id);
         let mut ctx = Ctx::blank();
-        let typical = call(&mut ctx, twin.name, arguments(twin, None));
+        let a = arguments(&mut ctx, twin, None);
+        let typical = call(&mut ctx, twin.name, a);
         if let Err(e) = held(&typical, &twin.contract.result) {
             misses.push(format!("{} typical: {e}", twin.name));
         }
         for (i, f) in twin.contract.fields.iter().enumerate() {
             let change = Change { field: i, value: away(f.typical, f.lo, f.hi) };
             let mut ctx = Ctx::blank();
-            let reply = call(&mut ctx, twin.name, arguments(twin, Some(change)));
+            let a = arguments(&mut ctx, twin, Some(change));
+            let reply = call(&mut ctx, twin.name, a);
             if let Err(e) = held(&reply, &(f.outcome)(change.value)) {
                 misses.push(format!("{} {} = {}: {e}", twin.name, twin.args[i], change.value));
             }
         }
     }
     assert!(misses.is_empty(), "the server and the window differ:\n{}", misses.join("\n"));
+}
+
+/// EVERY MODE OF A CONTRACT that has a twin argument gives the body the contract says it gives; a mode the contract
+/// expects refused (no outcome) is refused here too. A mode of the contract with no twin is named.
+#[test]
+fn a_mode_is_the_body_the_window_lays() {
+    let mut misses = Vec::new();
+    for twin in TWINS {
+        let modes: Vec<&qymcad_acceptance::contract::Mode> = twin.contract.modes.iter().flat_map(|group| group.iter()).collect();
+        for m in &modes {
+            let Some(mt) = twin.modes.iter().find(|t| t.word == m.word) else {
+                // cut and intersect over a sketch with no body are refused by the window and by the server alike
+                if m.outcome.is_none() {
+                    continue;
+                }
+                misses.push(format!("{} has no twin for the mode {}", twin.name, m.word));
+                continue;
+            };
+            let mut ctx = Ctx::blank();
+            let mut a = arguments(&mut ctx, twin, None);
+            if let (Value::Object(into), Value::Object(extra)) = (&mut a, (mt.args)()) {
+                into.extend(extra);
+            }
+            let reply = call(&mut ctx, twin.name, a);
+            let got = match &m.outcome {
+                Some(want) => held(&reply, want),
+                None if reply["ok"] == json!(false) => Ok(()),
+                None => Err(format!("built where the window refuses: {reply}")),
+            };
+            if let Err(e) = got {
+                misses.push(format!("{} {}: {e}", twin.name, m.word));
+            }
+        }
+    }
+    assert!(misses.is_empty(), "the modes of the server and the window differ:\n{}", misses.join("\n"));
+}
+
+/// A CUT OR A MEETING OVER A PART WITH NO BODY is refused with a code, as the window refuses it in words.
+#[test]
+fn a_cut_with_nothing_to_cut_is_refused() {
+    for twin in TWINS.iter().filter(|t| t.name == "extrude" || t.name == "revolve") {
+        for op in ["cut", "intersect"] {
+            let mut ctx = Ctx::blank();
+            let mut a = arguments(&mut ctx, twin, None);
+            a["op"] = json!(op);
+            let reply = call(&mut ctx, twin.name, a);
+            assert_eq!(reply["error"]["code"], "no-body", "{} {op}: {reply}", twin.name);
+        }
+    }
 }
 
 /// EVERY PRIMITIVE OF THE WINDOW has its twin here: a primitive added to the window and not to the server is noticed.

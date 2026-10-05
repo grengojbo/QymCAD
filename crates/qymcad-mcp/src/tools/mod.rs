@@ -2,6 +2,7 @@
 
 pub mod doc;
 pub mod exchange;
+pub mod features;
 pub mod history;
 pub mod params;
 pub mod prim;
