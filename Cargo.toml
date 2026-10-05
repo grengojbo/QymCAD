@@ -21,6 +21,7 @@ members = [
     "crates/qymcad-meshfit",
     "crates/qymcad-acceptance",
     "crates/qymcad-doc",
+    "crates/qymcad-mcp",
 ]
 
 # THE BAN ON "WRITTEN AND NEVER WIRED UP" - THE MOST IMPORTANT THING IN THIS FILE.
