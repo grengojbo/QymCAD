@@ -124,6 +124,9 @@ pub const ALL: &[Tool] = &[
     crate::tools::prim::CONE,
     crate::tools::prim::TORUS,
     crate::tools::prim::PRISM,
+    crate::tools::sketch::CREATE_SKETCH,
+    crate::tools::sketch::SKETCH_ADD,
+    crate::tools::sketch::SKETCH_INFO,
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
 ];

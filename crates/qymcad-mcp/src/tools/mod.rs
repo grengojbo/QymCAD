@@ -5,3 +5,4 @@ pub mod exchange;
 pub mod history;
 pub mod params;
 pub mod prim;
+pub mod sketch;
