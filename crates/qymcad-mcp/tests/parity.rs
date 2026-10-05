@@ -82,6 +82,36 @@ fn block_open_top(ctx: &mut Ctx) -> Value {
     a
 }
 
+/// The block and its right face, the plane a mirror stands on in the contract.
+fn block_right_face(ctx: &mut Ctx) -> Value {
+    let mut a = block(ctx);
+    a["plane"] = json!({ "face": "right" });
+    a
+}
+
+/// The block, a row along X.
+fn block_along_x(ctx: &mut Ctx) -> Value {
+    let mut a = block(ctx);
+    a["along"] = json!("x");
+    a
+}
+
+/// The block cut by a plane taken from its top face.
+fn block_cut_by_top(ctx: &mut Ctx) -> Value {
+    let mut a = block(ctx);
+    a["plane"] = json!({ "face": "top" });
+    a
+}
+
+/// THE BLOCK FAR OFF THE AXIS: a 40 x 20 rectangle from (200, -10) extruded 10.
+fn block_off_axis(ctx: &mut Ctx) -> Value {
+    let made = call(ctx, "create_sketch", json!({ "plane": "xy" }));
+    let _ = call(ctx, "sketch_add", json!({ "sketch": made["sketch"], "entities": [{ "rect": { "from": [200, -10], "to": [240, 10] } }] }));
+    let laid = call(ctx, "extrude", json!({ "sketch": made["sketch"], "distance": 10 }));
+    assert_eq!(laid["ok"], json!(true), "the far block was not laid: {laid}");
+    json!({ "body": { "body": laid["body"] } })
+}
+
 const TWINS: &[Twin] = &[
     Twin { contract: &primitives::BOX, name: "box", args: &["x", "y", "z"], fixture: first_part, modes: &[] },
     Twin { contract: &primitives::CYLINDER, name: "cylinder", args: &["radius", "height"], fixture: first_part, modes: &[] },
@@ -138,6 +168,11 @@ const TWINS: &[Twin] = &[
             ModeTwin { word: "cmd-countersink", args: || json!({ "kind": "countersink", "recess_diameter": 12, "recess_depth": 4 }) },
         ],
     },
+    Twin { contract: &part::MIRROR, name: "mirror", args: &[], fixture: block_right_face, modes: &[ModeTwin { word: "cmd-with-original", args: || json!({ "keep": "reflection" }) }] },
+    Twin { contract: &part::LINEAR_ARRAY, name: "linear_pattern", args: &["step", "count"], fixture: block_along_x, modes: &[] },
+    Twin { contract: &part::CIRCULAR_ARRAY, name: "circular_pattern", args: &["count"], fixture: block_off_axis, modes: &[ModeTwin { word: "cmd-full-circle", args: || json!({ "angle": 180 }) }] },
+    Twin { contract: &part::SPLIT_BODY, name: "split_body", args: &["offset"], fixture: block_cut_by_top, modes: &[] },
+    Twin { contract: &part::PUSH_FACE, name: "push_face", args: &["distance"], fixture: block_top_face, modes: &[] },
     Twin {
         contract: &part::SHELL,
         name: "shell",
@@ -176,20 +211,44 @@ fn held(reply: &Value, want: &Outcome) -> Result<(), String> {
     if reply["ok"] != json!(true) {
         return Err(format!("refused: {reply}"));
     }
-    let Outcome::Body { volume, faces, edges, min, max } = *want else { return Err(format!("the contract wants {want:?}, not a body")) };
-    let bodies = reply["bodies"].as_array().ok_or("no bodies in the answer")?;
-    let [b] = bodies.as_slice() else { return Err(format!("{} bodies stand, not one", bodies.len())) };
+    let bodies: Vec<&Value> = reply["bodies"].as_array().ok_or("no bodies in the answer")?.iter().filter(|b| b["visible"] != json!(false)).collect();
     let num = |v: &Value| v.as_f64().unwrap_or(f64::NAN);
-    let point = |v: &Value| [num(&v[0]), num(&v[1]), num(&v[2])];
-    let diagonal = (0..3).map(|i| (max[i] - min[i]).powi(2)).sum::<f64>().sqrt();
-    let slack = (0.0015 * diagonal).max(0.05);
-    let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() <= slack);
-    let got_volume = num(&b["volume"]);
-    let ok = (got_volume - volume).abs() <= 1e-5 * volume.abs().max(1.0) && b["faces"] == json!(faces) && b["edges"] == json!(edges) && near(point(&b["min"]), min) && near(point(&b["max"]), max);
-    if ok {
-        Ok(())
-    } else {
-        Err(format!("the body is volume {got_volume} faces {} edges {} min {} max {}, the window's is {want:?}", b["faces"], b["edges"], b["min"], b["max"]))
+    let close = |a: f64, b: f64| (a - b).abs() <= 1e-5 * b.abs().max(1.0);
+    match *want {
+        Outcome::Body { volume, faces, edges, min, max } => {
+            let [b] = bodies.as_slice() else { return Err(format!("{} bodies stand, not one", bodies.len())) };
+            let point = |v: &Value| [num(&v[0]), num(&v[1]), num(&v[2])];
+            let diagonal = (0..3).map(|i| (max[i] - min[i]).powi(2)).sum::<f64>().sqrt();
+            let slack = (0.0015 * diagonal).max(0.05);
+            let near = |a: [f64; 3], b: [f64; 3]| a.iter().zip(b).all(|(x, y)| (x - y).abs() <= slack);
+            let got_volume = num(&b["volume"]);
+            if close(got_volume, volume) && b["faces"] == json!(faces) && b["edges"] == json!(edges) && near(point(&b["min"]), min) && near(point(&b["max"]), max) {
+                Ok(())
+            } else {
+                Err(format!("the body is volume {got_volume} faces {} edges {} min {} max {}, the window's is {want:?}", b["faces"], b["edges"], b["min"], b["max"]))
+            }
+        }
+        // one body of separate pieces: a pattern whose copies stand apart
+        Outcome::Pieces { pieces, volume } => {
+            let [b] = bodies.as_slice() else { return Err(format!("{} bodies stand, not one", bodies.len())) };
+            if b["pieces"] == json!(pieces) && close(num(&b["volume"]), volume) {
+                Ok(())
+            } else {
+                Err(format!("the body holds {} pieces of {}, the window's {pieces} of {volume}", b["pieces"], b["volume"]))
+            }
+        }
+        // several bodies of the part: how many, all together, the largest
+        Outcome::Bodies { count, volume, largest } => {
+            let got: Vec<f64> = bodies.iter().map(|b| num(&b["volume"])).collect();
+            let whole: f64 = got.iter().sum();
+            let biggest = got.iter().copied().fold(0.0, f64::max);
+            if got.len() == count && close(whole, volume) && close(biggest, largest) {
+                Ok(())
+            } else {
+                Err(format!("{} bodies of {whole}, the largest {biggest}; the window's {count} of {volume}, the largest {largest}", got.len()))
+            }
+        }
+        _ => Err(format!("the contract wants {want:?}, which this check does not read")),
     }
 }
 
@@ -220,7 +279,9 @@ fn a_primitive_is_the_body_the_window_lays() {
             misses.push(format!("{} typical: {e}", twin.name));
         }
         for (i, f) in twin.contract.fields.iter().enumerate() {
-            let change = Change { field: i, value: away(f.typical, f.lo, f.hi) };
+            // a count is a whole number: 3 copies half as much again are 5, not 4.5
+            let value = if f.class == Class::Count { away(f.typical, f.lo, f.hi).round() } else { away(f.typical, f.lo, f.hi) };
+            let change = Change { field: i, value };
             let mut ctx = Ctx::blank();
             let a = arguments(&mut ctx, twin, Some(change));
             let reply = call(&mut ctx, twin.name, a);

@@ -71,6 +71,9 @@ pub struct Body {
     pub consumed: bool,
     /// A surface with no inside.
     pub sheet: bool,
+    /// The separate solids the live body holds: one for a part, several for a pattern whose copies stand apart;
+    /// none without a live body.
+    pub pieces: Option<u32>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -123,6 +126,7 @@ pub fn report(project: &Project, shapes: &HashMap<Id, Shape>, shown: &dyn Fn(&st
                 visible: b.visible,
                 consumed: consumed.contains(&b.id),
                 sheet: b.sheet,
+                pieces: shape.map(|s| s.solid_count()),
             }
         })
         .collect();

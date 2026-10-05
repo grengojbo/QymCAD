@@ -73,7 +73,7 @@ fn feature(f: &qymcad_doc::report::Feature) -> Value {
 fn body(b: &qymcad_doc::report::Body) -> Value {
     json!({
         "id": b.id, "name": b.name, "part": b.part, "volume": b.volume, "area": b.area, "min": b.min, "max": b.max,
-        "faces": b.faces, "edges": b.edges, "visible": b.visible, "consumed": b.consumed, "sheet": b.sheet,
+        "faces": b.faces, "edges": b.edges, "pieces": b.pieces, "visible": b.visible, "consumed": b.consumed, "sheet": b.sheet,
     })
 }
 

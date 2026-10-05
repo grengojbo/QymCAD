@@ -133,6 +133,13 @@ pub const ALL: &[Tool] = &[
     crate::tools::features::CHAMFER,
     crate::tools::features::HOLE,
     crate::tools::features::SHELL,
+    crate::tools::modify::LINEAR_PATTERN,
+    crate::tools::modify::CIRCULAR_PATTERN,
+    crate::tools::modify::MIRROR,
+    crate::tools::modify::BOOLEAN,
+    crate::tools::modify::MOVE,
+    crate::tools::modify::SPLIT_BODY,
+    crate::tools::modify::PUSH_FACE,
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
 ];

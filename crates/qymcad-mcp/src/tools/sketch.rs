@@ -9,13 +9,13 @@
 
 use std::collections::BTreeMap;
 
-use qymcad_core::feature::{BasePlane, FaceKey, Purpose, SketchPlane, Winding};
+use qymcad_core::feature::{BasePlane, Purpose, SketchPlane, Winding};
 use qymcad_core::geom::Point2;
 use qymcad_core::model::{Constraint, EntityKind, Id, PlaneDef, Project, WorkPlane};
 use serde::Deserialize;
 use serde_json::{json, Value};
 
-use crate::args::{self, Amount, BodyRef, Element, Expect, QueryArg};
+use crate::args::{self, Amount, BodyRef, QueryArg};
 use crate::tool::{self, Ctx, Refusal, Stage, Tool};
 use crate::tools::doc::{answer, outcome};
 
@@ -52,15 +52,6 @@ enum PlaneArg {
 struct CreateArgs {
     plane: PlaneArg,
     offset: Option<Amount>,
-}
-
-/// A FACE TAKEN FOR A PLANE: the one face the query finds on the body, by the key a sketch keeps of it.
-fn face_key(project: &Project, body: Id, face: &QueryArg) -> Result<FaceKey, Refusal> {
-    let found = args::resolve(project, body, &args::reference(face, Expect::One), Element::Faces)?;
-    let desc = found[0];
-    let faces = project.bodies.iter().find(|b| b.id == body).map(|b| b.faces.as_slice()).unwrap_or_default();
-    let (index, f) = faces.iter().enumerate().find(|(_, f)| f.id == desc).ok_or_else(|| Refusal::new("ref-lost", &format!("Face {desc} is not on body {body}."), Stage::Resolve))?;
-    Ok(FaceKey { index: index as u32, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id })
 }
 
 /// The plane the sketch stands on, an offset datum laid first when `offset` asks for one; the datum's distance keeps
@@ -103,7 +94,7 @@ pub const CREATE_SKETCH: Tool = Tool {
             }
             PlaneArg::Face { body, face } => {
                 let body = body.resolve(project)?;
-                SketchPlane::Face(body, face_key(project, body, face)?)
+                SketchPlane::Face(body, args::face_key(project, body, face)?)
             }
         };
         let offset = a.offset.as_ref().map(|o| o.read(project, "offset")).transpose()?;

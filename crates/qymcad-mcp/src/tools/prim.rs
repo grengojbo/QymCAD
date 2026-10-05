@@ -16,20 +16,20 @@ use crate::tools::doc::{answer, outcome};
 /// A TURN about an axis through the origin, right-handed, in degrees.
 #[derive(Clone, Copy, Debug, Deserialize)]
 #[serde(deny_unknown_fields)]
-struct Turn {
+pub(crate) struct Turn {
     axis: [f64; 3],
     degrees: f64,
 }
 
 /// Where a primitive goes from where it is made: the turns in order, then the shift.
-struct Placement {
-    at: Option<[f64; 3]>,
-    rotate: Vec<Turn>,
+pub(crate) struct Placement {
+    pub(crate) at: Option<[f64; 3]>,
+    pub(crate) rotate: Vec<Turn>,
 }
 
 impl Placement {
     /// The move, or none when the primitive stays where it is made.
-    fn matrix(&self) -> Result<Option<[f64; 12]>, Refusal> {
+    pub(crate) fn matrix(&self) -> Result<Option<[f64; 12]>, Refusal> {
         let mut m = qymcad_core::feature::PLACE_IDENTITY;
         for t in &self.rotate {
             let len = t.axis.iter().map(|v| v * v).sum::<f64>().sqrt();
@@ -109,7 +109,7 @@ struct Laid {
 }
 
 /// The schema of a primitive: its own sizes, then `at` and `rotate`.
-fn schema(sizes: Value, required: &[&str]) -> Value {
+pub(crate) fn schema(sizes: Value, required: &[&str]) -> Value {
     let mut props = sizes;
     props["at"] = json!({ "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "Where the origin of the primitive goes, mm." });
     props["rotate"] = json!({

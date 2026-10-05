@@ -344,3 +344,13 @@ pub fn amount_schema(what: &str) -> Value {
 pub fn body_schema() -> Value {
     json!({ "description": "{\"body\": key}, or {\"part\": key} for the one body the part stands as.", "type": "object", "minProperties": 1, "maxProperties": 1 })
 }
+
+/// A FACE BY A QUERY THAT FINDS ONE: the key a feature keeps of it - its place among the body's faces, its centre and
+/// normal now, and its name, by which the feature finds it again.
+pub fn face_key(project: &Project, body: Id, face: &QueryArg) -> Result<qymcad_core::feature::FaceKey, Refusal> {
+    let found = resolve(project, body, &reference(face, Expect::One), Element::Faces)?;
+    let desc = found[0];
+    let faces = project.bodies.iter().find(|b| b.id == body).map(|b| b.faces.as_slice()).unwrap_or_default();
+    let (index, f) = faces.iter().enumerate().find(|(_, f)| f.id == desc).ok_or_else(|| Refusal::new("ref-lost", &format!("Face {desc} is not on body {body}."), Stage::Resolve))?;
+    Ok(qymcad_core::feature::FaceKey { index: index as u32, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id })
+}

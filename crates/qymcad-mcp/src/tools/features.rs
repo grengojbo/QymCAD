@@ -533,10 +533,7 @@ pub const HOLE: Tool = Tool {
                 Place::Sketch(sketch)
             }
             (Some(face), None) => {
-                let found = crate::args::resolve(project, body, &crate::args::reference(face, crate::args::Expect::One), crate::args::Element::Faces)?;
-                let faces = project.bodies.iter().find(|b| b.id == body).map(|b| b.faces.as_slice()).unwrap_or_default();
-                let (index, f) = faces.iter().enumerate().find(|(_, f)| f.id == found[0]).ok_or_else(|| Refusal::new("ref-lost", "The face is not on the body.", Stage::Resolve))?;
-                let key = qymcad_core::feature::FaceKey { index: index as u32, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id };
+                let key = crate::args::face_key(project, body, face)?;
                 let frame = qymcad_doc::ops::FaceFrame { centre: key.centroid, normal: key.normal };
                 let point = match (a.at, a.offset) {
                     (Some(_), Some(_)) => return Err(Refusal::new("arguments", "Give offset or at, not both.", Stage::Validate)),

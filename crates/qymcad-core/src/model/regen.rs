@@ -1699,7 +1699,7 @@ impl Project {
     /// THE PLANE A MIRROR OR A SPLIT STANDS ON, as origin and normal: a face of a body (read off it at this rebuild, so
     /// it follows the face), a datum plane (resolved earlier in the pass), or a world plane 0 XY, 1 XZ, 2 YZ. `None`
     /// when the face's body or the datum is gone: the operation refuses rather than cut along another plane.
-    fn op_plane(&self, plane: u8, datum: Id, face: Option<(Id, crate::feature::FaceKey)>) -> Option<([f64; 3], [f64; 3])> {
+    pub fn op_plane(&self, plane: u8, datum: Id, face: Option<(Id, crate::feature::FaceKey)>) -> Option<([f64; 3], [f64; 3])> {
         if let Some((body, key)) = face {
             return self.regen_faces.contains_key(&body).then(|| self.resolve_face(body, &key));
         }
