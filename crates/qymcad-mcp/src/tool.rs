@@ -129,6 +129,10 @@ pub const ALL: &[Tool] = &[
     crate::tools::sketch::SKETCH_INFO,
     crate::tools::features::EXTRUDE,
     crate::tools::features::REVOLVE,
+    crate::tools::features::FILLET,
+    crate::tools::features::CHAMFER,
+    crate::tools::features::HOLE,
+    crate::tools::features::SHELL,
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
 ];

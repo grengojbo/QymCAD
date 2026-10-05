@@ -53,6 +53,35 @@ fn rectangle_about_x(ctx: &mut Ctx) -> Value {
     a
 }
 
+/// THE BLOCK: the rectangle sketch extruded 10, as the window's fixture makes it; the arguments name its body.
+fn block(ctx: &mut Ctx) -> Value {
+    let a = rectangle_sketch(ctx);
+    let laid = call(ctx, "extrude", json!({ "sketch": a["sketch"], "distance": 10 }));
+    assert_eq!(laid["ok"], json!(true), "the block was not laid: {laid}");
+    json!({ "body": { "body": laid["body"] } })
+}
+
+/// The block and its top front edge - where the contract's pick at (20, 0, 10) lands.
+fn block_front_edge(ctx: &mut Ctx) -> Value {
+    let mut a = block(ctx);
+    a["edges"] = json!({ "between": { "one": "top", "other": "front" } });
+    a
+}
+
+/// The block and its top face - where the contract's pick at (20, 15, 10) lands; a hole stands at its centre.
+fn block_top_face(ctx: &mut Ctx) -> Value {
+    let mut a = block(ctx);
+    a["face"] = json!("top");
+    a
+}
+
+/// The block open at its top.
+fn block_open_top(ctx: &mut Ctx) -> Value {
+    let mut a = block(ctx);
+    a["open"] = json!("top");
+    a
+}
+
 const TWINS: &[Twin] = &[
     Twin { contract: &primitives::BOX, name: "box", args: &["x", "y", "z"], fixture: first_part, modes: &[] },
     Twin { contract: &primitives::CYLINDER, name: "cylinder", args: &["radius", "height"], fixture: first_part, modes: &[] },
@@ -83,6 +112,41 @@ const TWINS: &[Twin] = &[
             ModeTwin { word: "cmd-one-side", args: || json!({ "direction": "forward" }) },
             ModeTwin { word: "cmd-symmetric", args: || json!({ "direction": "both" }) },
             ModeTwin { word: "cmd-flip-btn", args: || json!({ "direction": "backward" }) },
+        ],
+    },
+    Twin { contract: &part::FILLET, name: "fillet", args: &["radius"], fixture: block_front_edge, modes: &[] },
+    Twin {
+        contract: &part::CHAMFER,
+        name: "chamfer",
+        args: &["distance"],
+        fixture: block_front_edge,
+        modes: &[
+            ModeTwin { word: "cmd-symmetric", args: || json!({}) },
+            ModeTwin { word: "cmd-two-distances", args: || json!({ "second": { "distance": 1.5 } }) },
+            ModeTwin { word: "cmd-leg-angle", args: || json!({ "second": { "angle": 45 } }) },
+        ],
+    },
+    Twin {
+        contract: &part::HOLE,
+        name: "hole",
+        args: &["diameter", "depth"],
+        fixture: block_top_face,
+        modes: &[
+            ModeTwin { word: "cmd-by-face", args: || json!({}) },
+            ModeTwin { word: "cmd-simple", args: || json!({ "kind": "plain" }) },
+            ModeTwin { word: "cmd-counterbore", args: || json!({ "kind": "counterbore", "recess_diameter": 12, "recess_depth": 4 }) },
+            ModeTwin { word: "cmd-countersink", args: || json!({ "kind": "countersink", "recess_diameter": 12, "recess_depth": 4 }) },
+        ],
+    },
+    Twin {
+        contract: &part::SHELL,
+        name: "shell",
+        args: &["thickness"],
+        fixture: block_open_top,
+        modes: &[
+            ModeTwin { word: "cmd-inwards", args: || json!({ "side": "inward" }) },
+            ModeTwin { word: "cmd-outwards", args: || json!({ "side": "outward" }) },
+            ModeTwin { word: "cmd-centred", args: || json!({ "side": "centred" }) },
         ],
     },
 ];
