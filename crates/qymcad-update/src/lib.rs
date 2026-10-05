@@ -10,16 +10,21 @@
 //! argument with an antivirus on Windows; a browser does all of that better and every person already
 //! has one. This asks one question, and a button opens the release page.
 //!
-//! WHY OUR OWN ADDRESS AND NOT THE PLATFORM'S API. `ENDPOINT` freezes into every binary ever handed
-//! out - it cannot be renamed later, because copies installed today will keep knocking at the old one
-//! for years. While it is ours, where the answer comes FROM can move without stranding them.
+//! WHERE THE ANSWER COMES FROM: a small record, `latest.json`, attached to every release of this program's own
+//! repository by the release run on a tag. `releases/latest/download/` always names the newest release, so one
+//! fixed address serves every copy ever handed out, and no site of our own is needed to answer it. A release is
+//! made by a person pressing the button against a tag, so a version nobody chose to publish does not exist here.
 //!
-//! It is answered by the site, from a record filled in by hand, and not by the release run. So a release
-//! nobody has announced does not exist for this module: when to tell people about a version is a
-//! person's decision, not a build's.
+//! WHAT GOES OUT: one GET of that address and nothing about the copy that asks - no version, no system, no way it
+//! was installed. Documents, models and paths go nowhere, ever.
 
-/// WHERE THE ANSWER COMES FROM. Written once and never renamed - see the note above.
-pub const ENDPOINT: &str = "https://cad.qymis.tech/latest.json";
+/// WHERE THE ANSWER COMES FROM. Frozen into every binary handed out: copies installed today will knock at it for
+/// years.
+pub const ENDPOINT: &str = "https://github.com/grengojbo/QymCAD/releases/latest/download/latest.json";
+
+/// WHAT THE REQUEST CALLS ITSELF: the program's name and nothing more, so the request tells nobody which version,
+/// which system or which kind of install asked.
+pub const AGENT: &str = "QymCAD";
 
 /// HOW THE COPY WAS INSTALLED, because the answer decides whether to ask at all.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -41,18 +46,6 @@ pub enum Install {
 impl Install {
     /// EVERY KIND, so a walk over them cannot silently miss one added later.
     pub const ALL: [Install; 6] = [Install::AppImage, Install::System, Install::Msi, Install::App, Install::Portable, Install::Flatpak];
-
-    /// The word that goes into the request signature. ASCII, lower case, one word.
-    pub fn word(self) -> &'static str {
-        match self {
-            Install::AppImage => "appimage",
-            Install::System => "system",
-            Install::Msi => "msi",
-            Install::App => "app",
-            Install::Portable => "portable",
-            Install::Flatpak => "flatpak",
-        }
-    }
 
     /// CAN THIS COPY ASK AT ALL.
     ///
@@ -102,20 +95,7 @@ pub fn install_from(appimage: Option<&str>, in_flatpak: bool, exe: Option<&std::
     Install::Portable
 }
 
-/// THE SIGNATURE OF THE REQUEST: `QymCAD/<version> (<os>-<arch>; <install>)`.
-///
-/// The request goes out anyway; this only decides whether it is signed. Signed, the site's ordinary log
-/// answers a question nothing else here answers - how many copies are alive, of which versions, on which
-/// systems - and it answers it without a tracker, an identifier or a third party.
-///
-/// WHAT IS NOT IN IT: no name, no machine, no number issued by us, nothing that tells one copy from
-/// another. Three facts, and all three are already written on the download page. The honest other side
-/// is that a log like this counts REQUESTS, not people.
-pub fn user_agent(version: &str, install: Install) -> String {
-    format!("QymCAD/{version} ({}-{}; {})", std::env::consts::OS, std::env::consts::ARCH, install.word())
-}
-
-/// WHAT THE SITE ANSWERED. Every field but the first two may be missing, and missing is the normal case.
+/// WHAT THE RECORD SAYS. Every field but the first two may be missing, and missing is the normal case.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct Latest {
     /// The release tag, e.g. `v0.2.0-dev.20260920`.
@@ -134,8 +114,7 @@ pub struct Latest {
 
 /// READING THE ANSWER, and refusing it without a word when it is not one.
 ///
-/// The site is an ordinary web application, and an ordinary web application answers an error with a page
-/// of HTML. That is NOT a reason to disturb anybody: nothing understood means nothing shown, until the
+/// The address is an ordinary web server, and an ordinary web server answers an error with a page of HTML. That is NOT a reason to disturb anybody: nothing understood means nothing shown, until the
 /// next check. The same goes for JSON that parses but carries no tag.
 pub fn parse(body: &str) -> Option<Latest> {
     let v: serde_json::Value = serde_json::from_str(body).ok()?;
@@ -217,16 +196,16 @@ const BODY_CAP: u64 = 64 * 1024;
 ///
 /// THIS BLOCKS. It is meant to be called on a thread of its own, the way the file jobs already are:
 /// the launch must not wait for the network for a single moment.
-pub fn fetch(version: &str, install: Install) -> Option<Latest> {
+pub fn fetch(install: Install) -> Option<Latest> {
     if !install.may_ask() {
         return None; // inside a sandbox with no network the request would never leave
     }
     let config = ureq::Agent::config_builder()
         .timeout_global(Some(std::time::Duration::from_secs(10)))
-        .user_agent(user_agent(version, install))
-        // The site may answer with a move to another address (http -> https, a trailing slash), and
-        // one hop is all that is legitimate here.
-        .max_redirects(2)
+        .user_agent(AGENT)
+        // `releases/latest/download/` moves twice before the file: to the tag of the newest release, and from
+        // there to the store the files are served from (measured: 2 moves, then 200). One more is the margin.
+        .max_redirects(3)
         .build();
     let agent: ureq::Agent = config.into();
     let mut response = agent.get(ENDPOINT).call().ok()?;
@@ -282,14 +261,14 @@ impl Checker {
     ///
     /// Asking again while an answer is still on its way does nothing: a person leaning on the menu item
     /// would otherwise start a thread per press.
-    pub fn start(&mut self, version: String, install: Install) {
+    pub fn start(&mut self, install: Install) {
         if self.waiting.is_some() {
             return;
         }
         let (tx, rx) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             // the answer is sent whatever it is; a receiver that has gone away is not our business
-            let _ = tx.send(fetch(&version, install));
+            let _ = tx.send(fetch(install));
         });
         self.waiting = Some(rx);
         self.outcome = Outcome::Asking;
@@ -402,19 +381,34 @@ mod tests {
         assert!(!is_unfit("0.1.0", Some("v0.1.0-dev.20260901")), "a build with no date was marked unfit");
     }
 
-    /// THE SIGNATURE HAS A FIXED SHAPE, because a log is parsed by a pattern.
+    /// THE REQUEST SAYS NOTHING ABOUT THE COPY THAT ASKS: the name of the program, no version, no system, no
+    /// word size, no way of installing.
     #[test]
-    fn the_signature_reads_the_same_every_time() {
-        for kind in Install::ALL {
-            let ua = user_agent("v0.2.0-dev.20260920", kind);
-            assert!(ua.starts_with("QymCAD/v0.2.0-dev.20260920 ("), "the signature does not begin with the program and its version: {ua}");
-            assert!(ua.ends_with(&format!("; {})", kind.word())), "the signature does not end with how it was installed: {ua}");
-            assert!(ua.is_ascii(), "the signature is not ASCII, and a log is read by a pattern: {ua}");
-            assert!(!ua.contains("  "), "the signature carries an empty field: {ua}");
+    fn the_request_says_nothing_about_the_copy() {
+        assert_eq!(AGENT, "QymCAD");
+        for told in [std::env::consts::OS, std::env::consts::ARCH, env!("CARGO_PKG_VERSION")] {
+            assert!(!AGENT.contains(told), "the request names {told}");
         }
-        // Flatpak never signs anything, because it never asks - see `may_ask`.
+        assert!(ENDPOINT.starts_with("https://github.com/grengojbo/QymCAD/releases/latest/download/"), "the record is asked of another address: {ENDPOINT}");
+        // Flatpak never asks - see `may_ask`.
         assert!(!Install::Flatpak.may_ask());
         assert!(Install::ALL.iter().filter(|k| k.may_ask()).count() == 5, "somebody changed who may ask");
+    }
+
+    /// THE RELEASE RUN WRITES THE RECORD THIS PARSER READS. The record is not typed by a person: the run makes it
+    /// from the tag with `printf`, and a field renamed there would leave every copy blind to new versions.
+    #[test]
+    fn the_release_run_writes_the_record_this_reads() {
+        let run = include_str!("../../../.github/workflows/release.yml");
+        let line = run.lines().find(|l| l.contains("printf '{\"latest\"")).expect("the release run no longer writes the record");
+        assert!(run.contains("> dist/latest.json"), "the record does not go into the release files");
+        // the template with the values the run fills in on a tag
+        let template = line.split('\'').nth(1).expect("the template is quoted").replace("\\n", "");
+        let filled = ["v0.2.0-dev.20261005", "https://github.com", "grengojbo/QymCAD", "v0.2.0-dev.20261005", "2026-10-05"].iter().fold(template, |t, v| t.replacen("%s", v, 1));
+        let got = parse(&filled).unwrap_or_else(|| panic!("the record the run writes does not parse: {filled}"));
+        assert_eq!(got.latest, "v0.2.0-dev.20261005");
+        assert_eq!(got.url, "https://github.com/grengojbo/QymCAD/releases/tag/v0.2.0-dev.20261005");
+        assert_eq!(got.published.as_deref(), Some("2026-10-05"));
     }
 
     /// THE LIVE ADDRESS ANSWERS WHAT THE CONTRACT SAYS IT ANSWERS.
@@ -427,13 +421,13 @@ mod tests {
     /// cargo test -p qymcad-update -- --ignored --nocapture
     /// ```
     ///
-    /// What it is for: the record is filled in by a person through a form, and the field names are a
-    /// contract between that form and this parser. A field renamed there is not a compilation error
-    /// here - it is a program that stops noticing releases, and notices nothing about noticing nothing.
+    /// What it is for: the record is written by the release run, and the field names are a contract between
+    /// that run and this parser. A field renamed there is not a compilation error here - it is a program that
+    /// stops noticing releases, and notices nothing about noticing nothing.
     #[test]
-    #[ignore = "goes to cad.qymis.tech; run by hand"]
+    #[ignore = "goes to the releases of github.com/grengojbo/QymCAD; run by hand"]
     fn the_site_answers_what_the_contract_promises() {
-        let got = fetch("v0.0.0-dev.20200101", Install::Portable).expect("the site did not answer with our record");
+        let got = fetch(Install::Portable).expect("the releases did not answer with our record");
         println!("latest={} url={} published={:?}", got.latest, got.url, got.published);
         assert!(date_of(&got.latest).is_some(), "the tag the site returned carries no date: {}", got.latest);
         assert!(got.url.starts_with("https://"), "the page to open is not an https address: {}", got.url);
@@ -473,13 +467,13 @@ mod tests {
     /// ASKING TWICE OVER DOES NOT START TWO THREADS.
     ///
     /// The menu item can be pressed as fast as a hand moves, and every press would otherwise be a thread
-    /// and a request. The site's own limit is 60 an hour.
+    /// and a request to a server that limits how often one address may ask.
     #[test]
     fn leaning_on_the_menu_item_asks_once() {
         let mut c = Checker::new();
         c.waiting = Some(std::sync::mpsc::channel().1); // as if a request were on its way
         c.outcome = Outcome::Asking;
-        c.start("v0.1.0-dev.20260828".into(), Install::Portable);
+        c.start(Install::Portable);
         assert_eq!(*c.outcome(), Outcome::Asking, "a second request was started while the first was still out");
     }
 

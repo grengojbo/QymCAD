@@ -76,14 +76,16 @@ pub(crate) fn available() -> bool {
 /// ASK NOW, because a person pressed the item. Goes even when the automatic check is switched off:
 /// pressing it IS the asking.
 pub(crate) fn ask(set: &mut qymcad_ui_state::Settings) {
-    let Some(release) = release() else { return };
+    if release().is_none() {
+        return;
+    }
     let install = Install::from_env();
     if !install.may_ask() {
         return;
     }
     set.update_last_checked = now();
     if let Ok(mut c) = CHECKER.lock() {
-        c.start(release, install);
+        c.start(install);
     }
 }
 

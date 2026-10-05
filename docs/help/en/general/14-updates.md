@@ -2,7 +2,7 @@
 
 **Help -> Check for updates**.
 
-The program asks the site whether a version newer than yours has come out, and says so in the status line
+The program asks its release page on GitHub whether a version newer than yours has come out, and says so in the status line
 at the bottom of the window. When there is something to update to, a bright line appears there with the
 new version number — press it and a window opens with the details.
 
@@ -38,14 +38,10 @@ a month, or never. The menu item works whichever is chosen, including "never".
 
 ## What goes over the network
 
-One request to `https://cad.qymis.tech/latest.json`, carrying three things about your build:
-
-* the version number,
-* the system and its word size (`linux-x86_64`, for instance),
-* how the program was installed (`appimage`, `msi`, `system` and so on).
-
-All of that is written on the download page and singles nobody out: the request carries no name of yours,
-no name of your machine and no number issued to you. Documents, models and file paths go nowhere, ever.
+One request to `https://github.com/grengojbo/QymCAD/releases/latest/download/latest.json` — a small file
+attached to the newest release of the program. The request says nothing about your copy: not the version,
+not the system, not how the program was installed, no name of yours or of your machine. Documents, models
+and file paths go nowhere, ever.
 
 To switch it off, choose "never" in the same setting. There are then no requests at all.
 

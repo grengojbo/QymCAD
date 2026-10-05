@@ -359,6 +359,16 @@ jobs:
           n=$(ls dist | wc -l)
           [ "$n" -eq 4 ] || { echo "!!! four packages were expected, $n arrived"; exit 1; }
 
+      # THE RECORD THE PROGRAM ASKS ABOUT NEW VERSIONS (`ENDPOINT` in crates/qymcad-update): one small file on
+      # every release made from a tag, at an address that always names the newest release. Written after the
+      # count above, which is of packages; the record is not one.
+      - name: The record of the newest release
+        if: github.ref_type == 'tag'
+        run: |
+          printf '{"latest":"%s","url":"%s/%s/releases/tag/%s","published":"%s"}\n' \
+            "$GITHUB_REF_NAME" "$GITHUB_SERVER_URL" "$GITHUB_REPOSITORY" "$GITHUB_REF_NAME" "$(date -u +%F)" > dist/latest.json
+          cat dist/latest.json
+
       # NOT MARKED A PRE-RELEASE, and that is a decision rather than an oversight.
       #
       # The rule used to be the one semantic versioning suggests: a hyphen in the tag means a pre-release.
