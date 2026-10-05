@@ -1357,7 +1357,9 @@ impl Project {
         // The distinction is made by the query rather than by the result: when descriptors were
         // named and no live edges were found, the reference is lost and that is reported.
         let asked_count = edges.query.picked_descs().len();
-        let asked_edges = asked_count > 0;
+        // A DESCRIPTION ASKS FOR EDGES as much as a pick does: "between the top and the front" that matches nothing is
+        // lost, not "every edge". Measured: a query matching no edge of a block rounded all twelve, 26 faces, green.
+        let asked_edges = asked_count > 0 || !edges.query.is_pick_list();
         // A PART OF THE PICKED EDGES GONE - a cut above took one away - the rest are done and the node says, in yellow,
         // how many were left: it is neither a failure of the whole nor to be kept quiet. Reported behaviour: a rounding
         // of four edges stood green with three after a cut above took the fourth.
@@ -1413,7 +1415,9 @@ impl Project {
         // As for a fillet: an empty list means the whole part, and a lost reference must not
         // masquerade as that.
         let asked_count = edges.query.picked_descs().len();
-        let asked_edges = asked_count > 0;
+        // A DESCRIPTION ASKS FOR EDGES as much as a pick does: "between the top and the front" that matches nothing is
+        // lost, not "every edge". Measured: a query matching no edge of a block rounded all twelve, 26 faces, green.
+        let asked_edges = asked_count > 0 || !edges.query.is_pick_list();
         // A PART OF THE PICKED EDGES GONE - a cut above took one away - the rest are done and the node says, in yellow,
         // how many were left: it is neither a failure of the whole nor to be kept quiet. Reported behaviour: a rounding
         // of four edges stood green with three after a cut above took the fourth.
@@ -3027,9 +3031,21 @@ impl Project {
                 self.name_seam_faces_of(node_id, body, kernel); // Then the seams: faces with no provenance,
                                                                 // named by their neighbours.
                 self.name_edges_of(body, kernel, emap); // Then the edges, derived from the face names.
-                                                        // Sheet or solid: asked of the kernel and recorded in the document. A sheet has no volume, and
-                                                        // everything that computes mass, cuts toolpaths or enforces "one part is one body" has to tell
-                                                        // them apart without guessing from the geometry.
+
+                // THE EDGES INTO THE MODEL AT ONCE, as the faces went in above, not only when the pass ends: a node built
+                // later in this same pass reads them. A rounding kept as a query asked the edges of its base while the
+                // model still held the base's edges from before - or none, the base having been suppressed - found
+                // nothing, and an empty list rounds the whole body. Measured: a block rounded "between the top and the
+                // front", its base suppressed and taken back in, came back with 26 faces instead of 7, the node green.
+                let edges = kernel.edges(body);
+                if edges.is_empty() {
+                    self.regen_edges.remove(&body);
+                } else {
+                    self.regen_edges.insert(body, edges);
+                }
+                // Sheet or solid: asked of the kernel and recorded in the document. A sheet has no volume, and
+                // everything that computes mass, cuts toolpaths or enforces "one part is one body" has to tell
+                // them apart without guessing from the geometry.
                 if let Some(i) = self.mesh_index(body) {
                     self.bodies[i].sheet = kernel.body_is_sheet(body);
                 }
