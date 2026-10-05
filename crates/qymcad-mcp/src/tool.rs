@@ -118,6 +118,12 @@ pub const ALL: &[Tool] = &[
     crate::tools::exchange::IMPORT_CAD,
     crate::tools::exchange::EXPORT_MESH,
     crate::tools::exchange::EXPORT_CAD,
+    crate::tools::prim::BOX,
+    crate::tools::prim::CYLINDER,
+    crate::tools::prim::SPHERE,
+    crate::tools::prim::CONE,
+    crate::tools::prim::TORUS,
+    crate::tools::prim::PRISM,
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
 ];
