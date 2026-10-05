@@ -18,6 +18,8 @@ path = "src/main.rs"
 [dependencies]
 qymcad-core.workspace = true
 qymcad-doc.workspace = true
+qymcad-io.workspace = true
+qymcad-kernel.workspace = true
 qymcad-i18n = { path = "../qymcad-i18n" }
 # THE PROTOCOL BY HAND, over this one crate: JSON-RPC 2.0 on stdin and stdout, one message per line. A protocol
 # SDK would bring an asynchronous runtime for a server that answers one request at a time on one thread - the

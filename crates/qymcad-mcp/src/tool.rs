@@ -114,6 +114,10 @@ pub const ALL: &[Tool] = &[
     crate::tools::params::SET_PARAMETER,
     crate::tools::params::DELETE_PARAMETER,
     crate::tools::params::LIST_PARAMETERS,
+    crate::tools::exchange::IMPORT_MESH,
+    crate::tools::exchange::IMPORT_CAD,
+    crate::tools::exchange::EXPORT_MESH,
+    crate::tools::exchange::EXPORT_CAD,
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
 ];

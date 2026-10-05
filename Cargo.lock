@@ -3280,6 +3280,8 @@ dependencies = [
  "qymcad-core",
  "qymcad-doc",
  "qymcad-i18n",
+ "qymcad-io",
+ "qymcad-kernel",
  "serde",
  "serde_json",
 ]
