@@ -1689,12 +1689,15 @@ pub(crate) fn mesh_quality_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::
         |ui| {
             ui.label(crate::i18n::tr("stl-detail"));
             ui.add_space(4.0);
-            // (the label, the deflection in mm)
-            let presets: [(&str, f64); 4] =
-                [(&crate::i18n::tr("stl-draft"), 0.2), (&crate::i18n::tr("stl-standard"), 0.05), (&crate::i18n::tr("stl-high"), 0.02), (&crate::i18n::tr("stl-max"), 0.005)];
-            for (lbl, defl) in presets {
-                if ui.add_sized([260.0, 24.0], egui::Button::new(lbl)).clicked() {
-                    choice = Some(Some(defl));
+            for detail in qymcad_doc::export::MeshDetail::ALL {
+                let label = match detail {
+                    qymcad_doc::export::MeshDetail::Draft => crate::i18n::tr("stl-draft"),
+                    qymcad_doc::export::MeshDetail::Standard => crate::i18n::tr("stl-standard"),
+                    qymcad_doc::export::MeshDetail::High => crate::i18n::tr("stl-high"),
+                    qymcad_doc::export::MeshDetail::Max => crate::i18n::tr("stl-max"),
+                };
+                if ui.add_sized([260.0, 24.0], egui::Button::new(label)).clicked() {
+                    choice = Some(Some(detail.deflection()));
                 }
             }
             ui.add_space(6.0);

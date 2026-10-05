@@ -19,6 +19,31 @@ pub enum ExportTarget {
     Project,
 }
 
+/// HOW FINE A MESH FILE IS WRITTEN: the details the window offers by name, each a deflection in millimetres - how far
+/// a facet may stand off the exact surface.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MeshDetail {
+    Draft,
+    Standard,
+    High,
+    Max,
+}
+
+impl MeshDetail {
+    /// Every detail, coarsest first.
+    pub const ALL: [MeshDetail; 4] = [MeshDetail::Draft, MeshDetail::Standard, MeshDetail::High, MeshDetail::Max];
+
+    /// The deflection, mm.
+    pub fn deflection(self) -> f64 {
+        match self {
+            MeshDetail::Draft => 0.2,
+            MeshDetail::Standard => 0.05,
+            MeshDetail::High => 0.02,
+            MeshDetail::Max => 0.005,
+        }
+    }
+}
+
 /// Whether `owner` and every assembly above it, up to `stop`, is shown.
 pub fn component_chain_visible(project: &Project, owner: Id, stop: Option<Id>) -> bool {
     let mut cur = Some(owner);
@@ -253,7 +278,15 @@ fn tri_colours(tree: &[ExportNode], body: Id, mesh: &Mesh, faces: &[MeshFace]) -
 
 #[cfg(test)]
 mod tests {
-    use super::tri_colours;
+    use super::{tri_colours, MeshDetail};
+
+    /// THE DETAILS GO FROM COARSE TO FINE, at the numbers the window has always offered.
+    #[test]
+    fn the_details_go_from_coarse_to_fine() {
+        let defl: Vec<f64> = MeshDetail::ALL.iter().map(|d| d.deflection()).collect();
+        assert_eq!(defl, [0.2, 0.05, 0.02, 0.005]);
+    }
+
     use qymcad_core::geom::{Mesh, MeshFace, Point3};
     use qymcad_core::model::ExportNode;
 
