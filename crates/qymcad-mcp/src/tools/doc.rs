@@ -59,32 +59,30 @@ struct GetArgs {
     detail: Detail,
 }
 
+fn coded(e: &qymcad_core::errors::CoreError) -> Value {
+    json!({ "code": e.key(), "message": qymcad_i18n::error_words::error_text(e) })
+}
+
+fn feature(f: &qymcad_doc::report::Feature) -> Value {
+    json!({
+        "key": f.key, "name": f.name, "kind": f.kind, "part": f.part, "suppressed": f.suppressed, "bodies": f.bodies,
+        "error": f.error.as_ref().map(coded), "warning": f.warning.as_ref().map(coded),
+    })
+}
+
+fn body(b: &qymcad_doc::report::Body) -> Value {
+    json!({
+        "id": b.id, "name": b.name, "part": b.part, "volume": b.volume, "area": b.area, "min": b.min, "max": b.max,
+        "faces": b.faces, "edges": b.edges, "visible": b.visible, "consumed": b.consumed, "sheet": b.sheet,
+    })
+}
+
 /// The account of the document as the model reads it; the names in English.
 fn document(ctx: &Ctx, detail: Detail) -> Value {
     let r: Report = ctx.doc.document(&qymcad_i18n::name);
-    let coded = |e: &qymcad_core::errors::CoreError| json!({ "code": e.key(), "message": qymcad_i18n::error_words::error_text(e) });
     let parts: Vec<Value> = r.parts.iter().map(|p| json!({ "key": p.key, "name": p.name, "assembly": p.assembly, "parent": p.parent, "visible": p.visible })).collect();
-    let features: Vec<Value> = r
-        .features
-        .iter()
-        .map(|f| {
-            json!({
-                "key": f.key, "name": f.name, "kind": f.kind, "part": f.part, "suppressed": f.suppressed, "bodies": f.bodies,
-                "error": f.error.as_ref().map(coded), "warning": f.warning.as_ref().map(coded),
-            })
-        })
-        .collect();
-    let bodies: Vec<Value> = r
-        .bodies
-        .iter()
-        .filter(|b| matches!(detail, Detail::Full) || !b.consumed)
-        .map(|b| {
-            json!({
-                "id": b.id, "name": b.name, "part": b.part, "volume": b.volume, "area": b.area, "min": b.min, "max": b.max,
-                "faces": b.faces, "edges": b.edges, "visible": b.visible, "consumed": b.consumed, "sheet": b.sheet,
-            })
-        })
-        .collect();
+    let features: Vec<Value> = r.features.iter().map(feature).collect();
+    let bodies: Vec<Value> = r.bodies.iter().filter(|b| matches!(detail, Detail::Full) || !b.consumed).map(body).collect();
     let parameters: Vec<Value> = r.parameters.iter().map(|p| json!({ "name": p.name, "expr": p.expr, "value": p.value })).collect();
     let history = ctx.doc.history();
     json!({
@@ -98,7 +96,18 @@ fn document(ctx: &Ctx, detail: Detail) -> Value {
     })
 }
 
-fn answer(key: &str, value: Value) -> Answer {
+/// WHERE THE DOCUMENT STANDS AFTER AN ACTION, beside the action's own answer: the bodies standing on their own,
+/// measured, and every feature that stands red or short - so the model reads what its action did without asking.
+pub fn outcome(ctx: &Ctx, mut a: Answer) -> Answer {
+    let r: Report = ctx.doc.document(&qymcad_i18n::name);
+    let bodies: Vec<Value> = r.bodies.iter().filter(|b| !b.consumed).map(body).collect();
+    let red: Vec<Value> = r.features.iter().filter(|f| f.error.is_some() || f.warning.is_some()).map(feature).collect();
+    a.insert("bodies".into(), json!(bodies));
+    a.insert("red".into(), json!(red));
+    a
+}
+
+pub fn answer(key: &str, value: Value) -> Answer {
     let mut a = Answer::new();
     a.insert(key.into(), value);
     a

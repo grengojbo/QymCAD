@@ -111,6 +111,9 @@ pub const ALL: &[Tool] = &[
     crate::tools::doc::OPEN_PROJECT,
     crate::tools::doc::SAVE_PROJECT,
     crate::tools::doc::GET_DOCUMENT,
+    crate::tools::params::SET_PARAMETER,
+    crate::tools::params::DELETE_PARAMETER,
+    crate::tools::params::LIST_PARAMETERS,
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
 ];
