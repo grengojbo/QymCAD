@@ -885,18 +885,7 @@ fn fresh_row(wc: &qymcad_ui_state::WinCtx, i: usize) -> bool {
 /// A GLOBAL PARAMETER EDIT HAS BEEN APPLIED. A method of its own, because this path has to be TESTABLE: the
 /// parameter window draws itself, and a test must pull the same handle rather than a similar one of its own.
 pub(crate) fn apply_param_edit(wc: &mut qymcad_ui_state::WinCtx) {
-    wc.project.eval_parameters();
-    // THE REBUILD GRAPH: editing a parameter touches only the sketches that actually mention it, not every one
-    // of them. The features with expressions over that name are marked by `mark_changed_params_dirty` (by
-    // comparing against a snapshot of the values), so there is nothing to duplicate here.
-    for si in 0..wc.project.sketches.len() {
-        let uses = wc.project.sketches[si].constraints.iter().any(|c| c.expr().is_some());
-        if uses {
-            wc.project.solve_sketch(si);
-            let sid = wc.project.sketches[si].id;
-            wc.project.mark_sketch_dirty(sid);
-        }
-    }
+    qymcad_doc::params::settle(wc.project);
     wc.ask.push(qymcad_ui_state::WinAsk::RegenerateAll); // the bodies rebuild associatively from the new parameters
 }
 
