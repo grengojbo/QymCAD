@@ -183,8 +183,9 @@ impl Project {
     }
 
     /// Breadcrumbs to a component: `Assembly.Subassembly.Part`. The root of the document is left out of the
-    /// path, being the same for everyone and distinguishing nothing.
-    pub fn component_breadcrumbs(&self, comp: Id) -> String {
+    /// path, being the same for everyone and distinguishing nothing. `shown` is how a stored name reads (a name may
+    /// be stored as a key of the catalogue, `name-part-n#1`); the core has no language, so the caller brings it.
+    pub fn component_breadcrumbs(&self, comp: Id, shown: &dyn Fn(&str) -> String) -> String {
         let mut names: Vec<String> = Vec::new();
         let mut cur = Some(comp);
         // Guard against a cycle. The component tree is built by code, but a damaged document must not hang
@@ -195,7 +196,7 @@ impl Project {
             if c.parent.is_none() {
                 break; // the root of the document
             }
-            names.push(c.name.clone());
+            names.push(shown(&c.name));
             cur = c.parent;
             guard -= 1;
             if guard == 0 {
@@ -209,21 +210,26 @@ impl Project {
     /// Breadcrumbs to whatever carries the name: `Subassembly.Part.Sketch` for a dimension and
     /// `Subassembly.Part.Feature` for a feature parameter. The two have to look the same.
     pub fn driver_path(&self, target: &crate::model::DimTarget) -> String {
+        self.driver_path_shown(target, &|stored| stored.to_string())
+    }
+
+    /// The same, each name as `shown` reads it.
+    pub fn driver_path_shown(&self, target: &crate::model::DimTarget, shown: &dyn Fn(&str) -> String) -> String {
         match target {
-            crate::model::DimTarget::Sketch { sketch, .. } => self.sketch_breadcrumbs(*sketch),
-            crate::model::DimTarget::Feature { node, .. } => self.feature_breadcrumbs(*node),
+            crate::model::DimTarget::Sketch { sketch, .. } => self.sketch_breadcrumbs(*sketch, shown),
+            crate::model::DimTarget::Feature { node, .. } => self.feature_breadcrumbs(*node, shown),
         }
     }
 
     /// Breadcrumbs to a feature: the path of the part plus the name of the timeline node.
-    pub fn feature_breadcrumbs(&self, node: Id) -> String {
+    pub fn feature_breadcrumbs(&self, node: Id, shown: &dyn Fn(&str) -> String) -> String {
         let Some(n) = self.timeline.iter().find(|n| n.id == node) else { return String::new() };
-        let own = n.parent.map(|c| self.component_breadcrumbs(c)).unwrap_or_default();
+        let own = n.parent.map(|c| self.component_breadcrumbs(c, shown)).unwrap_or_default();
         match (own.is_empty(), n.name.is_empty()) {
             (true, true) => String::new(),
-            (true, false) => n.name.clone(),
+            (true, false) => shown(&n.name),
             (false, true) => own,
-            (false, false) => format!("{own}.{}", n.name),
+            (false, false) => format!("{own}.{}", shown(&n.name)),
         }
     }
 
@@ -232,9 +238,9 @@ impl Project {
     /// A sketch may have no timeline node, which happens in tests and for one just created; the owner cannot
     /// then be found and the path consists of the sketch name alone. Returning an empty path silently is not
     /// acceptable: an empty path means global, and that would be untrue.
-    pub fn sketch_breadcrumbs(&self, sketch: Id) -> String {
-        let own = self.sketch_owner(sketch).map(|c| self.component_breadcrumbs(c)).unwrap_or_default();
-        let name = self.sketches.iter().find(|s| s.id == sketch).map(|s| s.name.clone()).unwrap_or_default();
+    pub fn sketch_breadcrumbs(&self, sketch: Id, shown: &dyn Fn(&str) -> String) -> String {
+        let own = self.sketch_owner(sketch).map(|c| self.component_breadcrumbs(c, shown)).unwrap_or_default();
+        let name = self.sketches.iter().find(|s| s.id == sketch).map(|s| shown(&s.name)).unwrap_or_default();
         match (own.is_empty(), name.is_empty()) {
             (true, true) => String::new(),
             (true, false) => name,
@@ -248,6 +254,12 @@ impl Project {
     /// The order is stable — parameters first, in document order, then dimensions. The list feeds completion
     /// and must not jump between frames.
     pub fn drivers(&self) -> Vec<DriverRef> {
+        self.drivers_shown(&|stored| stored.to_string())
+    }
+
+    /// The same, each path read through `shown`: a part or a sketch is stored under a key of the catalogue
+    /// (`name-part-n#1`), and a caller speaking to a person or a model reads it in words (`Part 1`).
+    pub fn drivers_shown(&self, shown: &dyn Fn(&str) -> String) -> Vec<DriverRef> {
         let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
         for p in self.parameters.iter().filter(|p| !p.name.is_empty()) {
             *seen.entry(p.name.to_lowercase()).or_insert(0) += 1;
@@ -265,7 +277,7 @@ impl Project {
             .collect();
         out.extend(self.named_dims.iter().filter(|n| !n.name.is_empty()).map(|nd| DriverRef {
             name: nd.name.clone(),
-            path: self.driver_path(&nd.target),
+            path: self.driver_path_shown(&nd.target, shown),
             value: self.named_dim_value(nd),
             kind: match nd.target {
                 crate::model::DimTarget::Sketch { .. } => DriverKind::SketchDim,

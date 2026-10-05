@@ -213,6 +213,22 @@ fn a_taken_name_says_who_holds_it() {
     assert!(p.name_owner("").is_none(), "an empty name belongs to nobody");
 }
 
+/// THE PATH TO A NAME READS AS THE CALLER READS NAMES: every stored name on the way goes through `shown`, so a part or a
+/// sketch stored as a key of the catalogue reads in words, while the plain path keeps the names as stored.
+#[test]
+fn the_path_to_a_name_reads_through_the_caller() {
+    let mut p = Project::default();
+    p.new_document();
+    let comp = p.add_component("name-part-n#1");
+    p.set_active_component(Some(comp));
+    let sid = sketch_with_driver(&mut p, "name-sketch-n#1", "len", 20.0);
+    p.add_sketch_node(sid, "name-sketch-n#1");
+    let target = p.named_dims.iter().find(|n| n.name == "len").map(|n| n.target.clone()).expect("the named dimension");
+    assert_eq!(p.driver_path(&target), "name-part-n#1.name-sketch-n#1");
+    let words = |stored: &str| stored.replace("name-part-n#", "Part ").replace("name-sketch-n#", "Sketch ");
+    assert_eq!(p.driver_path_shown(&target, &words), "Part 1.Sketch 1");
+}
+
 // ── numbers in a field ───────────────────────────────────────────────────────────────────────────
 
 /// No more than four decimals, and no trailing zeros.

@@ -94,3 +94,23 @@ fn a_deleted_parameter_turns_red_what_reads_it() {
     let doc = call(&mut ctx, "get_document", json!({}));
     assert!(doc["document"]["features"].as_array().expect("features").iter().all(|f| f["error"].is_null()), "undo left a red feature: {doc}");
 }
+
+/// A NAME HELD BY A DIMENSION is refused with the path to it in words, as a person reads the part and the sketch - not
+/// as the keys of the catalogue they are stored under; the list of names says the same.
+#[test]
+fn the_holder_of_a_name_is_named_in_words() {
+    let mut ctx = Ctx::blank();
+    let made = call(&mut ctx, "create_sketch", json!({ "plane": "xy" }));
+    let drawn = call(
+        &mut ctx,
+        "sketch_add",
+        json!({ "sketch": made["sketch"], "entities": [{ "line": { "from": [0, 0], "to": [20, 0], "as": "l" } }], "dimensions": [{ "length": { "line": "l", "value": 20, "name": "depth" } }] }),
+    );
+    assert_eq!(drawn["ok"], json!(true), "{drawn}");
+    let words = format!("{}.{}", qymcad_i18n::name("name-part-n#1"), qymcad_i18n::name("name-sketch-n#1"));
+    let taken = call(&mut ctx, "set_parameter", json!({ "name": "depth", "expr": "5" }));
+    let message = taken["error"]["message"].as_str().unwrap_or_default();
+    assert!(message.contains(&words) && !message.contains("name-"), "the holder is not named in words ({words}): {taken}");
+    let list = call(&mut ctx, "list_parameters", json!({}));
+    assert!(list.to_string().contains(&words) && !list.to_string().contains("name-part"), "the list names the holder by its keys: {list}");
+}

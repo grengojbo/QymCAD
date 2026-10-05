@@ -40,7 +40,8 @@ fn fit_name(ctx: &Ctx, name: &str) -> Result<(), Refusal> {
     if qymcad_core::drivers::check_ident(name).is_err() {
         return Err(Refusal::new("unfit-name", &format!("The name \"{name}\" cannot be used in a formula: letters, digits and _ only, not starting with a digit."), Stage::Validate));
     }
-    match ctx.doc.project().name_owner(name) {
+    let holder = ctx.doc.project().drivers_shown(&qymcad_i18n::name).into_iter().find(|d| d.name.eq_ignore_ascii_case(name.trim()));
+    match holder {
         Some(owner) => Err(Refusal::new("taken-name", &format!("The name \"{name}\" belongs to a dimension in {}.", owner.path), Stage::Validate).with_hint("Choose another name.")),
         None => Ok(()),
     }
@@ -121,7 +122,8 @@ pub const LIST_PARAMETERS: Tool = Tool {
         let Nothing {} = tool::args(arguments)?;
         let p = ctx.doc.project();
         let parameters: Vec<Value> = (0..p.parameters.len()).map(|i| parameter(ctx, i)).collect();
-        let drivers: Vec<Value> = p.drivers().into_iter().filter(|d| !d.path.is_empty()).map(|d| json!({ "name": d.name, "where": d.path, "value": d.value, "ambiguous": d.ambiguous })).collect();
+        let drivers: Vec<Value> =
+            p.drivers_shown(&qymcad_i18n::name).into_iter().filter(|d| !d.path.is_empty()).map(|d| json!({ "name": d.name, "where": d.path, "value": d.value, "ambiguous": d.ambiguous })).collect();
         let mut a = Answer::new();
         a.insert("parameters".into(), json!(parameters));
         a.insert("dimensions".into(), json!(drivers));
