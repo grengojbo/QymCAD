@@ -811,7 +811,7 @@ pub(crate) fn spawn_save(io: &mut DocIo, live: &mut LiveGeom, project: &mut Proj
     // "WHEN IT WAS STARTED" IS A FACT, NOT A PROPERTY OF THE LAST WRITE: set once, on the first save,
     // and never touched again. An autosave does not start a document - it is a snapshot.
     if !autosave && project.meta.created.is_empty() {
-        project.meta.created = crate::gui::now_iso8601();
+        project.meta.created = qymcad_doc::clock::now_iso8601();
     }
     let mut proj = project.clone();
     proj.regen_faces.clear(); // derived from the faces of the bundle - not duplicated

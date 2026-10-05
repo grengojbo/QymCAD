@@ -11,6 +11,7 @@
 //! person is asked of the caller, which knows the language.
 
 pub mod brep;
+pub mod clock;
 pub mod engine;
 pub mod export;
 pub mod history;

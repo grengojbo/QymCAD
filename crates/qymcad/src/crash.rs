@@ -146,7 +146,7 @@ fn write_note(path: &Path, kind: &str, message: &str, place: &str) -> Option<Pat
 
     let mut out = String::new();
     out.push_str(&crate::diagnostics::block());
-    out.push_str(&format!("\nTime: {}\n", crate::gui::now_iso8601()));
+    out.push_str(&format!("\nTime: {}\n", qymcad_doc::clock::now_iso8601()));
     out.push_str(&format!("{kind}: {message}\nAt: {place}\n"));
     out.push_str(&format!("Document: {}\n", doc.as_deref().map(without_home).unwrap_or_else(|| "(never saved)".into())));
     out.push_str(&format!("Autosave: {}\n", autosave.as_deref().map(without_home).unwrap_or_else(|| "(none)".into())));

@@ -13,6 +13,7 @@ qymcad-core.workspace = true
 qymcad-kernel.workspace = true
 qymcad-io.workspace = true
 qymcad-meshfit.workspace = true
+time.workspace = true # the calendar of the document stamp
 
 [lints]
 workspace = true

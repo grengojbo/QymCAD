@@ -100,47 +100,4 @@ mod tests {
         assert!(app.project.meta.created.is_empty(), "an autosave does not create the document — the date must stay empty");
         let _ = std::fs::remove_file(&path);
     }
-
-    /// THE CALENDAR RECKONS RIGHTLY — CHECKED AGAINST KNOWN DATES.
-    ///
-    /// The calendar is written by hand (a date crate was not dragged in for the sake of one line), and
-    /// by hand people get exactly two things wrong in it: leap years and crossing February. A range
-    /// check does not catch that — "2026-02-30" passes straight through it. So the stamps taken are
-    /// ones whose answer is known exactly, including 29 February and the boundaries of a day and a
-    /// year.
-    #[test]
-    fn the_calendar_gets_known_dates_right() {
-        for (secs, want) in [
-            (0u64, "1970-01-01T00:00:00Z"),
-            (86_399, "1970-01-01T23:59:59Z"),
-            (86_400, "1970-01-02T00:00:00Z"),
-            (951_782_400, "2000-02-29T00:00:00Z"),   // a leap century: 2000 is a leap year
-            (1_078_012_800, "2004-02-29T00:00:00Z"), // an ordinary leap year
-            (1_709_164_800, "2024-02-29T00:00:00Z"),
-            (1_767_225_599, "2025-12-31T23:59:59Z"), // the boundary of a year
-            (4_102_444_800, "2100-01-01T00:00:00Z"),
-            // THE RULE OF CENTURIES is only exercised AFTER February: 2100 is not a leap year, and
-            // without that rule the 1st of March would slide back a day. A stamp on the 1st of January
-            // does not touch it at all — that is how it was written at first, and an honesty check
-            // showed it.
-            (4_107_542_400, "2100-03-01T00:00:00Z"),
-            (4_233_772_800, "2104-03-01T00:00:00Z"), // and 2104 is a leap year — the rule must not eat that one too
-        ] {
-            assert_eq!(super::super::iso8601_from_unix(secs), want, "the calendar got the stamp {secs} wrong");
-        }
-    }
-
-    /// THE DATE IS ISO-8601 AND READABLE. The format is deliberately a machine one: it is
-    /// unambiguous and it sorts.
-    #[test]
-    fn the_timestamp_is_iso8601() {
-        let s = super::super::now_iso8601();
-        assert_eq!(s.len(), 20, "YYYY-MM-DDTHH:MM:SSZ was expected, and it came out \"{s}\"");
-        assert!(s.ends_with('Z') && s.as_bytes()[10] == b'T', "the ISO-8601 layout is broken: \"{s}\"");
-        let year: i32 = s[..4].parse().expect("the year as a number");
-        assert!((2025..2100).contains(&year), "the year \"{year}\" is outside common sense — the calendar reckons wrongly");
-        let month: u32 = s[5..7].parse().expect("the month as a number");
-        let day: u32 = s[8..10].parse().expect("the day as a number");
-        assert!((1..=12).contains(&month) && (1..=31).contains(&day), "month or day out of range: \"{s}\"");
-    }
 }

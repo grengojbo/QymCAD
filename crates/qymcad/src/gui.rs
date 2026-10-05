@@ -41,31 +41,12 @@ fn app_icon() -> egui::IconData {
     }
 }
 
-/// THE CURRENT TIME IN ISO-8601 (UTC, to the second).
-///
-/// By its own arithmetic, without a date crate: exactly one string is needed in the whole project, and a
-/// dependency for it would have to be carried, updated and explained. The format chosen is machine-readable and
-/// sortable - whoever wants to show it to a person may, but what is stored must be unambiguous.
-pub(crate) fn now_iso8601() -> String {
-    iso8601_from_unix(unix_secs())
-}
-
 /// SECONDS SINCE THE EPOCH, in one place.
 ///
 /// The same incantation stood in four files - the name of a crash file, the name of a report directory,
 /// the stamp of a document and the autosave clock - each spelling out its own fall back to zero.
 pub(crate) fn unix_secs() -> u64 {
     std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
-}
-
-/// CONVERTING unix SECONDS INTO ISO-8601. Separate from "what time is it", because only this part is testable:
-/// the current time has nothing to be compared against in a test, while a known stamp has.
-pub(crate) fn iso8601_from_unix(secs: u64) -> String {
-    // THE LAYOUT IS BUILT HERE, THE CALENDAR IS NOT. Leap years, the rule of centuries and the length of
-    // February are a solved problem; the layout is four numbers and two separators and is held by the table
-    // of known stamps beside it. Only the hard half was handed over.
-    let t = time::OffsetDateTime::from_unix_timestamp(secs as i64).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-    format!("{:04}-{:02}-{:02}T{:02}:{:02}:{:02}Z", t.year(), u8::from(t.month()), t.day(), t.hour(), t.minute(), t.second())
 }
 
 /// The folder a person's own files are in - what the "open the settings folder" button opens.
