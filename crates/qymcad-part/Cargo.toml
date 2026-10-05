@@ -13,6 +13,7 @@ edition = "2021"
 egui = "0.35"
 egui-phosphor = "0.11"
 qymcad-core = { path = "../qymcad-core" }
+qymcad-doc = { path = "../qymcad-doc" }
 qymcad-kernel = { path = "../qymcad-kernel" }
 qymcad-meshfit = { path = "../qymcad-meshfit" }
 qymcad-ui-state = { path = "../qymcad-ui-state" }

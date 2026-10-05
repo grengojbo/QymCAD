@@ -16,6 +16,7 @@ pub mod engine;
 pub mod export;
 pub mod history;
 pub mod import;
+pub mod ops;
 pub mod params;
 pub mod regen;
 pub mod report;

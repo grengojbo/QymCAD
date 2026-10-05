@@ -41,7 +41,7 @@ pub fn axis_of(d: [f64; 3]) -> u8 {
 /// parameters of the command rather than remembered when the command opens: the operation is chosen in
 /// the bar, after opening.
 pub fn smart_flip(cmd: u8, op: u8, plane: &qymcad_core::feature::SketchPlane) -> bool {
-    cmd == 1 && op == 2 && matches!(plane, qymcad_core::feature::SketchPlane::Face(..))
+    cmd == 1 && op == 2 && qymcad_doc::ops::cut_goes_into_the_body(plane)
 }
 
 /// A command parameter taken from a feature dimension: the text is the expression if there is one, or
@@ -589,7 +589,8 @@ pub fn apply_hole_cmd(cmd: &qymcad_ui_state::FeatCommand, hole: qymcad_ui_state:
     let face = project.bodies.get(mi).and_then(|b| b.faces.get(fi))?;
     // the face is referred to by its persistent id, so the hole holds on to it through a rebuild
     let key = qymcad_core::feature::FaceKey { index: fi as u32, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: face.id };
-    let at = hole_centre(key.centroid, key.normal, qymcad_ui_state::cmd_val(cmd, "off_u"), qymcad_ui_state::cmd_val(cmd, "off_v"));
+    let at = qymcad_doc::ops::FaceFrame { centre: key.centroid, normal: key.normal }
+        .point_at(qymcad_doc::ops::FaceOffset { u: qymcad_ui_state::cmd_val(cmd, "off_u"), v: qymcad_ui_state::cmd_val(cmd, "off_v") });
     let body = project.add_hole_at(
         src,
         key,
@@ -2258,7 +2259,7 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
     let (o, d) = qymcad_ui_state::screen_ray(pc.cam, rect, screen);
     let (lo, ld) = (qymcad_core::feature::apply12(&inv, o), qymcad_core::feature::apply12_dir(&inv, d));
     let Some(local) = qymcad_ui_state::ray_plane(lo, ld, c, n) else { return };
-    let (u, v) = hole_shifts(c, n, local);
+    let qymcad_doc::ops::FaceOffset { u, v } = qymcad_doc::ops::FaceFrame { centre: c, normal: n }.offset_of(local);
     // the same face clicked where the hole already stands (within 0.5 mm) lets it go; anywhere else on it moves the
     // hole there
     let here = (u - qymcad_ui_state::cmd_val(pc.cmd, "off_u")).hypot(v - qymcad_ui_state::cmd_val(pc.cmd, "off_v")) < 0.5;
@@ -2275,21 +2276,6 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
             p.txt = qymcad_i18n::num(p.val, 3);
         }
     }
-}
-
-/// How far `at` stands from the face centre `c` along the face's own two axes (those of a plane through `c` square to
-/// `n`).
-pub fn hole_shifts(c: [f64; 3], n: [f64; 3], at: [f64; 3]) -> (f64, f64) {
-    let f = qymcad_core::feature::PlaneFrame::from_origin_normal(c, n, 0.0);
-    let d = [at[0] - c[0], at[1] - c[1], at[2] - c[2]];
-    let dot = |a: [f64; 3]| a[0] * d[0] + a[1] * d[1] + a[2] * d[2];
-    (dot(f.x), dot(f.y))
-}
-
-/// The hole centre `u` and `v` off the face centre `c` along the face's own axes.
-pub fn hole_centre(c: [f64; 3], n: [f64; 3], u: f64, v: f64) -> [f64; 3] {
-    let f = qymcad_core::feature::PlaneFrame::from_origin_normal(c, n, 0.0);
-    [c[0] + f.x[0] * u + f.y[0] * v, c[1] + f.x[1] * u + f.y[1] * v, c[2] + f.x[2] * u + f.y[2] * v]
 }
 
 /// THE ROW OF A SKETCH CLICKED AGAIN, the sketch already selected: a sweep lets go of its path, a loft of that section,
@@ -2653,7 +2639,8 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     let hole_face: Option<(qymcad_core::feature::FaceKey, [f64; 3], [f64; 3])> = match *pc.sel {
         qymcad_ui_state::Sel::Face(mi, fi) => pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map(|face| {
             let k = qymcad_core::feature::FaceKey { index: fi as u32, centroid: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, id: face.id };
-            (k, hole_centre(k.centroid, k.normal, qymcad_ui_state::cmd_val(pc.cmd, "off_u"), qymcad_ui_state::cmd_val(pc.cmd, "off_v")), k.normal)
+            let off = qymcad_doc::ops::FaceOffset { u: qymcad_ui_state::cmd_val(pc.cmd, "off_u"), v: qymcad_ui_state::cmd_val(pc.cmd, "off_v") };
+            (k, qymcad_doc::ops::FaceFrame { centre: k.centroid, normal: k.normal }.point_at(off), k.normal)
         }),
         _ => None,
     };
@@ -3572,9 +3559,10 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-diameter", "diameter", diameter, 0.1, 10000.0), cmd_param_from(&*pc.project, fid, "f-depth", "depth", depth, 0.1, 10000.0)];
             // where it stands on its face, as the two shifts from the face centre the fields hold
             let (u, v) = match *pc.sel {
-                qymcad_ui_state::Sel::Face(mi, fi) if sketch == 0 => {
-                    pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map_or((0.0, 0.0), |f| hole_shifts([f.centroid.x, f.centroid.y, f.centroid.z], f.normal, point))
-                }
+                qymcad_ui_state::Sel::Face(mi, fi) if sketch == 0 => pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi)).map_or((0.0, 0.0), |f| {
+                    let off = qymcad_doc::ops::FaceFrame { centre: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal }.offset_of(point);
+                    (off.u, off.v)
+                }),
                 _ => (0.0, 0.0),
             };
             pc.cmd.params.push(cmd_param_from(&*pc.project, fid, "f-hole-u", "off_u", u, -100000.0, 100000.0));

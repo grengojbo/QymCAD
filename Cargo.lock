@@ -3305,6 +3305,7 @@ dependencies = [
  "egui 0.35.0",
  "egui-phosphor 0.11.0",
  "qymcad-core",
+ "qymcad-doc",
  "qymcad-i18n",
  "qymcad-kernel",
  "qymcad-meshfit",
