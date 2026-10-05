@@ -4,7 +4,7 @@
 //!
 //! THE DOOR IS ONE: the document is read freely and changed only through [`DocEngine::edit`]. A change made past it
 //! would leave no undo step and no rebuild, and the next reading would measure a document nobody built.
-use crate::{brep, export, history, import, regen};
+use crate::{brep, export, history, import, regen, report};
 use qymcad_core::feature::{FeatureKind, RegenReport};
 use qymcad_core::model::{Id, Project};
 use qymcad_kernel::Shape;
@@ -293,6 +293,11 @@ impl DocEngine {
     /// The live B-rep of `body`, when it is up.
     pub fn shape(&self, body: Id) -> Option<&Shape> {
         self.shapes.get(&body)
+    }
+
+    /// What the document holds, measured; `shown` is how a stored name reads to a person.
+    pub fn document(&self, shown: &dyn Fn(&str) -> String) -> report::Report {
+        report::report(&self.project, &self.shapes, shown)
     }
 
     /// What the last rebuild answered.

@@ -16,5 +16,6 @@ pub mod export;
 pub mod history;
 pub mod import;
 pub mod regen;
+pub mod report;
 
 pub use engine::{DocEngine, DocError, Exported, Imported};
