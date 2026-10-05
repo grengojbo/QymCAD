@@ -60,10 +60,10 @@ Requires Windows 10/11 x64.
 "@ | Set-Content -Encoding UTF8 "$out\README.txt"
 
 @"
-QymCAD - переносимая сборка для Windows (x64).
-Запуск: qymcad.exe (все нужные DLL лежат рядом - ничего ставить не надо).
-Требуется Windows 10/11 x64.
-"@ | Set-Content -Encoding UTF8 "$out\ПРОЧТИ.txt"
+QymCAD - переносна збірка для Windows (x64).
+Запуск: qymcad.exe (усі потрібні DLL лежать поруч - нічого встановлювати не треба).
+Потрібна Windows 10/11 x64.
+"@ | Set-Content -Encoding UTF8 "$out\ПРОЧИТАЙ.txt"
 
 $zip = "dist\$name-win64.zip"
 if (Test-Path $zip) { Remove-Item $zip }
