@@ -3276,7 +3276,9 @@ dependencies = [
 name = "qymcad-mcp"
 version = "0.1.0"
 dependencies = [
+ "qymcad-doc",
  "qymcad-i18n",
+ "serde",
  "serde_json",
 ]
 

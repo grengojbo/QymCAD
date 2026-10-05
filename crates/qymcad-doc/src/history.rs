@@ -202,6 +202,11 @@ impl History {
         self.open.take().map(|(_, before)| before)
     }
 
+    /// An action is open: begun and neither committed nor aborted.
+    pub fn is_open(&self) -> bool {
+        self.open.is_some()
+    }
+
     /// One step back from `now`: the step's name and the state to restore; `now` becomes the step redo puts again.
     /// Nothing while an action is open - it is closed first.
     #[must_use]

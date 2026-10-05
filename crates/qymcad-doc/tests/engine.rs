@@ -75,6 +75,30 @@ fn a_refused_action_leaves_no_trace_and_no_step() {
     assert_eq!(d.history().undo_names(), vec!["block"], "the refused action left a step behind");
 }
 
+/// A PANIC IN THE MIDDLE OF AN ACTION leaves it open; `recover` takes it back whole, and the next action is a step of
+/// its own rather than one nested in the broken action.
+#[test]
+fn an_action_a_panic_broke_is_taken_back() {
+    let mut d = DocEngine::blank();
+    let _ = d.edit("block", |p| Ok(block(p))).expect("the block is laid");
+    let before = (key_of(d.project()), volumes(&d));
+    let broke = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        d.edit("box", |p| -> Result<(), String> {
+            let _ = p.add_box(5.0, 5.0, 5.0);
+            panic!("a panic for the check")
+        })
+    }));
+    assert!(broke.is_err(), "the action did not panic");
+    assert!(d.history().is_open(), "the panic closed the action on its own - nothing for recover to do");
+    assert!(d.recover(), "recover found no open action");
+    assert!(!d.history().is_open(), "the action is still open after recover");
+    assert_eq!((key_of(d.project()), volumes(&d)), before, "the broken action left the document changed");
+    assert_eq!(d.history().undo_names(), vec!["block"], "the broken action left a step behind");
+    let _ = d.edit("box", |p| Ok(p.add_box(5.0, 5.0, 5.0))).expect("the next action is laid");
+    assert_eq!(d.history().undo_names(), vec!["block", "box"], "the next action did not stand as a step of its own");
+    assert!(!d.recover(), "recover took back an action that was not open");
+}
+
 #[test]
 fn a_node_laid_on_what_is_gone_is_not_laid() {
     let mut d = DocEngine::blank();

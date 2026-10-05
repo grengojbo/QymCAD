@@ -8,16 +8,21 @@ repository.workspace = true
 homepage.workspace = true
 description = "The document over the Model Context Protocol: a stdio server a language model drives the way a person drives the window"
 
+[lib]
+path = "src/lib.rs"
+
 [[bin]]
 name = "qymcad-mcp"
 path = "src/main.rs"
 
 [dependencies]
+qymcad-doc.workspace = true
 qymcad-i18n = { path = "../qymcad-i18n" }
 # THE PROTOCOL BY HAND, over this one crate: JSON-RPC 2.0 on stdin and stdout, one message per line. A protocol
 # SDK would bring an asynchronous runtime for a server that answers one request at a time on one thread - the
 # thread the interface language is bound to.
 serde_json = "1.0.151"
+serde = { workspace = true }
 
 [lints]
 workspace = true

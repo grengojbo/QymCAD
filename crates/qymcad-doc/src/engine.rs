@@ -257,6 +257,21 @@ impl DocEngine {
         Some(name)
     }
 
+    /// TAKE BACK AN ACTION A PANIC LEFT OPEN: the state before it is restored and rebuilt, and no step is left. A
+    /// caller that catches a panic out of [`DocEngine::edit`] calls this before the next action, which would otherwise
+    /// nest inside the broken one and be taken back with it. `false` when no action was open - then the panic struck
+    /// outside an action, and the document is whatever it reached.
+    pub fn recover(&mut self) -> bool {
+        let mut restored = false;
+        while self.history.is_open() {
+            if let Some(snap) = self.history.abort() {
+                self.put(snap);
+                restored = true;
+            }
+        }
+        restored
+    }
+
     /// BRING THE LIVE BODIES UP: the nodes whose bodies are shown from the file's mesh alone are rebuilt, nothing else.
     /// Derived work - the document does not change, and no step is made.
     pub fn ensure_brep(&mut self) {
