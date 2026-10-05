@@ -98,7 +98,9 @@ pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
         // catalogue key. Foreign text (the error number of OCCT itself) passes through as it stands —
         // `name` translates known keys only.
         E::Kernel(msg) => args.set("message", crate::name(msg)),
-        E::Expr(X::UnknownChar(w) | X::UnknownFn(w) | X::UnknownName(w) | X::NeedsOneArg(w) | X::NeedsTwoArgs(w) | X::UnexpectedToken(w) | X::TrailingInput(w)) => args.set("what", w.clone()),
+        E::Expr(X::UnknownChar(w) | X::UnknownFn(w) | X::UnknownName(w) | X::NeedsOneArg(w) | X::NeedsTwoArgs(w) | X::UnexpectedToken(w) | X::TrailingInput(w) | X::Cycle(w)) => {
+            args.set("what", w.clone())
+        }
         _ => {}
     }
     crate::tr_args(&e.key(), Some(&args))

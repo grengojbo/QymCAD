@@ -41,6 +41,7 @@ mod tests {
                 ExprError::NotANumber,
                 ExprError::UnexpectedEnd,
                 ExprError::UnknownName("w".into()),
+                ExprError::Cycle("h".into()),
             ] {
                 let msg = crate::gui::error_words::expr_error_text(&e);
                 assert!(!msg.trim().is_empty(), "{code}: {e:?} — an empty message");
@@ -84,6 +85,30 @@ mod tests {
         crate::i18n::set_language(&prev);
         assert!(texts.iter().any(|t| t.contains(&want)), "the parameters window carries no reason \"{want}\": {texts:?}");
         assert!(!texts.iter().any(|t| t.trim() == "(!)"), "the wordless red bracket is back");
+    }
+
+    /// A FORMULA THAT READS ITS OWN NAME is shown as a reason, not as a number.
+    ///
+    /// The value cell evaluates the text of the field against the current values, so `h = h * 2` with `h` at 10
+    /// read "20.000" there while the document had no value for `h` at all.
+    #[test]
+    fn the_params_window_names_a_parameter_that_reads_itself() {
+        let prev = crate::i18n::language();
+        crate::i18n::set_language("en");
+        let mut app = App::default();
+        app.project.parameters = vec![qymcad_core::model::Param { name: "h".into(), expr: "h * 2".into(), value: 10.0 }];
+        app.project.eval_parameters();
+        app.win.open(WinKind::Params);
+        let texts = super::super::screen_keys::tests::frame_text(&mut app, |a, c| {
+            let mut asks = Vec::new();
+            crate::gui::panels_windows::params_window(&mut a.win_ctx(&mut asks), c);
+            a.do_win_asks(asks, c);
+        });
+        let want = crate::gui::error_words::expr_error_text(&ExprError::Cycle("h".into()));
+        crate::i18n::set_language(&prev);
+        assert!(texts.iter().any(|t| t.contains(&want)), "the parameters window does not say that h reads itself \"{want}\": {texts:?}");
+        assert!(!texts.iter().any(|t| t.trim() == "20.000"), "the cell shows a number computed from the previous value: {texts:?}");
+        assert_eq!(app.project.parameters[0].value, 10.0, "the value stays as it was");
     }
 
     /// AND FOR A FEATURE DIMENSION TOO — THAT WAS THE LAST SILENT DOOR.

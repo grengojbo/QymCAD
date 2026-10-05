@@ -631,7 +631,10 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
 
                 // THE VALUE IS COMPUTED FROM WHAT IS IN THE FIELD RIGHT NOW rather than from what was recorded: the
                 // answer is visible while typing, and it costs the document nothing.
-                match wc.project.eval_expr(&r.text) {
+                // `eval_param_expr` rather than `eval_expr`: the field holds the formula of THIS parameter, and a
+                // formula that reads its own name back has no value - evaluated against the current values, `h *
+                // 2` showed 20 here while the document had no number for `h` at all.
+                match wc.project.eval_param_expr(&own, &r.text) {
                     Ok(v) => {
                         ui.label(format!("{v:.3}"));
                     }

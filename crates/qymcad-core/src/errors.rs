@@ -204,6 +204,12 @@ pub enum ExprError {
     TrailingInput(String),
     /// the result is not a number, from a division by zero or similar
     NotANumber,
+    /// The formula of the named parameter reads that parameter back, directly (`h = h * 2`) or through other
+    /// parameters (`a = b + 1`, `b = a`).
+    ///
+    /// Such a formula has no value. Evaluated to a fixed point from the previous value it drifts instead: `h = h
+    /// * 2` from 10 settled on 5120 after eight passes, and nothing said why.
+    Cycle(String),
 }
 
 /// A kernel error: a fact rather than a phrase, with the words supplied by the application.
@@ -517,6 +523,7 @@ impl ExprError {
             UnexpectedEnd => "error-expr-unexpected-end",
             TrailingInput(_) => "error-expr-trailing-input",
             NotANumber => "error-expr-not-a-number",
+            Cycle(_) => "error-expr-cycle",
         }
     }
 }
@@ -589,6 +596,7 @@ impl std::fmt::Display for ExprError {
             ExpectedParen => write!(f, "expected ')'"),
             ExpectedParenAfterArgs => write!(f, "expected ')' after arguments"),
             NotANumber => write!(f, "result is not a number"),
+            Cycle(n) => write!(f, "{n} refers to itself"),
         }
     }
 }

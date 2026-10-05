@@ -203,6 +203,7 @@ error-expr-unexpected-token = Unexpected token { $what }
 error-expr-unexpected-end = the expression ends too early: a number or a name was expected
 error-expr-trailing-input = Trailing input at «{ $what }»
 error-expr-not-a-number = The result is not a number (division by zero?)
+error-expr-cycle = the formula comes back to { $what }, directly or through other parameters: remove the name from the formula or break the chain
 
 ## A message from the kernel itself — passed through untranslated: it is diagnostics, not prose.
 

@@ -483,7 +483,8 @@ impl Default for DatumAxis {
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Param {
     pub name: String,
-    /// The expression (`50`, `w/2`, `2*pi*r`). Empty or unparsable leaves `value` untouched.
+    /// The expression (`50`, `w/2`, `2*pi*r`). Empty, unparsable or reading its own name back leaves `value`
+    /// untouched.
     pub expr: String,
     /// Last evaluated value (a cache for the solver and the interface).
     pub value: f64,
@@ -2303,11 +2304,15 @@ impl Project {
                 vars.insert(p.name.to_lowercase(), p.value); // seed with the previous value
             }
         }
+        // A PARAMETER IN A CYCLE TAKES NO PART IN THE FIXED POINT. Seeded with its previous value, `h = h * 2`
+        // doubled on every pass and settled on 5120 from 10 after eight; `a = b + 1`, `b = a` grew by one per
+        // pass. It keeps its value, as an unparsable formula does, and is reported below.
+        let cyclic: std::collections::HashSet<String> = self.parameters.iter().filter(|p| !p.name.is_empty() && self.param_reads_itself(&p.name, &p.expr)).map(|p| p.name.to_lowercase()).collect();
         // Fixed point over the dependencies (up to eight passes).
         for _ in 0..8 {
             let mut changed = false;
             for p in &self.parameters {
-                if p.name.is_empty() || p.expr.trim().is_empty() {
+                if p.name.is_empty() || p.expr.trim().is_empty() || cyclic.contains(&p.name.to_lowercase()) {
                     continue;
                 }
                 if let Ok(v) = eval(&p.expr, &vars) {
@@ -2328,6 +2333,10 @@ impl Project {
                 continue;
             }
             if p.expr.trim().is_empty() {
+                continue;
+            }
+            if cyclic.contains(&p.name.to_lowercase()) {
+                errs.push((p.name.clone(), crate::errors::ExprError::Cycle(p.name.clone())));
                 continue;
             }
             match eval(&p.expr, &vars) {
@@ -2376,6 +2385,39 @@ impl Project {
         // Going through `param_map` exposes both the global parameters and the named driving dimensions of
         // a skeleton sketch.
         crate::expr::eval(src, &self.param_map())
+    }
+
+    /// Evaluate `src` as the formula of the global parameter `name`: as [`Self::eval_expr`], except that a
+    /// formula that comes back to `name` is [`ExprError::Cycle`](crate::errors::ExprError::Cycle) rather than a
+    /// number computed from the value `name` had before.
+    pub fn eval_param_expr(&self, name: &str, src: &str) -> Result<f64, crate::errors::ExprError> {
+        if self.param_reads_itself(name, src) {
+            return Err(crate::errors::ExprError::Cycle(name.to_string()));
+        }
+        self.eval_expr(src)
+    }
+
+    /// Whether the formula `src`, written for the global parameter `name`, reads `name` back: directly, or
+    /// through the formulas of the global parameters it names. Names are case-insensitive.
+    pub fn param_reads_itself(&self, name: &str, src: &str) -> bool {
+        let target = name.to_lowercase();
+        if target.is_empty() {
+            return false;
+        }
+        let mut seen = std::collections::HashSet::new();
+        let mut todo = vec![src.to_lowercase()];
+        while let Some(e) = todo.pop() {
+            if crate::expr::mentions(&e, &target) {
+                return true;
+            }
+            for q in &self.parameters {
+                let k = q.name.to_lowercase();
+                if !k.is_empty() && crate::expr::mentions(&e, &k) && seen.insert(k) {
+                    todo.push(q.expr.to_lowercase());
+                }
+            }
+        }
+        false
     }
 
     pub fn solve_sketch(&mut self, si: usize) -> f64 {
