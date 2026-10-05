@@ -1420,13 +1420,6 @@ impl Session {
             .map(|(i, b)| {
                 let m = &b.mesh;
                 let shape = app.live.shapes.get(&b.id);
-                let area = (0..m.tris.len())
-                    .map(|ti| {
-                        let t = m.triangle(ti);
-                        let (u, v) = ([t[1].x - t[0].x, t[1].y - t[0].y, t[1].z - t[0].z], [t[2].x - t[0].x, t[2].y - t[0].y, t[2].z - t[0].z]);
-                        0.5 * ((u[1] * v[2] - u[2] * v[1]).powi(2) + (u[2] * v[0] - u[0] * v[2]).powi(2) + (u[0] * v[1] - u[1] * v[0]).powi(2)).sqrt()
-                    })
-                    .sum();
                 let bounds = m.bounds();
                 Solid {
                     name: named(&b.name),
@@ -1434,7 +1427,7 @@ impl Session {
                     part_key: p.body_owner(b.id),
                     colour: p.mesh_color(i),
                     volume: shape.map(|s| s.volume()).unwrap_or_else(|| m.volume()),
-                    area,
+                    area: qymcad_doc::report::mesh_area(m),
                     faces: b.faces.len(),
                     face_names: b.faces.iter().map(|f| f.id).collect(),
                     face_centres: b.faces.iter().map(|f| [f.centroid.x, f.centroid.y, f.centroid.z]).collect(),

@@ -27,5 +27,11 @@ qymcad-i18n = { path = "../qymcad-i18n" }
 serde_json = "1.0.151"
 serde = { workspace = true }
 
+[dev-dependencies]
+# THE WINDOW, FOR THE CHECKS ONLY: a document the server wrote is opened the way a person opens it, and the two
+# accounts of it are held together. The program itself stays without a window.
+qymcad = { path = "../qymcad" }
+qymcad-acceptance = { path = "../qymcad-acceptance" }
+
 [lints]
 workspace = true
