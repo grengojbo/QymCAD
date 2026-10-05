@@ -16,6 +16,7 @@ name = "qymcad-mcp"
 path = "src/main.rs"
 
 [dependencies]
+qymcad-core.workspace = true
 qymcad-doc.workspace = true
 qymcad-i18n = { path = "../qymcad-i18n" }
 # THE PROTOCOL BY HAND, over this one crate: JSON-RPC 2.0 on stdin and stdout, one message per line. A protocol

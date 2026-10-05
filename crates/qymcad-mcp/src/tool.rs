@@ -6,19 +6,20 @@
 //! A refusal is an answer, not a fault of the protocol: the model reads `ok: false` with its code and tries again,
 //! where a JSON-RPC error would read as a broken server.
 
-use qymcad_doc::DocEngine;
+use qymcad_doc::{DocEngine, DocError};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Map, Value};
 
-/// What a tool works on: the one document the server keeps.
+/// What a tool works on: the one document the server keeps, and the file it was opened from or last saved to.
 pub struct Ctx {
     pub doc: DocEngine,
+    pub path: Option<String>,
 }
 
 impl Ctx {
-    /// A new empty document, as the window starts.
+    /// A new document with one part, as the window starts.
     pub fn blank() -> Self {
-        Ctx { doc: DocEngine::blank() }
+        Ctx { doc: DocEngine::blank(), path: None }
     }
 }
 
@@ -40,6 +41,10 @@ pub enum Stage {
     Validate,
     /// The history has no step to take.
     History,
+    /// A file could not be read or written, or is not the kind the tool takes.
+    Io,
+    /// The action laid a node on what the document no longer holds.
+    Resolve,
     /// The work itself broke: the kernel refused or the program panicked.
     Kernel,
 }
@@ -49,6 +54,8 @@ impl Stage {
         match self {
             Stage::Validate => "validate",
             Stage::History => "history",
+            Stage::Io => "io",
+            Stage::Resolve => "resolve",
             Stage::Kernel => "kernel",
         }
     }
@@ -74,6 +81,23 @@ impl Refusal {
     }
 }
 
+/// A REFUSAL OF THE DOCUMENT, in the words of the catalogue: its code is the head of what the document said, up to
+/// the argument after `#`, and its message is that in English.
+pub fn doc_refusal(e: DocError) -> Refusal {
+    let coded = |stored: &str, stage: Stage| {
+        let head = stored.split('#').next().unwrap_or(stored);
+        let code = if head.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-') { head } else { "refused" };
+        Refusal::new(code, &qymcad_i18n::name(stored), stage)
+    };
+    match e {
+        DocError::File(stored) => coded(&stored, Stage::Io),
+        DocError::Refused(stored) => coded(&stored, Stage::Kernel),
+        DocError::Gone(nodes) => {
+            Refusal::new("inputs-gone", &format!("The action would stand on what the document no longer holds: nodes {nodes:?}."), Stage::Resolve).with_hint("Read get_document for what is there now.")
+        }
+    }
+}
+
 /// READ THE ARGUMENTS into the tool's record. A field the record does not know, a field missing, a value of the wrong
 /// kind - each is refused here, before the document is touched. No arguments at all read as an empty object.
 pub fn args<T: DeserializeOwned>(arguments: Value) -> Result<T, Refusal> {
@@ -82,7 +106,14 @@ pub fn args<T: DeserializeOwned>(arguments: Value) -> Result<T, Refusal> {
 }
 
 /// THE TOOLS, in the order `tools/list` gives them.
-pub const ALL: &[Tool] = &[crate::tools::history::UNDO, crate::tools::history::REDO];
+pub const ALL: &[Tool] = &[
+    crate::tools::doc::NEW_PROJECT,
+    crate::tools::doc::OPEN_PROJECT,
+    crate::tools::doc::SAVE_PROJECT,
+    crate::tools::doc::GET_DOCUMENT,
+    crate::tools::history::UNDO,
+    crate::tools::history::REDO,
+];
 
 pub fn find(name: &str) -> Option<&'static Tool> {
     ALL.iter().find(|t| t.name == name)
