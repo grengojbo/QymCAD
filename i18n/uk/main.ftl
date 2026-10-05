@@ -2144,6 +2144,7 @@ status-delete-feature = Видалення операції
 status-delete-joint = Видалення з'єднання
 status-delete-component = Видалення компонента
 status-new-sketch = Новий ескіз
+status-new-part = Нова деталь
 status-delete-sketch = Видалення ескізу
 sketch-deleted = Ескіз видалено
 del-feature = операцію

@@ -290,6 +290,16 @@ impl DocEngine {
         &self.project
     }
 
+    /// STEP INTO A PART: what comes next is laid in it. Where a person works is not a change of the document - the
+    /// window steps into a part with no step of undo - so this takes none either. `false` when `part` is no part.
+    pub fn set_active_part(&mut self, part: Id) -> bool {
+        if !self.project.component_is_part(part) {
+            return false;
+        }
+        self.project.set_active_component(Some(part));
+        true
+    }
+
     /// The live B-rep of `body`, when it is up.
     pub fn shape(&self, body: Id) -> Option<&Shape> {
         self.shapes.get(&body)

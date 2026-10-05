@@ -2152,6 +2152,7 @@ status-delete-feature = Deleting the operation
 status-delete-joint = Deleting a joint
 status-delete-component = Deleting a component
 status-new-sketch = New sketch
+status-new-part = New part
 status-delete-sketch = Deleting the sketch
 sketch-deleted = The sketch is deleted
 del-feature = the feature
