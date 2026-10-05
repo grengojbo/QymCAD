@@ -38,7 +38,13 @@ pub fn serve(mut input: impl BufRead, mut output: impl Write) -> std::io::Result
 }
 
 /// The reply to one line, or nothing when the line is owed none.
+///
+/// EVERY REPLY IS ENGLISH. The language is bound to the thread, and left alone it follows the system locale: on a
+/// machine set to Ukrainian a refusal came back in Ukrainian once Ukrainian joined the catalogue. The reader is a
+/// model, and one language keeps its replies alike from one machine to the next, so it is set here, on whatever thread
+/// asks, rather than once at the start of the program.
 pub fn answer(ctx: &mut Ctx, line: &str) -> Option<Value> {
+    qymcad_i18n::set_language("en");
     match rpc::parse(line) {
         Incoming::Request { id, method, params } => Some(request(ctx, &id, &method, params)),
         Incoming::Notification { method } => {
