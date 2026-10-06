@@ -7,6 +7,7 @@
 //! came 0.03 % apart.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use crate::gui::import_door::tests::{answer, cube_stl, frame, key, running, settle};
     use crate::gui::App;
     use qymcad_ui_state::Want;
@@ -22,21 +23,20 @@ mod tests {
         Rewritten,
     }
 
-    /// The file the cube of `check` is written to, one per check.
-    fn cube_file(check: Check) -> std::path::PathBuf {
-        let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/import-door"));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        dir.join(match check {
-            Check::Scene => "sharp-scene.stl",
-            Check::Raster => "sharp-raster.stl",
-            Check::Read => "sharp-read.stl",
-            Check::Rewritten => "sharp-rewritten.stl",
+    /// The folder the cube of `check` is written to, one per check and run; the cube is `sharp.stl` in it.
+    fn cube_folder(check: Check) -> CheckFolder {
+        CheckFolder::new(match check {
+            Check::Scene => "sharp-scene",
+            Check::Raster => "sharp-raster",
+            Check::Read => "sharp-read",
+            Check::Rewritten => "sharp-rewritten",
         })
     }
 
     /// A cube from a text STL through the door, seen in 3D: its corners welded, every one shared by three faces.
     fn the_cube(check: Check) -> App {
-        let p = cube_file(check);
+        let folder = cube_folder(check);
+        let p = folder.file("sharp.stl");
         std::fs::write(&p, cube_stl(10.0)).expect("written");
         let (mut app, ctx) = running();
         answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
@@ -81,13 +81,14 @@ mod tests {
     /// the 20 cubes came in with no vertex at all, in each of 10 runs.
     #[test]
     fn a_cube_comes_in_whole_while_another_check_writes_its_file() {
+        let theirs = cube_folder(Check::Rewritten);
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let other = {
             let stop = stop.clone();
-            let p = cube_file(Check::Rewritten);
+            let p = theirs.file("sharp.stl");
             std::thread::spawn(move || {
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    std::fs::write(&p, cube_stl(10.0)).expect("written");
+                    let _ = std::fs::write(&p, cube_stl(10.0));
                 }
             })
         };

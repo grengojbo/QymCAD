@@ -6,14 +6,14 @@
 #[cfg(test)]
 mod tests {
     use crate::gui::a_component_stepped_into_is_not_lit::tests::calm;
+    use crate::gui::check_folder::tests::CheckFolder;
     use crate::gui::import_door::tests::{answer, frame, key, running, settle};
     use qymcad_ui_state::Want;
 
     #[test]
     fn a_coloured_ply_comes_in_coloured() {
-        let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/ply-probe"));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let path = dir.join("squares.ply");
+        let folder = CheckFolder::new("coloured-ply");
+        let path = folder.file("squares.ply");
         let mut text = String::from("ply\nformat ascii 1.0\nelement vertex 8\nproperty float x\nproperty float y\nproperty float z\nelement face 3\nproperty uchar red\nproperty uchar green\nproperty uchar blue\nproperty uchar alpha\nproperty list uchar int vertex_indices\nend_header\n");
         for j in 0..2 {
             for i in 0..4 {

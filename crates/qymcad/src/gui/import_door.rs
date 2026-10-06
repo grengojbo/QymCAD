@@ -131,6 +131,7 @@ pub(crate) fn import_answer(want: Want) -> impl FnOnce(&mut App, PathBuf) + 'sta
 #[cfg(test)]
 pub(crate) mod tests {
     use super::{import_answer, import_filters};
+    use crate::gui::check_folder::tests::CheckFolder;
     use crate::gui::App;
     use qymcad_io::Format;
     use qymcad_ui_state::Want;
@@ -297,9 +298,8 @@ pub(crate) mod tests {
     /// SOLIDS AND A MESH ARE READ IN THE BACKGROUND, each by its own reader.
     #[test]
     fn a_solid_and_a_mesh_are_read_in_the_background() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let stl = dir.join("tetra.stl");
+        let folder = CheckFolder::new("import-door-in-the-background");
+        let stl = folder.file("tetra.stl");
         std::fs::write(
             &stl,
             "solid t\nfacet normal 0 0 -1\nouter loop\nvertex 0 0 0\nvertex 0 10 0\nvertex 10 0 0\nendloop\nendfacet\n\
@@ -308,26 +308,26 @@ pub(crate) mod tests {
              facet normal 1 1 1\nouter loop\nvertex 10 0 0\nvertex 0 10 0\nvertex 0 0 10\nendloop\nendfacet\nendsolid t\n",
         )
         .expect("the mesh is written");
-        let igs = dir.join("cube.igs");
+        let igs = folder.file("cube.igs");
         let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
         qymcad_kernel::write_iges(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], &igs.to_string_lossy(), qymcad_kernel::LengthUnit::Millimetre).expect("the IGES is written");
         // the STEP is written here too, like every other format of this check: a file brought from elsewhere is not in
         // every tree the check runs in
-        let step = dir.join("cube.step");
+        let step = folder.file("cube.step");
         qymcad_kernel::write_step(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], &step.to_string_lossy()).expect("the STEP is written");
-        let obj = dir.join("two-cubes.obj");
+        let obj = folder.file("two-cubes.obj");
         let cube = |at: f64| qymcad_core::geom::Mesh {
             verts: [[0.0, 0.0, 0.0], [10.0, 0.0, 0.0], [0.0, 10.0, 0.0], [0.0, 0.0, 10.0]].iter().map(|p| qymcad_core::geom::Point3::new(p[0] + at, p[1], p[2])).collect(),
             tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]],
         };
         qymcad_io::export_obj(&[cube(0.0), cube(30.0)], &obj.to_string_lossy()).expect("the OBJ is written");
-        let ply = dir.join("tetra.ply");
+        let ply = folder.file("tetra.ply");
         qymcad_io::export_ply(&[cube(0.0)], &ply.to_string_lossy()).expect("the PLY is written");
-        let glb = dir.join("two-cubes.glb");
+        let glb = folder.file("two-cubes.glb");
         qymcad_io::export_glb(&[cube(0.0), cube(30.0)], &glb.to_string_lossy()).expect("the GLB is written");
-        let three = dir.join("two-cubes.3mf");
+        let three = folder.file("two-cubes.3mf");
         qymcad_io::export_3mf(&[cube(0.0), cube(30.0)], &three.to_string_lossy()).expect("the 3MF is written");
-        let amf = dir.join("two-cubes.amf");
+        let amf = folder.file("two-cubes.amf");
         qymcad_io::export_amf(&[cube(0.0), cube(30.0)], &amf.to_string_lossy()).expect("the AMF is written");
         for (path, says) in [
             (step.to_string_lossy().into_owned(), "STEP"),
@@ -390,9 +390,8 @@ pub(crate) mod tests {
     /// Reported behaviour: such a file did not open at all, and the status line showed the kernel's code.
     #[test]
     fn an_iges_drawing_comes_in_as_a_sketch() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join("drawing.igs");
+        let folder = CheckFolder::new("import-door-iges-drawing");
+        let p = folder.file("drawing.igs");
         std::fs::write(&p, iges_line()).expect("written");
         let (mut app, ctx) = running();
         answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
@@ -404,9 +403,8 @@ pub(crate) mod tests {
     /// A FILE THE KERNEL CANNOT READ IS ANSWERED IN WORDS, not with the kernel's code.
     #[test]
     fn a_file_the_kernel_cannot_read_is_answered_in_words() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join("broken.stp");
+        let folder = CheckFolder::new("import-door-broken");
+        let p = folder.file("broken.stp");
         std::fs::write(&p, "this is not STEP\n").expect("written");
         let (mut app, ctx) = running();
         answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
@@ -436,9 +434,8 @@ pub(crate) mod tests {
     ///   dropped on the way into the document.
     #[test]
     fn a_mesh_comes_in_where_the_file_puts_it_under_its_name() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join("bracket.3mf");
+        let folder = CheckFolder::new("import-door-where-the-file-puts-it");
+        let p = folder.file("bracket.3mf");
         let v = |x: f64, y: f64, z: f64| qymcad_core::geom::Point3::new(x, y, z);
         let lifted = qymcad_core::geom::Mesh { verts: vec![v(0.0, 0.0, 50.0), v(10.0, 0.0, 50.0), v(0.0, 10.0, 50.0), v(0.0, 0.0, 60.0)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] };
         qymcad_io::export_3mf(&[lifted], &p.to_string_lossy()).expect("written");
@@ -458,13 +455,12 @@ pub(crate) mod tests {
     /// every part the way its STEP does.
     #[test]
     fn a_mesh_comes_in_in_the_colours_of_its_file() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        std::fs::write(dir.join("coloured.mtl"), "newmtl dark\nKd 0.149 0.149 0.165\nnewmtl red\nKd 0.8 0.1 0.1\n").expect("written");
+        let folder = CheckFolder::new("import-door-colours");
+        std::fs::write(folder.file("coloured.mtl"), "newmtl dark\nKd 0.149 0.149 0.165\nnewmtl red\nKd 0.8 0.1 0.1\n").expect("written");
         let tetra = |at: f64| format!("v {at} 0 0\nv {} 0 0\nv {at} 10 0\nv {at} 0 10\n", at + 10.0);
         let faces = |k: usize| [[1, 3, 2], [1, 2, 4], [1, 4, 3], [2, 3, 4]].iter().map(|f| format!("f {} {} {}\n", f[0] + k, f[1] + k, f[2] + k)).collect::<String>();
         let obj = format!("mtllib coloured.mtl\n{}{}o bolt\nusemtl dark\n{}o plate\nusemtl red\n{}", tetra(0.0), tetra(20.0), faces(0), faces(4));
-        let p = dir.join("coloured.obj");
+        let p = folder.file("coloured.obj");
         std::fs::write(&p, obj).expect("written");
         let (mut app, ctx) = running();
         let before = app.project.bodies.len();
@@ -478,11 +474,10 @@ pub(crate) mod tests {
     /// piece's own name - not bodies with no part, seen only at the top. One piece is one part, named after its file.
     #[test]
     fn a_mesh_lands_as_parts_under_its_file() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
+        let folder = CheckFolder::new("import-door-parts");
         let tetra = |at: f64| format!("v {at} 0 0\nv {} 0 0\nv {at} 10 0\nv {at} 0 10\n", at + 10.0);
         let faces = |k: usize| [[1, 3, 2], [1, 2, 4], [1, 4, 3], [2, 3, 4]].iter().map(|f| format!("f {} {} {}\n", f[0] + k, f[1] + k, f[2] + k)).collect::<String>();
-        let pair = dir.join("pair.obj");
+        let pair = folder.file("pair.obj");
         std::fs::write(&pair, format!("{}{}o bolt\n{}o plate\n{}", tetra(0.0), tetra(20.0), faces(0), faces(4))).expect("written");
         let (mut app, ctx) = running();
         let steps = app.disk.edits.undo.len();
@@ -507,7 +502,7 @@ pub(crate) mod tests {
         assert!(app.project.timeline.iter().all(|n| !n.dirty), "a mesh piece is left waiting for a rebuild");
         assert!(app.regen.busy.is_none(), "a rebuild of nothing is running after a mesh came in: {}", app.status);
 
-        let single = dir.join("lone.stl");
+        let single = folder.file("lone.stl");
         std::fs::write(&single, cube_stl(10.0)).expect("written");
         let (mut app, ctx) = running();
         answer(&mut app, &ctx, Want::Anything, &single.to_string_lossy());
@@ -523,11 +518,9 @@ pub(crate) mod tests {
         assert_eq!((lone.kind, app.project.component_bodies(lone.id).len()), (qymcad_core::feature::ComponentKind::Part, 1), "one piece is one part");
     }
 
-    /// The folder the scale checks write their files into, under `target`.
-    fn scale_file(name: &str) -> String {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-scale", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        dir.join(name).to_string_lossy().into_owned()
+    /// The file `name` of a scale check, in the check's own folder.
+    fn scale_file(folder: &CheckFolder, name: &str) -> String {
+        folder.file(name).to_string_lossy().into_owned()
     }
 
     pub(crate) fn key(k: egui::Key) -> Vec<egui::Event> {
@@ -586,7 +579,8 @@ pub(crate) mod tests {
     /// with no one asked.
     #[test]
     fn a_file_without_units_asks_what_it_is_drawn_in() {
-        let p = scale_file("unit-cube.stl");
+        let folder = CheckFolder::new("import-scale-unit-cube");
+        let p = scale_file(&folder, "unit-cube.stl");
         std::fs::write(&p, cube_stl(1.0)).expect("written");
         let (mut app, ctx) = running();
         let (before, steps) = (app.project.bodies.len(), app.disk.edits.undo.len());
@@ -605,7 +599,8 @@ pub(crate) mod tests {
     /// ESC LEAVES NOTHING IMPORTED: no body, no step of undo, and the status line says so.
     #[test]
     fn escape_leaves_nothing_imported() {
-        let p = scale_file("unit-cube-esc.stl");
+        let folder = CheckFolder::new("import-scale-unit-cube-esc");
+        let p = scale_file(&folder, "unit-cube-esc.stl");
         std::fs::write(&p, cube_stl(1.0)).expect("written");
         let (mut app, ctx) = running();
         let (before, steps) = (app.project.bodies.len(), app.disk.edits.undo.len());
@@ -621,7 +616,8 @@ pub(crate) mod tests {
     /// A FILE THAT NAMES ITS UNIT AND COMES IN AT A SENSIBLE SIZE LANDS WITHOUT A QUESTION.
     #[test]
     fn a_file_with_its_unit_and_a_sensible_size_lands_without_asking() {
-        let p = scale_file("ten.3mf");
+        let folder = CheckFolder::new("import-scale-ten");
+        let p = scale_file(&folder, "ten.3mf");
         let v = |x: f64, y: f64, z: f64| qymcad_core::geom::Point3::new(x, y, z);
         let tet = qymcad_core::geom::Mesh { verts: vec![v(0.0, 0.0, 0.0), v(10.0, 0.0, 0.0), v(0.0, 10.0, 0.0), v(0.0, 0.0, 10.0)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] };
         qymcad_io::export_3mf(&[tet], &p).expect("written");
@@ -641,7 +637,8 @@ pub(crate) mod tests {
     /// document builds the solid at the same size.
     #[test]
     fn a_file_that_lies_about_its_unit_is_scaled_and_keeps_its_scale() {
-        let p = scale_file("half-mm.step");
+        let folder = CheckFolder::new("import-scale-half-mm");
+        let p = scale_file(&folder, "half-mm.step");
         let s = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 0.5], 0.5).expect("a cube");
         qymcad_kernel::write_step(&[(&s, qymcad_core::feature::PLACE_IDENTITY)], &p).expect("written");
         let (mut app, ctx) = running();
@@ -669,8 +666,8 @@ pub(crate) mod tests {
     }
 
     /// A tetrahedron with legs of `side`, as a 3MF in millimetres by its own word.
-    fn tet_3mf(name: &str, side: f64) -> String {
-        let p = scale_file(name);
+    fn tet_3mf(folder: &CheckFolder, name: &str, side: f64) -> String {
+        let p = scale_file(folder, name);
         let v = |x: f64, y: f64, z: f64| qymcad_core::geom::Point3::new(x * side, y * side, z * side);
         let tet = qymcad_core::geom::Mesh { verts: vec![v(0.0, 0.0, 0.0), v(1.0, 0.0, 0.0), v(0.0, 1.0, 0.0), v(0.0, 0.0, 1.0)], tris: vec![[0, 2, 1], [0, 1, 3], [0, 3, 2], [1, 2, 3]] };
         qymcad_io::export_3mf(&[tet], &p).expect("written");
@@ -686,7 +683,8 @@ pub(crate) mod tests {
     #[test]
     fn the_view_takes_in_a_model_of_any_size_and_zooms_on_from_there() {
         for (name, side) in [("forty-metres.3mf", 40_000.0), ("tenth-of-a-mm.3mf", 0.1)] {
-            let p = tet_3mf(name, side);
+            let folder = CheckFolder::new(&format!("import-scale-{name}"));
+            let p = tet_3mf(&folder, name, side);
             let (mut app, ctx) = running();
             crate::gui::hand::Hand::new(&mut app); // the 3D view, as a person works in it
             let _ = read_and_look(&mut app, &ctx, &p);
@@ -715,7 +713,8 @@ pub(crate) mod tests {
     /// no node - so it stayed in front of the very geometry it promises never to stand in front of.
     #[test]
     fn a_mesh_imported_into_a_blank_document_sends_the_start_screen_away() {
-        let p = scale_file("start-screen.stl");
+        let folder = CheckFolder::new("import-scale-start-screen");
+        let p = scale_file(&folder, "start-screen.stl");
         std::fs::write(&p, cube_stl(10.0)).expect("written");
         let (mut app, ctx) = running();
         let title = crate::i18n::tr("start-title");
@@ -801,9 +800,8 @@ pub(crate) mod tests {
     /// rebuild, it started one of nothing, as a mesh piece that came in dirty once did.
     #[test]
     fn a_mesh_part_brought_back_by_undo_is_not_rebuilt() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join("undeleted.stl");
+        let folder = CheckFolder::new("import-door-undo");
+        let p = folder.file("undeleted.stl");
         std::fs::write(&p, cube_stl(10.0)).expect("written");
         let (mut app, ctx) = running();
         answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
@@ -827,9 +825,8 @@ pub(crate) mod tests {
 
     /// A cube of 10 mm from STL through the door, kept at the file's numbers; returns its body.
     fn stl_cube(app: &mut App, ctx: &egui::Context, name: &str) -> qymcad_core::model::Id {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join(name);
+        let folder = CheckFolder::new(&format!("import-door-stl-cube-{name}"));
+        let p = folder.file(name);
         std::fs::write(&p, cube_stl(10.0)).expect("written");
         answer(app, ctx, Want::Anything, &p.to_string_lossy());
         settle(app, ctx);
@@ -921,7 +918,8 @@ pub(crate) mod tests {
     /// solid as well; asked once more, Enter keeps it at 100 mm, and the document builds it at that size on opening.
     #[test]
     fn a_solid_is_asked_about_again_from_its_node() {
-        let p = scale_file("again.step");
+        let folder = CheckFolder::new("import-scale-again");
+        let p = scale_file(&folder, "again.step");
         let s = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
         qymcad_kernel::write_step(&[(&s, qymcad_core::feature::PLACE_IDENTITY)], &p).expect("written");
         let (mut app, ctx) = running();
@@ -1468,9 +1466,8 @@ pub(crate) mod tests {
     fn an_open_box_recognised(stem: &str) -> (App, egui::Context) {
         use crate::gui::a_component_stepped_into_is_not_lit::tests::{calm, double_click_at};
         let (mut app, ctx) = running();
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join(format!("{stem}.stl"));
+        let folder = CheckFolder::new(&format!("import-door-open-box-{stem}"));
+        let p = folder.file(&format!("{stem}.stl"));
         let closed = cube_stl(10.0);
         // the two triangles of the top (corners 4 to 7 all stand at z = 10) are left out
         let chunks: Vec<&str> = closed.split("facet normal").collect();
@@ -1538,9 +1535,8 @@ pub(crate) mod tests {
     #[test]
     fn a_drawing_says_what_it_did_not_read() {
         let (mut app, ctx) = running();
-        let dir = std::path::PathBuf::from(format!("{}/../../target/import-door", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join("with-text.dxf");
+        let folder = CheckFolder::new("import-door-not-read");
+        let p = folder.file("with-text.dxf");
         std::fs::write(
             &p,
             "0\nSECTION\n2\nENTITIES\n0\nLINE\n8\n0\n10\n0.0\n20\n0.0\n30\n0.0\n11\n10.0\n21\n0.0\n31\n0.0\n0\nTEXT\n8\n0\n10\n0.0\n20\n0.0\n30\n0.0\n40\n2.5\n1\nnote\n0\nENDSEC\n0\nEOF\n",

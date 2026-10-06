@@ -4,14 +4,14 @@
 //! was read as STEP whatever it was, and an IGES part opened with a mesh and no live body.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use qymcad_core::feature::PLACE_IDENTITY;
     use qymcad_core::model::Project;
 
     #[test]
     fn an_iges_part_gets_its_live_body_back() {
-        let dir = std::path::PathBuf::from(format!("{}/../../target/iges-reopen-app", env!("CARGO_MANIFEST_DIR")));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let path = dir.join("cube.igs");
+        let folder = CheckFolder::new("iges-reopen-app");
+        let path = folder.file("cube.igs");
         let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
         qymcad_kernel::write_iges(&[(&cube, PLACE_IDENTITY)], &path.to_string_lossy(), qymcad_kernel::LengthUnit::Millimetre).expect("written");
         let mut p = Project::default();

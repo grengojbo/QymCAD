@@ -10,6 +10,7 @@
 //! and that is how it must be checked.
 #[cfg(test)]
 mod tests {
+    use super::super::check_folder::tests::CheckFolder;
     use super::super::hand::Hand;
     use super::super::App;
 
@@ -234,9 +235,9 @@ mod tests {
         }
     }
 
-    /// Save and reopen - and check everything there as well.
-    fn save_and_reopen(app: &mut App, step: &str, problems: &mut Vec<String>) -> App {
-        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
+    /// Save into `folder` and reopen - and check everything there as well.
+    fn save_and_reopen(app: &mut App, folder: &CheckFolder, step: &str, problems: &mut Vec<String>) -> App {
+        let path = folder.file("user-case.qcad").to_string_lossy().into_owned();
         crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
         app.save_project();
         app.drain_bg_for_test();
@@ -713,6 +714,10 @@ mod tests {
     #[test]
     fn a_3d_printer_builds_a_box_with_a_lid() {
         let mut problems: Vec<String> = Vec::new();
+        // the rounds of saving and reopening go into a folder of this run: a document at a fixed name is saved and read
+        // back by every run from this checkout, and of two runs started 0 to 0.1 s apart 3 of 4 failed with "the saved
+        // file does not open" (a bad checksum, a stream of no UTF-8) - each read the file the other was writing
+        let folder = CheckFolder::new("user-case");
         let mut app = App::default();
         // THE DOCUMENT IS ALREADY CREATED by the application at startup - a second call bred A SECOND empty
         // part, and the tree carried "Part 1" and "Part 2" although not one had been made by hand.
@@ -773,7 +778,7 @@ mod tests {
         }
 
         // --- SAVE AND REOPEN ---
-        let mut app = save_and_reopen(&mut app, "the housing is finished", &mut problems);
+        let mut app = save_and_reopen(&mut app, &folder, "the housing is finished", &mut problems);
 
         // --- EDITING A DIMENSION IN THE MIDDLE OF THE HISTORY ---
         if let Some(ti) = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })) {
@@ -1076,7 +1081,7 @@ mod tests {
         }
 
         // --- SAVE, REOPEN AND GO ON WORKING IN THE REOPENED DOCUMENT ---
-        let mut app = save_and_reopen(&mut app, "housing + lid + joint", &mut problems);
+        let mut app = save_and_reopen(&mut app, &folder, "housing + lid + joint", &mut problems);
         let comps: Vec<u64> = app.project.components.iter().filter(|c| c.id != app.project.root).map(|c| c.id).collect();
         if let Some(&first) = comps.first() {
             app.enter_component(first);
@@ -1942,7 +1947,7 @@ mod tests {
             let names_before: Vec<String> = app.project.components.iter().map(|c| c.name.clone()).collect();
             let area_before: f64 = app.project.regen_faces.values().flatten().map(|f| f.area).sum();
 
-            let app2 = save_and_reopen(&mut app, "the save round after every operation", &mut problems);
+            let app2 = save_and_reopen(&mut app, &folder, "the save round after every operation", &mut problems);
 
             if app2.project.timeline.len() != nodes_before {
                 problems.push(format!("after the save round there are {} nodes instead of {nodes_before}", app2.project.timeline.len()));
