@@ -130,12 +130,15 @@ jobs:
       # THE TAG IS STAMPED INTO THE BINARY HERE, at the step that compiles it - not at the one that packs
       # it. `build.rs` reads `QYMCAD_VERSION`, so a build step without it produces a program that cannot
       # say which release it is, however the file is named afterwards.
+      #
+      # TWO BINARIES: the program, and the server for Claude (`qymcad-mcp`), which travels in the same package
+      # beside it on the same kernel libraries - one download, nothing more to fetch to connect Claude.
       - name: Build (release)
         env:
           QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           OCCT_INCLUDE_DIR: C:\occt\include\opencascade
           OCCT_LIB_DIR: C:\occt\lib
-        run: cargo build --release --locked --bin qymcad
+        run: cargo build --release --locked --bin qymcad --bin qymcad-mcp
 
       # THE TAG NAMES THE PACKAGE when the button was pressed against one; every other build is named by
       # the manifest version plus the commit. Two dev builds three days apart must not share a file name.
@@ -294,7 +297,7 @@ jobs:
           QYMCAD_VERSION: ${{ github.ref_type == 'tag' && github.ref_name || '' }}
           OCCT_INCLUDE_DIR: /Users/runner/occt/include/opencascade
           OCCT_LIB_DIR: /Users/runner/occt/lib
-        run: cargo build --release --locked --bin qymcad
+        run: cargo build --release --locked --bin qymcad --bin qymcad-mcp
 
       - name: Bundle the .app
         env:

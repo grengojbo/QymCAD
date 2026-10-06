@@ -47,6 +47,7 @@ fn sandbox(case: &str, deps: Deps) -> PathBuf {
     write("THIRD-PARTY-NOTICES.md", "notices\n");
     write("assets/icons/macos/qymcad.icns", "icns\n");
     executable(&write("target/release/qymcad", "the program\n"));
+    executable(&write("target/release/qymcad-mcp", "the server for Claude\n"));
 
     // As OCCT installs them: one real file per module and two links to it. The chain matters - a `cp` that
     // follows links writes three full copies of every module, which is how an 80 MB archive was measured.
@@ -198,4 +199,22 @@ fn a_path_left_naming_the_build_machine_fails_the_bundle() {
     assert!(!out.status.success(), "a library still named the build machine and the script was happy:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("still points at the build machine"), "the refusal did not say what was wrong:\n{}", said(&out));
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that cannot start");
+}
+
+/// THE SERVER FOR CLAUDE TRAVELS INSIDE THE APP, beside the program, and finds the same kernel libraries: it is
+/// built against them as the program is, so it is pointed at the bundle's Frameworks and its paths are rewritten
+/// the same way. Left outside, or left naming the build machine, it would start here and nowhere else - and a
+/// person connecting Claude to it would have a second thing to download.
+#[test]
+fn the_server_for_claude_travels_inside_the_app() {
+    let dir = sandbox("server", Deps::BuildMachine);
+    let out = bundle(&dir);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad-mcp"), "the server is not in the app:\n{}", archive(&dir));
+    let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
+    assert!(
+        calls.contains("-add_rpath @executable_path/../Frameworks") && calls.lines().any(|l| l.starts_with("-add_rpath") && l.ends_with("MacOS/qymcad-mcp")),
+        "the server was not pointed at the bundle's Frameworks:\n{calls}"
+    );
+    assert!(calls.lines().any(|l| l.starts_with("-change ") && l.ends_with("MacOS/qymcad-mcp")), "the server was left naming the build machine:\n{calls}");
 }

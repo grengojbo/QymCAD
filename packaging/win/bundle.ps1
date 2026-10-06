@@ -7,6 +7,10 @@ $ErrorActionPreference = "Stop"
 
 $bin = "target\release\qymcad.exe"
 if (-not (Test-Path $bin)) { throw "no $bin - run cargo build --release first" }
+# THE SERVER FOR CLAUDE travels beside the program and finds the same DLLs there; the MSI packs this folder whole, so
+# it is installed beside qymcad.exe as well.
+$server = "target\release\qymcad-mcp.exe"
+if (-not (Test-Path $server)) { throw "no $server - run cargo build --release --bin qymcad --bin qymcad-mcp first" }
 
 # THE NAME. A tag names the package itself; anything else is named by the manifest version plus the commit,
 # or two builds three days apart share a file name and a report cannot be traced to either.
@@ -23,6 +27,7 @@ $out = "dist\qymcad"
 if (Test-Path $out) { Remove-Item -Recurse -Force $out }
 New-Item -ItemType Directory -Force -Path $out | Out-Null
 Copy-Item $bin $out
+Copy-Item $server $out
 
 # --- the OCCT libraries, from the build we made ourselves ---
 $occtBin = Join-Path $env:OCCT_ROOT "bin"
@@ -56,12 +61,14 @@ Copy-Item THIRD-PARTY-NOTICES.md $out
 @"
 QymCAD - portable build for Windows (x64).
 To run: qymcad.exe (every DLL it needs is right here - nothing to install).
+qymcad-mcp.exe is QymCAD for Claude (Claude Desktop, Claude Code): it is started by Claude, not by hand.
 Requires Windows 10/11 x64.
 "@ | Set-Content -Encoding UTF8 "$out\README.txt"
 
 @"
 QymCAD - переносна збірка для Windows (x64).
 Запуск: qymcad.exe (усі потрібні DLL лежать поруч - нічого встановлювати не треба).
+qymcad-mcp.exe - QymCAD для Claude (Claude Desktop, Claude Code): його запускає Claude, не ви.
 Потрібна Windows 10/11 x64.
 "@ | Set-Content -Encoding UTF8 "$out\ПРОЧИТАЙ.txt"
 

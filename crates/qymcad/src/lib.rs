@@ -51,6 +51,9 @@ mod packaging_flatpak;
 // The release run itself: every package built is handed over, and the publishing job waits for them all.
 #[cfg(test)]
 mod packaging_release;
+// The server for Claude travels in every package beside the program, and the AppImage starts it on `mcp`.
+#[cfg(test)]
+mod packaging_mcp;
 // Every build of the kernel keeps the checks OCCT compiles out of a Release by default.
 #[cfg(test)]
 mod packaging_occt;

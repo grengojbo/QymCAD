@@ -13,8 +13,8 @@ export OCCT_LIB_DIR=${OCCT_LIB_DIR:-/opt/occt/lib}
 export LD_LIBRARY_PATH=${OCCT_LIB_DIR}:${LD_LIBRARY_PATH:-}
 export APPIMAGE_EXTRACT_AND_RUN=1
 
-echo ">>> cargo build --release (qymcad)"
-cargo build --release --locked --bin qymcad
+echo ">>> cargo build --release (qymcad, qymcad-mcp)"
+cargo build --release --locked --bin qymcad --bin qymcad-mcp
 
 BIN=$CARGO_TARGET_DIR/release/qymcad
 [ -x "$BIN" ] || { echo "!!! the binary did not build: $BIN"; exit 1; }
@@ -24,6 +24,11 @@ APPDIR=/tmp/AppDir
 rm -rf "$APPDIR"
 mkdir -p "$APPDIR/usr/bin"
 cp "$BIN" "$APPDIR/usr/bin/qymcad"
+# THE SERVER FOR CLAUDE, beside the program and on the same kernel libraries; the package's own door (AppRun) starts it
+# when the package is run with `mcp`.
+SERVER=$CARGO_TARGET_DIR/release/qymcad-mcp
+[ -x "$SERVER" ] || { echo "!!! the server did not build: $SERVER"; exit 1; }
+cp "$SERVER" "$APPDIR/usr/bin/qymcad-mcp"
 
 # The licence and the third-party notices TRAVEL WITH THE BINARY, in the place a Linux program keeps them.
 # AGPL-3.0 asks for the licence text to accompany the program, and LGPL-2.1 (OCCT) for the notice.
@@ -123,6 +128,8 @@ echo ">>> linuxdeploy: the icons, the .so files from ldd (/opt/occt/lib among th
 linuxdeploy \
     --appdir "$APPDIR" \
     --executable "$APPDIR/usr/bin/qymcad" \
+    --executable "$APPDIR/usr/bin/qymcad-mcp" \
+    --custom-apprun packaging/linux/AppRun \
     --desktop-file packaging/linux/qymcad.desktop \
     "${ICON_ARGS[@]}" \
     "${LIB_ARGS[@]}" \
@@ -191,5 +198,14 @@ if [ ${#carried[@]} -ne 0 ]; then
     echo "!!! this is what makes a package start here and die on somebody else's desktop"
     exit 1
 fi
+# THE SERVER AND THE DOOR TO IT are inside, and the server starts: run with `mcp`, the package answers a handshake.
+[ -x "$CHECK/squashfs-root/usr/bin/qymcad-mcp" ] || { echo "!!! the package does not carry the server for Claude"; exit 1; }
+grep -q '"mcp"' "$CHECK/squashfs-root/AppRun" || { echo "!!! the package's AppRun does not start the server on mcp"; exit 1; }
+hello='{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-06-18"}}'
+answer=$(printf '%s\n' "$hello" | "$CHECK/squashfs-root/AppRun" mcp 2>/dev/null | head -1 || true)
+case "$answer" in
+    *'"serverInfo"'*) echo ">>> the server in the package answers: ${answer:0:120}" ;;
+    *) echo "!!! the server in the package did not answer a handshake: $answer"; exit 1 ;;
+esac
 rm -rf "$CHECK"
 echo ">>> DONE: $OUT"

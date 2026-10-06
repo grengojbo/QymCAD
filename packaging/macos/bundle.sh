@@ -11,6 +11,10 @@ set -euo pipefail
 
 BIN=target/release/qymcad
 [ -x "$BIN" ] || { echo "!!! no $BIN - run cargo build --release first"; exit 1; }
+# THE SERVER FOR CLAUDE travels inside the app, beside the program: it is built against the same kernel libraries
+# and finds them in the same Frameworks, so a person connecting Claude has nothing more to download.
+SERVER=target/release/qymcad-mcp
+[ -x "$SERVER" ] || { echo "!!! no $SERVER - run cargo build --release --bin qymcad --bin qymcad-mcp first"; exit 1; }
 OCCT_ROOT=${OCCT_ROOT:?set OCCT_ROOT to the OCCT installation}
 
 # THE NAME. A tag names the package itself; anything else carries the commit, so two builds three days
@@ -28,6 +32,7 @@ APP=dist/QymCAD.app
 rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" "$APP/Contents/Frameworks"
 cp "$BIN" "$APP/Contents/MacOS/qymcad"
+cp "$SERVER" "$APP/Contents/MacOS/qymcad-mcp"
 cp assets/icons/macos/qymcad.icns "$APP/Contents/Resources/"
 
 # The licence and the notices travel with the binary: AGPL asks for the licence text to accompany the
@@ -76,6 +81,7 @@ echo ">>> libraries: $n, links to them: $links"
 # allowed to fail quietly: without the rpath every library below is unreachable and the program does not
 # start at all, so a swallowed error here would ship as a green build.
 install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/qymcad"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/qymcad-mcp"
 
 # What a file depends on, one path per line. The header line - the file's own name - is dropped.
 #
@@ -112,6 +118,7 @@ for lib in "$APP"/Contents/Frameworks/*.dylib; do
     rewrite_deps "$lib"
 done
 rewrite_deps "$APP/Contents/MacOS/qymcad"
+rewrite_deps "$APP/Contents/MacOS/qymcad-mcp"
 echo ">>> paths rewritten to @rpath: $rewritten"
 
 # NOT A PATH LEFT POINTING HOME. A single dependency still naming the build machine means the program
@@ -120,7 +127,7 @@ echo ">>> paths rewritten to @rpath: $rewritten"
 # THE CHECK IS NOT `grep -q`. Under `set -o pipefail` an early-exiting `grep -q` kills `otool` with a
 # broken pipe, the pipeline reports that failure, and the `if` reads it as "nothing found" - the sentinel
 # passed a bundle in which every path still named the build machine. Read it all, then look.
-left=$(otool -L "$APP/Contents/MacOS/qymcad" "$APP"/Contents/Frameworks/*.dylib | grep "$OCCT_ROOT" || true)
+left=$(otool -L "$APP/Contents/MacOS/qymcad" "$APP/Contents/MacOS/qymcad-mcp" "$APP"/Contents/Frameworks/*.dylib | grep "$OCCT_ROOT" || true)
 if [ -n "$left" ]; then
     echo "!!! a library still points at the build machine:"
     printf '%s\n' "$left" | head -5 || true

@@ -1,0 +1,13 @@
+#!/bin/sh
+# THE DOOR OF THE APPIMAGE: what runs when the package is run.
+#
+# The package is mounted at a new path every time it starts, so nothing outside can name a file inside it - and the
+# server for Claude lives inside, beside the program, sharing its kernel libraries. So the package itself is the
+# command for both: `QymCAD.AppImage` opens the window, `QymCAD.AppImage mcp` starts the server on stdin and stdout,
+# which is what Claude Desktop and Claude Code are told to run.
+HERE="$(dirname "$(readlink -f "$0")")"
+if [ "${1:-}" = "mcp" ]; then
+    shift
+    exec "$HERE/usr/bin/qymcad-mcp" "$@"
+fi
+exec "$HERE/usr/bin/qymcad" "$@"
