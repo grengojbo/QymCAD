@@ -1,5 +1,6 @@
 //! The tools, one module per group of the catalogue.
 
+pub mod batch;
 pub mod doc;
 pub mod exchange;
 pub mod features;

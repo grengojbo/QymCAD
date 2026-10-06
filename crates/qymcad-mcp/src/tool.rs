@@ -161,6 +161,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::query::RESOLVE,
     crate::tools::query::INSPECT,
     crate::tools::query::MEASURE,
+    crate::tools::batch::APPLY_OPS,
 ];
 
 pub fn find(name: &str) -> Option<&'static Tool> {

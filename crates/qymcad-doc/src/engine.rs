@@ -164,6 +164,25 @@ impl DocEngine {
         Ok(r)
     }
 
+    /// OPEN A BATCH under `name`: the actions taken until [`DocEngine::commit_batch`] are one undo step. Each still
+    /// rebuilds after itself, so an action reads what the one before it built - a chamfer on the edges of the top of a
+    /// block laid in the same batch finds those edges.
+    pub fn begin_batch(&mut self, name: &str) {
+        self.ensure_brep();
+        self.history.begin(name, &self.project);
+    }
+
+    /// Close the batch as one step.
+    pub fn commit_batch(&mut self) {
+        self.history.commit();
+    }
+
+    /// TAKE THE BATCH BACK WHOLE: the document returns to what it was when the batch opened, rebuilt, and no step is
+    /// left - whatever its actions laid, refused or not.
+    pub fn abort_batch(&mut self) {
+        self.abort();
+    }
+
     /// BRING A FILE IN as one action: a mesh (STL, OBJ, PLY, glTF, 3MF, AMF) or a solid (STEP, IGES), laid in as the
     /// file's tree of parts with its original embedded, taken at `factor` from the file's own numbers. The file is
     /// read before the action opens, so a file that cannot be read leaves no step.

@@ -2153,6 +2153,7 @@ status-delete-joint = Удаление сопряжения
 status-delete-component = Удаление компонента
 status-new-sketch = Новый эскиз
 status-new-part = Новая деталь
+status-ops-batch = Операции
 status-delete-sketch = Удаление эскиза
 sketch-deleted = Эскиз удалён
 del-feature = фичу
