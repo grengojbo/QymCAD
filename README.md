@@ -32,6 +32,45 @@ exchange through STEP with other CAD systems.
 
 The interface is available in English, Ukrainian and Russian.
 
+## About this fork
+
+This is a fork of QymCAD by Denis Kazachenkov (QymIs Tech) — a product of its own, growing in its own direction. The whole of QymCAD stays in place: every change in the main repository comes here regularly. On top of it, the fork adds three things.
+
+### 1. Modelling together with Claude
+
+The **`qymcad-mcp`** server opens QymCAD to [Claude](https://claude.ai) through the MCP protocol. You describe a part in words, and Claude builds a real parametric model:
+
+> Make a plate 60×40×4 mm, four countersunk holes for M3 8 mm in from the edges, round the vertical edges with a radius of 5, and save a 3MF.
+
+Claude lays the features itself, checks the result (measures, looks at a picture, checks that the body is sound) and saves the files: `.qcad` for the QymCAD window, 3MF and STL for printing, STEP for other CAD programs. Everything is done with the same operations as in the window: a chamfer made through Claude and a chamfer made with the mouse are one and the same feature.
+
+It works with Claude Desktop and Claude Code. How to connect it and where to start — [the guide](https://grengojbo.github.io/QymCAD/en/).
+
+### 2. 3D printing
+
+The fork is aimed at parts for FDM printing:
+
+- export to 3MF with the tree of parts and their colours;
+- checks Claude makes before printing: the body is sound, one piece, with no "holes in the air";
+- a ready conversation template, `design_for_fdm`, with the rules of printing: clearances for screws, wall thickness, chamfers at the bottom.
+
+### 3. Ukrainian language and independence
+
+- The interface, the help and the README are in Ukrainian, beside English and Russian.
+- The program reaches no resources blocked in Ukraine. The update check, the links and "Report a problem" lead to this repository. The update check sends nothing about your computer.
+- The program has an identifier of its own (`io.github.grengojbo.qymcad`), so its settings do not mix with the original program's when both are installed on one computer.
+
+### What is where
+
+| Branch | What it holds |
+|---|---|
+| `main` | The fork's QymCAD: everything from the main repository + the translation and the rebranding. Releases are built from it. |
+| `mcp` | The `qymcad-mcp` server (in development; merged into `main` when the stage is finished). |
+
+Builds are in [Releases](https://github.com/grengojbo/QymCAD/releases): Windows (zip, msi), Linux (AppImage), macOS (Apple Silicon). The `qymcad-mcp` server comes in every build beside the program: connect it with "Help → Connect to Claude".
+
+Bugs and wishes — in [Issues](https://github.com/grengojbo/QymCAD/issues), or straight from the program: "Help → Report a problem".
+
 ## Status
 
 A development build. The program works and is fit for real parts, but it is updated daily.

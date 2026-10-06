@@ -1,0 +1,10 @@
+# THE GUIDE TO MODELLING WITH CLAUDE, the uk book of the documentation site (site/build.sh, .github/workflows/pages.yml).
+[book]
+title = "QymCAD і Claude"
+description = "Моделювання деталей разом із Claude: встановлення, перша деталь, приклади, поради для друку."
+language = "uk"
+src = "src"
+
+[output.html]
+git-repository-url = "https://github.com/grengojbo/QymCAD"
+site-url = "/QymCAD/uk/"

@@ -57,6 +57,9 @@ mod packaging_mcp;
 // Every build of the kernel keeps the checks OCCT compiles out of a Release by default.
 #[cfg(test)]
 mod packaging_occt;
+// The documentation site: one story in every language, in the words of the window.
+#[cfg(test)]
+mod site_books;
 // One reverse-DNS name for the program, in the four places that cannot share a constant.
 #[cfg(test)]
 mod app_identity;
