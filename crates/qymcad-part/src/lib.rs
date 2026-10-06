@@ -90,6 +90,34 @@ pub fn live_picks(project: &qymcad_core::model::Project, body: Id, r: &qymcad_co
     picked.into_iter().filter(|d| live.contains(d)).collect()
 }
 
+/// WHAT A REOPENED ROUNDING OR CHAMFER HAS TAKEN: the edges to light, and the description they came from, if any.
+pub struct Taken {
+    pub edges: std::collections::HashSet<u32>,
+    pub described: Option<qymcad_core::refs::Query>,
+}
+
+/// THE EDGES OF A REFERENCE AS A COMMAND REOPENS THEM. A pick hands back its picks; a description ("where the front
+/// meets the left", "every edge of this face") hands back the edges it finds now, and itself, so Enter keeps it.
+/// Reported behaviour: a plate's four vertical edges rounded by a description, reopened from the tree - the picks of a
+/// description are none, none is "every edge", and Enter wrote that over the description: every edge of the plate
+/// rounded, the row reading "all of them".
+pub fn reopen_edges(project: &Project, body: Id, r: &qymcad_core::refs::Ref) -> Taken {
+    if r.query.is_pick_list() {
+        return Taken { edges: live_picks(project, body, r, false), described: None };
+    }
+    let found = project.resolve_edge_refs(body, r, "ref-what-fillet-edge").unwrap_or_default();
+    Taken { edges: found.into_iter().collect(), described: Some(r.query.clone()) }
+}
+
+/// THE REFERENCE A ROUNDING OR CHAMFER IS WRITTEN WITH on Enter: the description still held, with the count the
+/// feature asked for, or the edges picked.
+pub fn edges_ref(described: &Option<qymcad_core::refs::Query>, picks: &[u32], was: &qymcad_core::refs::Ref) -> qymcad_core::refs::Ref {
+    match described {
+        Some(q) => qymcad_core::refs::Ref { query: q.clone(), expect: was.expect, hint: was.hint },
+        None => qymcad_core::refs::Ref::picks(picks),
+    }
+}
+
 /// The raw text of a command field (an expression or a number), by key.
 pub fn cmd_txt(cmd: &qymcad_ui_state::FeatCommand, key: &str) -> String {
     cmd.params.iter().find(|p| p.key == key).map(|p| p.txt.clone()).unwrap_or_default()
@@ -2587,6 +2615,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
         None => (Vec::new(), Vec::new()),
     };
     let edges: Vec<u32> = pc.gsel.edges.iter().copied().collect();
+    let described = pc.gsel.described.clone(); // a rounding or chamfer reopened from a description keeps it
     let faces_set: Vec<u32> = pc.gsel.faces.iter().copied().collect(); // the shell: a multiple selection by id
     let shell_side = pc.opts.shell_side; // the shell: which way the wall goes
     let draft_neutral = pc.draft.neutral; // the draft: the neutral face, 0 means unset
@@ -2754,12 +2783,12 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
             }
             FeatureKind::Fillet { radius, edges: e, at_vertices, .. } => {
                 *radius = r;
-                *e = qymcad_core::refs::Ref::picks(&edges); // a hand-picked set of edges is a query built from ids
+                *e = edges_ref(&described, &edges, e); // a description is kept; a hand-picked set is a query of ids
                 *at_vertices = vtable; // the "vertex -> radius" table
             }
             FeatureKind::Chamfer { dist: d, edges: e, mode, d2, flip, ref_face, .. } => {
                 *d = dist;
-                *e = qymcad_core::refs::Ref::picks(&edges); // a hand-picked set of edges is a query built from ids
+                *e = edges_ref(&described, &edges, e); // a description is kept; a hand-picked set is a query of ids
                 *mode = ch_mode; // the mode: symmetric, two distances, or a leg plus an angle
                 *d2 = ch_d2;
                 *flip = ch_flip;
@@ -3378,7 +3407,10 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 4, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc); // pull up the edges of the body (this clears the selection), then restore it
-            pc.gsel.edges = live_picks(&*pc.project, src, edges, false);
+            qymcad_ui_state::ensure_model_edges(&mut pc.rebuild(), src); // an opened file holds no edges until a rebuild
+            let taken = reopen_edges(&*pc.project, src, edges);
+            pc.gsel.edges = taken.edges;
+            pc.gsel.described = taken.described;
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-radius", "radius", radius, 0.05, 1000.0)];
             // THE TABLE OF VERTICES - one field per vertex, each at its own place. The reference is
             // resolved against the live body: the name of a vertex is derived from its edges and survives
@@ -3397,7 +3429,10 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 5, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc);
-            pc.gsel.edges = live_picks(&*pc.project, src, edges, false);
+            qymcad_ui_state::ensure_model_edges(&mut pc.rebuild(), src); // an opened file holds no edges until a rebuild
+            let taken = reopen_edges(&*pc.project, src, edges);
+            pc.gsel.edges = taken.edges;
+            pc.gsel.described = taken.described;
             pc.chamfer.mode = mode; // restore the mode, the side and the second parameter
             pc.chamfer.flip = flip;
             pc.chamfer.ref_face = ref_face; // restore the hand-picked reference face

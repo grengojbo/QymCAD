@@ -3867,6 +3867,7 @@ mod a_part_is_dragged_by_real_mouse;
 mod a_moved_part_does_not_rebuild_its_block;
 
 mod an_edge_anchor_survives_reopening;
+mod a_rounding_by_description_survives_reopening;
 mod every_kind_is_made_by_hand;
 mod every_relation_is_made_by_hand;
 mod joint_limits_are_visible;
