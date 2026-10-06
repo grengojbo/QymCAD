@@ -52,6 +52,29 @@ mod tests {
         );
     }
 
+    /// THE WINDOW NAMES THE AUTHOR AND THE FORK. A changed version carries a prominent notice that it was changed
+    /// (AGPL-3.0, section 5a): the program's author stays, and the fork it was changed in is named beside the author.
+    #[test]
+    fn the_about_window_names_the_author_and_the_fork() {
+        let mut app = crate::gui::screen_keys::tests::populated();
+        app.win.open(WinKind::About);
+
+        let ctx = egui::Context::default();
+        crate::gui::install_fonts(&ctx);
+        let _ = ctx.run_ui(raw(), |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c.ctx()));
+        let out = ctx.run_ui(raw(), |c| crate::gui::panels_windows::about_dialog(&mut app.win, &app.scheme, c.ctx()));
+
+        let painted = texts(&out.shapes);
+        let mut missing = Vec::new();
+        for key in ["about-author", "about-author-name", "about-fork", "about-fork-name"] {
+            let words = crate::i18n::tr(key);
+            if !painted.iter().any(|(t, _)| *t == words) {
+                missing.push(format!("{key} ({words:?})"));
+            }
+        }
+        assert!(missing.is_empty(), "the About window does not show {missing:?}");
+    }
+
     #[test]
     fn the_button_hands_the_details_over() {
         let mut app = crate::gui::screen_keys::tests::populated();

@@ -208,6 +208,12 @@ pub(crate) fn about_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, c
                 ui.label(crate::i18n::tr("about-author"));
                 ui.label(egui::RichText::new(crate::i18n::tr("about-author-name")).strong());
             });
+            // A CHANGED VERSION SAYS IT WAS CHANGED, and by whom (AGPL-3.0, section 5a): the author above stays, the
+            // fork this build comes from is named beside the author.
+            ui.horizontal(|ui| {
+                ui.label(crate::i18n::tr("about-fork"));
+                ui.label(egui::RichText::new(crate::i18n::tr("about-fork-name")).strong());
+            });
             // THE PERSON MUST SEE ON WHAT TERMS THEY GOT THE PROGRAM. A copyleft licence is worth nothing
             // to whoever does not know they hold it: the rights to study, change and pass the program on
             // come with it, and the only place a desktop program can say so is here.
