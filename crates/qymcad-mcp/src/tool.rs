@@ -200,6 +200,9 @@ fn wants_picture(tool: &Tool, arguments: &mut Value) -> bool {
 /// content for a client that reads it, and `isError` on a refusal.
 pub fn call(ctx: &mut Ctx, tool: &Tool, mut arguments: Value) -> Value {
     let picture_too = wants_picture(tool, &mut arguments);
+    // the kernel's own words for what it refused are kept on this thread - the rebuild runs here - until read; a
+    // refusal left from an earlier call must not be told as this one's
+    qymcad_kernel::clear_kernel_refusal();
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (tool.call)(ctx, arguments)));
     let body = match ran {
         Ok(Ok(mut answer)) => {
@@ -229,6 +232,12 @@ pub fn call(ctx: &mut Ctx, tool: &Tool, mut arguments: Value) -> Value {
     };
     let error = body["ok"] == json!(false);
     let mut body = body;
+    // THE KERNEL'S OWN WORDS, beside the coded reason, where the call went wrong: refused, or a feature left red. On a
+    // call that went through they are left out - the kernel may refuse one way and succeed another.
+    let went_wrong = error || body["red"].as_array().is_some_and(|r| !r.is_empty());
+    if let (true, Some(said)) = (went_wrong, qymcad_kernel::last_kernel_refusal()) {
+        body["kernel_said"] = json!(said);
+    }
     let png = take_picture(&mut body);
     let mut content = vec![json!({ "type": "text", "text": body.to_string() })];
     if let Some(data) = png {

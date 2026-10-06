@@ -18,6 +18,8 @@ pub enum Fault {
     MethodNotFound,
     /// A method it has, with parameters it cannot take: a tool by a name it does not have.
     InvalidParams,
+    /// A resource read by an address the server has nothing at - the code the protocol gives it.
+    ResourceNotFound,
 }
 
 impl Fault {
@@ -27,6 +29,7 @@ impl Fault {
             Fault::InvalidRequest => -32600,
             Fault::MethodNotFound => -32601,
             Fault::InvalidParams => -32602,
+            Fault::ResourceNotFound => -32002,
         }
     }
 }

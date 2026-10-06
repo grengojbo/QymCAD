@@ -1,5 +1,5 @@
-//! THE METHODS OF THE PROTOCOL: the handshake, the liveness probe, the three lists a client reads to learn what it
-//! may call, and the call of a tool.
+//! THE METHODS OF THE PROTOCOL: the handshake, the liveness probe, the lists a client reads to learn what it may
+//! call, read and offer, the call of a tool, the reading of a resource and the getting of a prompt.
 
 use std::io::{BufRead, Write};
 
@@ -67,8 +67,24 @@ fn request(ctx: &mut Ctx, id: &Value, method: &str, params: Value) -> Value {
         "ping" => rpc::success(id, json!({})),
         "tools/list" => rpc::success(id, json!({ "tools": tool::listing() })),
         "tools/call" => call(ctx, id, params),
-        "resources/list" => rpc::success(id, json!({ "resources": [] })),
-        "prompts/list" => rpc::success(id, json!({ "prompts": [] })),
+        "resources/list" => rpc::success(id, json!({ "resources": crate::resources::listing() })),
+        "resources/templates/list" => rpc::success(id, json!({ "resourceTemplates": crate::resources::templates() })),
+        "resources/read" => {
+            let uri = params.get("uri").and_then(Value::as_str).unwrap_or_default();
+            match crate::resources::read(ctx, uri) {
+                Ok(contents) => rpc::success(id, contents),
+                Err(missing) => rpc::fault(id, missing.fault, &missing.message),
+            }
+        }
+        "prompts/list" => rpc::success(id, json!({ "prompts": crate::prompts::listing() })),
+        "prompts/get" => {
+            let name = params.get("name").and_then(Value::as_str).unwrap_or_default();
+            let given = params.get("arguments").and_then(Value::as_object).cloned().unwrap_or_default();
+            match crate::prompts::get(name, &given) {
+                Ok(prompt) => rpc::success(id, prompt),
+                Err(why) => rpc::fault(id, Fault::InvalidParams, &why),
+            }
+        }
         _ => rpc::fault(id, Fault::MethodNotFound, &format!("no method {method}")),
     }
 }

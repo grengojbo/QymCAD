@@ -23,7 +23,7 @@ fn place(project: &Project, key: Id) -> Result<usize, Refusal> {
 }
 
 /// The sizes of a feature as the model reads them: the key, the value, and the expression it follows, if any.
-fn sizes(project: &Project, key: Id) -> Value {
+pub(crate) fn sizes(project: &Project, key: Id) -> Value {
     let Some(n) = project.timeline.iter().find(|n| n.id == key) else { return json!([]) };
     // the size the rebuild takes: the expression's value where there is one - a number typed for a feature lives there
     // too - otherwise the stored number
