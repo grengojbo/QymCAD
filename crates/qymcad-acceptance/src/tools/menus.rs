@@ -60,6 +60,7 @@ shows!(PARTS_LIBRARY, "menu.parts-library", &["menu-windows", "menu-parts-librar
 shows!(START_SCREEN, "menu.start-screen", &["menu-windows", "win-start"], "start-title", "general/01-window");
 shows!(HOTKEYS, "menu.hotkeys", &["menu-help", "help-hotkeys"], "hotkeys-title", "general/10-hotkeys");
 shows!(REPORT, "menu.report", &["menu-help", "help-report"], "report-title", "general/13-report");
+shows!(CONNECT_CLAUDE, "menu.connect-claude", &["menu-help", "help-connect-claude"], "claude-title", "general/15-claude");
 
 /// What the items of history leave out: they act on the document as it stands, and take nothing.
 const HISTORY: &[(u8, &str)] = &[

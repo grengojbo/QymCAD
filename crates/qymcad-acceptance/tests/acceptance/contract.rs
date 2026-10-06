@@ -82,6 +82,7 @@ contract!(menu_parts_library, qymcad_acceptance::tools::menus::PARTS_LIBRARY);
 contract!(menu_start_screen, qymcad_acceptance::tools::menus::START_SCREEN);
 contract!(menu_hotkeys, qymcad_acceptance::tools::menus::HOTKEYS);
 contract!(menu_report, qymcad_acceptance::tools::menus::REPORT);
+contract!(menu_connect_claude, qymcad_acceptance::tools::menus::CONNECT_CLAUDE);
 contract!(menu_undo, qymcad_acceptance::tools::menus::UNDO);
 contract!(menu_redo, qymcad_acceptance::tools::menus::REDO);
 contract!(menu_rebuild, qymcad_acceptance::tools::menus::REBUILD);

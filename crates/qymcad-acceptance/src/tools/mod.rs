@@ -118,6 +118,7 @@ pub static ALL: &[&Tool] = &[
     &menus::START_SCREEN,
     &menus::HOTKEYS,
     &menus::REPORT,
+    &menus::CONNECT_CLAUDE,
     &menus::UNDO,
     &menus::REDO,
     &menus::REBUILD,
