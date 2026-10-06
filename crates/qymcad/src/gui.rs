@@ -1918,8 +1918,7 @@ impl App {
         self.take_screenshot(ctx); // the picture of the window for a report comes back as an event
         crate::gui::panels_windows::crash_notice(&mut self.disk.crash_report, ctx); // "the last run ended in an error" - only after a crash
         self.report_window(ctx); // Help -> Report a problem
-        crate::gui::panels_windows::about_dialog(&mut self.win, &self.scheme, ctx); // the About window
-        crate::gui::panels_windows::updates_dialog(&mut self.win, &self.scheme, ctx); // Help -> Check for updates
+        crate::gui::panels_windows::help_windows(&mut self.win, &self.scheme, ctx); // About, updates, connecting Claude
         {
             let mut asks = Vec::new();
             crate::gui::panels_windows::doc_props_window(&mut self.win_ctx(&mut asks), ctx);
@@ -3891,6 +3890,8 @@ mod tests;
 
 /// Picking and hit-testing live in `gui/pick.rs`.
 mod report_problem;
+// Help -> Connect to Claude: the server of this package given to Claude Desktop and Claude Code.
+pub(crate) mod connect_claude;
 mod window_title;
 
 mod pick;

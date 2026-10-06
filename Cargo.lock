@@ -3180,6 +3180,7 @@ dependencies = [
  "rfd",
  "ron",
  "serde",
+ "serde_json",
  "sys-locale",
  "time",
  "unic-langid",

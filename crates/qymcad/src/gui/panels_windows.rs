@@ -1782,3 +1782,14 @@ pub(crate) fn scheme_section(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
         crate::gui::apply_theme(&mut *wc.scheme, &*wc.set, ctx);
     }
 }
+
+/// THE WINDOWS OF THE HELP MENU that need nothing of the application but the windows and the scheme: About, the check
+/// for updates, and connecting Claude - drawn by one call.
+pub(crate) fn help_windows(win: &mut super::Windows, scheme: &super::SchemeUi, ctx: &egui::Context) {
+    about_dialog(win, scheme, ctx);
+    updates_dialog(win, scheme, ctx);
+    // where things are on this computer is asked only while the window is open
+    if win.is(WinKind::Claude) {
+        crate::gui::connect_claude::window(win, scheme, &crate::gui::connect_claude::Machine::this_one(), ctx);
+    }
+}

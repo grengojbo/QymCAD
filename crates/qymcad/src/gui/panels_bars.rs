@@ -226,6 +226,10 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 bc.win.open(WinKind::Updates);
                 ui.close();
             }
+            if ui.button(format!("{} {}", ph::PLUGS_CONNECTED, qymcad_i18n::tr("help-connect-claude"))).clicked() {
+                bc.win.open(WinKind::Claude);
+                ui.close();
+            }
             if ui.button(format!("{} {}", ph::BUG, qymcad_i18n::tr("help-report"))).clicked() {
                 bc.win.open(WinKind::Report);
                 ui.close();

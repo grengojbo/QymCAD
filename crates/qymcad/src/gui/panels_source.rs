@@ -50,6 +50,8 @@ pub(crate) const WINDOWS: &str = concat!(
     "\n",
     include_str!("report_problem.rs"),
     "\n",
+    include_str!("connect_claude.rs"),
+    "\n",
     include_str!("file_ask.rs"),
     "\n",
     include_str!("import_scale.rs"),

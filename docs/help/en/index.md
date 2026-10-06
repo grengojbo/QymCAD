@@ -45,6 +45,7 @@ bottom says what is happening, how many degrees of freedom the sketch has and wh
 - [Keyboard shortcuts](general/10-hotkeys) — the full reference and how to reassign them.
 - [Report a problem](general/13-report) — something does not work: how to tell about it.
 - [Updates](general/14-updates) — how to learn about a new version, and what goes over the network.
+- [Connect to Claude](general/15-claude) — let Claude Desktop or Claude Code model in QymCAD.
 
 **F1** at any moment opens the article about what you are doing right now, not the contents page.
 

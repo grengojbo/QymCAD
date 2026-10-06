@@ -249,6 +249,14 @@ pub(in crate::gui) mod tests {
             }),
             surface("hotkeys", |a, c| a.hotkeys_window(c)),
             surface("about", |a, c| crate::gui::panels_windows::about_dialog(&mut a.win, &a.scheme, c)),
+            surface("connect to Claude", |a, c| {
+                let machine = crate::gui::connect_claude::Machine {
+                    config: Some(std::path::PathBuf::from("/nowhere/claude_desktop_config.json")),
+                    server: crate::gui::connect_claude::ServerCommand { command: "/nowhere/qymcad-mcp".into(), args: Vec::new() },
+                    present: crate::gui::connect_claude::Presence::There,
+                };
+                crate::gui::connect_claude::window(&mut a.win, &a.scheme, &machine, c)
+            }),
             // THE OTHER FIVE WINDOWS. They were absent, so an untranslated key in any of them reached the
             // screen with nothing to say so - and this is the check whose whole job is to notice that.
             surface("document properties", |a, c| {
@@ -283,6 +291,7 @@ pub(in crate::gui) mod tests {
                 app.win.open(WinKind::PartsLibrary);
                 app.win.open(WinKind::Hotkeys);
                 app.win.open(WinKind::About);
+                app.win.open(WinKind::Claude);
                 app.win.open(WinKind::DocProps);
                 app.win.open(WinKind::SaveTemplate);
                 app.win.open(WinKind::Report);

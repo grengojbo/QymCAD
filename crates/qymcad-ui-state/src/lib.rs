@@ -279,12 +279,14 @@ pub enum WinKind {
     PartsLibrary,
     /// What the check for a newer version came to (Help -> Check for updates).
     Updates,
+    /// Giving the server for Claude to Claude Desktop and Claude Code (Help -> Connect to Claude).
+    Claude,
 }
 
 impl WinKind {
     /// EVERY KIND, so that a walk over the windows cannot silently miss one added later. A guard checks that the
     /// count here matches the number of variants declared above.
-    pub const ALL: [WinKind; 11] = [
+    pub const ALL: [WinKind; 12] = [
         WinKind::SaveTemplate,
         WinKind::Start,
         WinKind::DocProps,
@@ -296,6 +298,7 @@ impl WinKind {
         WinKind::Settings,
         WinKind::PartsLibrary,
         WinKind::Updates,
+        WinKind::Claude,
     ];
 }
 
