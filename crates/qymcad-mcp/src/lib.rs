@@ -6,6 +6,7 @@
 
 pub mod args;
 mod paths;
+pub mod picture;
 pub mod rpc;
 pub mod server;
 pub mod tool;

@@ -2789,6 +2789,36 @@ pub fn draw_mesh(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// screen-linear `ndc_z` (`depth_ndc`), so the linear interpolation in `raster_band` is exact both in
 /// orthographic and in perspective. The background is transparent.
 pub fn rasterize_3d(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), ppp: f32, quality: f32) -> Option<egui::ColorImage> {
+    rasterize_3d_with_depth(pn, rect, basis, ppp, quality).map(|r| r.image)
+}
+
+/// THE DEPTH OF A FRAME: the parameters `proj_params` gave it, by which a world depth becomes the value its Z buffer
+/// holds.
+#[derive(Clone, Copy, Debug)]
+pub struct DepthScale {
+    pub inv_d: f64,
+    pub z_near: f64,
+    pub z_far: f64,
+    pub depth_half: f64,
+}
+
+impl DepthScale {
+    /// The buffer's value for a world depth (`Screen::at`'s second part): smaller is nearer.
+    pub fn at(&self, world_depth: f64) -> f32 {
+        qymcad_ui_state::depth_ndc(world_depth, self.inv_d, self.z_near, self.z_far, self.depth_half)
+    }
+}
+
+/// A frame drawn in software together with its Z buffer, one value per pixel row by row (`f32::INFINITY` where nothing
+/// is drawn), so that lines laid over it afterwards can be hidden behind the bodies the frame shows.
+pub struct Raster {
+    pub image: egui::ColorImage,
+    pub depth: Vec<f32>,
+    pub scale: DepthScale,
+}
+
+/// `rasterize_3d`, keeping the Z buffer.
+pub fn rasterize_3d_with_depth(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), ppp: f32, quality: f32) -> Option<Raster> {
     let w = (rect.width() * ppp * quality).round() as usize;
     let h = (rect.height() * ppp * quality).round() as usize;
     if w == 0 || h == 0 || w.saturating_mul(h) > 16_000_000 {
@@ -2898,7 +2928,8 @@ pub fn rasterize_3d(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64
             }
         });
     }
-    Some(egui::ColorImage { size: [w, h], source_size: egui::Vec2::new([w, h][0] as f32, [w, h][1] as f32), pixels: color })
+    let image = egui::ColorImage { size: [w, h], source_size: egui::Vec2::new([w, h][0] as f32, [w, h][1] as f32), pixels: color };
+    Some(Raster { image, depth: zbuf, scale: DepthScale { inv_d, z_near, z_far, depth_half } })
 }
 
 /// Draw ONE plane or face of the click-pick in the given colour: a world or datum plane as a square frame

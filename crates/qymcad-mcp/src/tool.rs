@@ -26,6 +26,14 @@ impl Ctx {
 /// What a tool answers with when it went through: the fields of its own answer, beside `ok` and `op`.
 pub type Answer = Map<String, Value>;
 
+/// THE KEY OF A PICTURE in an answer: a PNG in base64. It leaves the JSON and goes to the client as an image of its
+/// own - a picture as text would be thousands of characters the model reads as nothing.
+pub const PICTURE: &str = "png";
+
+/// The argument any tool but `render` takes besides its own: draw the document after the change, from the default
+/// view, and hand the picture back with the answer.
+const RENDER_TOO: &str = "render";
+
 /// ONE TOOL: its name and words for the model, the schema of its arguments, and the work.
 pub struct Tool {
     pub name: &'static str,
@@ -147,6 +155,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::timeline::EDIT_FEATURE,
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
+    crate::tools::look::RENDER,
 ];
 
 pub fn find(name: &str) -> Option<&'static Tool> {
@@ -155,15 +164,47 @@ pub fn find(name: &str) -> Option<&'static Tool> {
 
 /// The list a client reads to learn what it may call.
 pub fn listing() -> Value {
-    Value::Array(ALL.iter().map(|t| json!({ "name": t.name, "description": t.description, "inputSchema": (t.schema)() })).collect())
+    Value::Array(ALL.iter().map(|t| json!({ "name": t.name, "description": t.description, "inputSchema": schema(t) })).collect())
+}
+
+/// The schema of a tool's arguments, with `render` added to every tool but the one that draws.
+fn schema(tool: &Tool) -> Value {
+    let mut schema = (tool.schema)();
+    if tool.name != crate::tools::look::RENDER.name {
+        if let Some(props) = schema.get_mut("properties").and_then(Value::as_object_mut) {
+            props.insert(
+                RENDER_TOO.into(),
+                json!({ "type": "boolean", "default": false, "description": "Also draw the document after the call (iso, 800 x 600) and give the picture with the answer." }),
+            );
+        }
+    }
+    schema
+}
+
+/// Whether the call asks for a picture too; the argument is taken out, so the tool reads only its own.
+fn wants_picture(tool: &Tool, arguments: &mut Value) -> bool {
+    if tool.name == crate::tools::look::RENDER.name {
+        return false;
+    }
+    let taken = arguments.as_object_mut().and_then(|a| a.remove(RENDER_TOO));
+    taken == Some(json!(true))
 }
 
 /// CALL `tool` and answer as the protocol answers a tool: the JSON as text for any client, the same as structured
 /// content for a client that reads it, and `isError` on a refusal.
-pub fn call(ctx: &mut Ctx, tool: &Tool, arguments: Value) -> Value {
+pub fn call(ctx: &mut Ctx, tool: &Tool, mut arguments: Value) -> Value {
+    let picture_too = wants_picture(tool, &mut arguments);
     let ran = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| (tool.call)(ctx, arguments)));
     let body = match ran {
-        Ok(Ok(answer)) => {
+        Ok(Ok(mut answer)) => {
+            if picture_too {
+                // a document with nothing to draw answers without a picture: the call itself went through
+                let look =
+                    crate::picture::Look { view: Default::default(), size: crate::picture::Size { width: 800, height: 600 }, lit: crate::picture::Lit::Nothing, edges: crate::picture::Edges::Drawn };
+                if let Ok(picture) = crate::tools::look::picture_answer(ctx, &look) {
+                    answer.insert("picture".into(), Value::Object(picture));
+                }
+            }
             let mut body = Map::new();
             body.insert("ok".into(), json!(true));
             body.insert("op".into(), json!(tool.name));
@@ -181,7 +222,19 @@ pub fn call(ctx: &mut Ctx, tool: &Tool, arguments: Value) -> Value {
         }
     };
     let error = body["ok"] == json!(false);
-    json!({ "content": [{ "type": "text", "text": body.to_string() }], "structuredContent": body, "isError": error })
+    let mut body = body;
+    let png = take_picture(&mut body);
+    let mut content = vec![json!({ "type": "text", "text": body.to_string() })];
+    if let Some(data) = png {
+        content.push(json!({ "type": "image", "data": data, "mimeType": "image/png" }));
+    }
+    json!({ "content": content, "structuredContent": body, "isError": error })
+}
+
+/// The picture out of an answer, wherever the answer holds it: at its top (`render`) or in `picture` (`render: true`).
+fn take_picture(body: &mut Value) -> Option<Value> {
+    let obj = body.as_object_mut()?;
+    obj.remove(PICTURE).or_else(|| obj.get_mut("picture").and_then(Value::as_object_mut).and_then(|p| p.remove(PICTURE)))
 }
 
 fn refused(tool: &Tool, refusal: &Refusal, rolled_back: bool) -> Value {

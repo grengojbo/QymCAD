@@ -3277,6 +3277,8 @@ dependencies = [
 name = "qymcad-mcp"
 version = "0.1.0"
 dependencies = [
+ "egui 0.35.0",
+ "image",
  "qymcad",
  "qymcad-acceptance",
  "qymcad-core",
@@ -3284,6 +3286,9 @@ dependencies = [
  "qymcad-i18n",
  "qymcad-io",
  "qymcad-kernel",
+ "qymcad-render",
+ "qymcad-scheme",
+ "qymcad-ui-state",
  "serde",
  "serde_json",
 ]
