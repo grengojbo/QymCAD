@@ -1,5 +1,5 @@
-//! THE SMALL RULES OF A FEATURE that every caller laying one needs: which way a cut goes, and where on a face a hole
-//! stands. The window and the protocol server both lay cuts and holes; one copy of each rule leaves nothing to drift
+//! THE SMALL RULES OF A FEATURE that every caller laying one needs: which way a cut goes, where on a face a hole
+//! stands, and which holes found nothing to drill. The window and the protocol server both lay cuts and holes; one copy of each rule leaves nothing to drift
 //! between what a person gets by clicking and what a caller gets by asking.
 
 use qymcad_core::feature::{PlaneFrame, SketchPlane};
@@ -48,6 +48,75 @@ impl FaceFrame {
         let FaceOffset { u, v } = off;
         [c[0] + f.x[0] * u + f.y[0] * v, c[1] + f.x[1] * u + f.y[1] * v, c[2] + f.x[2] * u + f.y[2] * v]
     }
+}
+
+/// THE HOLES OF HOLE FEATURE `node` THAT MEET NO MATERIAL: the centre of each one (in the frame of the part) whose
+/// axis, followed the hole's depth into the body it drills, crosses none of that body's faces. Such a hole cuts
+/// nothing and the rebuild says nothing of it: a point drawn off the face, a face hole placed past the edge. Empty for
+/// a node that is no hole, or whose body has no mesh to look at.
+pub fn holes_in_air(project: &qymcad_core::model::Project, node: qymcad_core::model::Id) -> Vec<[f64; 3]> {
+    use qymcad_core::feature::FeatureKind;
+    let Some(n) = project.timeline.iter().find(|n| n.id == node) else { return Vec::new() };
+    let FeatureKind::Hole { src, point, normal, depth, sketch, flip, .. } = n.kind else { return Vec::new() };
+    let Some(mesh) = project.mesh_index(src).map(|mi| &project.bodies[mi].mesh) else { return Vec::new() };
+    // every hole as its centre and the way it is drilled: along -Z of a sketch point's frame, into a face against its
+    // normal
+    let axes: Vec<Axis> = if sketch != 0 {
+        project.sketch_hole_points(sketch, flip).iter().map(|m| Axis { at: [m[3], m[7], m[11]], into: [-m[2], -m[6], -m[10]] }).collect()
+    } else {
+        vec![Axis { at: point, into: [-normal[0], -normal[1], -normal[2]] }]
+    };
+    // the ray starts a hair before the centre: a centre on the face would otherwise start on it and might miss it
+    let hair = 1e-3;
+    axes.into_iter()
+        .filter(|a| {
+            let from = [a.at[0] - a.into[0] * hair, a.at[1] - a.into[1] * hair, a.at[2] - a.into[2] * hair];
+            !(0..mesh.tris.len()).any(|t| {
+                let tri = mesh.triangle(t);
+                ray_meets(&Ray { from, dir: a.into, reach: depth + 2.0 * hair }, [[tri[0].x, tri[0].y, tri[0].z], [tri[1].x, tri[1].y, tri[1].z], [tri[2].x, tri[2].y, tri[2].z]])
+            })
+        })
+        .map(|a| a.at)
+        .collect()
+}
+
+/// A hole's centre and the unit direction it is drilled in.
+struct Axis {
+    at: [f64; 3],
+    into: [f64; 3],
+}
+
+/// A ray from a point along a unit direction, as far as `reach`.
+struct Ray {
+    from: [f64; 3],
+    dir: [f64; 3],
+    reach: f64,
+}
+
+/// Whether the ray crosses the triangle within its reach (Moller-Trumbore).
+fn ray_meets(r: &Ray, tri: [[f64; 3]; 3]) -> bool {
+    let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
+    let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let e1 = sub(tri[1], tri[0]);
+    let e2 = sub(tri[2], tri[0]);
+    let p = cross(r.dir, e2);
+    let det = dot(e1, p);
+    if det.abs() < 1e-12 {
+        return false; // the ray runs along the triangle's plane
+    }
+    let s = sub(r.from, tri[0]);
+    let u = dot(s, p) / det;
+    if !(0.0..=1.0).contains(&u) {
+        return false;
+    }
+    let q = cross(s, e1);
+    let v = dot(r.dir, q) / det;
+    if v < 0.0 || u + v > 1.0 {
+        return false;
+    }
+    let t = dot(e2, q) / det;
+    (0.0..=r.reach).contains(&t)
 }
 
 #[cfg(test)]

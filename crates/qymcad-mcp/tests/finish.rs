@@ -128,3 +128,27 @@ fn what_finds_nothing_is_refused_whole() {
     assert_eq!(steep["error"]["code"], "bad-size", "{steep}");
     assert_eq!(ctx.doc.history().undo_names().len(), steps, "a refusal left a step");
 }
+
+/// A HOLE THAT CUTS NOTHING IS NAMED IN THE ANSWER. Reported behaviour: four holes drawn on a plate, their points laid
+/// as if the plate began at the origin - it stands centred on it - drilled one; the three others cut nothing and the
+/// answer said nothing. The answer now warns of each, with where it stands and where the body is.
+#[test]
+fn holes_that_cut_nothing_are_named() {
+    let mut ctx = Ctx::blank();
+    let laid = ok(call(&mut ctx, "box", json!({ "x": 60, "y": 40, "z": 4 })));
+    let top = ok(call(&mut ctx, "create_sketch", json!({ "plane": { "body": { "part": laid["bodies"][0]["part"] }, "face": "top" } })));
+    let points: Vec<Value> = [[8, 8], [52, 8], [8, 32], [52, 32]].iter().map(|p| json!({ "point": { "at": p } })).collect();
+    let _ = ok(call(&mut ctx, "sketch_add", json!({ "sketch": top["sketch"], "entities": points })));
+    let drilled = ok(call(&mut ctx, "hole", json!({ "sketch": top["sketch"], "diameter": 3.4, "depth": 10 })));
+    let warned = drilled["warnings"].as_array().cloned().unwrap_or_default();
+    let air: Vec<&Value> = warned.iter().filter(|w| w["code"] == "hole-in-air").collect();
+    assert_eq!(air.len(), 3, "three of the four holes stand past the plate: {drilled}");
+    let at: Vec<Value> = air.iter().map(|w| w["at"].clone()).collect();
+    for want in [json!([52.0, 8.0, 4.0]), json!([8.0, 32.0, 4.0]), json!([52.0, 32.0, 4.0])] {
+        assert!(at.contains(&want), "no warning at {want}: {drilled}");
+    }
+    // the holes all on the plate: no warning
+    let _ = ok(call(&mut ctx, "undo", json!({})));
+    let inside = ok(call(&mut ctx, "hole", json!({ "face": "top", "diameter": 3.4, "depth": 10 })));
+    assert!(inside.get("warnings").is_none(), "a hole on the plate is warned of: {inside}");
+}

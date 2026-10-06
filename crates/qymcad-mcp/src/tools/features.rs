@@ -560,9 +560,25 @@ pub const HOLE: Tool = Tool {
                 Ok(Laid { node, body: node })
             })
             .map_err(tool::doc_refusal)?;
-        Ok(laid_answer(ctx, laid))
+        let air = qymcad_doc::ops::holes_in_air(ctx.doc.project(), laid.node);
+        let mut out = laid_answer(ctx, laid);
+        if !air.is_empty() {
+            out.insert("warnings".into(), json!(air.iter().map(|at| hole_in_air(ctx, body, *at)).collect::<Vec<_>>()));
+        }
+        Ok(out)
     },
 };
+
+/// The warning of a hole that cut nothing: where it stands and where the body it was to drill is, both in the part's
+/// frame - the usual cause is a point laid as if the body began at the origin.
+fn hole_in_air(ctx: &Ctx, body: qymcad_core::model::Id, at: [f64; 3]) -> Value {
+    let span = ctx.doc.project().mesh_index(body).and_then(|mi| ctx.doc.project().bodies[mi].mesh.bounds());
+    let message = match span {
+        Some(b) => format!("The hole at {at:?} meets no material: the body spans x {}..{}, y {}..{}, z {}..{}.", b.min.x, b.max.x, b.min.y, b.max.y, b.min.z, b.max.z),
+        None => format!("The hole at {at:?} meets no material."),
+    };
+    json!({ "code": "hole-in-air", "at": at, "message": message })
+}
 
 /// The recess over a counterbored or countersunk hole.
 struct Recess {
