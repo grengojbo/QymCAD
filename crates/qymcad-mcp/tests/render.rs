@@ -107,9 +107,9 @@ fn a_picture_goes_to_the_client_as_an_image() {
     assert_eq!(body["view"], "iso", "{body}");
 }
 
-/// THE CAMERA ON THE SIDE ASKED FOR, framed by the window's fit: the longest side of the model spans 0.55 of the
-/// shorter side of the picture - 60 mm over 330 px of 600, 5.5 px per mm. From above the plate is 330 x 220, from the
-/// front 330 x 22, from the left 220 x 22.
+/// THE CAMERA ON THE SIDE ASKED FOR, the model filling 0.9 of the picture along the side it bounds first. In 600 x
+/// 600 the plate is 540 x 360 from above (9 px per mm), 540 x 36 from the front (9 px per mm), 540 x 54 from the left
+/// (13.5 px per mm).
 #[test]
 fn each_view_shows_the_plate_from_its_side() {
     let ctx = plate();
@@ -118,7 +118,7 @@ fn each_view_shows_the_plate_from_its_side() {
         width: usize,
         height: usize,
     }
-    let wanted = [Seen { view: View::Top, width: 330, height: 220 }, Seen { view: View::Front, width: 330, height: 22 }, Seen { view: View::Left, width: 220, height: 22 }];
+    let wanted = [Seen { view: View::Top, width: 540, height: 360 }, Seen { view: View::Front, width: 540, height: 36 }, Seen { view: View::Left, width: 540, height: 54 }];
     let mut wrong = Vec::new();
     for s in wanted {
         let img = picture::draw(ctx.doc.project(), &look(s.view, Lit::Nothing), &[]).expect("drawn");
@@ -175,9 +175,9 @@ fn nothing_to_draw_and_a_size_out_of_bounds_are_refused() {
 }
 
 /// THE EDGES BEHIND THE BODY ARE NOT DRAWN. A cube 20 from iso shows nine of its twelve edges: the six of its outline
-/// and the three of the near corner; the three of the far corner run behind it. Fitted into 600 x 600, an edge spans
-/// L = 20 x 16.5 x sqrt(2/3) = 269 px, and a line is drawn as many pixels as its longer screen side: L for an upright
-/// edge, L cos 30 deg for the others. Nine edges - three upright, six slanted - are 8.2 L of pixels; the three hidden
+/// and the three of the near corner; the three of the far corner run behind it. The cube stands 2 L high on the screen
+/// and is framed to 0.9 x 600 = 540 px by that height, so an edge spans L = 270 px; a line is drawn as many pixels as
+/// its longer screen side: L for an upright edge, L cos 30 deg for the others. Nine edges - three upright, six slanted - are 8.2 L of pixels; the three hidden
 /// ones would add 2.7 L.
 #[test]
 fn the_edges_behind_the_body_are_not_drawn() {
@@ -191,7 +191,7 @@ fn the_edges_behind_the_body_are_not_drawn() {
     // an edge is drawn in the light scheme's colour of edges, which neither the bodies nor the ground take
     let pen = qymcad_scheme::light().edge_idle();
     let drawn = img.pixels.iter().filter(|p| **p == pen).count() as f64;
-    let l = 20.0 * 16.5 * (2.0f64 / 3.0).sqrt();
+    let l = 270.0;
     let edges = drawn / l;
     assert!((7.6..=8.8).contains(&edges), "the picture draws {edges:.2} L of edges, not the 8.2 L of the nine in sight");
 }

@@ -221,6 +221,7 @@ pub fn draw(project: &Project, look: &Look, lines: &[Line]) -> Option<egui::Colo
     let qymcad_render::Angles { yaw, pitch } = qymcad_render::dir_to_angles(look.view.from());
     let mut cam = Cam3 { yaw, pitch, ..Cam3::default() };
     qymcad_render::fit3d(&mut cam, project, rect);
+    frame_tightly(&mut cam, project, rect);
     let painting = rest.painting(project, cam, selection(project, look.lit));
     let basis = cam.basis();
     let mut raster = qymcad_render::rasterize_3d_with_depth(&painting, rect, &basis, 1.0, 1.0)?;
@@ -243,6 +244,44 @@ pub fn draw(project: &Project, look: &Look, lines: &[Line]) -> Option<egui::Colo
         *p = over(*p, ground);
     }
     Some(img)
+}
+
+/// The share of the picture the model fills along its tighter side.
+const FILL: f64 = 0.9;
+
+/// THE MODEL FILLS THE PICTURE. The window's fit leaves the model 0.55 of the shorter side, room for the gizmos and
+/// the view cube a picture has none of; measured on a plate from above, it took a quarter of the frame. Here the
+/// bodies are measured as they fall on the screen - along the camera's right and up - and framed to `FILL` of the
+/// side they bound first.
+fn frame_tightly(cam: &mut Cam3, project: &Project, rect: Rect) {
+    let (right, up, _) = cam.basis();
+    let dot = |a: [f64; 3], b: [f64; 3]| a[0] * b[0] + a[1] * b[1] + a[2] * b[2];
+    let mut lo = [f64::INFINITY; 2];
+    let mut hi = [f64::NEG_INFINITY; 2];
+    let consumed = project.consumed_bodies();
+    for b in project.bodies.iter().filter(|b| b.visible && !consumed.contains(&b.id)) {
+        let wt = project.body_world_transform(b.id);
+        for v in &b.mesh.verts {
+            let w = qymcad_core::feature::apply12(&wt, [v.x, v.y, v.z]);
+            let on = [dot(w, right), dot(w, up)];
+            for k in 0..2 {
+                lo[k] = lo[k].min(on[k]);
+                hi[k] = hi[k].max(on[k]);
+            }
+        }
+    }
+    let span = [hi[0] - lo[0], hi[1] - lo[1]];
+    if !(span[0].is_finite() && span[1].is_finite()) || span[0].max(span[1]) < 1e-9 {
+        return; // nothing to measure, or a single point: the window's fit stands
+    }
+    // the middle of the bodies on the screen, back in the world: the target keeps its own depth along the view
+    let mid = [(lo[0] + hi[0]) / 2.0, (lo[1] + hi[1]) / 2.0];
+    let t = cam.target;
+    let shift = [mid[0] - dot(t, right), mid[1] - dot(t, up)];
+    cam.target = [t[0] + right[0] * shift[0] + up[0] * shift[1], t[1] + right[1] * shift[0] + up[1] * shift[1], t[2] + right[2] * shift[0] + up[2] * shift[1]];
+    let fits = |px: f32, along: f64| f64::from(px) / along.max(1e-9);
+    cam.scale = (fits(rect.width(), span[0]).min(fits(rect.height(), span[1])) * FILL) as f32;
+    cam.fit = cam.scale;
 }
 
 /// A piece of an edge on the screen: each end as `Screen::at` gives it, the point and its world depth.
