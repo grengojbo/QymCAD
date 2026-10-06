@@ -156,6 +156,11 @@ pub const ALL: &[Tool] = &[
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
     crate::tools::look::RENDER,
+    crate::tools::query::LIST_FACES,
+    crate::tools::query::LIST_EDGES,
+    crate::tools::query::RESOLVE,
+    crate::tools::query::INSPECT,
+    crate::tools::query::MEASURE,
 ];
 
 pub fn find(name: &str) -> Option<&'static Tool> {

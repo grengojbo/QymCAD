@@ -314,7 +314,7 @@ pub const REVOLVE: Tool = Tool {
 };
 
 /// THE BODY A FINISHING TOOL WORKS ON: the one named, or the one body of the active part.
-fn target(project: &Project, body: Option<crate::args::BodyRef>) -> Result<Id, Refusal> {
+pub(crate) fn target(project: &Project, body: Option<crate::args::BodyRef>) -> Result<Id, Refusal> {
     match body {
         Some(b) => b.resolve(project),
         None => crate::args::BodyRef::Part(project.current_ctx()).resolve(project).map_err(|r| r.with_hint("Name the body: {\"body\": key} or {\"part\": key}.")),
@@ -322,7 +322,7 @@ fn target(project: &Project, body: Option<crate::args::BodyRef>) -> Result<Id, R
 }
 
 /// The schema of the body a finishing tool takes; without it, the active part's one body.
-fn body_field() -> Value {
+pub(crate) fn body_field() -> Value {
     let mut s = crate::args::body_schema();
     s["description"] = json!("{\"body\": key} or {\"part\": key}; without it, the one body of the active part.");
     s

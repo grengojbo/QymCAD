@@ -8,8 +8,8 @@ pub use qymcad_ui_state::MeasurePick;
 pub(crate) use qymcad_ui_state::measure_text;
 use super::{App, Id};
 use egui::{Pos2, Rect};
-use qymcad_core::feature::{apply12, apply12_dir};
-use qymcad_core::measure::{MeasureItem};
+use qymcad_core::feature::apply12;
+use qymcad_core::measure::MeasureItem;
 
 impl App {
     /// THE RESULT TEXT — the only place where the numbers turn into a string (the status line and the
@@ -93,32 +93,14 @@ impl App {
         let (d, body, eid) = best.filter(|(d, _, _)| *d <= 8.0)?;
         let _ = d;
         let shape = self.live.shapes.get(&body)?;
-        let (polys, ids, circles) = shape.edges_full();
-        let k = ids.iter().position(|x| *x == eid)?;
         let wt = self.project.body_display_transform(body, ctx);
-        let poly = &polys[k];
-        if poly.len() < 2 {
-            return None;
-        }
-        // A CIRCULAR EDGE stays a circle: the diameter of a hole is measured by it, and a polyline
-        // from the tessellation would give a "length" instead of a diameter.
-        if let Some((c, ax, r)) = circles[k] {
-            let center = apply12(&wt, c);
-            let axis = apply12_dir(&wt, ax);
-            return Some(MeasurePick { item: MeasureItem::Circle { center, axis, r }, what: crate::i18n::tr1("m3-circle", "d", &crate::i18n::num(2.0 * r, 2)), at: center });
-        }
-        let a = apply12(&wt, [poly[0][0] as f64, poly[0][1] as f64, poly[0][2] as f64]);
-        let b = apply12(&wt, [poly[poly.len() - 1][0] as f64, poly[poly.len() - 1][1] as f64, poly[poly.len() - 1][2] as f64]);
-        // THE LENGTH goes by the polyline rather than the chord: an arc has a shorter chord, and
-        // "the length of the edge" would be a lie.
-        let mut length = 0.0;
-        for w in poly.windows(2) {
-            let (p, q) = (apply12(&wt, [w[0][0] as f64, w[0][1] as f64, w[0][2] as f64]), apply12(&wt, [w[1][0] as f64, w[1][1] as f64, w[1][2] as f64]));
-            length += ((q[0] - p[0]).powi(2) + (q[1] - p[1]).powi(2) + (q[2] - p[2]).powi(2)).sqrt();
-        }
-        let dir = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
-        let mid = [(a[0] + b[0]) * 0.5, (a[1] + b[1]) * 0.5, (a[2] + b[2]) * 0.5];
-        Some(MeasurePick { item: MeasureItem::Line { origin: a, dir, len: length }, what: crate::i18n::tr1("m3-edge", "v", &crate::i18n::num(length, 2)), at: mid })
+        let item = qymcad_doc::measure::edge_item(shape, eid, &wt)?;
+        let what = match item {
+            MeasureItem::Circle { r, .. } => crate::i18n::tr1("m3-circle", "d", &crate::i18n::num(2.0 * r, 2)),
+            MeasureItem::Line { len, .. } => crate::i18n::tr1("m3-edge", "v", &crate::i18n::num(len, 2)),
+            _ => return None,
+        };
+        Some(MeasurePick { item, what, at: qymcad_doc::measure::shown_at(&item) })
     }
 
     /// The face under the cursor -> a plane or a cylinder in the WORLD coordinates of the active
@@ -127,17 +109,11 @@ impl App {
         let (body, fid, hit) = crate::gui::pick::pick_face_ray(&self.painting(), rect, pos)?;
         let ctx = qymcad_ui_state::current_ctx_id(&self.active_path, &self.project);
         let wt = self.project.body_display_transform(body, ctx);
-        // A CYLINDER is a kind of its own: on the wall of a hole one measures the diameter and the
-        // gap to that wall, not to an imaginary plane it does not have.
-        if let Some((o, ax, r)) = self.live.shapes.get(&body).and_then(|s| s.face_cylinder(fid)) {
-            let origin = apply12(&wt, o);
-            let axis = apply12_dir(&wt, ax);
-            return Some(MeasurePick { item: MeasureItem::Cylinder { origin, axis, r }, what: crate::i18n::tr1("m3-cylinder", "d", &crate::i18n::num(2.0 * r, 2)), at: hit });
-        }
-        let key = qymcad_core::feature::FaceKey { index: 0, centroid: [0.0; 3], normal: [0.0, 0.0, 1.0], id: fid };
-        let (c, n) = self.project.resolve_face(body, &key);
-        let origin = apply12(&wt, c);
-        let normal = apply12_dir(&wt, n);
-        Some(MeasurePick { item: MeasureItem::Plane { origin, normal }, what: crate::i18n::tr("m3-face"), at: hit })
+        let item = qymcad_doc::measure::face_item(&self.project, self.live.shapes.get(&body), body, fid, &wt);
+        let what = match item {
+            MeasureItem::Cylinder { r, .. } => crate::i18n::tr1("m3-cylinder", "d", &crate::i18n::num(2.0 * r, 2)),
+            _ => crate::i18n::tr("m3-face"),
+        };
+        Some(MeasurePick { item, what, at: hit })
     }
 }
