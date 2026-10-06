@@ -88,16 +88,16 @@ fn a_query_finds_what_a_feature_would_take() {
 }
 
 #[test]
-fn a_sound_body_is_one_solid_and_its_smallest_rounding_is_named() {
+fn a_sound_body_is_one_solid_and_its_smallest_radius_is_named() {
     let mut ctx = block();
     let bare = ok(call(&mut ctx, "inspect", json!({})));
     assert_eq!(bare["valid"], json!(true), "{bare}");
     assert_eq!(bare["solids"], json!(1), "{bare}");
     assert_eq!(bare["surfaces"], json!({ "plane": 6 }), "{bare}");
-    assert_eq!(bare["smallest_round"], Value::Null, "a block with no rounding has one: {bare}");
+    assert_eq!(bare["smallest_radius"], Value::Null, "a block with no round face has a radius: {bare}");
     let _ = ok(call(&mut ctx, "fillet", json!({ "edges": { "adjacent": "top" }, "radius": 2 })));
     let rounded = ok(call(&mut ctx, "inspect", json!({})));
-    assert!(close(&rounded["smallest_round"], 2.0), "{rounded}");
+    assert!(close(&rounded["smallest_radius"], 2.0), "{rounded}");
     assert!(rounded["surfaces"]["cylinder"].as_u64().is_some_and(|n| n >= 4), "the rounded rim has no cylinders: {rounded}");
 }
 

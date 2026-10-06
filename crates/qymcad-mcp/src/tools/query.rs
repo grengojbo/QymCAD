@@ -188,7 +188,7 @@ const SURFACES: [&str; 7] = ["plane", "cylinder", "cone", "sphere", "torus", "fr
 
 pub const INSPECT: Tool = Tool {
     name: "inspect",
-    description: "The health of a body before it is printed or exported: valid (the kernel finds it sound), solids (1 for one closed body; more means it fell apart, 0 a sheet), its faces by the kind of surface, the smallest rounding or chamfer on it (null when it has none). Volume, area and bounds are in get_document.",
+    description: "The health of a body before it is printed or exported: valid (the kernel finds it sound), solids (1 for one closed body; more means it fell apart, 0 a sheet), its faces by the kind of surface, the smallest radius of a round face on it - a rounding, or the wall of a hole (null when it has none; list_faces tells which). Volume, area and bounds are in get_document.",
     schema: body_only,
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: BodyArgs = tool::args(arguments)?;
@@ -202,7 +202,7 @@ pub const INSPECT: Tool = Tool {
         out.insert("valid".into(), json!(shape.is_valid()));
         out.insert("solids".into(), json!(shape.solid_count()));
         out.insert("surfaces".into(), json!(kinds));
-        out.insert("smallest_round".into(), if round_min > 0.0 { json!(round(round_min)) } else { Value::Null });
+        out.insert("smallest_radius".into(), if round_min > 0.0 { json!(round(round_min)) } else { Value::Null });
         Ok(out)
     },
 };
