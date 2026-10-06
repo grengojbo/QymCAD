@@ -11,6 +11,9 @@ use qymcad_core::geom::Point2;
 use qymcad_core::model::{Id, Project};
 use qymcad_ui_state::*;
 
+pub mod view;
+pub use view::{color_image_to_png, dir_to_angles, fit3d, Angles};
+
 pub const CARD_BUTTON: egui::Vec2 = egui::vec2(150.0, 28.0);
 
 pub const CARD_PAD: f32 = 16.0;

@@ -161,13 +161,7 @@ fn norm(v: [f64; 3]) -> [f64; 3] {
     [v[0] / l, v[1] / l, v[2] / l]
 }
 
-/// The direction of a zone becomes the angles of the camera. As a function of its own, because the same
-/// conversion is used by the animation of the transition and by the tests: two copies of the formula
-/// would diverge in a sign and give a cube that looks the wrong way.
-pub(crate) fn dir_to_angles(d: [f64; 3]) -> (f64, f64) {
-    let n = norm(d);
-    (n[1].atan2(n[0]), n[2].clamp(-1.0, 1.0).asin())
-}
+pub(crate) use qymcad_render::dir_to_angles;
 
 impl App {
     /// THE ONE PLACE THE BORROWS ARE SPLIT for the view cube.
@@ -521,7 +515,7 @@ pub(crate) fn click(cube: &CubeCtx, rect: Rect, pos: Pos2) -> Option<Turn> {
     }
     let i = zone_at(cube, rect, pos)?;
     let z = &zones()[i];
-    let (yaw, pitch) = dir_to_angles(z.dir);
+    let qymcad_render::Angles { yaw, pitch } = dir_to_angles(z.dir);
     Some(Turn { yaw, pitch, say: z.label })
 }
 

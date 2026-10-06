@@ -17,6 +17,7 @@ qymcad-ui-state = { path = "../qymcad-ui-state" }
 qymcad-pick = { path = "../qymcad-pick" }
 qymcad-i18n = { path = "../qymcad-i18n" }
 qymcad-scheme = { path = "../qymcad-scheme" }
+image = { version = "0.25", default-features = false, features = ["png"] } # a picture written as PNG
 eframe = { version = "0.35", default-features = false, features = ["default_fonts", "glow", "wayland", "x11"] }
 
 [lints]

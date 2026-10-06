@@ -40,7 +40,7 @@ mod tests {
     #[test]
     fn a_corner_gives_a_proper_isometric_view() {
         for z in zones().iter().filter(|z| z.kind == ZoneKind::Corner) {
-            let (yaw, pitch) = dir_to_angles(z.dir);
+            let qymcad_render::Angles { yaw, pitch } = dir_to_angles(z.dir);
             let mut app = ready();
             app.viewing.cam.yaw = yaw;
             app.viewing.cam.pitch = pitch;
@@ -66,7 +66,7 @@ mod tests {
     #[test]
     fn the_poles_keep_an_orthonormal_basis() {
         for z in zones().iter().filter(|z| z.kind == ZoneKind::Face && z.dir[2].abs() > 0.9) {
-            let (yaw, pitch) = dir_to_angles(z.dir);
+            let qymcad_render::Angles { yaw, pitch } = dir_to_angles(z.dir);
             let mut app = ready();
             app.viewing.cam.yaw = yaw;
             app.viewing.cam.pitch = pitch;
@@ -93,7 +93,7 @@ mod tests {
         assert!(app.viewcube_click(rect(), at), "a click on the cube must be accepted");
         // the turn is animated — the animation is driven to its end
         app.viewing.finish_view_anim();
-        let (yw, pt) = dir_to_angles(want);
+        let qymcad_render::Angles { yaw: yw, pitch: pt } = dir_to_angles(want);
         assert!((app.viewing.cam.yaw - yw).abs() < 1e-6, "the yaw must arrive at the zone: {} against {yw}", app.viewing.cam.yaw);
         assert!((app.viewing.cam.pitch - pt).abs() < 1e-6, "the pitch must arrive at the zone: {} against {pt}", app.viewing.cam.pitch);
     }
@@ -416,7 +416,7 @@ mod tests {
             }
             let mut app = ready();
             // this face is looked at HEAD ON — just as after a click on it
-            let (yaw, pitch) = dir_to_angles(z.dir);
+            let qymcad_render::Angles { yaw, pitch } = dir_to_angles(z.dir);
             app.viewing.cam.yaw = yaw;
             app.viewing.cam.pitch = pitch;
             let (right, up) = crate::gui::viewcube::label_screen_dirs(&app.cube_ctx(), rect(), i);
