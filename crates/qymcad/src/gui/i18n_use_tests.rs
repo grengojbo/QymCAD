@@ -1046,3 +1046,198 @@ fn catalogue(lang: &str) -> Vec<(String, String)> {
     }
     out
 }
+
+/// The catalogue keys generated dynamically by runtime schemas rather than written as literals.
+fn dynamic_catalogue_keys() -> Vec<String> {
+    let mut keys = Vec::new();
+    // 1. Colour schemes: group headers and colour keys
+    for (section, rows) in qymcad_scheme::groups() {
+        keys.push(format!("scheme-group-{section}"));
+        for row in rows {
+            keys.push(format!("scheme-color-{row}"));
+        }
+    }
+    // 2. Joints
+    use qymcad_core::feature::JointKind;
+    for jk in [JointKind::Rigid, JointKind::Revolute, JointKind::Slider, JointKind::Cylindrical, JointKind::Planar, JointKind::Ball, JointKind::PinSlot, JointKind::Parallel] {
+        keys.push(format!("name-{}-n", jk.label()));
+    }
+    // 3. Kernel operations: failure and kernel-required error codes
+    for op in qymcad_core::errors::Op::all() {
+        keys.push(format!("error-op-failed-{}", op.key()));
+        keys.push(format!("error-kernel-required-{}", op.key()));
+    }
+    // 4. Panels from the shell layout
+    let shell = crate::gui::shell(&crate::gui::Settings::default());
+    for p in shell.keys() {
+        keys.push(format!("panel-{p}"));
+    }
+    // 5. Mouse layouts and hints
+    for m in qymcad_ui_state::MouseNav::ALL {
+        keys.push(m.key());
+        keys.push(m.hint_key());
+    }
+    // 6. Help sections
+    for h in ["sketch", "part", "assembly", "general", "cam", "start"] {
+        keys.push(format!("help-section-{h}"));
+    }
+    // 7. Hotkey areas
+    for a in crate::gui::hotkeys::AREAS {
+        keys.push(format!("hotkeys-area-{a}"));
+    }
+    // 8. Workbenches (e.g. for command search)
+    for wb in ["sketch", "part", "assembly"] {
+        keys.push(format!("wb-{wb}"));
+    }
+    // 9. Joint and mate fault hints
+    for why in ["j-fault-connector-lost", "j-fault-anchor-lost", "j-fault-anchor-on-moving-part"] {
+        keys.push(format!("{why}-hint"));
+    }
+    keys
+}
+
+/// Strip single-line (`//`) and multi-line (`/* ... */`) comments while preserving string literals.
+fn strip_comments(text: &str) -> String {
+    let mut out = String::with_capacity(text.len());
+    let mut chars = text.chars().peekable();
+    let mut block_depth = 0usize;
+
+    while let Some(c) = chars.next() {
+        if block_depth > 0 {
+            if c == '/' && chars.peek() == Some(&'*') {
+                chars.next();
+                block_depth += 1;
+            } else if c == '*' && chars.peek() == Some(&'/') {
+                chars.next();
+                block_depth -= 1;
+            } else if c == '\n' {
+                out.push('\n');
+            }
+        } else if c == '/' && chars.peek() == Some(&'/') {
+            for next_c in chars.by_ref() {
+                if next_c == '\n' {
+                    out.push('\n');
+                    break;
+                }
+            }
+        } else if c == '/' && chars.peek() == Some(&'*') {
+            chars.next();
+            block_depth = 1;
+        } else if c == '"' {
+            out.push(c);
+            while let Some(sc) = chars.next() {
+                out.push(sc);
+                if sc == '\\' {
+                    if let Some(esc) = chars.next() {
+                        out.push(esc);
+                    }
+                } else if sc == '"' {
+                    break;
+                }
+            }
+        } else if c == 'r' && (chars.peek() == Some(&'"') || chars.peek() == Some(&'#')) {
+            out.push(c);
+            let mut hashes = 0usize;
+            while chars.peek() == Some(&'#') {
+                chars.next();
+                hashes += 1;
+                out.push('#');
+            }
+            if chars.peek() == Some(&'"') {
+                chars.next();
+                out.push('"');
+                while let Some(rc) = chars.next() {
+                    out.push(rc);
+                    if rc == '"' {
+                        let mut match_hashes = 0usize;
+                        while match_hashes < hashes && chars.peek() == Some(&'#') {
+                            chars.next();
+                            out.push('#');
+                            match_hashes += 1;
+                        }
+                        if match_hashes == hashes {
+                            break;
+                        }
+                    }
+                }
+            }
+        } else {
+            out.push(c);
+        }
+    }
+    out
+}
+
+/// Collect all word tokens across the crates and the embedded resources in the program.
+///
+/// Symlinks are skipped so that local external checkouts or symlinked trees do not affect
+/// the test. Comments are stripped so that a mere mention in a comment does not keep an otherwise
+/// dead key alive.
+fn source_and_data_tokens() -> std::collections::HashSet<String> {
+    let crates_dir = qymcad_i18n::ratchet::crates_root();
+    let library_dir = crates_dir.parent().expect("repository root").join("library/parts");
+    let mut tokens = std::collections::HashSet::new();
+    let mut stack = vec![crates_dir, library_dir];
+    while let Some(dir) = stack.pop() {
+        let Ok(rd) = std::fs::read_dir(&dir) else { continue };
+        for e in rd.flatten() {
+            let p = e.path();
+            let Ok(meta) = std::fs::symlink_metadata(&p) else { continue };
+            if meta.file_type().is_symlink() {
+                continue;
+            }
+            if meta.is_dir() {
+                if let Some(name) = p.file_name().and_then(|n| n.to_str()) {
+                    if name.starts_with('.') || name == "target" || name == "i18n" {
+                        continue;
+                    }
+                }
+                stack.push(p);
+                continue;
+            }
+            if meta.is_file() {
+                if let Some(ext) = p.extension().and_then(|e| e.to_str()) {
+                    if matches!(ext, "rs" | "ron" | "toml" | "qpart") {
+                        if let Ok(s) = std::fs::read_to_string(&p) {
+                            let clean = strip_comments(&s);
+                            for token in clean.split(|c: char| !c.is_ascii_alphanumeric() && c != '-' && c != '_') {
+                                if !token.is_empty() {
+                                    tokens.insert(token.to_string());
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
+    tokens
+}
+
+/// NO DEAD KEYS IN THE CATALOGUE: every key in the catalogue is actually used by the code or data files.
+///
+/// When an operation, popup, or workbench is refactored or moved out (as CAM was, or as old popups
+/// were replaced by command bars), keys can be left behind silently. This guard checks that every key in the
+/// reference catalogue is either asked for in the codebase or belongs to an active dynamic family.
+#[test]
+fn no_dead_keys_in_the_catalogue() {
+    let dynamic = dynamic_catalogue_keys();
+    let tokens = source_and_data_tokens();
+    let mut dead = Vec::new();
+    for (key, _) in catalogue(qymcad_i18n::FALLBACK) {
+        if dynamic.contains(&key) {
+            continue;
+        }
+        if !tokens.contains(&key) {
+            dead.push(key);
+        }
+    }
+    dead.sort();
+    assert!(
+        dead.is_empty(),
+        "the catalogue holds keys that are no longer referenced anywhere ({}):\n{}\n\
+         Remove them from i18n/ or wire them to their callers.",
+        dead.len(),
+        dead.join("\n")
+    );
+}

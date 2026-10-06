@@ -78,9 +78,9 @@ pub static LINE: Tool = Tool {
     ],
 };
 
-/// A 40 x 30 rectangle by its two corners.
+/// A 40 x 30 rectangle by its two corners, its centre a point of its own.
 const RECT_BY_CORNERS: Outcome = Outcome::Sketch {
-    points: 4,
+    points: 5,
     lines: 4,
     arcs: 0,
     circles: 0,
@@ -92,13 +92,14 @@ const RECT_BY_CORNERS: Outcome = Outcome::Sketch {
     dof: None,
     box_of: None,
     size_of: None,
-    under: &[(20.0, 0.0, Under::Line), (0.0, 30.0, Under::Point), (20.0, 15.0, Under::Nothing)],
+    under: &[(20.0, 0.0, Under::Line), (0.0, 30.0, Under::Point), (20.0, 15.0, Under::Point), (10.0, 8.0, Under::Nothing)],
 };
 
-/// The same rectangle from a centre at the origin: 80 x 60, its sides through the corner clicked.
+/// The same rectangle from a centre at the origin: 80 x 60, its sides through the corner clicked, its centre a point of
+/// its own and its two construction diagonals through it.
 const RECT_FROM_CENTRE: Outcome = Outcome::Sketch {
-    points: 4,
-    lines: 4,
+    points: 5,
+    lines: 6,
     arcs: 0,
     circles: 0,
     ellipses: 0,
@@ -112,9 +113,9 @@ const RECT_FROM_CENTRE: Outcome = Outcome::Sketch {
     under: &[(0.0, 30.0, Under::Line), (40.0, 30.0, Under::Point), (20.0, 20.0, Under::Nothing)],
 };
 
-/// A rectangle by three points: a side from the first two, the height to the third.
+/// A rectangle by three points: a side from the first two, the height to the third; its centre a point of its own.
 const RECT_BY_THREE: Outcome = Outcome::Sketch {
-    points: 4,
+    points: 5,
     lines: 4,
     arcs: 0,
     circles: 0,
@@ -126,7 +127,7 @@ const RECT_BY_THREE: Outcome = Outcome::Sketch {
     dof: None,
     box_of: None,
     size_of: None,
-    under: &[(20.0, 0.0, Under::Line), (0.0, 0.0, Under::Point), (20.0, 10.0, Under::Nothing)],
+    under: &[(20.0, 0.0, Under::Line), (0.0, 0.0, Under::Point), (20.0, 10.0, Under::Point), (10.0, 5.0, Under::Nothing)],
 };
 
 /// A RECTANGLE: two corners, or a centre and a corner, or three points.
@@ -728,7 +729,7 @@ pub static TEXT: Tool = Tool {
 /// The rectangle of the fixture with its bottom side given a length: the width follows the number typed.
 const fn rect_of_width(w: f64) -> Outcome {
     Outcome::Sketch {
-        points: 4,
+        points: 5,
         lines: 4,
         arcs: 0,
         circles: 0,
@@ -736,7 +737,8 @@ const fn rect_of_width(w: f64) -> Outcome {
         splines: 0,
         texts: 0,
         notes: 0,
-        constraints: Some(5),
+        // the four turns of its sides, its centre on the middle, the dimension
+        constraints: Some(6),
         dof: Some(3),
         box_of: None,
         // a dimension sets the size; where the line stands is for the solver, which moves both of its free ends
@@ -1164,6 +1166,60 @@ fn corner_rounded(r: f64) -> Outcome {
     }
 }
 
+/// The square corner rounded by a fillet of radius `r`, as `corner_rounded` gives it, for a size other than a radius:
+/// a chord of 3 is a radius of 3 / sqrt 2 = 2.1213, an arc of 3 a radius of 6 / pi = 1.9099. The line halfway along
+/// what is left of it and the arc r - r / sqrt 2 out on the diagonal; the gap at half the radius along the line is not
+/// looked for: the arc of a radius of 2.1 passes 0.25 from it, within a click.
+const ROUNDED_BY_CHORD_3: Outcome = Outcome::Sketch {
+    points: 5,
+    lines: 2,
+    arcs: 1,
+    circles: 0,
+    ellipses: 0,
+    splines: 0,
+    texts: 0,
+    notes: 0,
+    constraints: None,
+    dof: None,
+    box_of: Some(([0.0, 0.0], [30.0, 30.0])),
+    size_of: None,
+    under: &[(16.0607, 0.0, Under::Line), (0.6213, 0.6213, Under::Arc)],
+};
+
+/// See `ROUNDED_BY_CHORD_3`: an arc of 3, a radius of 1.9099.
+const ROUNDED_BY_ARC_3: Outcome = Outcome::Sketch {
+    points: 5,
+    lines: 2,
+    arcs: 1,
+    circles: 0,
+    ellipses: 0,
+    splines: 0,
+    texts: 0,
+    notes: 0,
+    constraints: None,
+    dof: None,
+    box_of: Some(([0.0, 0.0], [30.0, 30.0])),
+    size_of: None,
+    under: &[(15.9549, 0.0, Under::Line), (0.5594, 0.5594, Under::Arc)],
+};
+
+/// The corner rounded with a radius of 3, the result of the tool as the bar opens.
+const ROUNDED_BY_RADIUS_3: Outcome = Outcome::Sketch {
+    points: 5,
+    lines: 2,
+    arcs: 1,
+    circles: 0,
+    ellipses: 0,
+    splines: 0,
+    texts: 0,
+    notes: 0,
+    constraints: None,
+    dof: None,
+    size_of: None,
+    box_of: Some(([0.0, 0.0], [30.0, 30.0])),
+    under: &[(1.5, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (0.8787, 0.8787, Under::Arc)],
+};
+
 /// CORNER: the corner of the two lines rounded with the radius the bar holds, a click on the corner itself.
 pub static CORNER: Tool = Tool {
     id: "sketch.corner",
@@ -1192,22 +1248,12 @@ pub static CORNER: Tool = Tool {
         negative: false,
         outcome: corner_rounded,
     }],
-    modes: &[],
-    result: Outcome::Sketch {
-        points: 5,
-        lines: 2,
-        arcs: 1,
-        circles: 0,
-        ellipses: 0,
-        splines: 0,
-        texts: 0,
-        notes: 0,
-        constraints: None,
-        dof: None,
-        size_of: None,
-        box_of: Some(([0.0, 0.0], [30.0, 30.0])),
-        under: &[(1.5, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (0.8787, 0.8787, Under::Arc)],
-    },
+    modes: &[&[
+        Mode { word: "opt-radius", clicks: None, outcome: Some(ROUNDED_BY_RADIUS_3) },
+        Mode { word: "opt-fillet-chord", clicks: None, outcome: Some(ROUNDED_BY_CHORD_3) },
+        Mode { word: "opt-fillet-arc-length", clicks: None, outcome: Some(ROUNDED_BY_ARC_3) },
+    ]],
+    result: ROUNDED_BY_RADIUS_3,
     node: "Sketch",
     undo: "tool-fillet",
     undo_steps: 1,
@@ -1219,7 +1265,6 @@ pub static CORNER: Tool = Tool {
     budget: (10, 2000),
     help: "sketch/16-corner",
     not_applicable: &[
-        (2, "the fillet has no mode: a click on a corner is the whole of it (the chamfer is a button of its own)"),
         (3, "the corner is taken by the click that rounds it, not by a pick before it"),
         (4, "a click away from a corner is answered by the tool itself, in words: see the drawing tools"),
         (7, "the corner is rounded by one click: there is nothing drawn between clicks to follow the pointer"),
@@ -1678,7 +1723,8 @@ pub static CON_EQUAL: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 4, lines: 4, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: None, dof: Some(3), box_of: None, size_of: None, under: &[] },
+    // four corners and the centre of the rectangle
+    result: Outcome::Sketch { points: 5, lines: 4, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: None, dof: Some(3), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -2191,9 +2237,9 @@ const EDITS: &[(u8, &str)] = &[
     DRAWS[5],
 ];
 
-/// A rectangle 40 x 30 with one more side 30 below its bottom: a copy placed, or a cut side put back lower.
+/// A rectangle 40 x 30 - its four corners and its centre - with one more side 30 below its bottom: a copy placed.
 const RECT_AND_SIDE_BELOW: Outcome = Outcome::Sketch {
-    points: 6,
+    points: 7,
     lines: 5,
     arcs: 0,
     circles: 0,
@@ -2424,18 +2470,20 @@ pub static MEASURE: Tool = Tool {
 };
 
 /// The rectangle 40 x 30 with every corner rounded with radius `r`: four sides cut back by r at each end, four arcs of
-/// quarter turns - eight points where arcs touch sides and four centres; the box of the whole is untouched.
+/// quarter turns - eight points where arcs touch sides and four centres, and the rectangle's own five: its four
+/// corners left as virtual sharps, which are neither drawn nor picked (the far corner (40, 30) takes no click), and
+/// its centre; the box of the whole is untouched.
 fn all_corners_rounded(r: f64) -> Outcome {
     let near = r - r / std::f64::consts::SQRT_2;
     // what lies under the pointer is asked only of an arc the pointer can tell from its ends: at 0.01 the whole arc is
     // under one pixel with its two ends, and the pick rightly finds a point there
     let under: &'static [(f64, f64, Under)] = if r >= 1.0 {
-        Box::leak(vec![(r / 2.0, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (near, near, Under::Arc), (40.0 - near, 30.0 - near, Under::Arc)].into_boxed_slice())
+        Box::leak(vec![(r / 2.0, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (near, near, Under::Arc), (40.0 - near, 30.0 - near, Under::Arc), (40.0, 30.0, Under::Nothing)].into_boxed_slice())
     } else {
         &[(20.0, 0.0, Under::Line)]
     };
     Outcome::Sketch {
-        points: 12,
+        points: 17,
         lines: 4,
         arcs: 4,
         circles: 0,
@@ -2479,8 +2527,9 @@ pub static FILLET_ALL: Tool = Tool {
         outcome: all_corners_rounded,
     }],
     modes: &[],
+    // see `all_corners_rounded`: twelve drawn, the four virtual sharps and the centre of the rectangle
     result: Outcome::Sketch {
-        points: 12,
+        points: 17,
         lines: 4,
         arcs: 4,
         circles: 0,
@@ -2492,7 +2541,7 @@ pub static FILLET_ALL: Tool = Tool {
         dof: None,
         box_of: Some(([0.0, 0.0], [40.0, 30.0])),
         size_of: None,
-        under: &[(2.5, 0.0, Under::Nothing), (20.0, 0.0, Under::Line)],
+        under: &[(2.5, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (40.0, 30.0, Under::Nothing)],
     },
     node: "Sketch",
     undo: "tool-fillet",

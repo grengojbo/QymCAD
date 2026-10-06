@@ -41,7 +41,7 @@ pub(crate) fn toggle_command_search(win: &mut super::Windows) {
 /// workbench is shown lower and with a marker - it is legitimate (it will switch the workbench) but must
 /// not push aside one's own.
 pub(crate) fn command_search_hits(workbench: qymcad_ui_state::Workbench, query: &str) -> Vec<&'static crate::command_catalog::Command> {
-    let q = query.trim().to_lowercase();
+    let q = crate::i18n::search::query(query);
     if q.is_empty() {
         return Vec::new();
     }
@@ -49,10 +49,7 @@ pub(crate) fn command_search_hits(workbench: qymcad_ui_state::Workbench, query: 
     let mut mine: Vec<(usize, &'static crate::command_catalog::Command)> = Vec::new();
     let mut other: Vec<(usize, &'static crate::command_catalog::Command)> = Vec::new();
     for c in crate::command_catalog::COMMANDS {
-        // SEARCH IN EVERY LANGUAGE. Someone working in a translated interface often remembers
-        // `fillet`: that is how other manuals, videos and forums write it.
-        let names = [c.name().to_lowercase(), c.name_in("ru").to_lowercase(), c.name_in("uk").to_lowercase(), c.name_in("en").to_lowercase()];
-        let hit = names.iter().filter(|n| !n.is_empty()).find_map(|n| n.find(&q));
+        let hit = crate::i18n::search::find_in_names(&q, &c.name(), |lang| c.name_in(lang));
         // and by code: `part.fillet` is found by "fillet" even without a name
         let hit = hit.or_else(|| c.code.to_lowercase().find(&q));
         let Some(at) = hit else { continue };

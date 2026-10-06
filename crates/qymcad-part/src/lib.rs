@@ -6282,6 +6282,17 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
 /// HOW A SKETCH CHAMFER IS GIVEN, on the bar of the chamfer: equal legs, two legs, or a leg and an angle - the words of
 /// the chamfer of a part - and, for the last two, the second value beside the first leg. Reported (issue #35): the
 /// sketch chamfer took one distance only, and a chamfer of 5 x 3 or of 5 at 30 deg had to be built by hand.
+/// The ways of a sketch fillet, before its field: by its radius, its chord or the length of its arc.
+fn fillet_modes(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
+    use qymcad_core::model::FilletBy;
+    for by in [FilletBy::Radius, FilletBy::Chord, FilletBy::ArcLength] {
+        if ui.selectable_label(bc.tool_prefs.fillet_by == by, qymcad_i18n::tr(qymcad_ui_state::fillet_label(by))).clicked() {
+            bc.tool_prefs.fillet_by = by;
+        }
+    }
+    ui.separator();
+}
+
 /// The modes of a sketch chamfer, before its fields: the fields of one chamfer stand together after them.
 fn chamfer_modes(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     use qymcad_core::feature::ChamferMode;
@@ -6526,10 +6537,20 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
             if bc.armed.click_op() == 4 || bc.armed.click_op() == 5 {
                 if bc.armed.click_op() == 5 {
                     chamfer_modes(bc, ui);
+                } else {
+                    fillet_modes(bc, ui);
                 }
-                ui.label(qymcad_i18n::tr(if bc.armed.click_op() == 4 { "opt-radius" } else { qymcad_ui_state::chamfer_d1_label(bc.tool_prefs.chamfer_mode) }));
+                ui.label(qymcad_i18n::tr(if bc.armed.click_op() == 4 {
+                    qymcad_ui_state::fillet_label(bc.tool_prefs.fillet_by)
+                } else {
+                    qymcad_ui_state::chamfer_d1_label(bc.tool_prefs.chamfer_mode)
+                }));
                 // with a corner clicked, the most it takes; short of it, the largest the field ever takes
-                let corner_hi = bc.corner.at.and_then(|(si, pid, ch)| (pid != 0).then(|| bc.project.corner_limit(si, pid, ch)).flatten()).map_or(10000.0, |l| l * (1.0 - 1e-9));
+                let corner_hi = bc
+                    .corner
+                    .at
+                    .and_then(|(si, pid, ch)| (pid != 0).then(|| qymcad_ui_state::corner_limit_in(&*bc.project, si, pid, ch, bc.tool_prefs.fillet_by)).flatten())
+                    .map_or(10000.0, |l| l * (1.0 - 1e-9));
                 bc.tool_prefs.fillet = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                     ui,
@@ -6635,8 +6656,14 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 Some(qymcad_ui_state::EditTool::Fillet | qymcad_ui_state::EditTool::Chamfer) => {
                     if bc.armed.modify() == Some(qymcad_ui_state::EditTool::Chamfer) {
                         chamfer_modes(bc, ui);
+                    } else {
+                        fillet_modes(bc, ui);
                     }
-                    ui.label(qymcad_i18n::tr(if bc.armed.modify() == Some(qymcad_ui_state::EditTool::Fillet) { "opt-radius" } else { qymcad_ui_state::chamfer_d1_label(bc.tool_prefs.chamfer_mode) }));
+                    ui.label(qymcad_i18n::tr(if bc.armed.modify() == Some(qymcad_ui_state::EditTool::Fillet) {
+                        qymcad_ui_state::fillet_label(bc.tool_prefs.fillet_by)
+                    } else {
+                        qymcad_ui_state::chamfer_d1_label(bc.tool_prefs.chamfer_mode)
+                    }));
                     bc.tool_prefs.fillet = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,

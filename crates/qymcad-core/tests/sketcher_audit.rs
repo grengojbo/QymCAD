@@ -107,7 +107,8 @@ fn assert_copied_constraints(p: &Project, si: usize, from_idx: usize, new_pts: &
         match c {
             Constraint::Fixed { .. } => panic!("the anchor was copied and must not be: it pins a position"),
             Constraint::DistancePL { .. } => panic!("a dimension to an axis was copied and must not be"),
-            Constraint::Horizontal { .. } | Constraint::Vertical { .. } => {
+            // the sides of a rectangle are held at their turn (`Orientation`), what Horizontal and Vertical were
+            Constraint::Horizontal { .. } | Constraint::Vertical { .. } | Constraint::Orientation { .. } => {
                 assert!(all_new, "a horizontal or vertical of the copy has to reference the new points");
                 hv += 1;
             }
@@ -140,7 +141,10 @@ fn clipboard_paste_carries_internal_constraints_only() {
     let (eids, _c00, _c10) = build_dimensioned_rect(&mut p, si);
     let clip = p.copy_sketch_geometry(si, &eids, 0.0, 0.0);
     // the snapshot holds internal constraints only, without the anchor or dimensions to an axis
-    assert!(clip.constraints.iter().any(|c| matches!(c, Constraint::Horizontal { .. } | Constraint::Vertical { .. })), "horizontals and verticals are in the clipboard");
+    assert!(
+        clip.constraints.iter().any(|c| matches!(c, Constraint::Horizontal { .. } | Constraint::Vertical { .. } | Constraint::Orientation { .. })),
+        "horizontals and verticals are in the clipboard"
+    );
     assert!(clip.constraints.iter().any(|c| matches!(c, Constraint::Distance { .. })), "the edge dimension is in the clipboard");
     assert!(!clip.constraints.iter().any(|c| matches!(c, Constraint::Fixed { .. } | Constraint::DistancePL { .. })), "the anchor and the dimension to an axis are not in the clipboard");
 

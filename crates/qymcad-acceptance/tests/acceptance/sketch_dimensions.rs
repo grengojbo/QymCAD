@@ -313,15 +313,16 @@ probe! {
         let mut s = Fixture::RectangleInSketch.start();
         rectangle_with_a_dimension(&mut s);
         let before = s.document().sketches[0].clone();
-        // corner to corner: the side is 50 and the height 30, so the diagonal is 58.3 and 10 is impossible
+        // corner to corner: the side is 50 and the height 30, so the diagonal is 58.3 and 10 is impossible. The rectangle
+        // was drawn from (0, 0) and grew from there to 50: its corners stand at (0, 0) and (50, 30)
         let hint = s.word("tb-dim-hint");
         let field = s.word("sk-expr-example");
         s.press_hint(&hint);
-        s.click_on_sketch(-5.0, 0.0);
-        s.click_on_sketch(45.0, 30.0);
+        s.click_on_sketch(0.0, 0.0);
+        s.click_on_sketch(50.0, 30.0);
         // placed off the middle of the diagonal square to it, so the dimension is aligned with the diagonal: put to
         // the side it would be a vertical one, and a height of 10 is one the rectangle can take
-        s.click_on_sketch(13.8, 25.3);
+        s.click_on_sketch(18.8, 25.3);
         s.fill_hinted(&field, "10").key(Key::Enter);
         let said = s.status();
         let after = s.document().sketches[0].clone();

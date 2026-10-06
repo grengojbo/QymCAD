@@ -734,6 +734,10 @@ fn con_jac(c: &Constraint, x: &[f64], x0: &[f64], idx: &HashMap<Id, usize>, ridx
         }
         Constraint::Horizontal { a, b } => out.push(vec![(vy(a), 1.0), (vy(b), -1.0)]),
         Constraint::Vertical { a, b } => out.push(vec![(vx(a), 1.0), (vx(b), -1.0)]),
+        Constraint::Orientation { a, b, deg } => {
+            let (sn, cs) = deg.to_radians().sin_cos();
+            out.push(vec![(vx(b), sn), (vy(b), -cs), (vx(a), -sn), (vy(a), cs)]);
+        }
         Constraint::Coincident { a, b } | Constraint::Concentric { c1: a, c2: b } => {
             out.push(vec![(vx(a), 1.0), (vx(b), -1.0)]);
             out.push(vec![(vy(a), 1.0), (vy(b), -1.0)]);
@@ -982,6 +986,14 @@ fn con_rows(c: &Constraint, x: &[f64], x0: &[f64], idx: &HashMap<Id, usize>, rid
             }
             Constraint::Horizontal { a, b } => r.push(g(a).1 - g(b).1),
             Constraint::Vertical { a, b } => r.push(g(a).0 - g(b).0),
+            Constraint::Orientation { a, b, deg } => {
+                // the side crossed with the direction held: linear in the points, and at 0 deg exactly a Horizontal. An
+                // angle residual (atan2) has a slope of 1 / length^2 and let a side squeezed short by contradicting
+                // constraints drift a point by 7.6 mm from one solve to the next.
+                let ((ax, ay), (bx, by)) = (g(a), g(b));
+                let (sn, cs) = deg.to_radians().sin_cos();
+                r.push((bx - ax) * sn - (by - ay) * cs);
+            }
             Constraint::Coincident { a, b } => {
                 let (ax, ay) = g(a);
                 let (bx, by) = g(b);
@@ -1200,7 +1212,9 @@ fn con_rows(c: &Constraint, x: &[f64], x0: &[f64], idx: &HashMap<Id, usize>, rid
 fn cons_ok(c: &Constraint, has: &impl Fn(Id) -> bool, is_center: &impl Fn(Id) -> bool) -> bool {
     match *c {
         Constraint::Fixed { p } => has(p),
-        Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => has(a) && has(b),
+        Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Orientation { a, b, .. } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => {
+            has(a) && has(b)
+        }
         Constraint::Parallel { a, b, c, d } | Constraint::Perpendicular { a, b, c, d } | Constraint::Equal { a, b, c, d } | Constraint::Collinear { a, b, c, d } => {
             has(a) && has(b) && has(c) && has(d)
         }

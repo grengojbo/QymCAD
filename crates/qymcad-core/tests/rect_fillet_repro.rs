@@ -47,10 +47,9 @@ fn rect_fillet_keeps_constraints_valid() {
     eprintln!("solver residual: {resid}");
     assert!(resid.is_finite() && resid < 1.0, "the solver converges, residual {resid}");
 
-    // the sides are still horizontal and vertical, so those constraints hold
-    let has_h = p.sketches[si].constraints.iter().any(|c| matches!(c, Constraint::Horizontal { .. }));
-    let has_v = p.sketches[si].constraints.iter().any(|c| matches!(c, Constraint::Vertical { .. }));
-    assert!(has_h && has_v, "the horizontal and vertical constraints of the rectangle survived");
+    // the sides are still held at their turn - at 0 deg and 90 deg - carried onto the shortened sides
+    let turns: Vec<f64> = p.sketches[si].constraints.iter().filter_map(|c| if let Constraint::Orientation { deg, .. } = c { Some(*deg) } else { None }).collect();
+    assert!(turns.len() == 4 && turns.iter().filter(|d| d.abs() < 1e-9).count() == 2, "the turn of every side of the rectangle survived: {turns:?}");
 }
 
 // A rectangle with edge dimensions for width and height, then filleted, has to remain solvable: no conflict,
@@ -204,7 +203,10 @@ fn rounding_every_corner_leaves_no_corner_point_behind() {
         p.add_rect_entity(si, 0.0, 0.0, 40.0, 30.0, qymcad_core::feature::Purpose::Real);
         let done = p.fillet_all_corners(si, r);
         let s = &p.sketches[si];
-        let used: std::collections::HashSet<_> = s.entities.iter().flat_map(qymcad_core::model::entity_points).chain(s.system_ids()).collect();
+        // the corners of a rectangle kept as one shape stay as its virtual sharps, and its centre on their middle: points the
+        // solver counts, not points left behind
+        let of_rect: Vec<u64> = s.rects.iter().flat_map(|r| r.corners.into_iter().chain([r.centre])).collect();
+        let used: std::collections::HashSet<_> = s.entities.iter().flat_map(qymcad_core::model::entity_points).chain(s.system_ids()).chain(of_rect).collect();
         let loose: Vec<_> = s.points.iter().filter(|q| !used.contains(&q.id)).map(|q| (q.id, q.x, q.y)).collect();
         if done != 4 || !loose.is_empty() {
             fails.push(format!("R{r}: {done} corners rounded, points drawn by nothing: {loose:?}"));

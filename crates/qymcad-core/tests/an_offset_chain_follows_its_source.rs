@@ -29,13 +29,14 @@ fn a_dimensioned_rectangle(p: &mut Project) -> (usize, Vec<u64>, (u64, u64)) {
     (si, lines, (a0, b0))
 }
 
-/// The width of the copy: the span in x of the points of the lines not in `source`.
+/// The width of the copy: the span in x of the points of the lines not in `source` - and not the construction
+/// diagonals of the source rectangle, which are no part of the copy.
 fn copy_width(p: &Project, si: usize, source: &[u64]) -> f64 {
     let s = &p.sketches[si];
     let xs: Vec<f64> = s
         .entities
         .iter()
-        .filter(|e| !source.contains(&e.id))
+        .filter(|e| !source.contains(&e.id) && !e.construction)
         .filter_map(|e| match e.kind {
             EntityKind::Line { a, b } => Some([a, b]),
             _ => None,

@@ -738,6 +738,8 @@ pub struct Placing {
     /// the dimension input fields and the focus within them
     pub buf: [String; 2],
     pub focus: bool,
+    /// a value was typed into the fields: closing them with Enter then lays the dimensions typed
+    pub typed: bool,
 }
 
 impl Placing {
@@ -754,6 +756,14 @@ impl Placing {
     pub fn rect(&self) -> Option<(Point2, Point2, Vec<Id>)> {
         match &self.shape {
             PlacingShape::Rect { a, b, ids } => Some((*a, *b, ids.clone())),
+            _ => None,
+        }
+    }
+
+    /// A rectangle reopened for its width and height: the indices of those dimensions.
+    pub fn rect_dims(&self) -> Option<qymcad_core::model::RectDims> {
+        match &self.shape {
+            PlacingShape::RectDims(d) => Some(*d),
             _ => None,
         }
     }
@@ -805,6 +815,8 @@ pub struct SketchToolPrefs {
     /// value - the second leg, or the angle from the first line in degrees
     pub chamfer_mode: qymcad_core::feature::ChamferMode,
     pub chamfer_second: f64,
+    /// HOW A FILLET IS GIVEN: by its radius, its chord or the length of its arc; `fillet` holds the value in that way
+    pub fillet_by: qymcad_core::model::FilletBy,
     /// a text in a sketch: its contents, its height, and whether it is an annotation rather than geometry
     pub text: String,
     pub text_h: f64,
@@ -1674,6 +1686,21 @@ pub const SEL_TEXT: u8 = 4;
 /// behaviour (found checking issue #32): a double click on a text, and a second copy of it slid about under the cursor.
 pub fn text_ghost_shown(armed: &Armed, inline: &InlineEdit) -> bool {
     armed.draw_kind() == 11 && inline.text().is_none()
+}
+
+/// A RECTANGLE IS TAKEN WHOLE by the tools that carry geometry - move, copy, rotate, the patterns: a click on one side of a
+/// rectangle picked that side alone, and a turn of it was a turn of one line out of a shape held square. Every side of
+/// a rectangle with one side picked joins the selection.
+pub fn take_whole_rects(project: &Project, si: usize, sel_sk: &mut SketchSelection) {
+    let Some(s) = project.sketches.get(si) else { return };
+    let picked: Vec<Id> = sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    for r in s.rects.iter().filter(|r| r.sides.iter().any(|e| picked.contains(e))) {
+        for side in r.sides {
+            if !picked.contains(&side) {
+                sel_sk.items.push((1, side));
+            }
+        }
+    }
 }
 
 /// The indices of the texts selected in sketch `si`, in the order they were picked.
@@ -2780,6 +2807,8 @@ pub enum PlacingShape {
     Poly(Id),
     /// an ellipse: the entity and its centre
     Ellipse(Id, Point2),
+    /// a rectangle reopened by a double click on a side: its width and height dimensions, edited in place
+    RectDims(qymcad_core::model::RectDims),
 }
 
 /// THE CUSTOM SCHEME SCREEN: what is being edited and what to say about saving.
@@ -12523,6 +12552,8 @@ pub fn constraint_label(c: &qymcad_core::model::Constraint) -> String {
         C::Fixed { .. } => qymcad_i18n::tr("con-fixed"),
         C::Horizontal { .. } => qymcad_i18n::tr("con-horizontal"),
         C::Vertical { .. } => qymcad_i18n::tr("con-vertical"),
+        // never listed, but named where a conflict has to name what holds the rectangle
+        C::Orientation { .. } => qymcad_i18n::tr("con-rect-turn"),
         C::Coincident { .. } => qymcad_i18n::tr("con-coincident"),
         C::Distance { d, driven, expr, .. } => dim("con-name-distance", value(qymcad_i18n::num(*d, 1), expr), *driven),
         C::Parallel { .. } => qymcad_i18n::tr("con-parallel"),
@@ -12993,7 +13024,7 @@ fn try_modify_in(ed: Editing, sel_sk: &mut SketchSelection, sk_pat: SketchPatter
             true
         }
         EditTool::Fillet => {
-            eids.len() >= 2 && ed.project.fillet_lines(si, eids[0], eids[1], tool_prefs.fillet) && {
+            eids.len() >= 2 && ed.project.fillet_lines_by(si, eids[0], eids[1], fillet_size(tool_prefs)) && {
                 sel_sk.clear(); // the selection and whatever was waiting for it
                 true
             }
@@ -13402,6 +13433,32 @@ pub fn set_chamfer_mode(prefs: &mut SketchToolPrefs, mode: qymcad_core::feature:
         qymcad_core::feature::ChamferMode::DistAngle => 45.0,
         _ => prefs.fillet,
     };
+}
+
+/// The caption of a fillet's field, and the word of its mode on the bar: the radius, the chord or the arc length.
+pub fn fillet_label(by: qymcad_core::model::FilletBy) -> &'static str {
+    use qymcad_core::model::FilletBy;
+    match by {
+        FilletBy::Radius => "opt-radius",
+        FilletBy::Chord => "opt-fillet-chord",
+        FilletBy::ArcLength => "opt-fillet-arc-length",
+    }
+}
+
+/// THE MOST A CORNER TAKES, in the way its size is given: the leg of a chamfer, or the radius, the chord or the arc
+/// length of a fillet - the largest radius worked into the chord or the arc of the same turn. `None` where the corner
+/// is not one of two lines.
+pub fn corner_limit_in(project: &Project, si: usize, pid: Id, chamfer: bool, by: qymcad_core::model::FilletBy) -> Option<f64> {
+    let l = project.corner_limit(si, pid, chamfer)?;
+    if chamfer || by == qymcad_core::model::FilletBy::Radius {
+        return Some(l);
+    }
+    project.corner_sweep(si, pid).map(|sweep| qymcad_core::model::FilletSize::of_radius(by, l, sweep))
+}
+
+/// The size of the fillet the bar holds: the way it is given and the value in that way.
+pub fn fillet_size(prefs: &SketchToolPrefs) -> qymcad_core::model::FilletSize {
+    qymcad_core::model::FilletSize { by: prefs.fillet_by, value: prefs.fillet }
 }
 
 /// The label of a chamfer's first field: the size of an equal chamfer, the first of two legs, or the length along the

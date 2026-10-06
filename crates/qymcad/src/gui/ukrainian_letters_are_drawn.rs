@@ -18,8 +18,11 @@ mod tests {
     /// from the catalogue alone would stay green if a letter were never used there.
     const ALPHABET: &str = include_str!("ukrainian_alphabet.txt");
 
-    /// The apostrophe the catalogue and the help are written with.
-    const APOSTROPHE: char = '\u{2019}';
+    /// The apostrophe the catalogue and the help are written with: the plain one the catalogue came with.
+    const APOSTROPHE: char = '\'';
+
+    /// The other shapes of the apostrophe, which must not be mixed in beside the agreed one.
+    const OTHER_APOSTROPHES: [char; 2] = ['\u{2019}', '\u{02BC}'];
 
     /// The bold face, the same bytes the window installs.
     const BOLD_BYTES: &[u8] = include_bytes!("../../../../assets/fonts/LiberationSans-Bold.ttf");
@@ -62,21 +65,32 @@ mod tests {
     }
 
     /// Every character of the Ukrainian catalogue and help that is not plain ASCII.
-    fn used_characters() -> std::collections::BTreeSet<char> {
+    /// Every Ukrainian text a person reads: the catalogue less its comments, which are never drawn, and the help.
+    fn ukrainian_texts() -> String {
         let root = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../..");
-        let mut out = std::collections::BTreeSet::new();
+        let mut out = String::new();
         let mut stack = vec![root.join("i18n/uk"), root.join("docs/help/uk")];
         while let Some(dir) = stack.pop() {
             for e in std::fs::read_dir(&dir).expect("the Ukrainian directory reads").flatten() {
                 let p = e.path();
                 if p.is_dir() {
                     stack.push(p);
-                } else if p.extension().is_some_and(|x| x == "ftl" || x == "md") {
-                    out.extend(std::fs::read_to_string(&p).expect("the file reads").chars().filter(|c| !c.is_ascii()));
+                } else if p.extension().is_some_and(|x| x == "md") {
+                    out.push_str(&std::fs::read_to_string(&p).expect("the file reads"));
+                } else if p.extension().is_some_and(|x| x == "ftl") {
+                    let text = std::fs::read_to_string(&p).expect("the file reads");
+                    for line in text.lines().filter(|l| !l.trim_start().starts_with('#')) {
+                        out.push_str(line);
+                        out.push('\n');
+                    }
                 }
             }
         }
         out
+    }
+
+    fn used_characters() -> std::collections::BTreeSet<char> {
+        ukrainian_texts().chars().filter(|c| !c.is_ascii()).collect()
     }
 
     /// The characters of `wanted` the installed fonts do not draw, named by the face that lacks them.
@@ -126,9 +140,14 @@ mod tests {
     /// diameter sign or a typographic dash is as fatal as a missing letter.
     #[test]
     fn every_character_the_ukrainian_texts_use_has_a_glyph() {
+        let texts = ukrainian_texts();
+        let letter = |c: char| ALPHABET.contains(c);
+        let chars: Vec<char> = texts.chars().collect();
+        let between_letters = chars.windows(3).any(|w| letter(w[0]) && w[1] == APOSTROPHE && letter(w[2]));
+        assert!(between_letters, "the Ukrainian texts hold no apostrophe of the agreed shape between letters - the check is looking at the wrong files");
+        let mixed: Vec<char> = OTHER_APOSTROPHES.into_iter().filter(|a| texts.contains(*a)).collect();
+        assert!(mixed.is_empty(), "other shapes of the apostrophe {mixed:?} are mixed into the Ukrainian texts: write only the plain one");
         let used = used_characters();
-        assert!(used.contains(&APOSTROPHE), "the Ukrainian texts hold no apostrophe of the agreed shape - the check is looking at the wrong files");
-        assert!(!used.contains(&'\u{02BC}'), "two shapes of the apostrophe are mixed in the Ukrainian texts: write only U+2019");
         let used: Vec<char> = used.into_iter().collect();
         let bad = missing(&used);
         assert!(bad.is_empty(), "the Ukrainian texts hold characters the interface fonts cannot draw ({}):\n{}", bad.len(), bad.join("\n"));

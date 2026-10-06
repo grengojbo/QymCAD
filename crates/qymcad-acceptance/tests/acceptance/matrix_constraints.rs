@@ -196,8 +196,9 @@ probe! {
             // the rectangle carries no dimensions, so the solver may move it rather than the point: what must hold is
             // the point in the middle of the bottom wherever the bottom now is - the two lowest corners
             tie(point_and_rectangle, &[(13.0, 7.0), (20.0, 0.0)], "con-midpoint-hint", Want::Added(|s| {
+                // the four corners of the rectangle come first, its centre after them, the point drawn last
                 let at = s.document().sketches[0].places.clone();
-                let (corners, point) = (&at[..4], at[4]);
+                let (corners, point) = (&at[..4], at[at.len() - 1]);
                 let mut low: Vec<[f64; 2]> = corners.to_vec();
                 low.sort_by(|a, b| a[1].total_cmp(&b[1]));
                 let middle = [(low[0][0] + low[1][0]) / 2.0, (low[0][1] + low[1][1]) / 2.0];

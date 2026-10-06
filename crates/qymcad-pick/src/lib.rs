@@ -1553,6 +1553,10 @@ pub fn constraint_glyphs(pick: &PickCtx, rect: Rect, si: usize) -> Vec<(usize, P
             // as if it were breeding extra constraints).
             Constraint::Fixed { p } if !s.system_ids().contains(&p) => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::Fix),
             Constraint::PointOnLine { p, .. } => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::PointOnLine),
+            // THE CENTRE OF A RECTANGLE SHOWS NO MIDPOINT GLYPH: the rectangle holds it there itself, as it holds its
+            // turn, and the glyph beside the point took the click meant for the point - a constraint on the centre was
+            // refused, the centre never picked
+            Constraint::Midpoint { p, .. } if s.rects.iter().any(|r| r.centre == p) => {}
             Constraint::Midpoint { p, .. } => push(&mut out, ci, pt(p).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::Midpoint),
             Constraint::EqualRadius { c1, c2 } => {
                 push(&mut out, ci, pt(c1).map(|q| sh.at(q) + egui::vec2(8.0, 8.0)), Gly::Equal);

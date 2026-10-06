@@ -530,8 +530,12 @@ mod tests {
 
     impl Frames {
         fn open() -> Self {
+            Self::open_in("en")
+        }
+
+        fn open_in(code: &str) -> Self {
             let lang = qymcad_i18n::language();
-            qymcad_i18n::set_language("en");
+            qymcad_i18n::set_language(code);
             let mut app = App::default();
             app.win.open(crate::gui::WinKind::Hotkeys);
             let ctx = egui::Context::default();
@@ -559,6 +563,14 @@ mod tests {
             let press = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
             self.frame(vec![press(true)]);
             self.frame(vec![press(false)]);
+        }
+
+        /// A click on the empty filter field and `text` typed into it.
+        fn type_filter(&mut self, text: &str) {
+            let shapes = self.frame(Vec::new());
+            let hint = text_rect(&shapes, &crate::i18n::tr("hotkeys-filter-hint")).expect("the empty filter shows its hint");
+            self.click(hint.center());
+            self.frame(vec![egui::Event::Text(text.into())]);
         }
 
         /// A frame in which the key goes down.
@@ -807,8 +819,7 @@ mod tests {
             })
         };
         assert!(on_field(&shapes).is_none(), "the empty filter already shows a clear icon");
-        w.click(hint.center());
-        w.frame(vec![egui::Event::Text("no such command".into())]);
+        w.type_filter("no such command");
         let shapes = w.frame(Vec::new());
         assert!(text_rect(&shapes, &what).is_none(), "the filter did not take the typed text: the extrude row is still drawn");
         let x = on_field(&shapes).expect("the filter holds text and shows no clear icon inside its field");
@@ -816,5 +827,27 @@ mod tests {
         let shapes = w.frame(Vec::new());
         assert!(text_rect(&shapes, &what).is_some(), "the click on the clear icon did not bring the rows back");
         assert!(on_field(&shapes).is_none(), "the cleared filter still shows its clear icon");
+    }
+
+    /// THE FILTER FINDS A ROW BY ITS ENGLISH DESCRIPTION, one way only.
+    #[test]
+    fn the_filter_finds_a_row_by_its_english_description() {
+        let row = |action: &str| HOTKEYS.iter().find(|r| r.action == action).expect("the row");
+        let russian: String = crate::i18n::tr_in("ru", row("part.mirror").what).expect("the Russian description of the Mirror row").to_lowercase().chars().take(4).collect();
+        let mut wrong = Vec::new();
+        for (ui, typed, found) in [("ru", "mirror", true), ("ru", "MIRR", true), ("en", russian.as_str(), false)] {
+            let mut w = Frames::open_in(ui);
+            let mirror = super::super::hotkeys::hotkey_what(row("part.mirror"));
+            let hole = super::super::hotkeys::hotkey_what(row("part.hole"));
+            w.type_filter(typed);
+            let shapes = w.frame(Vec::new());
+            if text_rect(&shapes, &mirror).is_some() != found {
+                wrong.push(format!("interface `{ui}`, `{typed}` typed: the Mirror row `{mirror}` drawn {}, expected {found}", !found));
+            }
+            if text_rect(&shapes, &hole).is_some() {
+                wrong.push(format!("interface `{ui}`, `{typed}` typed: the Hole row `{hole}` is still drawn"));
+            }
+        }
+        assert!(wrong.is_empty(), "{wrong:#?}");
     }
 }

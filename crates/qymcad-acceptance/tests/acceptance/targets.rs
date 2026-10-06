@@ -89,7 +89,8 @@ probe! {
         assert_eq!(s.sketch_under(20.0, 0.0), Some(SketchPick::Line { from: (0.0, 0.0), to: (40.0, 0.0) }), "the bottom side of the rectangle is not under its middle");
         assert_eq!(s.sketch_under(40.0, 15.0), Some(SketchPick::Line { from: (40.0, 0.0), to: (40.0, 30.0) }), "the right side of the rectangle is not under its middle");
         assert_eq!(s.sketch_under(40.0, 30.0), Some(SketchPick::Point { at: (40.0, 30.0) }), "the far corner is not under the place it was clicked");
-        assert_eq!(s.sketch_under(20.0, 15.0), None, "the empty middle of the rectangle takes something");
+        assert_eq!(s.sketch_under(20.0, 15.0), Some(SketchPick::Point { at: (20.0, 15.0) }), "the centre of the rectangle is not under its middle");
+        assert_eq!(s.sketch_under(10.0, 8.0), None, "the empty inside of the rectangle takes something");
     }
 }
 

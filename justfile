@@ -14,6 +14,10 @@ dev:
 test:
     cargo test
 
+# check translation coverage and list missing keys (`just i18n` or `just i18n uk`)
+i18n lang="":
+    python3 tools/i18n.py {{lang}}
+
 # --- Linux AppImage (locally, through Docker; OCCT 7.9.3 from source, glibc 2.35) ---
 IMG := "qymcad-appimage-builder"
 

@@ -90,7 +90,7 @@ pub(crate) fn hotkeys_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Conte
                 });
             });
             ui.separator();
-            let q = wc.hotkeys.filter.trim().to_lowercase();
+            let q = crate::i18n::search::query(&wc.hotkeys.filter);
             let mut shown = 0;
             egui::ScrollArea::vertical().auto_shrink([false, false]).show(ui, |ui| {
                 // measured inside the scroll area: whatever margin it keeps around its content is not the table's
@@ -167,11 +167,14 @@ pub(crate) fn hotkeys_take_keyboard(win: &mut qymcad_ui_state::Windows, hk: &mut
     true
 }
 
-/// WHETHER A ROW ANSWERS THE FILTER: by its description or by its key, either way round.
+/// WHETHER A ROW ANSWERS THE FILTER: by its description or by its key.
 fn row_matches(set: &qymcad_ui_state::Settings, r: &HotkeyRow, q: &str) -> bool {
+    if q.is_empty() || crate::i18n::search::find_in_names(q, &hotkey_what(r), |lang| crate::i18n::tr_in(lang, r.what).unwrap_or_default()).is_some() {
+        return true;
+    }
+    // the stored spelling AND the shown one: a Mac user types the Command sign they see, anybody may type "ctrl"
     let key = qymcad_ui_state::hotkey_key(set, r.action);
-    // the stored spelling AND the shown one: a Mac user types what they see (⌘), anybody may type "ctrl"
-    q.is_empty() || hotkey_what(r).to_lowercase().contains(q) || key.to_lowercase().contains(q) || qymcad_ui_state::key_label(&key).to_lowercase().contains(q)
+    key.to_lowercase().contains(q) || qymcad_ui_state::key_label(&key).to_lowercase().contains(q)
 }
 
 fn what_of(action: &str) -> String {

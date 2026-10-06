@@ -125,6 +125,22 @@ impl<'a> Hand<'a> {
         self.frame(vec![button(false)]);
     }
 
+    /// WHERE THE NUMBER FIELD NEAREST TO `near` STANDS, the next frame drawn - a field a person drags or types into.
+    pub fn number_near(&mut self, near: egui::Pos2) -> Option<egui::Rect> {
+        self.frame(Vec::new());
+        self.win.widgets.iter().filter(|w| w.kind == super::window::Kind::Number).map(|w| w.rect).min_by(|a, b| a.center().distance(near).total_cmp(&b.center().distance(near)))
+    }
+
+    /// DOUBLE-CLICK A POINT OF THE SCREEN: the hand rests over it, then presses and releases twice, each in a frame
+    /// of its own - four sixtieths of a second, well inside the time egui allows a double click.
+    pub fn double_click_screen(&mut self, at: egui::Pos2) -> &mut Self {
+        self.win.clock += 1.0;
+        self.press_screen(at);
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        self.frame(vec![button(true)]);
+        self.frame(vec![button(false)])
+    }
+
     /// PRESS THE TICK BEFORE `word` - the checkbox standing on the line of the words holding `word` nearest to
     /// `near`, the last one to the left of them, as the tick of a heading or a row of the tree stands. Answers whether
     /// such a tick was on screen.
@@ -157,6 +173,13 @@ impl<'a> Hand<'a> {
     pub fn written_at(&mut self, word: &str) -> Option<egui::Rect> {
         self.frame(Vec::new());
         self.win.drawn.iter().find(|(t, _)| t == word).map(|(_, r)| *r)
+    }
+
+    /// WHERE `word` IS WRITTEN NEAREST TO `near`, the next frame drawn - the same words may stand in a panel and in a
+    /// window at once.
+    pub fn written_near(&mut self, word: &str, near: egui::Pos2) -> Option<egui::Rect> {
+        self.frame(Vec::new());
+        self.win.drawn.iter().filter(|(t, _)| t == word).map(|(_, r)| *r).min_by(|a, b| a.center().distance(near).total_cmp(&b.center().distance(near)))
     }
 
     /// PRESS WHERE `word` IS WRITTEN - the one nearest to `near` when the frame wrote it in several places.

@@ -83,9 +83,9 @@ probe! {
         let mut s = a_square_and_a_tall_shape();
         // about the square, cutting across the tall shape beside it
         box_from(&mut s, (6.0, 3.0), (17.0, 12.0));
-        // the panel counts what is picked: the four lines of the square and its four corners, and nothing of the
-        // tall shape, which the box only cuts across
-        assert!(picked(&mut s) == 8, "the box holds the square wholly and only cuts the tall shape: {} things are picked", picked(&mut s));
+        // the panel counts what is picked: the four lines of the square, its four corners and its centre, and nothing of
+        // the tall shape, which the box only cuts across
+        assert!(picked(&mut s) == 9, "the box holds the square wholly and only cuts the tall shape: {} things are picked", picked(&mut s));
     }
 }
 
@@ -94,7 +94,7 @@ probe! {
     fn a_box_right_to_left_takes_what_it_touches() {
         let mut s = a_square_and_a_tall_shape();
         box_from(&mut s, (17.0, 12.0), (6.0, 3.0));
-        assert!(picked(&mut s) > 8, "a crossing box takes what it touches as well, and over the square (8 things) and part of the tall shape it took only {}", picked(&mut s));
+        assert!(picked(&mut s) > 9, "a crossing box takes what it touches as well, and over the square (9 things) and part of the tall shape it took only {}", picked(&mut s));
     }
 }
 
@@ -103,7 +103,7 @@ probe! {
     fn a_drag_carries_the_whole_shape_that_is_picked() {
         let mut s = a_square_and_a_tall_shape();
         box_from(&mut s, (6.0, 3.0), (14.0, 12.0)); // the square, wholly
-        assert!(picked(&mut s) == 8, "the square was not taken whole: {} picked", picked(&mut s));
+        assert!(picked(&mut s) == 9, "the square - its sides, corners and centre - was not taken whole: {} picked", picked(&mut s));
         s.drag_on_sketch((10.5, 5.0), (10.5, 9.0));
         for corner in [(8.0, 9.0), (13.0, 9.0), (8.0, 14.0), (13.0, 14.0)] {
             assert!(stands_at(&mut s, corner), "the square did not move up by 4 as a whole: its corners are {:?}", places(&mut s));

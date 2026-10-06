@@ -146,8 +146,8 @@ impl Op {
         use Op::*;
         &[
             Extrude, ExtrudeProfile, ExtrudeContour, Revolve, RevolveProfile, RevolveAxis, Sweep, Loft, LoftBoolean, Boolean, BodyBoolean, Fillet, FilletVar, Chamfer, ChamferAsym, Shell, ShellCenter,
-            Draft, PushFace, RemoveFaces, Thicken, SplitBody, SplitFaces, Hole, Holes, Thread, Helix, Auger, Mirror, MirrorPlane, Array, Move, Transform, Cylinder, Sphere, Cone, Torus, Prism,
-            FuseProfiles, Place, MeshSolid, MeshRecognise,
+            Draft, PushFace, RemoveFaces, Thicken, CopyFaces, OffsetSurface, ReplaceFaces, Stitch, Trim, Patch, SplitBody, SplitFaces, Hole, Holes, Thread, Helix, Auger, Mirror, MirrorPlane, Array,
+            Move, Transform, Cylinder, Sphere, Cone, Torus, Prism, FuseProfiles, Place, MeshSolid, MeshRecognise,
         ]
     }
 }

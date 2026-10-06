@@ -82,7 +82,19 @@ pub fn joint_slot_drag(ui: &mut egui::Ui, jj: &mut qymcad_core::feature::Joint, 
         *typed.borrow_mut() = if t.parse::<f64>().is_ok() { String::new() } else { t };
         Some(v)
     };
-    let r = ui.add(egui::DragValue::new(&mut v).speed(speed).suffix(suffix).custom_parser(parser));
+    // THE FIELD IS AS WIDE AS THE WIDEST NUMBER IT SHOWS, not as its text of the moment: a run passes angles with
+    // decimals, and a field 40 px wide at "99" and 52 px at "100.12" jumped every frame, pushing the rest of the line
+    // sideways. The decimals are fixed at two: egui picks them by the pixel size of the screen (three for a travel on
+    // a 1x screen, two on a 2x one), and a width reserved for one count would not hold the other. Four digits before
+    // the point cover a travel up to 9999 mm; a larger number widens the field as before.
+    let widest = egui::WidgetText::from(format!("-8888.88{suffix}")).into_galley(ui, Some(egui::TextWrapMode::Extend), f32::INFINITY, ui.style().drag_value_text_style.clone());
+    let width = widest.size().x + 2.0 * ui.spacing().button_padding.x;
+    let r = ui
+        .scope(|ui| {
+            ui.spacing_mut().interact_size.x = ui.spacing().interact_size.x.max(width);
+            ui.add(egui::DragValue::new(&mut v).speed(speed).max_decimals(2).suffix(suffix).custom_parser(parser))
+        })
+        .inner;
     // where the typing or the drag begins and ends is where its step of undo opens and closes (`joint_values_step`):
     // the field writes the value while it is being typed, before it reports a change
     if r.gained_focus() || r.drag_started() {
@@ -1657,6 +1669,25 @@ pub fn joint_giz_drag_to(jc: &mut qymcad_ui_state::JointCtx, cursor: Pos2, d: eg
     apply_joint_giz(jc);
 }
 
+/// Where the window of mate `jid` was placed last, kept between frames.
+#[derive(Clone, Copy)]
+struct PopupPin {
+    joint: Id,
+    at: Pos2,
+}
+
+/// WHERE THE WINDOW OF MATE `jid` STANDS: by the mate (`by_mate`), except while `anim` runs that same mate - then where
+/// it stood when the run began. The window follows the view, not the motion it causes itself: a run of the travel of
+/// a cylindrical mate carries anchor B along the axis, the midpoint of the anchors goes with it, and the window
+/// travelled 21-41 px over one second of the run, the button that stops the run riding along under the pointer.
+fn popup_place(ctx: &egui::Context, jid: Id, anim: Option<&qymcad_ui_state::JointAnim>, by_mate: Pos2) -> Pos2 {
+    let id = egui::Id::new("joint_edit_popup_pin");
+    let pinned = ctx.data(|d| d.get_temp::<PopupPin>(id)).filter(|p| p.joint == jid && anim.is_some_and(|a| a.joint == jid));
+    let at = pinned.map_or(by_mate, |p| p.at);
+    ctx.data_mut(|d| d.insert_temp(id, PopupPin { joint: jid, at }));
+    at
+}
+
 /// The joint EDIT popup AT THE GEOMETRY (a double click on the glyph): EVERY parameter of the joint -
 /// the angle, the offset and the second offset as drag values, the `f=` expressions over global
 /// variables, flipping the side, driving from the root, and the min/max limits. Anchors A and B are
@@ -1694,7 +1725,8 @@ pub fn joint_popup(jc: &mut qymcad_ui_state::JointCtx, ctx: &egui::Context, rect
     let before = jc.project.joints.clone();
     let vars = jc.project.param_map();
     let mut exprs = Vec::new();
-    egui::Area::new(egui::Id::new("joint_edit_popup")).fixed_pos(qymcad_ui_state::clamp_popup(mid, rect) + egui::vec2(12.0, -12.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+    let at = popup_place(ctx, jid, jc.joint_anim.as_ref(), qymcad_ui_state::clamp_popup(mid, rect) + egui::vec2(12.0, -12.0));
+    egui::Area::new(egui::Id::new("joint_edit_popup")).fixed_pos(at).order(egui::Order::Foreground).show(ctx, |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             ui.set_max_width(260.0);
             ui.horizontal(|ui| {

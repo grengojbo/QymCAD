@@ -19,7 +19,28 @@ menu IS the directory.
 `en`. So a translation can arrive in parts: 60% is better than nothing, and the interface will not come out
 full of holes.
 
-`cargo test -p qymcad i18n` prints the coverage of every language, so what is left is visible.
+`tools/i18n.py` (or `just i18n`) checks translation coverage and finds missing keys without needing a Rust toolchain:
+
+- **Overview of all languages:**
+  ```bash
+  python3 tools/i18n.py        # or: just i18n
+  ```
+- **Inspect missing keys for a language** (shows the English reference and source comments):
+  ```bash
+  python3 tools/i18n.py de     # or: just i18n de
+  ```
+- **Generate stubs for untranslated keys** (appends ready-to-translate entries to `i18n/<lang>/*.ftl`):
+  ```bash
+  python3 tools/i18n.py --stub de
+  ```
+- **Verify that all keys are translated:**
+  ```bash
+  python3 tools/i18n.py --check
+  ```
+- **Verify that no dead keys exist in the catalogue:**
+  ```bash
+  cargo test -p qymcad --lib gui::i18n_use_tests::no_dead_keys_in_the_catalogue
+  ```
 
 ## The voice: a program names things, it does not chat
 
@@ -55,4 +76,3 @@ window of a program.
 |---|---|
 | `main.ftl` | the CAD interface: menus, windows, tools, messages |
 | `errors.ftl` | what the program answers when an operation refuses |
-| `cam.ftl` | the machining module (CAM). Translating it is OPTIONAL: the module is off by default and most people do not need it |

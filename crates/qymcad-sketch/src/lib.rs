@@ -133,6 +133,9 @@ pub fn sketch_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::Ui, si: u
                 if is_sys(c) {
                     continue; // a system `Fixed` on the origin or an axis is not shown
                 }
+                if matches!(c, Constraint::Orientation { .. }) {
+                    continue; // the turn of a rectangle is the rectangle's own: it is turned by Rotate, not listed
+                }
                 let is_sel = cur_sel == Some(ci);
                 // is it a dimension? (consistent redundancy among dimensions is harmless and gets no warning)
                 let is_dim = matches!(
@@ -418,8 +421,9 @@ pub fn sketch_hit(pick: &qymcad_ui_state::PickCtx, rect: Rect, pos: Pos2, si: us
     // every tie to a real point.
     let mut best_pt: Option<(f32, Id)> = None;
     let mut best_sys: Option<(f32, Id)> = None;
+    let sharps = s.virtual_sharps(); // not drawn, so not picked
     for p in &s.points {
-        if is_axis_ref(p.id) {
+        if is_axis_ref(p.id) || sharps.contains(&p.id) {
             continue;
         }
         let d = sh.at(Point2::new(p.x, p.y)).distance(pos);
@@ -534,9 +538,14 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
         let limit = if pid == 0 {
             let sel: std::collections::HashSet<Id> = cc.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
             let only = cc.corner.only.clone().or_else(|| (!sel.is_empty()).then_some(sel));
-            cc.project.all_corners_limit(si, only.as_ref())
+            // the most is known as a radius; a chord or an arc is checked corner by corner when it is applied
+            if cc.tool_prefs.fillet_by == qymcad_core::model::FilletBy::Radius {
+                cc.project.all_corners_limit(si, only.as_ref())
+            } else {
+                None
+            }
         } else {
-            cc.project.corner_limit(si, pid, chamfer)
+            qymcad_ui_state::corner_limit_in(&*cc.project, si, pid, chamfer, cc.tool_prefs.fillet_by)
         };
         let judge = |project: &qymcad_core::model::Project, text: &str| -> Option<String> {
             match qymcad_core::expr::eval(text.trim(), &project.param_map()) {
@@ -562,10 +571,10 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
                 ui.horizontal(|ui| {
                     ui.label(if chamfer {
                         qymcad_i18n::tr(qymcad_ui_state::chamfer_d1_label(cc.tool_prefs.chamfer_mode))
-                    } else if pid == 0 {
+                    } else if pid == 0 && cc.tool_prefs.fillet_by == qymcad_core::model::FilletBy::Radius {
                         qymcad_i18n::tr("sk-r-all-corners")
                     } else {
-                        qymcad_i18n::tr("sk-radius")
+                        qymcad_i18n::tr(qymcad_ui_state::fillet_label(cc.tool_prefs.fillet_by))
                     });
                     let r0 = qymcad_ui_state::focus_edit(ui, &mut buf, 64.0, "", want_focus);
                     if let Some(why) = judge(&*cc.project, &buf) {
@@ -646,7 +655,7 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
                         let sel: std::collections::HashSet<Id> = cc.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
                         (!sel.is_empty()).then_some(sel)
                     });
-                    cc.project.fillet_all_corners_of(si, r, only.as_ref())
+                    cc.project.fillet_all_corners_by(si, qymcad_core::model::FilletSize { by: cc.tool_prefs.fillet_by, value: r }, only.as_ref())
                 } else if chamfer {
                     let second = parse_num(cc.project, &cc.corner.buf2.clone()).unwrap_or(cc.tool_prefs.chamfer_second);
                     if second_used {
@@ -655,7 +664,7 @@ pub fn corner_input_popup(cc: &mut qymcad_ui_state::CornerCtx, ctx: &egui::Conte
                     let legs = qymcad_core::model::ChamferLegs { mode: cc.tool_prefs.chamfer_mode, first: r, second };
                     cc.project.chamfer_at_vertex(si, pid, legs, cc.corner.near) as usize
                 } else {
-                    cc.project.fillet_at_vertex(si, pid, r) as usize
+                    cc.project.fillet_at_vertex_by(si, pid, qymcad_core::model::FilletSize { by: cc.tool_prefs.fillet_by, value: r }) as usize
                 };
                 if ok_n > 0 {
                     cc.sel_sk.clear(); // the selection and whatever was waiting for it
@@ -808,6 +817,7 @@ pub fn rect_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context,
                 });
             });
         pl.place.buf = buf.clone();
+        pl.place.typed |= chg;
         if got_focus {
             pl.place.focus = false;
         }
@@ -822,13 +832,23 @@ pub fn rect_input_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context,
                     pl.place.set(qymcad_ui_state::PlacingShape::Rect { a: fixed, b: nb, ids: nids });
                 }
                 Anchor::Center { at: center } => {
-                    let (na, nb) = (Point2::new(center.x - nw / 2.0, center.y - nh / 2.0), Point2::new(center.x + nw / 2.0, center.y + nh / 2.0));
+                    let nb = Point2::new(center.x + nw / 2.0, center.y + nh / 2.0);
                     pl.project.delete_entities(si, &ids);
-                    let nids = pl.project.add_rect_entity(si, na.x, na.y, nb.x, nb.y, qymcad_core::feature::Purpose::Real);
+                    let nids = pl.project.add_rect_from_centre(si, center, nb, qymcad_core::feature::Purpose::Real);
                     pl.place.set(qymcad_ui_state::PlacingShape::RectCenter { center, corner: nb, ids: nids });
                 }
             }
             qymcad_ui_state::invalidate(pl.regen);
+        }
+        // A WIDTH OR A HEIGHT TYPED IS LAID AS DIMENSIONS when the fields are closed with Enter or the tick, as the
+        // diameter of a circle is: a size typed by hand is a size meant. Closed untouched, or with Esc, the rectangle is
+        // left free.
+        if close && pl.place.typed {
+            if let Some(side) = pl.place.rect().or_else(|| pl.place.rect_center()).and_then(|(_, _, ids)| ids.first().copied()) {
+                pl.project.dimension_rect(si, side);
+                pl.project.solve_sketch(si);
+                qymcad_ui_state::invalidate(pl.regen);
+            }
         }
         if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
             pl.place.clear();
@@ -965,7 +985,111 @@ pub fn place_input_popup(
     let pl = &mut qymcad_ui_state::PlaceCtx { place, project: ed.project, view: &*ed.view, regen: ed.regen };
     ellipse_input_popup(pl, ctx, rect, si);
     rect_input_popup(pl, ctx, rect, si);
+    rect_dims_popup(pl, ctx, rect, si);
     poly_input_popup(pl, ctx, rect, si);
+}
+
+/// A RECTANGLE REOPENED BY A DOUBLE CLICK: its width and its height, typed into the dimensions it holds them by, as the
+/// diameter of a circle is. A value typed is the dimension's at once and the rectangle follows - from the corner it was
+/// drawn from, or about its centre; Enter, the tick or Esc closes the fields.
+pub fn rect_dims_popup(pl: &mut qymcad_ui_state::PlaceCtx, ctx: &egui::Context, rect: Rect, si: usize) {
+    let Some(dims) = pl.place.rect_dims() else { return };
+    let dim = |p: &qymcad_core::model::Project, ci: usize| match p.sketches.get(si).and_then(|s| s.constraints.get(ci)) {
+        Some(c @ qymcad_core::model::Constraint::Distance { .. }) => Some(c.clone()),
+        _ => None,
+    };
+    let (Some(qymcad_core::model::Constraint::Distance { d: w0, a: at, .. }), Some(qymcad_core::model::Constraint::Distance { d: h0, .. })) =
+        (dim(pl.project, dims.width), dim(pl.project, dims.height))
+    else {
+        pl.place.clear(); // the dimensions went from under the fields
+        return;
+    };
+    let want_focus = std::mem::take(&mut pl.place.focus);
+    if want_focus {
+        pl.place.buf = [qymcad_core::expr::fmt_num(w0), qymcad_core::expr::fmt_num(h0)];
+    }
+    let Some(corner) = qymcad_ui_state::sketch_pt(pl.project, si, at) else { return };
+    let enter = ctx.input(|i| i.key_pressed(egui::Key::Enter));
+    let (mut chg, mut close) = (false, false);
+    let mut buf = std::mem::take(&mut pl.place.buf);
+    egui::Area::new(egui::Id::new(("rectdims", si)))
+        .fixed_pos(qymcad_ui_state::clamp_popup((qymcad_ui_state::Sheet { view: *pl.view, rect }).at(corner), rect) + egui::vec2(10.0, -10.0))
+        .order(egui::Order::Foreground)
+        .show(ctx, |ui| {
+            egui::Frame::popup(ui.style()).show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.label(qymcad_i18n::tr("sk-width-short"));
+                    let r0 = qymcad_ui_state::focus_edit(ui, &mut buf[0], 60.0, "", want_focus);
+                    ui.label(qymcad_i18n::tr("sk-height-short"));
+                    let r1 = qymcad_ui_state::focus_edit(ui, &mut buf[1], 60.0, "", false);
+                    chg = r0.changed() || r1.changed();
+                    if ((r0.lost_focus() || r1.lost_focus()) && enter) || ui.button(ph::CHECK).clicked() {
+                        close = true;
+                    }
+                });
+            });
+        });
+    if chg {
+        let mut set = |ci: usize, text: &str| {
+            if let Some(v) = parse_num(pl.project, text).filter(|v| *v > 0.01) {
+                if let Some(qymcad_core::model::Constraint::Distance { d, .. }) = pl.project.sketches[si].constraints.get_mut(ci) {
+                    *d = v;
+                }
+            }
+        };
+        set(dims.width, &buf[0]);
+        set(dims.height, &buf[1]);
+        pl.project.solve_sketch(si);
+        qymcad_ui_state::invalidate(pl.regen);
+    }
+    pl.place.buf = buf;
+    if close || ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+        pl.place.clear();
+    }
+}
+
+/// A DOUBLE CLICK ON A SHAPE OPENS ITS SIZE: a side of a rectangle its width and height, a circle its diameter (laid
+/// as a dimension when it has none), an arc its radius, the circle a polygon hangs on - or the polygon itself - its
+/// radius and turn. Answers whether a shape was there.
+pub fn open_shape_size(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, pos: Pos2, si: usize) -> bool {
+    use qymcad_ui_state::{InlineEdit, PlacingShape};
+    if let Some((1, eid)) = sketch_hit(&sk.pick(), rect, pos, si) {
+        if let Some(dims) = sk.project.rect_dims(si, eid) {
+            sk.project.solve_sketch(si);
+            sk.place.set(PlacingShape::RectDims(dims));
+            sk.place.focus = true;
+            return true;
+        }
+    }
+    if let Some(eid) = qymcad_pick::nearest_circle_entity(&sk.pick(), rect, pos, si) {
+        // a circle gets a diameter dimension; an arc has its radius edited
+        let center = sk.project.sketches[si].entities.iter().find(|e| e.id == eid).and_then(|e| match e.kind {
+            qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
+            _ => None,
+        });
+        // the circumscribed circle of a polygon (the vertices hang on it) opens the polygon popup (the radius plus the
+        // angle), while an ordinary circle gets a diameter
+        let is_poly_rim = center.is_some_and(|c| sk.project.sketches[si].constraints.iter().any(|x| matches!(x, qymcad_core::model::Constraint::PointOnCircle { c: cc, .. } if *cc == c)));
+        if let (true, Some(c)) = (is_poly_rim, center) {
+            sk.place.set(PlacingShape::Poly(c));
+            sk.place.focus = true;
+        } else if let Some(c) = center {
+            if let Some(ci) = sk.project.ensure_diameter(si, c, true) {
+                *sk.inline = InlineEdit::Dim(ci);
+                sk.dim.focus = true;
+            }
+        } else {
+            *sk.inline = InlineEdit::Circle(eid);
+            sk.dim.focus = true;
+        }
+        return true;
+    }
+    if let Some(cid) = qymcad_ui_state::polygon_under(&*sk.project, &*sk.view, rect, pos, si) {
+        sk.place.set(PlacingShape::Poly(cid)); // editing the radius of the construction circle
+        sk.place.focus = true;
+        return true;
+    }
+    false
 }
 
 /// FINISH THE SPLINE - what a double click does.
@@ -2671,10 +2795,9 @@ pub fn sketch_tool_click_inner(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, 
                 // corners keep the first corner. A rotated rectangle (three points) offers no typing.
                 match sk.tool_prefs.rect_mode {
                     1 => {
-                        // centre plus a corner: the opposite corner is its mirror through the centre
+                        // centre plus a corner: the opposite corner is its mirror through the centre, and the rectangle keeps the centre
                         let (c, cr) = (sk.tool.pts[0], sk.tool.pts[1]);
-                        let a = Point2::new(2.0 * c.x - cr.x, 2.0 * c.y - cr.y);
-                        let ids = sk.project.add_rect_entity(si, a.x, a.y, cr.x, cr.y, qymcad_core::feature::Purpose::of(con));
+                        let ids = sk.project.add_rect_from_centre(si, c, cr, qymcad_core::feature::Purpose::of(con));
                         sk.tool.pts.clear();
                         qymcad_ui_state::invalidate(&mut *sk.regen);
                         if !con {
@@ -3079,6 +3202,16 @@ pub fn sketch_drag_start(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Contex
                                 arc_pts.insert(*p);
                             }
                             _ => {}
+                        }
+                    }
+                    // THE CENTRE OF A RECTANGLE IS DRAGGED, and the rectangle goes with it as a circle goes with its centre: it
+                    // stands on the middle of the diagonal, and was refused with the materialised midpoints above - the
+                    // rectangle could not be taken by its centre. A centre pinned stays refused.
+                    let pinned: std::collections::HashSet<Id> =
+                        sk.project.sketches[si].constraints.iter().filter_map(|c| if let qymcad_core::model::Constraint::Fixed { p } = c { Some(*p) } else { None }).collect();
+                    for r in &sk.project.sketches[si].rects {
+                        if !pinned.contains(&r.centre) {
+                            arc_pts.remove(&r.centre);
                         }
                     }
                     // DRIVEN POINTS (projections of the geometry of a body) are not dragged: their
@@ -3757,9 +3890,16 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                 // an array: pick the entities, then (for a circular one) click THE CENTRE of
                 // rotation, then Enter
                 let shift = ctx.input(|i| i.modifiers.shift);
+                if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel {
+                    qymcad_ui_state::take_whole_rects(&*sk.project, si, &mut *sk.sel_sk);
+                    // and what was selected before the tool
+                }
                 let has_sel = sk.sel_sk.items.iter().any(|(k, _)| *k == 1);
                 if !has_sel {
                     sketch_select_click(sk, rect, pos, shift);
+                    if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel {
+                        qymcad_ui_state::take_whole_rects(&*sk.project, si, &mut *sk.sel_sk);
+                    }
                     *sk.status = if sk.sel_sk.items.iter().any(|(k, _)| *k == 1) {
                         if sk.armed.pat_op() == 2 {
                             qymcad_i18n::tr("sk-click-rot-centre")
@@ -3772,6 +3912,9 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                 } else if shift {
                     // Shift continues picking the source
                     sketch_select_click(sk, rect, pos, true);
+                    if let qymcad_ui_state::Sel::Sketch(si) = *sk.sel {
+                        qymcad_ui_state::take_whole_rects(&*sk.project, si, &mut *sk.sel_sk);
+                    }
                 } else if sk.armed.pat_op() == 2 {
                     // circular: a click sets or moves the centre, snapping to an intersection or a vertex
                     sk.pat.center = Some(snap_world(sk, rect, pos));
@@ -3781,11 +3924,14 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                 // an interactive move or copy: the selection, then the base point, then the target
                 let qymcad_ui_state::Sel::Sketch(si) = *sk.sel else { return }; // the selection may have changed between frames - do not crash
                 let w = snap_world(sk, rect, pos);
+                // what was selected before the tool, too: one side of a rectangle carries the whole rectangle
+                qymcad_ui_state::take_whole_rects(&*sk.project, si, &mut *sk.sel_sk);
                 let eids: Vec<Id> = sk.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
                 let texts = qymcad_ui_state::sel_text_indices(&*sk.project, &*sk.sel_sk, si);
                 if eids.is_empty() && texts.is_empty() {
                     let shift = ctx.input(|i| i.modifiers.shift);
                     sketch_select_click(sk, rect, pos, shift);
+                    qymcad_ui_state::take_whole_rects(&*sk.project, si, &mut *sk.sel_sk);
                     if !sk.sel_sk.items.iter().any(|(k, _)| *k == 1 || *k == qymcad_ui_state::SEL_TEXT) {
                         *sk.status = qymcad_i18n::tr("sk-click-for-move");
                     } else {
@@ -3938,8 +4084,21 @@ pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2)
     // A POINT BEING DRAGGED DOES NOT SNAP TO ITSELF. Its own place, and whatever stands on it (a coincident end, the
     // vertex of the contour drawn through it), is a vertex within reach until the hand is 9 px away: a point led
     // at 3 px a frame stuck, moved in jerks and was let go short - measured, 1 mm short of a 7 mm drag.
-    let dragged = sk.drag.pt().and_then(|(dsi, pi)| sk.project.sketches.get(dsi)?.points.get(pi).map(|q| Point2::new(q.x, q.y)));
-    let own = |p: Point2| dragged.is_some_and(|q| (p.x - q.x).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9);
+    //
+    // NOR TO WHAT GOES WITH IT: the corners of a rectangle dragged by its centre, and every line ending at a point that
+    // moves. They stand where the drag was a frame ago, and the middle of the rectangle's own diagonal - its centre
+    // a frame back - caught the centre: a rectangle led 12 mm by its centre came 10.7.
+    let moving: Vec<Point2> = sk
+        .drag
+        .pt()
+        .and_then(|(dsi, pi)| {
+            let s = sk.project.sketches.get(dsi)?;
+            let q = s.points.get(pi)?;
+            let at = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+            Some(std::iter::once(Point2::new(q.x, q.y)).chain(s.rects.iter().filter(|r| r.centre == q.id).flat_map(|r| r.corners.into_iter().filter_map(at))).collect())
+        })
+        .unwrap_or_default();
+    let own = |p: Point2| moving.iter().any(|q| (p.x - q.x).abs() < 1e-9 && (p.y - q.y).abs() < 1e-9);
     if let Some(asi) = qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses) {
         if let Some(s) = sk.project.sketches.get(asi) {
             for sp in &s.points {
@@ -4000,9 +4159,10 @@ pub fn snap_world(sk: &mut qymcad_ui_state::SketchCtx, rect: Rect, screen: Pos2)
     let mut cand: Option<(f32, Point2, u8)> = None;
     if let Some(si) = qymcad_ui_state::edit_si(&*sk.project, &*sk.sketch_ses) {
         let qymcad_ui_state::ActiveEdges { lines, circles: circs } = qymcad_ui_state::active_edges(&sk.draw(), si);
-        // the segments of the projected outlines of the reference body, used for INTERSECTIONS with the
-        // sketch lines and for points on an edge. That is how the intersection of a construction line with
-        // a face or the outline of a part becomes snappable.
+        let lines: Vec<(Point2, Point2)> = lines.into_iter().filter(|(a, b)| !own(*a) && !own(*b)).collect(); // what moves with the drag is no target
+                                                                                                              // the segments of the projected outlines of the reference body, used for INTERSECTIONS with the
+                                                                                                              // sketch lines and for points on an edge. That is how the intersection of a construction line with
+                                                                                                              // a face or the outline of a part becomes snappable.
         let ref_segs: Vec<(Point2, Point2)> = ref_edges.iter().flat_map(|poly| poly.windows(2).map(|s| (s[0], s[1]))).collect();
         // the priority: a midpoint (3) over an intersection (5) over a point on an edge (6)
         // 1) the midpoints of segments (SKETCH lines only - the midpoints of a tessellated outline are noise)
@@ -4218,6 +4378,7 @@ pub fn make_between_dim(sk: &mut qymcad_ui_state::SketchCtx, si: usize, r1: qymc
         }
     };
     if let Some(c) = c {
+        sk.project.give_rect_turn_to(si, &c); // an angle on a side of a rectangle turns it
         sk.project.sketches[si].constraints.push(c);
         let ci = sk.project.sketches[si].constraints.len() - 1;
         let (redundant, conflict) = qymcad_ui_state::finish_dim(&mut *sk.project, &mut *sk.regen, si, ci);

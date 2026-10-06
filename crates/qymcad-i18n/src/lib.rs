@@ -361,9 +361,7 @@ pub fn keys_of(code: &str) -> Vec<String> {
     LANGS.with(|m| m.get(code).map(|l| l.keys()).unwrap_or_default())
 }
 
-/// The string FROM THIS LANGUAGE ONLY, with no fallback to the reference — for the tests and the
-/// coverage report.
-#[cfg_attr(not(test), allow(dead_code))]
+/// The string FROM THIS LANGUAGE ONLY, with no fallback to the reference.
 pub fn tr_in(code: &str, key: &str) -> Option<String> {
     LANGS.with(|m| m.get(code).and_then(|l| l.get(key, None)))
 }
@@ -383,3 +381,4 @@ macro_rules! t {
 pub mod error_words;
 pub mod keys;
 pub mod ratchet;
+pub mod search;

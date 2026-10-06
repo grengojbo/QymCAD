@@ -80,4 +80,5 @@ crossed-out key to see why.
 
 When the key is taken, the window offers **Swap** (that command gets the key you are replacing), **Take
 it** (that command is left without a key) or **Keep as it was**. The filter above the table finds a command
-by a word of its description or by its key.
+by a word of its description or by its key. In an interface in another language it also finds a command by
+its English name: `mirror` finds Mirror. The command search (Ctrl+K) finds the same way.

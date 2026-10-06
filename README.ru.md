@@ -10,7 +10,7 @@
 
 [github.com/grengojbo/QymCAD](https://github.com/grengojbo/QymCAD)
 
-[English](README.md) · **Русский** · [Українська](README.uk.md)
+[English](README.md) | **Русский** | [Українська](README.uk.md)
 
 <img src="docs/screenshots/01-assembly.png" width="900" alt="Станок, собранный в QymCAD: компоненты, сопряжения и их степени свободы">
 

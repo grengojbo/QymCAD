@@ -47,25 +47,29 @@ fn rotate_turns_geometry_about_center() {
     }
 }
 
-/// A CONSTRAINED SHAPE OBEYS ITS CONSTRAINTS THROUGH A TURN rather than being torn out of them.
-///
-/// Before the solver stood at the end of `rotate_entities`, the rectangle came out standing at 90 degrees
-/// with its horizontal constraints unsatisfied: the drawing said one thing and the model another, until the
-/// next edit put it back. Now the sides stay horizontal and vertical - the turn is refused, and the popup
-/// says so (`sk-turn-held`).
+/// A RECTANGLE TURNED BY ROTATE TURNS AS A WHOLE and stays a rectangle: its sides as long as before, square at the
+/// corners, the first side at the turn asked for (issue #56). It was held Horizontal and Vertical, and the turn was
+/// refused.
 #[test]
-fn a_constrained_rectangle_keeps_its_sides_upright_through_a_turn() {
+fn a_rectangle_turns_as_a_whole() {
     use qymcad_core::model::EntityKind;
     let (mut p, si, eids) = rect_sketch();
-    p.rotate_entities(si, &eids, 0.0, 0.0, 90.0);
-    let at = |id: u64| p.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("the point exists");
-    for e in &p.sketches[si].entities {
-        if let EntityKind::Line { a, b } = e.kind {
-            let (u, v) = (at(a), at(b));
-            let (dx, dy) = ((v.0 - u.0).abs(), (v.1 - u.1).abs());
-            assert!(dx < 1e-6 || dy < 1e-6, "a side of the rectangle came out slanted: {u:?} -> {v:?}");
+    let side = |p: &Project, k: usize| {
+        let at = |id: u64| p.sketches[si].points.iter().find(|q| q.id == id).map(|q| (q.x, q.y)).expect("the point exists");
+        match p.sketches[si].entities.iter().find(|e| e.id == eids[k]).map(|e| e.kind) {
+            Some(EntityKind::Line { a, b }) => (at(a), at(b)),
+            _ => panic!("a side"),
         }
-    }
+    };
+    let len = |(u, v): ((f64, f64), (f64, f64))| (v.0 - u.0).hypot(v.1 - u.1);
+    let (w0, h0) = (len(side(&p, 0)), len(side(&p, 1)));
+    p.rotate_entities(si, &eids, 0.0, 0.0, 30.0);
+    let (s0, s1) = (side(&p, 0), side(&p, 1));
+    let turn = (s0.1 .1 - s0.0 .1).atan2(s0.1 .0 - s0.0 .0).to_degrees();
+    let (u, v) = ((s0.1 .0 - s0.0 .0, s0.1 .1 - s0.0 .1), (s1.1 .0 - s1.0 .0, s1.1 .1 - s1.0 .1));
+    assert!((turn - 30.0).abs() < 1e-6, "the first side stands at {turn} deg, not 30");
+    assert!((u.0 * v.0 + u.1 * v.1).abs() < 1e-6, "the corner is no longer square: {u:?} {v:?}");
+    assert!((len(s0) - w0).abs() < 1e-6 && (len(s1) - h0).abs() < 1e-6, "the sides changed: {w0} x {h0} -> {} x {}", len(s0), len(s1));
 }
 
 #[test]
@@ -667,7 +671,8 @@ fn rect3_is_a_rectangle() {
     let ids = p.add_rect3_entity(si, Point2::new(0.0, 0.0), Point2::new(6.0, 8.0), Point2::new(-8.0, 6.0), qymcad_core::feature::Purpose::Real); // Side (0,0)-(6,8) of length 10, height 10.
     assert_eq!(ids.len(), 4, "four sides");
     let mut per = 0.0;
-    for e in &p.sketches[si].entities {
+    // the perimeter is the sides': the construction diagonals of the rectangle are none of it
+    for e in p.sketches[si].entities.iter().filter(|e| !e.construction) {
         if let EntityKind::Line { a, b } = e.kind {
             let pa = p.sketches[si].points.iter().find(|q| q.id == a).unwrap();
             let pb = p.sketches[si].points.iter().find(|q| q.id == b).unwrap();

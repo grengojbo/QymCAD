@@ -17,7 +17,8 @@ fn gui_like_sequential_fillet_with_solve() {
             let corner = {
                 let s = &p.sketches[si];
                 let mut cnt: std::collections::HashMap<u64, usize> = Default::default();
-                for e in &s.entities {
+                // a corner is where two lines of the contour meet: the construction diagonals of the rectangle are none
+                for e in s.entities.iter().filter(|e| !e.construction) {
                     if let qymcad_core::model::EntityKind::Line { a, b } = e.kind {
                         *cnt.entry(a).or_default() += 1;
                         *cnt.entry(b).or_default() += 1;

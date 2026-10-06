@@ -562,6 +562,9 @@ pub struct Sketch {
     /// Editable patterns: a source, the layout parameters and the ids of the derived copies.
     #[serde(default)]
     pub patterns: Vec<SketchPattern>,
+    /// The rectangles kept as one shape: their sides, corners, centre and construction diagonals, see `SketchRect`.
+    #[serde(default)]
+    pub rects: Vec<SketchRect>,
     /// Projections of body geometry (driven entities that reference their source).
     #[serde(default)]
     pub projections: Vec<SketchProjection>,
@@ -606,6 +609,29 @@ impl Sketch {
     ///
     /// One source of truth on purpose: spelled out by hand in six places the set drifts apart, some copies
     /// forgetting the origin and others the axes.
+    /// THE CORNERS OF A RECTANGLE LEFT AS VIRTUAL SHARPS: a corner rounded or cut away stays a point of the rectangle -
+    /// its centre stands on the middle of the corners, its turn is told by them - but no line of it ends there any
+    /// more. Such a point is the rectangle's own, not geometry: it is not drawn and not picked. Shown, a rectangle
+    /// rounded all round carried four points out in the air beyond its arcs.
+    pub fn virtual_sharps(&self) -> std::collections::HashSet<Id> {
+        let ends: std::collections::HashSet<Id> = self
+            .entities
+            .iter()
+            .filter(|e| !e.construction)
+            .flat_map(|e| match e.kind {
+                EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => vec![a, b],
+                _ => Vec::new(),
+            })
+            .collect();
+        self.rects.iter().flat_map(|r| r.corners).filter(|c| !ends.contains(c)).collect()
+    }
+
+    /// The points not drawn among the sketch's own: the frame of reference (drawn by the axis marker) and the virtual
+    /// sharps of rectangles.
+    pub fn unseen_points(&self) -> std::collections::HashSet<Id> {
+        self.system_ids().into_iter().chain(self.virtual_sharps()).collect()
+    }
+
     pub fn system_ids(&self) -> Vec<Id> {
         std::iter::once(self.origin).chain(std::iter::once(self.frame)).chain(self.axis_pts).filter(|id| *id != 0).collect()
     }
@@ -810,6 +836,43 @@ pub enum PatternKind {
     },
 }
 
+/// A SKETCH RECTANGLE KEPT AS ONE SHAPE: four sides each held at its turn (`Constraint::Orientation`: the first and the
+/// third at the turn of the rectangle, the second and the fourth square to them), and a centre on the middle of its
+/// diagonal - drawn as two construction diagonals for a rectangle drawn from its centre. It stays a rectangle until it
+/// is broken - a side deleted - and then the record, the centre and the diagonals go and four plain lines are left.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct SketchRect {
+    pub id: Id,
+    /// The corners in order round the rectangle.
+    pub corners: [Id; 4],
+    /// The sides: corner k to corner k + 1.
+    pub sides: [Id; 4],
+    pub centre: Id,
+    /// The construction diagonals of a rectangle drawn from its centre: corner 0 to 2, corner 1 to 3. A rectangle drawn
+    /// by its corners has none - its centre is held on the middle without them - as the diagonals would split every
+    /// line crossing it for Trim (a construction line is a boundary).
+    pub diagonals: Option<[Id; 2]>,
+    /// What a width or a height changed grows the rectangle from.
+    pub anchor: RectAnchor,
+}
+
+/// THE WIDTH AND THE HEIGHT DIMENSIONS OF A RECTANGLE, as indices of its sketch's constraints: the first along its
+/// first side, the second along the side after it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RectDims {
+    pub width: usize,
+    pub height: usize,
+}
+
+/// What stays put when the width or the height of a rectangle changes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+pub enum RectAnchor {
+    /// The corner it was drawn from (a point id).
+    Corner(Id),
+    /// Its centre: a rectangle drawn from the centre grows about it.
+    Centre,
+}
+
 /// An editable sketch pattern: source entities plus layout parameters produce derived instances.
 ///
 /// The instance ids are stored so that editing the parameters can recreate them. Instances are real
@@ -883,6 +946,11 @@ pub enum Constraint {
     Horizontal { a: Id, b: Id },
     /// Vertical: points `a` and `b` share the same vertical (equal x).
     Vertical { a: Id, b: Id },
+    /// THE TURN OF A SKETCH RECTANGLE: the side from `a` to `b` stands at `deg` degrees to the X axis. The rectangle
+    /// holds it itself and it is never drawn nor typed: a corner dragged changes the size and leaves the turn, the
+    /// Rotate tool changes `deg`, and an angle dimension a person puts on a side takes its place. Without it a
+    /// rectangle held by parallel and perpendicular sides turned under a dragged corner.
+    Orientation { a: Id, b: Id, deg: f64 },
     /// Points `a` and `b` coincide.
     Coincident { a: Id, b: Id },
     /// Dimension: the distance between `a` and `b` equals `d`. `off` is the offset of the dimension line
@@ -1066,7 +1134,7 @@ impl Constraint {
         use Constraint::*;
         match *self {
             Fixed { p } => vec![p],
-            Horizontal { a, b } | Vertical { a, b } | Coincident { a, b } | Distance { a, b, .. } => vec![a, b],
+            Horizontal { a, b } | Vertical { a, b } | Orientation { a, b, .. } | Coincident { a, b } | Distance { a, b, .. } => vec![a, b],
             Parallel { a, b, c, d } | Perpendicular { a, b, c, d } | Equal { a, b, c, d } | Collinear { a, b, c, d } | AngleLines { a, b, c, d, .. } => vec![a, b, c, d],
             Angle { a, b, c, .. } | Midpoint { p: a, a: b, b: c } | PointOnLine { p: a, a: b, b: c } | DistancePL { p: a, a: b, b: c, .. } | ArcLength { c: a, a: b, b: c, .. } => vec![a, b, c],
             Tangent { a, b, c, .. } => vec![a, b, c],
@@ -1555,7 +1623,7 @@ fn constraint_uses_line(c: &Constraint, lines: &[(Id, Id)]) -> bool {
 pub fn constraint_point_ids(c: &Constraint) -> Vec<Id> {
     match *c {
         Constraint::Fixed { p } => vec![p],
-        Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => vec![a, b],
+        Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Orientation { a, b, .. } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => vec![a, b],
         Constraint::Parallel { a, b, c, d } | Constraint::Perpendicular { a, b, c, d } | Constraint::Equal { a, b, c, d } | Constraint::Collinear { a, b, c, d } => vec![a, b, c, d],
         Constraint::Angle { a, b, c, .. } => vec![a, b, c],
         Constraint::Midpoint { p, a, b } => vec![p, a, b],
@@ -1628,7 +1696,7 @@ fn remap_constraint_point(c: &mut Constraint, from: Id, to: Id) {
     };
     match c {
         Constraint::Fixed { p } => fix(p),
-        Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => {
+        Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Orientation { a, b, .. } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => {
             fix(a);
             fix(b);
         }
@@ -1839,7 +1907,7 @@ pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleT
 mod tess;
 mod timeline;
 mod sketch;
-pub use sketch::{ChamferLegs, TextSpec};
+pub use sketch::{ChamferLegs, FilletBy, FilletSize, TextSpec};
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
@@ -2036,6 +2104,71 @@ impl Project {
     }
 
     pub fn fillet_at_vertex(&mut self, si: usize, pid: Id, r: f64) -> bool {
+        self.fillet_at_vertex_by(si, pid, FilletSize::radius(r))
+    }
+
+    /// HOW FAR THE ARC OF A FILLET TURNS on the corner at `pid`: pi minus the angle between its two edges, each taken
+    /// from the corner to its far end (exact for lines, the chord of an arc for an arc). `None` without a corner of two
+    /// edges.
+    pub fn corner_sweep(&self, si: usize, pid: Id) -> Option<f64> {
+        let edges = self.vertex_edges(si, pid);
+        if edges.len() != 2 {
+            return None;
+        }
+        let (pcx, pcy) = self.point_xy(si, pid)?;
+        let mut dirs = Vec::new();
+        for e in edges {
+            let (a, b) = self.edge_end_ids(si, e)?;
+            let (ox, oy) = self.point_xy(si, if a == pid { b } else { a })?;
+            let l = (ox - pcx).hypot(oy - pcy);
+            if l < 1e-9 {
+                return None;
+            }
+            dirs.push(((ox - pcx) / l, (oy - pcy) / l));
+        }
+        let corner = (dirs[0].0 * dirs[1].0 + dirs[0].1 * dirs[1].1).clamp(-1.0, 1.0).acos();
+        Some(std::f64::consts::PI - corner)
+    }
+
+    /// FILLET THE CORNER AT `pid` WITH A SIZE GIVEN BY ITS RADIUS, ITS CHORD OR ITS ARC LENGTH. The radius the size
+    /// makes on this corner is laid, and the fillet keeps the size as it was given: a chord as the distance between
+    /// the two points of touching, an arc length as the length of the arc - so a dimension changed afterwards moves the
+    /// fillet. A chord or an arc the corner cannot take is refused, where a radius is pressed to the corner as before.
+    pub fn fillet_at_vertex_by(&mut self, si: usize, pid: Id, size: FilletSize) -> bool {
+        let r = match size.by {
+            FilletBy::Radius => size.value,
+            _ => {
+                let Some(r) = self.corner_sweep(si, pid).and_then(|sweep| size.radius_on(sweep)) else { return false };
+                if self.corner_limit(si, pid, false).is_some_and(|l| r >= l * (1.0 - 1e-9)) {
+                    return false;
+                }
+                r
+            }
+        };
+        if !self.fillet_round(si, pid, r) {
+            return false;
+        }
+        if size.by != FilletBy::Radius {
+            self.give_fillet_its_size(si, size);
+        }
+        true
+    }
+
+    /// THE LAST FILLET LAID KEEPS ITS SIZE AS IT WAS GIVEN: its radius dimension is put in place of a distance between
+    /// the two points of touching (a chord) or of an arc length dimension, and the sketch is solved.
+    pub(super) fn give_fillet_its_size(&mut self, si: usize, size: FilletSize) {
+        let Some(s) = self.sketches.get(si) else { return };
+        let Some(last) = s.entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).max_by_key(|e| e.id).copied() else { return };
+        let EntityKind::Arc { center: centre, a, b, ccw } = last.kind else { return };
+        let Some(ci) = self.fillet_radius_constraint(si, last.id) else { return };
+        self.sketches[si].constraints[ci] = match size.by {
+            FilletBy::Chord => Constraint::Distance { a, b, d: size.value, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+            _ => Constraint::ArcLength { c: centre, a, b, ccw, len: size.value, off: 0.0, expr: String::new(), driven: false },
+        };
+        self.solve_sketch(si);
+    }
+
+    fn fillet_round(&mut self, si: usize, pid: Id, r: f64) -> bool {
         let edges = self.vertex_edges(si, pid);
         if edges.len() != 2 {
             return false;
@@ -4690,7 +4823,7 @@ fn remap_point_id(s: &mut Sketch, from: Id, to: Id) {
     for c in &mut s.constraints {
         match c {
             Constraint::Fixed { p } => r(p),
-            Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => {
+            Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Orientation { a, b, .. } | Constraint::Coincident { a, b } | Constraint::Distance { a, b, .. } => {
                 r(a);
                 r(b);
             }

@@ -23,7 +23,8 @@ probe! {
         assert_eq!(doc.parts.len(), 1, "one part was built in: {:?}", doc.parts);
         assert!(!part.contains('#') && !part.contains("name-"), "the part is read by a catalogue key, not by the name a person sees: {part:?}");
         let [sketch] = doc.sketches.as_slice() else { panic!("one sketch was drawn, the document holds {:?}", doc.sketches) };
-        assert_eq!((sketch.points, sketch.lines, sketch.part.as_deref()), (4, 4, Some(part.as_str())), "the rectangle's sketch: {sketch:?}");
+        // four corners and the centre of the rectangle, four sides
+        assert_eq!((sketch.points, sketch.lines, sketch.part.as_deref()), (5, 4, Some(part.as_str())), "the rectangle's sketch: {sketch:?}");
         let kinds: Vec<&str> = doc.features.iter().map(|f| f.kind.as_str()).collect();
         assert_eq!(kinds, ["Sketch", "Extrude"], "the timeline of a sketch and an extrusion: {:?}", doc.features);
         assert!(doc.features.iter().all(|f| f.error.is_none()), "a node of the block did not build: {:?}", doc.features);

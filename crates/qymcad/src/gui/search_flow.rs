@@ -50,6 +50,22 @@ mod tests {
         assert!(hits.iter().any(|c| c.code == "part.fillet"), "an English name is not searchable in a Russian interface: {:?}", hits.iter().map(|c| c.code).collect::<Vec<_>>());
     }
 
+    /// AN ENGLISH INTERFACE DOES NOT FIND BY THE RUSSIAN NAME.
+    #[test]
+    fn an_english_interface_does_not_find_by_the_russian_name() {
+        let prev = crate::i18n::language();
+        crate::i18n::set_language("en");
+        crate::help::set_lang("en");
+        let app = in_part();
+        let fillet = crate::command_catalog::by_code("part.fillet").expect("the fillet in the catalogue");
+        let russian: String = fillet.name_in("ru").to_lowercase().chars().take(6).collect();
+        let hits = crate::gui::command_search::command_search_hits(app.workbench, &russian);
+        crate::i18n::set_language(&prev);
+        crate::help::set_lang("");
+        assert!(!russian.is_empty(), "the fillet has no Russian name");
+        assert!(hits.is_empty(), "the Russian word `{russian}` found commands in an English interface: {:?}", hits.iter().map(|c| c.code).collect::<Vec<_>>());
+    }
+
     /// AND A COMMAND WITHOUT A KEY OF ITS OWN IS SEARCHABLE IN THE OTHER LANGUAGE.
     ///
     /// The first edition looked at the second language only for commands with a name key OF THEIR OWN,

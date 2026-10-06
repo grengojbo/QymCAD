@@ -57,6 +57,120 @@ impl ChamferLegs {
     }
 }
 
+/// HOW A SKETCH FILLET IS GIVEN: by its radius, by its chord - the straight distance between the two points where it
+/// meets the lines - or by the length of its arc.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum FilletBy {
+    #[default]
+    Radius,
+    Chord,
+    ArcLength,
+}
+
+/// THE SIZE OF A SKETCH FILLET: how it is given and the value in that way.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FilletSize {
+    pub by: FilletBy,
+    pub value: f64,
+}
+
+impl FilletSize {
+    /// A fillet of radius `r`.
+    pub fn radius(r: f64) -> Self {
+        FilletSize { by: FilletBy::Radius, value: r }
+    }
+
+    /// The radius of the fillet on a corner whose arc turns through `sweep` (radians, pi minus the angle between the
+    /// lines): the chord is 2 r sin(sweep / 2), the arc r sweep. On a square corner a chord of 5 is a radius of 3.54,
+    /// an arc of 5 a radius of 3.18. `None` for a value of no length or a corner with no turn.
+    pub fn radius_on(&self, sweep: f64) -> Option<f64> {
+        let r = match self.by {
+            FilletBy::Radius => self.value,
+            FilletBy::Chord => self.value / (2.0 * (sweep / 2.0).sin()),
+            FilletBy::ArcLength => self.value / sweep,
+        };
+        (self.value > 1e-9 && sweep > 1e-6 && r.is_finite() && r > 1e-9).then_some(r)
+    }
+
+    /// The value in this way of a fillet of radius `r` on a corner whose arc turns through `sweep`: the inverse of
+    /// `radius_on`, for the largest value a corner takes.
+    pub fn of_radius(by: FilletBy, r: f64, sweep: f64) -> f64 {
+        match by {
+            FilletBy::Radius => r,
+            FilletBy::Chord => 2.0 * r * (sweep / 2.0).sin(),
+            FilletBy::ArcLength => r * sweep,
+        }
+    }
+}
+
+/// THE CONSTRAINTS A RECTANGLE IS HELD BY WHEN AN ANGLE DIMENSION ON ITS SIDE TAKES ITS TURN: opposite sides parallel
+/// and the first two square - its shape without a turn of its own.
+pub(crate) fn rect_free_constraints(c0: Id, c1: Id, c2: Id, c3: Id) -> [Constraint; 3] {
+    [
+        Constraint::Parallel { a: c0, b: c1, c: c3, d: c2 },
+        Constraint::Parallel { a: c0, b: c3, c: c1, d: c2 },
+        Constraint::Perpendicular { a: c0, b: c1, c: c0, d: c3 },
+    ]
+}
+
+/// Is `c` one of the constraints rectangle `r` holds itself by, held by its turns or by its shape alone?
+fn is_rect_own(r: &crate::model::SketchRect, c: &Constraint) -> bool {
+    let [c0, c1, c2, c3] = r.corners;
+    rect_own_constraints(c0, c1, c2, c3, r.centre, 0.0).iter().chain(rect_free_constraints(c0, c1, c2, c3).iter()).any(|o| same_rect_constraint(o, c))
+}
+
+/// Is `c` the constraint `own` a rectangle holds itself by - the same kind on the same points, whatever the turn held?
+fn same_rect_constraint(own: &Constraint, c: &Constraint) -> bool {
+    match (own, c) {
+        (Constraint::Orientation { a, b, .. }, Constraint::Orientation { a: x, b: y, .. }) => a == x && b == y,
+        (Constraint::Parallel { a, b, c: cc, d }, Constraint::Parallel { a: w, b: x, c: y, d: z })
+        | (Constraint::Perpendicular { a, b, c: cc, d }, Constraint::Perpendicular { a: w, b: x, c: y, d: z }) => [a, b, cc, d] == [w, x, y, z],
+        (Constraint::Midpoint { p, a, b }, Constraint::Midpoint { p: q, a: x, b: y }) => [p, a, b] == [q, x, y],
+        _ => false,
+    }
+}
+
+/// WHAT A SOLVE HOLDS OF RECTANGLE `r` so that its size changes from where it should, `dragged` being the point under
+/// the hand. A dragged corner stretches the rectangle from the corner across from it - a corner shares a side with each
+/// neighbour, so with a neighbour held it could only slide along that side, one size at a time. A rectangle drawn from
+/// its centre holds the centre under a dragged corner. Not dragged, its anchor is held: the centre, or the corner it was
+/// drawn from, so that a width or a height typed grows it from there. Nothing when the centre is dragged: the rectangle
+/// goes with it.
+fn held_for_size(r: &crate::model::SketchRect, dragged: Option<Id>) -> Option<Id> {
+    if dragged == Some(r.centre) {
+        return None;
+    }
+    let corner_dragged = dragged.and_then(|d| r.corners.iter().position(|k| *k == d));
+    match (r.anchor, corner_dragged) {
+        (crate::model::RectAnchor::Centre, _) => Some(r.centre),
+        (crate::model::RectAnchor::Corner(_), Some(k)) => Some(r.corners[(k + 2) % 4]),
+        (crate::model::RectAnchor::Corner(c), None) => Some(c),
+    }
+}
+
+/// Where a rectangle was drawn from: a corner (its index round the rectangle) or the centre.
+#[derive(Clone, Copy)]
+enum DrawnFrom {
+    Corner(usize),
+    Centre,
+}
+
+/// THE CONSTRAINTS A RECTANGLE HOLDS ITSELF BY, corners `c0`..`c3` in order round it: every side at its turn - the
+/// first and the third at `deg`, the second and the fourth square to them - and the centre on the middle of the
+/// diagonal c0 - c2. Four for the shape and its turn, two for the centre: a rectangle of four corners and a centre (ten
+/// unknowns) is left with its place, its width and its height. At 0 deg the four are exactly Horizontal and Vertical,
+/// and as stable: the same shape held by parallel and perpendicular sides let a side squeezed short by contradicting
+/// constraints drift a point by 2.3 to 243 mm from one solve to the next (7 of 400 random sketches).
+pub(crate) fn rect_own_constraints(c0: Id, c1: Id, c2: Id, c3: Id, centre: Id, deg: f64) -> [Constraint; 5] {
+    [
+        Constraint::Orientation { a: c0, b: c1, deg },
+        Constraint::Orientation { a: c3, b: c2, deg },
+        Constraint::Orientation { a: c1, b: c2, deg: deg + 90.0 },
+        Constraint::Orientation { a: c0, b: c3, deg: deg + 90.0 },
+        Constraint::Midpoint { p: centre, a: c0, b: c2 },
+    ]
+}
+
 impl Project {
     /// Add a contour and return its stable id.
     pub fn add_contour(&mut self, c: Contour) -> Id {
@@ -98,6 +212,7 @@ impl Project {
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
+            rects: Vec::new(),
             projections: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
@@ -281,6 +396,7 @@ impl Project {
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
+            rects: Vec::new(),
             projections: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
@@ -307,6 +423,7 @@ impl Project {
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
+            rects: Vec::new(),
             projections: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,
@@ -821,6 +938,20 @@ impl Project {
     /// and the constraints that hung on the deleted lines by their pair of endpoints — even when those
     /// endpoints are shared and still alive.
     pub fn delete_entities(&mut self, si: usize, eids: &[Id]) {
+        // A RECTANGLE LOSING A SIDE IS BROKEN: its diagonals go with the side, its centre with them, and the constraints
+        // it held itself by - four plain lines are left, with nothing of the rectangle on them.
+        let mut eids = eids.to_vec();
+        if let Some(s) = self.sketches.get_mut(si) {
+            let broken: Vec<crate::model::SketchRect> = s.rects.iter().filter(|r| r.sides.iter().chain(r.diagonals.iter().flatten()).any(|e| eids.contains(e))).cloned().collect();
+            s.rects.retain(|r| !broken.contains(r));
+            for r in &broken {
+                eids.extend(r.diagonals.into_iter().flatten());
+                let [c0, c1, c2, c3] = r.corners;
+                let own = rect_own_constraints(c0, c1, c2, c3, r.centre, 0.0);
+                s.constraints.retain(|c| !own.iter().any(|o| same_rect_constraint(o, c)));
+            }
+        }
+        let eids = &eids[..];
         {
             let Some(s) = self.sketches.get_mut(si) else { return };
             // Endpoint pairs of the lines being deleted: constraints referencing those lines go as well.
@@ -904,6 +1035,101 @@ impl Project {
         }
         self.regen_sketch(si);
     }
+    /// THE WIDTH AND THE HEIGHT DIMENSIONS OF THE RECTANGLE WITH SIDE `side`, laid when it has none: a dimension of a
+    /// side, or of the side across from it, is its width or its height. `None` when the side is no rectangle's.
+    pub fn rect_dims(&mut self, si: usize, side: Id) -> Option<crate::model::RectDims> {
+        let s = self.sketches.get(si)?;
+        let r = s.rects.iter().find(|r| r.sides.contains(&side))?.clone();
+        let [c0, c1, c2, c3] = r.corners;
+        let find =
+            |pairs: [(Id, Id); 2]| s.constraints.iter().position(|c| matches!(*c, Constraint::Distance { a, b, axis: 0, .. } if pairs.iter().any(|&(x, y)| (a == x && b == y) || (a == y && b == x))));
+        let (width, height) = (find([(c0, c1), (c3, c2)]), find([(c1, c2), (c0, c3)]));
+        match (width, height) {
+            (Some(width), Some(height)) => Some(crate::model::RectDims { width, height }),
+            _ => {
+                // the one there is goes, and both are laid afresh beside each other
+                let sk = self.sketches.get_mut(si)?;
+                if let Some(i) = width.or(height) {
+                    sk.constraints.remove(i);
+                }
+                self.dimension_rect(si, side);
+                let n = self.sketches[si].constraints.len();
+                Some(crate::model::RectDims { width: n - 2, height: n - 1 })
+            }
+        }
+    }
+    /// THE WIDTH AND THE HEIGHT OF THE RECTANGLE WITH SIDE `side` LAID AS DIMENSIONS, at the lengths its first two sides
+    /// stand at, each led out a fifth of the shorter side beyond its side (a positive offset is to the right of a side
+    /// run from its first corner, and the corners go round anticlockwise - the dimensions stand outside). Returns
+    /// whether the rectangle was found.
+    pub fn dimension_rect(&mut self, si: usize, side: Id) -> bool {
+        let Some(s) = self.sketches.get_mut(si) else { return false };
+        let Some(r) = s.rects.iter().find(|r| r.sides.contains(&side)).cloned() else { return false };
+        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+        let (Some(p0), Some(p1), Some(p2)) = (at(r.corners[0]), at(r.corners[1]), at(r.corners[2])) else { return false };
+        let (w, h) = ((p1.0 - p0.0).hypot(p1.1 - p0.1), (p2.0 - p1.0).hypot(p2.1 - p1.1));
+        let off = 0.2 * w.min(h);
+        let dim = |a: Id, b: Id, d: f64| Constraint::Distance { a, b, d, off, expr: String::new(), driven: false, axis: 0, at: None };
+        s.constraints.push(dim(r.corners[0], r.corners[1], w));
+        s.constraints.push(dim(r.corners[1], r.corners[2], h));
+        true
+    }
+    /// AN ANGLE DIMENSION ON A SIDE OF A RECTANGLE TAKES ITS TURN: called with the dimension before it is laid. The turns
+    /// the rectangle holds itself by go, and its shape is held by parallel and square sides, so the dimension turns it -
+    /// both held, the rectangle would be held twice over and the dimension refused.
+    pub fn give_rect_turn_to(&mut self, si: usize, dim: &Constraint) {
+        let Constraint::AngleLines { a, b, c, d, .. } = *dim else { return };
+        let Some(s) = self.sketches.get_mut(si) else { return };
+        let side_of = |s: &crate::model::Sketch, r: &crate::model::SketchRect, x: Id, y: Id| {
+            r.sides.iter().any(|e| matches!(s.entities.iter().find(|q| q.id == *e).map(|q| q.kind), Some(EntityKind::Line { a, b }) if (a == x && b == y) || (a == y && b == x)))
+        };
+        let turned: Vec<crate::model::SketchRect> = s.rects.iter().filter(|r| side_of(s, r, a, b) || side_of(s, r, c, d)).cloned().collect();
+        for r in turned {
+            let held_by_turns = s.constraints.iter().any(|k| matches!(k, Constraint::Orientation { a, .. } if r.corners.contains(a)));
+            if !held_by_turns {
+                continue;
+            }
+            s.constraints.retain(|k| !(matches!(k, Constraint::Orientation { .. }) && is_rect_own(&r, k)));
+            let [c0, c1, c2, c3] = r.corners;
+            s.constraints.extend(rect_free_constraints(c0, c1, c2, c3));
+        }
+    }
+    /// AFTER A CONSTRAINT IS DELETED, the rectangles it was part of: one of a rectangle's own constraints deleted breaks
+    /// it - the record, its centre, its diagonals and the rest of its own constraints go, four plain lines are left; an
+    /// angle dimension that held a rectangle's turn deleted gives the turn back to the rectangle, at the turn it stands
+    /// at, so a dragged corner does not turn it.
+    fn settle_rects_after(&mut self, si: usize, removed: &Constraint) {
+        let Some(s) = self.sketches.get_mut(si) else { return };
+        let broken: Vec<crate::model::SketchRect> = s.rects.iter().filter(|r| is_rect_own(r, removed)).cloned().collect();
+        for r in &broken {
+            s.rects.retain(|k| k.id != r.id);
+            s.constraints.retain(|k| !is_rect_own(r, k));
+        }
+        let diagonals: Vec<Id> = broken.iter().flat_map(|r| r.diagonals.into_iter().flatten()).collect();
+        let free: Vec<crate::model::SketchRect> = s
+            .rects
+            .iter()
+            .filter(|r| !s.constraints.iter().any(|k| matches!(k, Constraint::Orientation { a, .. } if r.corners.contains(a))))
+            .filter(|r| !s.constraints.iter().any(|k| matches!(k, Constraint::AngleLines { a, b, c, d, .. } if [a, b, c, d].iter().filter(|p| r.corners.contains(p)).count() >= 2)))
+            .cloned()
+            .collect();
+        for r in free {
+            let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+            let (Some(p0), Some(p1)) = (at(r.corners[0]), at(r.corners[1])) else { continue };
+            let deg = (p1.1 - p0.1).atan2(p1.0 - p0.0).to_degrees();
+            let [c0, c1, c2, c3] = r.corners;
+            s.constraints.retain(|k| !(matches!(k, Constraint::Parallel { .. } | Constraint::Perpendicular { .. }) && is_rect_own(&r, k)));
+            s.constraints.extend(rect_own_constraints(c0, c1, c2, c3, r.centre, deg).into_iter().filter(|k| matches!(k, Constraint::Orientation { .. })));
+        }
+        let centres: Vec<Id> = broken.iter().map(|r| r.centre).collect();
+        if !diagonals.is_empty() {
+            self.delete_entities(si, &diagonals);
+        }
+        if let Some(s) = self.sketches.get_mut(si) {
+            let used: std::collections::HashSet<Id> = s.constraints.iter().flat_map(constraint_point_ids).collect();
+            s.points.retain(|q| !centres.contains(&q.id) || used.contains(&q.id));
+        }
+    }
     /// Delete constraint `ci` of a sketch. For a midpoint constraint the orphaned midpoint is pruned as well
     /// (nothing else uses it and it is not a system point), so no debris is left behind. The sketch is then
     /// re-solved.
@@ -914,7 +1140,8 @@ impl Project {
                 return false;
             }
             let removed = s.constraints.remove(ci);
-            if let Constraint::Midpoint { p, .. } = removed {
+            if let Constraint::Midpoint { p, .. } = &removed {
+                let p = *p;
                 let used_ent = s.entities.iter().any(|e| match e.kind {
                     EntityKind::Line { a, b } => a == p || b == p,
                     EntityKind::Arc { center, a, b, .. } => center == p || a == p || b == p,
@@ -927,6 +1154,7 @@ impl Project {
                     s.points.retain(|q| q.id != p); // The orphaned midpoint is removed.
                 }
             }
+            self.settle_rects_after(si, &removed);
         }
         self.solve_sketch(si);
         true
@@ -935,7 +1163,15 @@ impl Project {
     /// (the frame, the driven projections, the pinned points). See `Sketch::held_points`.
     fn movable_of(&self, si: usize, eids: &[Id]) -> Vec<Id> {
         let held = self.sketches.get(si).map(|s| s.held_points()).unwrap_or_default();
-        self.entity_point_ids(si, eids).into_iter().filter(|id| !held.contains(id)).collect()
+        let mut pts = self.entity_point_ids(si, eids);
+        // A RECTANGLE MOVES AS ONE SHAPE: with all its corners its centre goes too. Left behind, the centre held the
+        // middle of the diagonal back, and a rectangle moved by 5 came out moved by 4.
+        pts.extend(self.whole_rects(si, &pts).iter().map(|r| r.centre));
+        pts.into_iter().filter(|id| !held.contains(id)).collect()
+    }
+    /// The rectangles of sketch `si` whose four corners are all among `pts`.
+    fn whole_rects(&self, si: usize, pts: &[Id]) -> Vec<crate::model::SketchRect> {
+        self.sketches.get(si).map(|s| s.rects.iter().filter(|r| r.corners.iter().all(|c| pts.contains(c))).cloned().collect()).unwrap_or_default()
     }
 
     /// THE EDIT ENDS AT THE SOLVER, not at a rebuild. `regen_sketch` recomputes the contours from whatever
@@ -973,7 +1209,17 @@ impl Project {
     pub fn rotate_entities(&mut self, si: usize, eids: &[Id], cx: f64, cy: f64, deg: f64) {
         let (sn, cs) = (deg.to_radians().sin(), deg.to_radians().cos());
         let pts = self.movable_of(si, eids);
+        // THE ROTATE TOOL TURNS A RECTANGLE: the turn it holds itself by goes round with it. Kept, it pulled the
+        // rectangle back to where it stood.
+        let turned: Vec<Id> = self.whole_rects(si, &pts).iter().flat_map(|r| r.corners).collect();
         if let Some(s) = self.sketches.get_mut(si) {
+            for c in s.constraints.iter_mut() {
+                if let Constraint::Orientation { a, b, deg: held } = c {
+                    if turned.contains(a) && turned.contains(b) {
+                        *held += deg;
+                    }
+                }
+            }
             for p in s.points.iter_mut() {
                 if pts.contains(&p.id) {
                     let (x, y) = (p.x - cx, p.y - cy);
@@ -1920,6 +2166,42 @@ impl Project {
         self.regen_sketch(si);
         true
     }
+    /// The same with a size given by a radius, a chord or an arc length (see `fillet_at_vertex_by`).
+    pub fn fillet_lines_by(&mut self, si: usize, e1: Id, e2: Id, size: FilletSize) -> bool {
+        let r = match size.by {
+            FilletBy::Radius => size.value,
+            _ => {
+                let (Some((a1, b1)), Some((a2, b2))) = (self.line_ends(si, e1), self.line_ends(si, e2)) else { return false };
+                let pc = if a1 == a2 || a1 == b2 {
+                    a1
+                } else if b1 == a2 || b1 == b2 {
+                    b1
+                } else {
+                    return false;
+                };
+                let (o1, o2) = (if a1 == pc { b1 } else { a1 }, if a2 == pc { b2 } else { a2 });
+                let (Some((px, py)), Some((ax, ay)), Some((bx, by))) = (self.point_xy(si, pc), self.point_xy(si, o1), self.point_xy(si, o2)) else { return false };
+                let (la, lb) = ((ax - px).hypot(ay - py), (bx - px).hypot(by - py));
+                if la < 1e-9 || lb < 1e-9 {
+                    return false;
+                }
+                let corner = (((ax - px) * (bx - px) + (ay - py) * (by - py)) / (la * lb)).clamp(-1.0, 1.0).acos();
+                let Some(r) = size.radius_on(std::f64::consts::PI - corner) else { return false };
+                // what the lines take: the points of touching r / tan(corner / 2) from the corner, within the shorter line
+                if r / (corner / 2.0).tan() >= la.min(lb) * 0.95 {
+                    return false;
+                }
+                r
+            }
+        };
+        if !self.fillet_lines(si, e1, e2, r) {
+            return false;
+        }
+        if size.by != FilletBy::Radius {
+            self.give_fillet_its_size(si, size);
+        }
+        true
+    }
     /// Fillet the corner between two segments sharing a vertex, with radius `r`. The lines are shortened to the
     /// tangency points and an arc is inserted between them. Returns whether it succeeded.
     pub fn fillet_lines(&mut self, si: usize, e1: Id, e2: Id, r: f64) -> bool {
@@ -2019,7 +2301,11 @@ impl Project {
                     // a tangency or a point held on a line names the line by two points too: rounding the next corner of
                     // a rectangle shortened a side whose tangency still ran to the old vertex, and that vertex was kept
                     // as a point nothing drew (14 or 15 points on a rectangle rounded all round, not 12)
-                    Constraint::Horizontal { a, b } | Constraint::Vertical { a, b } | Constraint::Tangent { a, b, .. } | Constraint::PointOnLine { a, b, .. } => (*a, *b) = pair(*a, *b),
+                    Constraint::Horizontal { a, b }
+                    | Constraint::Vertical { a, b }
+                    | Constraint::Orientation { a, b, .. }
+                    | Constraint::Tangent { a, b, .. }
+                    | Constraint::PointOnLine { a, b, .. } => (*a, *b) = pair(*a, *b),
                     Constraint::Equal { a, b, c: cc, d } | Constraint::Parallel { a, b, c: cc, d } | Constraint::Perpendicular { a, b, c: cc, d } | Constraint::Collinear { a, b, c: cc, d } => {
                         (*a, *b) = pair(*a, *b);
                         (*cc, *d) = pair(*cc, *d);
@@ -2036,8 +2322,10 @@ impl Project {
     /// This keeps the dimensions and constraints on the corner valid while `pc` never reaches the contour. A
     /// real vertex, still needed by a third edge, is left alone.
     pub(super) fn keep_virtual_corner_lines(&mut self, si: usize, pc: Id, o1: Id, t1: Id, o2: Id, t2: Id) {
+        // a construction line ending at the corner - the diagonal of a rectangle - does not keep the corner a vertex of the
+        // contour; it holds on to the virtual sharp, below
         let pc_still_used = self.sketches.get(si).is_some_and(|s| {
-            s.entities.iter().any(|e| match e.kind {
+            s.entities.iter().filter(|e| !e.construction).any(|e| match e.kind {
                 EntityKind::Line { a, b } => a == pc || b == pc,
                 EntityKind::Arc { center, a, b, .. } => center == pc || a == pc || b == pc,
                 EntityKind::Circle { center, .. } => center == pc,
@@ -2050,7 +2338,9 @@ impl Project {
         self.carry_edge_constraints(si, pc, Some((o1, t1)), Some((o2, t2)));
         // the vertex stays, as the virtual sharp on both extensions, only while a dimension or another constraint still
         // stands on it
-        let referenced = self.sketches.get(si).is_some_and(|s| s.constraints.iter().any(|c| c.points().contains(&pc)));
+        // a corner of a rectangle kept as one shape stays as its virtual sharp: its centre stands on the middle of the
+        // corners, and a move or a turn of the rectangle is told by them
+        let referenced = self.corner_still_held(si, pc);
         if let Some(s) = self.sketches.get_mut(si) {
             if referenced {
                 s.constraints.push(Constraint::PointOnLine { p: pc, a: o1, b: t1 });
@@ -2059,6 +2349,16 @@ impl Project {
                 s.points.retain(|p| p.id != pc); // nothing stands on the vanished vertex any more
             }
         }
+    }
+    /// IS THE VANISHED CORNER `pc` STILL HELD - by a constraint or a dimension on it, by a construction line ending at
+    /// it (the diagonal of a rectangle), or as a corner of a rectangle kept as one shape? Then it stays, as the virtual
+    /// sharp on the extensions of its sides.
+    fn corner_still_held(&self, si: usize, pc: Id) -> bool {
+        self.sketches.get(si).is_some_and(|s| {
+            s.constraints.iter().any(|c| c.points().contains(&pc))
+                || s.entities.iter().any(|e| matches!(e.kind, EntityKind::Line { a, b } if a == pc || b == pc))
+                || s.rects.iter().any(|r| r.corners.contains(&pc))
+        })
     }
     /// Chamfer between two segments sharing a vertex, with setback `d`.
     pub fn chamfer_lines(&mut self, si: usize, e1: Id, e2: Id, legs: ChamferLegs) -> bool {
@@ -2363,8 +2663,9 @@ impl Project {
         // `pc` is held against every support: a line by `PointOnLine` on its extension, an arc or circle by
         // `PointOnCircle`. When `pc` is still needed by a third edge (three or more edges met at the corner) it
         // is a real vertex already and is left alone.
+        // a construction line ending at the corner - the diagonal of a rectangle - does not keep it a vertex of the contour
         let pc_still_used = self.sketches.get(si).is_some_and(|s| {
-            s.entities.iter().any(|e| match e.kind {
+            s.entities.iter().filter(|e| !e.construction).any(|e| match e.kind {
                 EntityKind::Line { a, b } => a == pc || b == pc,
                 EntityKind::Arc { center, a, b, .. } => center == pc || a == pc || b == pc,
                 EntityKind::Circle { center, .. } => center == pc,
@@ -2376,7 +2677,7 @@ impl Project {
             self.carry_edge_constraints(si, pc, side(&s1c, o1, t1), side(&s2c, o2, t2));
         }
         // the vertex stays, as the virtual sharp on both supports, only while a dimension or another constraint stands on it
-        let referenced = self.sketches.get(si).is_some_and(|s| s.constraints.iter().any(|c| c.points().contains(&pc)));
+        let referenced = self.corner_still_held(si, pc);
         if !pc_still_used && !referenced {
             // nothing stands on the vanished vertex any more: it goes, rather than stay a point of its own
             if let Some(s) = self.sketches.get_mut(si) {
@@ -2427,6 +2728,8 @@ impl Project {
         let Some(s) = self.sketches.get(si) else { return Vec::new() };
         s.entities
             .iter()
+            // construction lines are not edges of a corner: the diagonals of a rectangle end at its corners
+            .filter(|e| !e.construction)
             .filter(|e| matches!(e.kind, EntityKind::Line { a, b } if a == pid || b == pid) || matches!(e.kind, EntityKind::Arc { a, b, .. } if a == pid || b == pid))
             .map(|e| e.id)
             .collect()
@@ -2492,11 +2795,16 @@ impl Project {
     /// Fillet the corners of the selected geometry: a corner is taken only when both of its edges are in
     /// `only` (`None` means the whole sketch). "Fillet all" with a shape selected fillets that shape alone.
     pub fn fillet_all_corners_of(&mut self, si: usize, r: f64, only: Option<&std::collections::HashSet<Id>>) -> usize {
+        self.fillet_all_corners_by(si, FilletSize::radius(r), only)
+    }
+    /// The same with a size given by a radius, a chord or an arc length: every corner gets the radius the size makes on
+    /// it, and keeps the size as it was given (see `fillet_at_vertex_by`).
+    pub fn fillet_all_corners_by(&mut self, si: usize, size: FilletSize, only: Option<&std::collections::HashSet<Id>>) -> usize {
         let corners: Vec<Id> = {
             let Some(s) = self.sketches.get(si) else { return 0 };
             let mut count: std::collections::HashMap<Id, usize> = std::collections::HashMap::new();
             for e in &s.entities {
-                if only.is_some_and(|f| !f.contains(&e.id)) {
+                if e.construction || only.is_some_and(|f| !f.contains(&e.id)) {
                     continue;
                 }
                 let ends = match e.kind {
@@ -2514,7 +2822,7 @@ impl Project {
         let mut done = 0;
         for pid in corners {
             // Is the vertex still intact, with two edges still meeting there?
-            if self.sketches.get(si).is_some_and(|s| s.points.iter().any(|q| q.id == pid)) && self.vertex_edges(si, pid).len() == 2 && self.fillet_at_vertex(si, pid, r) {
+            if self.sketches.get(si).is_some_and(|s| s.points.iter().any(|q| q.id == pid)) && self.vertex_edges(si, pid).len() == 2 && self.fillet_at_vertex_by(si, pid, size) {
                 done += 1;
             }
         }
@@ -2709,12 +3017,83 @@ impl Project {
         let mut radii = self.entity_radii(si);
         let intrinsics = self.entity_intrinsics(si);
         let Some(s) = self.sketches.get_mut(si) else { return 0.0 };
+        // THE CENTRE OF A RECTANGLE DRAWN BY ITS CORNERS FOLLOWS THE CORNERS: it is put on the middle of the diagonal
+        // before the solve. Left where it stood, it held the corners back - a side moved from 20 to 30 came out at 28.9,
+        // the solver sharing the move between the corners and the centre. A centre a rectangle was drawn from is its
+        // anchor and stays.
+        struct Mid {
+            centre: Id,
+            at: Point2,
+        }
+        let mids: Vec<Mid> = s
+            .rects
+            .iter()
+            .filter(|r| matches!(r.anchor, crate::model::RectAnchor::Corner(_)))
+            // only a centre nothing else holds: one that carries a constraint of its own is solved with it, and put back on
+            // the middle before every solve of a contradicting sketch it was a new compromise each time - a point drifted
+            // by 1 mm from one solve to the next
+            .filter(|r| s.constraints.iter().filter(|c| c.points().contains(&r.centre)).count() == 1)
+            .filter_map(|r| {
+                let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+                let (a, c) = (at(r.corners[0])?, at(r.corners[2])?);
+                Some(Mid { centre: r.centre, at: Point2::new((a.x + c.x) / 2.0, (a.y + c.y) / 2.0) })
+            })
+            .collect();
+        for m in mids {
+            if let Some(q) = s.points.iter_mut().find(|q| q.id == m.centre) {
+                (q.x, q.y) = (m.at.x, m.at.y);
+            }
+        }
+        // A RECTANGLE DRAGGED BY ITS CENTRE GOES WITH IT AS A WHOLE, as a circle goes with its centre: its corners are
+        // carried by the move of the centre before the solve. Left where they stood, the drag pulled the centre alone,
+        // the middle of the diagonal pulled it back by the two corners on it, and the rectangle hardly moved.
+        if let Some((d, tx, ty)) = drag {
+            let carried: Vec<Id> = s.rects.iter().filter(|r| r.centre == d).flat_map(|r| r.corners).collect();
+            if let Some((cx, cy)) = s.points.iter().find(|q| q.id == d).map(|q| (q.x, q.y)) {
+                if !carried.is_empty() {
+                    let held = s.held_points();
+                    let (dx, dy) = (tx - cx, ty - cy);
+                    for q in s.points.iter_mut().filter(|q| (carried.contains(&q.id) || q.id == d) && !held.contains(&q.id)) {
+                        q.x += dx;
+                        q.y += dy;
+                    }
+                }
+            }
+        }
         // Reference (driven) dimensions do not constrain the geometry and are excluded from the solver, while
         // the arc intrinsics (endpoints on the circle of radius R) are always active.
         let mut active: Vec<Constraint> = s.constraints.iter().filter(|c| !c.is_driven()).cloned().collect();
         active.extend(intrinsics);
         let (was, radii_was): (Vec<(f64, f64)>, Vec<f64>) = (s.points.iter().map(|p| (p.x, p.y)).collect(), radii.iter().map(|r| r.value).collect());
-        let resid = crate::solver::solve_full_iter(&mut s.points, &mut radii, &active, drag, max_iter);
+        // A RECTANGLE CHANGES ITS SIZE FROM WHERE IT WAS DRAWN: from the centre a rectangle drawn from the centre, from the
+        // first corner one drawn by its corners. The solver alone spreads a change over every point it may move, so a
+        // dragged corner or a width typed grew a rectangle about wherever the least travel lay. What is held for this
+        // solve (`held_for_size`) is let go when the sketch does not solve with it - a dimension that moves the
+        // rectangle as a whole.
+        let anchors: Vec<Constraint> =
+            s.rects.iter().filter_map(|r| held_for_size(r, drag.map(|(d, _, _)| d))).filter(|p| s.points.iter().any(|q| q.id == *p)).map(|p| Constraint::Fixed { p }).collect();
+        let resid = if anchors.is_empty() {
+            crate::solver::solve_full_iter(&mut s.points, &mut radii, &active, drag, max_iter)
+        } else {
+            let (mut held_points, mut held_radii) = (s.points.clone(), radii.clone());
+            let held: Vec<Constraint> = active.iter().cloned().chain(anchors).collect();
+            crate::solver::solve_full_iter(&mut held_points, &mut held_radii, &held, drag, max_iter);
+            // SOLVED IS TOLD BY THE SKETCH'S OWN CONSTRAINTS, not by the hold, a soft pull of which a little is always left
+            // under a corner dragged away from it. Solved means to the precision the polish reaches (1e-12): a side held
+            // 0.0009 short of a collinear line by its anchor left 1e-7 and passed at 1e-6. A DRAG FRAME KEEPS THE HOLD
+            // whatever it leaves: a frame is a compromise with the pointer until the release solves it, and the
+            // compromise grows with how far the pointer is from where the corner can go - a corner pulled 8 mm up off
+            // its horizontal side left 2e-2, and a frame let go of the hold carried the corner drawn from 7 mm with it.
+            // The release is solved in full, and lets the hold go if the sketch does not solve with it.
+            let r = crate::solver::residual_per_constraint(&held_points, &held_radii, &active).iter().map(|v| v * v).sum::<f64>().sqrt();
+            let solved = if drag.is_some() { f64::INFINITY } else { 1e-9 };
+            if r <= solved {
+                (s.points, radii) = (held_points, held_radii);
+                r
+            } else {
+                crate::solver::solve_full_iter(&mut s.points, &mut radii, &active, drag, max_iter)
+            }
+        };
         // A SOLVED SKETCH SOLVED AGAIN STAYS AS IT WAS: a move below rounding is not written. Each solve of a solved
         // polygon shifted its points by about 2e-18 mm, the document key read every frame as an edit, and a rebuild
         // in the background always came back stale and was started again - the program never came to rest.
@@ -3316,30 +3695,65 @@ impl Project {
         self.regen_sketch(si);
         id
     }
-    /// Add a rectangle as four segment entities, from two opposite corners. Returns the entity ids.
+    /// A rectangle by two opposite corners, kept as one shape (see `SketchRect`); it grows from the corner at
+    /// (`x0`, `y0`). Returns the ids of its four sides.
     pub fn add_rect_entity(&mut self, si: usize, x0: f64, y0: f64, x1: f64, y1: f64, purpose: crate::feature::Purpose) -> Vec<Id> {
-        let construction = purpose == crate::feature::Purpose::Construction;
         let (xa, xb) = (x0.min(x1), x0.max(x1));
         let (ya, yb) = (y0.min(y1), y0.max(y1));
-        let corners = [(xa, ya), (xb, ya), (xb, yb), (xa, yb)];
-        let pids: Vec<Id> = corners.iter().map(|&(x, y)| self.sketch_point_at(si, x, y, 1e-6)).collect();
-        let mut eids = Vec::with_capacity(4);
-        for k in 0..4 {
-            let id = self.alloc_id();
-            self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Line { a: pids[k], b: pids[(k + 1) % 4] }, construction });
-            eids.push(id);
+        let corners = [Point2::new(xa, ya), Point2::new(xb, ya), Point2::new(xb, yb), Point2::new(xa, yb)];
+        let first = corners.iter().position(|c| c.x == x0 && c.y == y0).unwrap_or(0);
+        self.lay_rect(si, corners, DrawnFrom::Corner(first), purpose)
+    }
+    /// A rectangle drawn from its centre and a corner, kept as one shape; it grows about the centre. Returns the ids
+    /// of its four sides.
+    pub fn add_rect_from_centre(&mut self, si: usize, centre: Point2, corner: Point2, purpose: crate::feature::Purpose) -> Vec<Id> {
+        let (dx, dy) = ((corner.x - centre.x).abs(), (corner.y - centre.y).abs());
+        let corners = [
+            Point2::new(centre.x - dx, centre.y - dy),
+            Point2::new(centre.x + dx, centre.y - dy),
+            Point2::new(centre.x + dx, centre.y + dy),
+            Point2::new(centre.x - dx, centre.y + dy),
+        ];
+        self.lay_rect(si, corners, DrawnFrom::Centre, purpose)
+    }
+    /// LAY A RECTANGLE OF FOUR CORNERS in order round it: the sides, and - for real geometry - the shape kept as one:
+    /// opposite sides parallel, the first two square, the turn of the first side held (`Orientation`), a centre point
+    /// on the middle of the diagonal, the two construction diagonals for a rectangle drawn from its centre, and the
+    /// record. Construction
+    /// geometry gets the four sides alone. Returns the ids of the sides.
+    fn lay_rect(&mut self, si: usize, corners: [Point2; 4], from: DrawnFrom, purpose: crate::feature::Purpose) -> Vec<Id> {
+        let construction = purpose == crate::feature::Purpose::Construction;
+        let pids: Vec<Id> = corners.iter().map(|c| self.sketch_point_at(si, c.x, c.y, 1e-6)).collect();
+        let mut sides = [0; 4];
+        for (k, side) in sides.iter_mut().enumerate() {
+            *side = self.alloc_id();
+            self.sketches[si].entities.push(SketchEntity { id: *side, kind: EntityKind::Line { a: pids[k], b: pids[(k + 1) % 4] }, construction });
         }
-        // Automatic rectangle constraints: the bottom and top sides horizontal, the sides vertical. Only the
-        // independent ones are added, so the sketch is not over-constrained, and none for construction
-        // geometry.
         if !construction {
-            self.add_constraint_if_independent(si, Constraint::Horizontal { a: pids[0], b: pids[1] });
-            self.add_constraint_if_independent(si, Constraint::Horizontal { a: pids[3], b: pids[2] });
-            self.add_constraint_if_independent(si, Constraint::Vertical { a: pids[1], b: pids[2] });
-            self.add_constraint_if_independent(si, Constraint::Vertical { a: pids[0], b: pids[3] });
+            let [c0, c1, c2, c3] = [pids[0], pids[1], pids[2], pids[3]];
+            let mid = Point2::new((corners[0].x + corners[2].x) / 2.0, (corners[0].y + corners[2].y) / 2.0);
+            let centre = self.sketch_point_at(si, mid.x, mid.y, 1e-6);
+            let diagonals = matches!(from, DrawnFrom::Centre).then(|| {
+                let mut d = [0; 2];
+                for (id, (a, b)) in d.iter_mut().zip([(c0, c2), (c1, c3)]) {
+                    *id = self.alloc_id();
+                    self.sketches[si].entities.push(SketchEntity { id: *id, kind: EntityKind::Line { a, b }, construction: true });
+                }
+                d
+            });
+            let deg = (corners[1].y - corners[0].y).atan2(corners[1].x - corners[0].x).to_degrees();
+            for c in rect_own_constraints(c0, c1, c2, c3, centre, deg) {
+                self.add_constraint_if_independent(si, c);
+            }
+            let anchor = match from {
+                DrawnFrom::Corner(k) => crate::model::RectAnchor::Corner(pids[k]),
+                DrawnFrom::Centre => crate::model::RectAnchor::Centre,
+            };
+            let id = self.alloc_id();
+            self.sketches[si].rects.push(crate::model::SketchRect { id, corners: [c0, c1, c2, c3], sides, centre, diagonals, anchor });
         }
         self.regen_sketch(si);
-        eids
+        sides.to_vec()
     }
     /// Like `add_polygon_entity`, but returns the id of the circumscribed circle centre together with the side
     /// ids.
@@ -3430,33 +3844,15 @@ impl Project {
     /// a projection onto the normal. Returns the ids of the four sides. Opposite sides are held parallel and
     /// adjacent ones perpendicular, so it stays a rectangle under the solver.
     pub fn add_rect3_entity(&mut self, si: usize, p1: crate::geom::Point2, p2: crate::geom::Point2, p3: crate::geom::Point2, purpose: crate::feature::Purpose) -> Vec<Id> {
-        let ((x1, y1), (x2, y2), (x3, y3)) = ((p1.x, p1.y), (p2.x, p2.y), (p3.x, p3.y));
-        let construction = purpose == crate::feature::Purpose::Construction;
-        let (dx, dy) = (x2 - x1, y2 - y1);
+        let (dx, dy) = (p2.x - p1.x, p2.y - p1.y);
         let len = (dx * dx + dy * dy).sqrt();
         if len < 1e-6 {
             return Vec::new();
         }
         let (nx, ny) = (-dy / len, dx / len); // Unit normal to the side.
-        let h = (x3 - x2) * nx + (y3 - y2) * ny; // Signed height: the projection of p3 onto the normal.
-        let p1 = self.sketch_point_at(si, x1, y1, 1e-6);
-        let p2 = self.sketch_point_at(si, x2, y2, 1e-6);
-        let p3 = self.sketch_point_at(si, x2 + nx * h, y2 + ny * h, 1e-6);
-        let p4 = self.sketch_point_at(si, x1 + nx * h, y1 + ny * h, 1e-6);
-        let segs = [(p1, p2), (p2, p3), (p3, p4), (p4, p1)];
-        let mut eids = Vec::with_capacity(4);
-        for (a, b) in segs {
-            let id = self.alloc_id();
-            self.sketches[si].entities.push(SketchEntity { id, kind: EntityKind::Line { a, b }, construction });
-            eids.push(id);
-        }
-        if !construction {
-            self.add_constraint_if_independent(si, Constraint::Parallel { a: p1, b: p2, c: p4, d: p3 });
-            self.add_constraint_if_independent(si, Constraint::Parallel { a: p1, b: p4, c: p2, d: p3 });
-            self.add_constraint_if_independent(si, Constraint::Perpendicular { a: p1, b: p2, c: p1, d: p4 });
-        }
-        self.regen_sketch(si);
-        eids
+        let h = (p3.x - p2.x) * nx + (p3.y - p2.y) * ny; // Signed height: the projection of p3 onto the normal.
+        let corners = [p1, p2, Point2::new(p2.x + nx * h, p2.y + ny * h), Point2::new(p1.x + nx * h, p1.y + ny * h)];
+        self.lay_rect(si, corners, DrawnFrom::Corner(0), purpose)
     }
     /// Add an arc entity (centre, start, end, direction).
     pub fn add_arc_entity(&mut self, si: usize, c: crate::geom::Point2, a: crate::geom::Point2, b: crate::geom::Point2, winding: crate::feature::Winding, purpose: crate::feature::Purpose) {
@@ -3487,6 +3883,7 @@ impl Project {
             notes: Vec::new(),
             texts: Vec::new(),
             patterns: Vec::new(),
+            rects: Vec::new(),
             projections: Vec::new(),
             plane: crate::feature::SketchPlane::default(),
             origin: 0,

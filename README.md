@@ -10,7 +10,7 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 
 [github.com/grengojbo/QymCAD](https://github.com/grengojbo/QymCAD)
 
-**English** · [Русский](README.ru.md) · [Українська](README.uk.md)
+**English** | [Русский](README.ru.md) | [Українська](README.uk.md)
 
 <img src="docs/screenshots/01-assembly.png" width="900" alt="A CNC machine assembled in QymCAD: components, joints and their degrees of freedom">
 
@@ -30,7 +30,7 @@ The geometry is exact and solid (B-rep), computed by the [OpenCASCADE](https://d
 kernel — the same one FreeCAD runs on. Hence precise surfaces instead of meshes, correct fillets and
 exchange through STEP with other CAD systems.
 
-The interface is available in English, Russian and Ukrainian.
+The interface is available in English, Ukrainian and Russian.
 
 ## Status
 
