@@ -2647,6 +2647,17 @@ impl Project {
         let live = if r.query.is_pick_list() {
             self.live_edge_refs(node_id, src, &r.query.picked_descs(), emap, kernel)
         } else {
+            // A DESCRIPTION READS THE MODEL'S EDGES, and a document opened from its file has none until a rebuild: the
+            // file keeps meshes and faces, not edges. The source is not rebuilt when only the rounding is, so its edges
+            // are taken from the live body here, as a pick takes them. Reported behaviour: a plate's vertical edges
+            // rounded by a description, the file opened and the rounding reopened - "none of the 0 named edges is
+            // left", red, until anything rebuilt the plate.
+            if let std::collections::hash_map::Entry::Vacant(slot) = self.regen_edges.entry(src) {
+                let edges = kernel.edges(src);
+                if !edges.is_empty() {
+                    slot.insert(edges);
+                }
+            }
             self.resolve_edge_refs(src, r, "ref-what-fillet-edge").unwrap_or_default()
         };
         // And no foreign number reaches the kernel. The kernel does not refuse a non-existent edge, it

@@ -75,3 +75,26 @@ fn a_rounding_whose_query_finds_nothing_goes_red() {
     let faces = p.regen_faces.get(&chamfer).map_or(0, Vec::len);
     assert!(p.regen_errors.contains_key(&chamfer) && faces <= 6, "a chamfer that found no edge cut the block: {faces} faces");
 }
+
+/// A ROUNDING REBUILT ON A BASE WHOSE EDGES THE MODEL DOES NOT HOLD - a document just opened from its file, which keeps
+/// meshes and faces but not edges - finds its edges on the live body. Reported behaviour: the rounding reopened right
+/// after opening said "none of the 0 named edges is left" and went red, until anything rebuilt the base.
+#[test]
+fn a_rounding_rebuilt_alone_finds_its_edges_on_the_live_base() {
+    let mut p = Project::default();
+    p.new_document();
+    let base = block(&mut p);
+    let _ = qymcad_testkit::regenerate(&mut p);
+    let edge = Query::Between(Box::new(Query::Extreme { axis: Axis::Z, max: true }), Box::new(Query::Extreme { axis: Axis::Y, max: false }));
+    let fillet = p.add_fillet_ref(base, 2.0, Ref { expect: qymcad_core::refs::Cardinality::Some, ..Ref::many(edge) });
+    let (_, shapes) = qymcad_testkit::regenerate(&mut p);
+    // as an opened file stands: the base live and clean, no edges in the model, the rounding to be built again alone
+    p.regen_edges.clear();
+    if let Some(n) = p.timeline.iter_mut().find(|n| n.id == fillet) {
+        n.dirty = true;
+    }
+    let (report, _) = qymcad_testkit::regenerate_dirty_with_shapes(&mut p, shapes);
+    assert!(report.errors.is_empty(), "the rounding rebuilt alone went red: {:?}", report.errors);
+    let faces = p.regen_faces.get(&fillet).map_or(0, Vec::len);
+    assert_eq!(faces, 7, "the rounding rebuilt alone came back with {faces} faces");
+}
