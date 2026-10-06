@@ -34,7 +34,7 @@ The interface is available in English, Ukrainian and Russian.
 
 ## About this fork
 
-This is a fork of QymCAD by Denis Kazachenkov (QymIs Tech) — a product of its own, growing in its own direction. The whole of QymCAD stays in place: every change in the main repository comes here regularly. On top of it, the fork adds three things.
+This is a fork of [QymCAD](https://github.com/QymIs-Tech/QymCAD) by Denis Kazachenkov — a product of its own, growing in its own direction. The whole of QymCAD stays in place: every change in the main repository comes here regularly. On top of it, the fork adds three things.
 
 ### 1. Modelling together with Claude
 

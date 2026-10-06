@@ -79,18 +79,25 @@ mod tests {
     /// person - an update check, a help page, a tracker, a homepage - leads to this repository instead. A merge
     /// of the upstream project brings its own addresses back with it; this says which file did. The author of
     /// the original is still named, as text.
+    ///
+    /// ONE ADDRESS IS LET THROUGH, IN ONE KIND OF FILE: a README may link the original's repository on GitHub, which
+    /// is reachable - it says where the fork came from. The site stays out of the READMEs too, and the repository
+    /// stays out of everything the program, its help and its packages hand a person.
     #[test]
     fn nothing_points_at_the_project_this_one_grew_from() {
         // put together here, so this file does not find itself
         let banned = [concat!("qymis", ".tech"), concat!("QymIs", "-Tech/"), concat!("github.com/QymIs", "-Tech")];
         let mut found = Vec::new();
         let mut files: Vec<std::path::PathBuf> = ["Cargo.toml", "README.md", "README.ru.md", "README.uk.md", "CONTRIBUTING.md", "CONTRIBUTING.ru.md"].iter().map(|f| root().join(f)).collect();
-        for dir in ["crates", "docs", "i18n", "packaging", ".github", "tools"] {
+        for dir in ["crates", "docs", "site", "i18n", "packaging", ".github", "tools"] {
             files.extend(every_file(&root().join(dir)));
         }
+        let origin = concat!("github.com/QymIs", "-Tech/QymCAD");
         for p in files {
             let text = std::fs::read_to_string(&p).unwrap_or_default();
+            let readme = p.file_name().is_some_and(|n| n.to_string_lossy().starts_with("README"));
             for (n, line) in text.lines().enumerate() {
+                let line = if readme { line.replace(origin, "") } else { line.to_string() };
                 if banned.iter().any(|b| line.contains(b)) {
                     found.push(format!("{}:{}", p.strip_prefix(root()).unwrap_or(&p).display(), n + 1));
                 }
