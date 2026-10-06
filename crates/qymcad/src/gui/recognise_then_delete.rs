@@ -38,16 +38,26 @@ mod tests {
         qymcad_core::geom::Mesh { verts, tris: tris.into_iter().map(|t: [usize; 3]| t.map(|k| k as u32)).collect() }
     }
 
-    /// A project holding the ball brought in from a file; returns the program and the part the ball landed in.
-    fn a_ball_brought_in(name: &str) -> (super::super::App, qymcad_core::model::Id) {
+    /// The file the check `name` of the test run `run` (a process id) writes its ball to. The folder lies in the
+    /// checkout, not in the target of the build, so two runs from one checkout share it (the host and a container, or
+    /// two containers each with a target of its own); the run in the name keeps one from reading a file the other has
+    /// just truncated.
+    fn ball_file(name: &str, run: u32) -> std::path::PathBuf {
         let dir = std::path::PathBuf::from(format!("{}/../../target/recognise-then-delete", env!("CARGO_MANIFEST_DIR")));
         std::fs::create_dir_all(&dir).expect("a folder for the check");
-        let p = dir.join(format!("{name}.3mf"));
+        dir.join(format!("{name}-{run}.3mf"))
+    }
+
+    /// A project holding the ball brought in from a file; returns the program and the part the ball landed in.
+    fn a_ball_brought_in(name: &str) -> (super::super::App, qymcad_core::model::Id) {
+        let p = ball_file(name, std::process::id());
         qymcad_io::export_3mf(&[ball()], &p.to_string_lossy()).expect("written");
         let (mut app, ctx) = super::super::import_door::tests::running();
         answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
         settle(&mut app, &ctx);
-        let ball = app.project.bodies.last().map(|b| b.id).expect("the ball came in");
+        // read and landed by now; 1.4 MB per check and run is not left behind in the checkout
+        let _ = std::fs::remove_file(&p);
+        let ball = app.project.bodies.last().map(|b| b.id).unwrap_or_else(|| panic!("the ball did not come in: {}", app.status));
         let part = app.project.body_owner(ball).expect("the ball landed in a part");
         app.enter_component(part);
         (app, part)
@@ -161,5 +171,34 @@ mod tests {
         assert!(!body, "the recognition was cancelled and its node stands built all the same");
         assert!(h.app.project.regen_errors.is_empty(), "Cancel left the node red, as if it had failed: {:?}", h.app.project.regen_errors);
         assert!(h.app.status.contains(&crate::i18n::tr("io-rebuild-cancelled")), "Cancel was pressed and the program does not say the rebuild was cancelled: {}", h.app.status);
+    }
+
+    /// ANOTHER RUN OF THE CHECKS DOES NOT READ THIS RUN'S FILE. Reported behaviour: the four checks above failed
+    /// together in a whole run, every one with no ball in the project, and passed in the runs after it. That run
+    /// overlapped another run from the same checkout (the host and a container, or two containers with targets of their
+    /// own): both wrote `target/recognise-then-delete/<check>.3mf`, and the door read a file the other run had just
+    /// truncated - "3MF: the package holds no model". Here another run rewrites the ball of the same check without a
+    /// pause while it is brought in 5 times; with one file for both runs, 5 of 5 balls did not come in.
+    #[test]
+    fn a_ball_comes_in_whole_while_another_run_writes_the_same_check() {
+        let other_run = std::process::id().wrapping_add(1);
+        let theirs = ball_file("overlapped", other_run);
+        qymcad_io::export_3mf(&[ball()], &theirs.to_string_lossy()).expect("written");
+        let bytes = std::fs::read(&theirs).expect("read back");
+        let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let other = {
+            let stop = stop.clone();
+            let theirs = theirs.clone();
+            std::thread::spawn(move || {
+                while !stop.load(std::sync::atomic::Ordering::Relaxed) {
+                    std::fs::write(&theirs, &bytes).expect("written");
+                }
+            })
+        };
+        let lost = (0..5).filter(|_| std::panic::catch_unwind(|| a_ball_brought_in("overlapped")).is_err()).count();
+        stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        other.join().expect("the other run's writer");
+        let _ = std::fs::remove_file(&theirs);
+        assert_eq!(lost, 0, "{lost} of 5 balls did not come in while another run wrote the file of the same check");
     }
 }
