@@ -12,9 +12,10 @@ struct Run {
     stderr: String,
 }
 
-/// Sends the lines, closes stdin, and reads every reply.
+/// Sends the lines, closes stdin, and reads every reply. The server keeps a document of its own: left to choose, it
+/// would send the calls to a QymCAD window open on the machine running the checks.
 fn run(lines: &[String]) -> Run {
-    let mut child = Command::new(env!("CARGO_BIN_EXE_qymcad-mcp")).stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().expect("the server starts");
+    let mut child = Command::new(env!("CARGO_BIN_EXE_qymcad-mcp")).arg("--headless").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().expect("the server starts");
     {
         let mut stdin = child.stdin.take().expect("stdin is piped");
         for l in lines {

@@ -6,7 +6,9 @@
 //! `qymcad_doc::Lent` - runs the same list of tools on it, so the two cannot drift apart.
 
 pub mod args;
+pub mod channel;
 mod paths;
 pub mod picture;
+pub mod reading;
 pub mod tool;
 pub mod tools;

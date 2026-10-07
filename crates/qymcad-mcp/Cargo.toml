@@ -16,9 +16,9 @@ name = "qymcad-mcp"
 path = "src/main.rs"
 
 [dependencies]
-qymcad-core.workspace = true
 qymcad-i18n = { path = "../qymcad-i18n" }
 qymcad-tools = { path = "../qymcad-tools" }
+qymcad-bridge = { path = "../qymcad-bridge" }
 # THE PROTOCOL BY HAND, over this one crate: JSON-RPC 2.0 on stdin and stdout, one message per line. A protocol
 # SDK would bring an asynchronous runtime for a server that answers one request at a time on one thread - the
 # thread the interface language is bound to.
@@ -29,6 +29,7 @@ serde_json = "1.0.151"
 # accounts of it are held together. The program itself stays without a window.
 qymcad = { path = "../qymcad" }
 qymcad-acceptance = { path = "../qymcad-acceptance" }
+qymcad-core.workspace = true
 # the document, the palette and the picture types the checks measure what the tools did with
 qymcad-doc.workspace = true
 qymcad-scheme = { path = "../qymcad-scheme" }

@@ -3334,6 +3334,7 @@ dependencies = [
  "image",
  "qymcad",
  "qymcad-acceptance",
+ "qymcad-bridge",
  "qymcad-core",
  "qymcad-doc",
  "qymcad-i18n",

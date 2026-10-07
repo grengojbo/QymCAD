@@ -1,17 +1,10 @@
 //! THE DOCUMENT AS RESOURCES: what a client may read without calling a tool - the whole document, and one feature by
-//! its key - in the same JSON the tools answer with.
+//! its key - in the same JSON the tools answer with. What is there is read in `qymcad_tools::reading`, the same for a
+//! document of the program's own and one the window lends.
 
 use serde_json::{json, Value};
 
-use crate::rpc::Fault;
-use qymcad_tools::tool::Ctx;
-use qymcad_tools::tools::doc::{document, feature, Detail};
-
-/// The address of the whole document.
-const DOCUMENT: &str = "qymcad://document";
-
-/// The head of the address of one feature; its key follows.
-const FEATURE: &str = "qymcad://feature/";
+use qymcad_tools::reading::{DOCUMENT, FEATURE};
 
 /// The resources there always are.
 pub fn listing() -> Value {
@@ -33,27 +26,4 @@ pub fn templates() -> Value {
         "description": "One feature of the timeline by its key: its kind, part, bodies, error or warning, and its sizes with the expressions they follow.",
         "mimeType": "application/json",
     }])
-}
-
-/// A resource that cannot be read: the fault and its words.
-pub struct Missing {
-    pub fault: Fault,
-    pub message: String,
-}
-
-/// THE CONTENTS AT `uri`, as the protocol carries them: one text in JSON.
-pub fn read(ctx: &Ctx, uri: &str) -> Result<Value, Missing> {
-    let text = if uri == DOCUMENT {
-        document(ctx, Detail::Summary)
-    } else if let Some(key) = uri.strip_prefix(FEATURE) {
-        let key: qymcad_core::model::Id = key.parse().map_err(|_| Missing { fault: Fault::InvalidParams, message: format!("\"{key}\" is no feature key: a key is a number.") })?;
-        let report = ctx.doc.document(&qymcad_i18n::name);
-        let found = report.features.iter().find(|f| f.key == key).ok_or_else(|| Missing { fault: Fault::ResourceNotFound, message: format!("There is no feature {key}.") })?;
-        let mut v = feature(found);
-        v["sizes"] = qymcad_tools::tools::timeline::sizes(ctx.doc.project(), key);
-        v
-    } else {
-        return Err(Missing { fault: Fault::ResourceNotFound, message: format!("There is nothing at {uri}.") });
-    };
-    Ok(json!({ "contents": [{ "uri": uri, "mimeType": "application/json", "text": text.to_string() }] }))
 }

@@ -55,6 +55,8 @@ pub enum Stage {
     Resolve,
     /// The work itself broke: the kernel refused or the program panicked.
     Kernel,
+    /// The call did not reach the window's document, or its answer did not come back.
+    Window,
 }
 
 impl Stage {
@@ -65,6 +67,7 @@ impl Stage {
             Stage::Io => "io",
             Stage::Resolve => "resolve",
             Stage::Kernel => "kernel",
+            Stage::Window => "window",
         }
     }
 }
@@ -253,11 +256,39 @@ fn take_picture(body: &mut Value) -> Option<Value> {
 }
 
 fn refused(tool: &Tool, refusal: &Refusal, rolled_back: bool) -> Value {
+    let after = if rolled_back { After::Untouched } else { After::Left };
+    refused_body(tool.name, refusal, after)
+}
+
+/// WHAT A REFUSED CALL LEFT OF THE DOCUMENT.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum After {
+    /// The document is as it was before the call: the call never started, or was taken back whole.
+    Untouched,
+    /// The call broke outside an action: the document is as far as it got, and nothing was taken back.
+    Left,
+    /// Nobody can tell: the call may have gone through where its answer was lost.
+    Unknown,
+}
+
+fn refused_body(name: &str, refusal: &Refusal, after: After) -> Value {
     let mut error = json!({ "code": refusal.code, "message": refusal.message, "stage": refusal.stage.word() });
     if let Some(hint) = &refusal.hint {
         error["hint"] = json!(hint);
     }
-    json!({ "ok": false, "op": tool.name, "error": error, "rolled_back": rolled_back })
+    let rolled_back = match after {
+        After::Untouched => json!(true),
+        After::Left => json!(false),
+        After::Unknown => Value::Null,
+    };
+    json!({ "ok": false, "op": name, "error": error, "rolled_back": rolled_back })
+}
+
+/// A REFUSAL OF A CALL AS THE PROTOCOL ANSWERS A TOOL, for a call refused before any tool ran: by name, with the
+/// document `after` it.
+pub fn refused_reply(name: &str, refusal: &Refusal, after: After) -> Value {
+    let body = refused_body(name, refusal, after);
+    json!({ "content": [{ "type": "text", "text": body.to_string() }], "structuredContent": body, "isError": true })
 }
 
 #[cfg(test)]

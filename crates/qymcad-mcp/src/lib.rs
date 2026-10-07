@@ -8,6 +8,7 @@
 //! well, so the program's checks reach them where they always have.
 
 pub use qymcad_tools::{args, picture, tool};
+pub mod engine;
 mod prompts;
 mod resources;
 pub mod rpc;
