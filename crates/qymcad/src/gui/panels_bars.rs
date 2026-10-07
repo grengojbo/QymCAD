@@ -20,6 +20,13 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     // The panel lives inside a `Ui` now; the context is still wanted for windows, input and viewport
     // commands, and it comes from the same place.
     let ctx = &ui.ctx().clone();
+    // WHERE THE SYSTEM BAR HOLDS THE MENUS, the window draws none: the frame only lets that bar catch up.
+    #[cfg(any(target_os = "macos", test))]
+    if crate::gui::native_menu::in_system_bar() {
+        #[cfg(target_os = "macos")]
+        crate::gui::native_menu::frame(bc, ctx);
+        return;
+    }
     let model = crate::gui::menu_model::menu_model(&crate::gui::menu_model::menu_state(bc));
     let mut chosen = None;
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
