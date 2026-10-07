@@ -1,0 +1,20 @@
+[package]
+name = "qymcad-bridge"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The channel between the open window and the program a language model starts: one local socket, its owner's alone"
+
+# A CHANNEL AND NOTHING ELSE: no window, no kernel, no document. It carries a call in and an answer out; what the call
+# does is the window's business. Without the kernel it builds in seconds anywhere, which is what lets its checks run
+# on a system the kernel takes an hour to build on.
+[dependencies]
+qymcad-paths = { path = "../qymcad-paths" }
+serde_json = "1.0.151"
+serde = { workspace = true }
+
+[lints]
+workspace = true

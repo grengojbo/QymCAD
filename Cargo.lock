@@ -3251,6 +3251,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "qymcad-bridge"
+version = "0.1.0"
+dependencies = [
+ "qymcad-paths",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "qymcad-core"
 version = "0.1.0"
 dependencies = [
