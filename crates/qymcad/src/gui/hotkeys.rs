@@ -649,7 +649,7 @@ mod tests {
     #[test]
     fn the_window_is_reachable_from_the_menu() {
         let panels = crate::gui::panels_source::PANELS;
-        assert!(panels.contains(".win.open(WinKind::Hotkeys);"), "the window must open from the Help menu");
+        assert!(panels.contains("MenuAction::Hotkeys => bc.win.open(WinKind::Hotkeys)"), "the window must open from the Help menu");
         assert!(include_str!("../gui.rs").contains("self.hotkeys_window(ctx);"), "the window must be drawn in the frame");
     }
 }

@@ -225,10 +225,12 @@ mod tests {
         // THE ROWS OF THE LIST ARE COUNTED, NOT EVERY MENTION OF `title()`. The former edition compared
         // the total number of occurrences with two and turned red at an edit in a NEIGHBOURING function
         // (choosing a free caption for a copy) — that is, it counted something other than what it is
-        // written about. The list of schemes is built by exactly two identical lines: the View menu and
-        // the settings window.
-        let rows = panels.matches("(p.id.clone(), p.title(), p.light)").count();
-        assert_eq!(rows, 2, "both the View menu and the settings window must take the caption from title(), and there are {rows} such lists");
+        // written about. The list of schemes is built in exactly two lines, one in each place it is shown: the
+        // rows of the View menu and the list of the settings window.
+        let menu = panels.matches("SchemeRow { choice: SchemeChoice { id: p.id.clone(), look: scheme_look(&p.id, p.light) }, title: p.title() }").count();
+        let window = panels.matches("(p.id.clone(), p.title(), p.light)").count();
+        assert_eq!(menu, 1, "the View menu must take the caption of a scheme from title(), and there are {menu} such lists");
+        assert_eq!(window, 1, "the settings window must take the caption of a scheme from title(), and there are {window} such lists");
         assert!(!panels.contains("format!(\"{icon}  {}\", p.name)"), "the caption of a scheme no longer comes from the empty name");
     }
 

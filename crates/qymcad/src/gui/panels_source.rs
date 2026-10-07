@@ -36,6 +36,10 @@ pub(crate) const PANELS: &str = concat!(
     include_str!("export_menu.rs"),
     "\n",
     include_str!("panels_windows.rs"),
+    "\n",
+    // the menu bar said once, as data: what the bar draws and what each item does. Last, because its checks
+    // follow its working part, and several guards read the panels only up to the first `#[cfg(test)]`.
+    include_str!("menu_model.rs"),
 );
 
 /// THE WINDOWS AND DIALOGUES OF THE APPLICATION, as one text.
@@ -76,6 +80,9 @@ const WINDOW_OPENERS: &str = concat!(
     include_str!("command_search.rs"),
     "\n",
     include_str!("../gui.rs"),
+    "\n",
+    // the items of the menu bar that open windows
+    include_str!("menu_model.rs"),
 );
 
 /// EVERYWHERE A CONTEXT IS USED: the three workbench crates and the panels of the application. `gui.rs` is

@@ -291,10 +291,15 @@ mod tests {
     /// prove nothing about the application if its bar does not go through `bar_menu_button`.
     #[test]
     fn the_application_bar_uses_the_walking_menus() {
+        // the bar draws every menu of the list in one loop, so one call stands for all of them
         let panels = crate::gui::panels_source::PANELS;
-        for key in ["menu-file", "menu-edit", "menu-view", "menu-windows", "menu-help"] {
-            assert!(panels.contains(&format!(r#"bar_menu_button(qymcad_i18n::tr("{key}")"#)), "the \"{key}\" menu of the bar must be a `bar_menu_button`, or hover does not move the open menu to it");
-        }
+        let from = panels.find("fn menu_bar(").expect("the menu bar is in place");
+        let bar = &panels[from..from + panels[from..].find("\n}\n").expect("the end of the menu bar")];
+        assert!(
+            bar.contains("for menu in &model {") && bar.contains("ui.bar_menu_button(menu.caption.as_str()"),
+            "every menu of the bar must be a `bar_menu_button`, or hover does not move the open menu to it"
+        );
+        assert!(!bar.contains("ui.menu_button("), "a menu of the bar drawn as egui's plain one does not hand the open menu over by hover");
     }
 
     /// A CLICK OUTSIDE ENDS THE WALK: after it, hover opens nothing again.

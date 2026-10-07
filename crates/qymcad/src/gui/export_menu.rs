@@ -47,7 +47,7 @@ pub(crate) fn choices() -> impl Iterator<Item = ExportChoice> {
 }
 
 /// The hint of a format: in the File menu it speaks of the whole project, on a component of that component.
-fn hint_of(choice: ExportChoice, from: ExportFrom) -> &'static str {
+pub(crate) fn hint_of(choice: ExportChoice, from: ExportFrom) -> &'static str {
     let (on_project, on_component) = CHOICES.iter().find(|(c, _, _)| *c == choice).map(|(_, p, c)| (*p, *c)).unwrap_or_default();
     match from {
         ExportFrom::Project => on_project,
