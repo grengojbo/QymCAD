@@ -1,3 +1,5 @@
+# QymCAD
+
 # QymCAD і Claude
 
 - [Що це таке](intro.md)

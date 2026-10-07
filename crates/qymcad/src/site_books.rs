@@ -96,8 +96,8 @@ mod tests {
         assert!(wrong.is_empty(), "{}", wrong.join("\n"));
     }
 
-    /// EVERY BOOK IS BUILT AND PUBLISHED: the build script makes each language, and the publishing run uses that
-    /// script with mdBook at a pinned version.
+    /// EVERY BOOK IS BUILT AND PUBLISHED: the build script makes each language and lays the help of the program into
+    /// it, and the publishing run uses that script with mdBook at a pinned version, run again when the help changes.
     #[test]
     fn every_book_is_built_and_published() {
         let build = read(&site().join("build.sh"));
@@ -107,7 +107,15 @@ mod tests {
                 wrong.push(format!("site/build.sh does not build the {lang} book"));
             }
         }
+        if !build.contains("help-book \"$lang\"") {
+            wrong.push("site/build.sh does not lay the help into the books".into());
+        }
         let pages = read(&site().join("../.github/workflows/pages.yml"));
+        for source in ["\"docs/help/**\"", "\"crates/qymcad-help/**\""] {
+            if !pages.contains(source) {
+                wrong.push(format!("pages.yml is not run when {source} changes"));
+            }
+        }
         if !pages.contains("bash site/build.sh") {
             wrong.push("pages.yml does not build with site/build.sh".into());
         }

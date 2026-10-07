@@ -11,6 +11,8 @@
 //! from the light theme exactly as the canvas once did.
 /// The map from a tool to its article. It travels with the help, not with the panels.
 pub mod map;
+/// The help laid out as pages of the documentation site's book.
+pub mod site;
 
 use include_dir::{include_dir, Dir};
 

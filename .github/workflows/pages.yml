@@ -1,7 +1,9 @@
-# THE DOCUMENTATION SITE on GitHub Pages: the guide to modelling with Claude, one mdBook a language (site/), built by
-# site/build.sh - the same script a local build runs - and published to https://grengojbo.github.io/QymCAD/.
+# THE DOCUMENTATION SITE on GitHub Pages: the guide to modelling with Claude and the help of the program, one mdBook
+# a language (site/ and docs/help), built by site/build.sh - the same script a local build runs - and published to
+# https://grengojbo.github.io/QymCAD/.
 #
-# From `main` only, and only when the site changed: the guide describes what a release of `main` does, so a page built
+# From `main` only, and only when what the site is made of changed - its own pages, the articles of the help, the
+# captions of the help's sections in the catalogue, the tool that lays the help in: the guide describes what a release of `main` does, so a page built
 # from a branch would describe a program nobody can download yet. The button runs it by hand as well.
 name: pages
 
@@ -10,6 +12,9 @@ on:
     branches: [main]
     paths:
       - "site/**"
+      - "docs/help/**"
+      - "i18n/**"
+      - "crates/qymcad-help/**"
       - ".github/workflows/pages.yml"
   workflow_dispatch:
 
@@ -38,6 +43,8 @@ jobs:
           curl -sSfL "https://github.com/rust-lang/mdBook/releases/download/v${MDBOOK}/mdbook-v${MDBOOK}-x86_64-unknown-linux-gnu.tar.gz" | tar -xz -C /usr/local/bin
           mdbook --version
 
+      # The help is laid into the books by a tool of qymcad-help, built here with the toolchain rust-toolchain.toml
+      # names; it needs none of the program's native libraries.
       - name: Build the site
         run: bash site/build.sh
 

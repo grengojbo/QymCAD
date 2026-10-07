@@ -1,7 +1,7 @@
-# THE GUIDE TO MODELLING WITH CLAUDE, the uk book of the documentation site (site/build.sh, .github/workflows/pages.yml).
+# THE DOCUMENTATION OF QYMCAD - the guide to modelling with Claude and the help of the program -, the uk book of the documentation site (site/build.sh, .github/workflows/pages.yml).
 [book]
-title = "QymCAD і Claude"
-description = "Моделювання деталей разом із Claude: встановлення, перша деталь, приклади, поради для друку."
+title = "QymCAD"
+description = "Документація QymCAD: моделювання разом із Claude і довідка програми — ескіз, деталь, збірка."
 language = "uk"
 src = "src"
 
