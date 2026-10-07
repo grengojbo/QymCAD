@@ -47,6 +47,21 @@ pub struct Exported {
     pub plan: export::Plan,
 }
 
+/// A DOCUMENT HELD ELSEWHERE - the window's - with everything live beside it, lent for one action and handed back.
+///
+/// The history is not part of it: the holder keeps its own and draws the step around the action itself.
+pub struct Lent {
+    pub project: Project,
+    /// The live B-rep of each body, by body id.
+    pub shapes: HashMap<Id, Shape>,
+    /// The live bodies and source bytes of imports taken back by undo, kept for redo.
+    pub shelved: HashMap<Id, Shape>,
+    pub shelved_sources: HashMap<Id, Vec<u8>>,
+    /// The parameter values the holder's last rebuild was made with. Without them every node that reads a parameter
+    /// would count as changed and be built again.
+    pub params_seen: HashMap<String, f64>,
+}
+
 /// THE DOCUMENT AND EVERYTHING LIVE BESIDE IT.
 pub struct DocEngine {
     project: Project,
@@ -77,6 +92,25 @@ impl DocEngine {
         d.params_seen = d.project.param_map();
         d.rebuild();
         d
+    }
+
+    /// TAKE A LENT DOCUMENT AS IT STANDS: its live bodies are its own, and nothing is built again - the window lends a
+    /// document it has already built, and building it once more would cost the whole rebuild for every action.
+    pub fn lend(lent: Lent) -> Self {
+        DocEngine {
+            project: lent.project,
+            shapes: lent.shapes,
+            shelved: lent.shelved,
+            shelved_sources: lent.shelved_sources,
+            params_seen: lent.params_seen,
+            history: history::History::new(UNDO_DEPTH),
+            report: RegenReport::default(),
+        }
+    }
+
+    /// HAND THE DOCUMENT BACK with everything live beside it; the history of the actions taken here stays behind.
+    pub fn hand_back(self) -> Lent {
+        Lent { project: self.project, shapes: self.shapes, shelved: self.shelved, shelved_sources: self.shelved_sources, params_seen: self.params_seen }
     }
 
     /// A new empty document: the root assembly and one part, as the window starts.

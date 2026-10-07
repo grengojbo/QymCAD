@@ -22,4 +22,4 @@ pub mod params;
 pub mod regen;
 pub mod report;
 
-pub use engine::{DocEngine, DocError, Exported, Imported};
+pub use engine::{DocEngine, DocError, Exported, Imported, Lent};
