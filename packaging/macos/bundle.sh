@@ -145,7 +145,8 @@ fi
 # What is left is the mark itself: `xattr -cr` clears the quarantine attribute, and the program then opens
 # by an ordinary double click. It is done once per download - an extended attribute stays cleared, a
 # restart does not bring it back - so the steps are written out plainly, for a person who has never opened
-# a terminal.
+# a terminal. The app is moved to Applications first, as the guide on the site says, so the command names
+# it by a path that is the same on every Mac and nothing has to be dragged into the terminal.
 cat > dist/README.txt <<'TXT'
 QymCAD - build for macOS (Apple Silicon).
 
@@ -153,18 +154,18 @@ FIRST RUN. The build carries no Apple developer signature, and macOS marks every
 from the internet as "quarantined": it will say the app is damaged and offer to move it to the Bin.
 It is not damaged. The mark has to be cleared, once.
 
-  1. Unpack the archive.
+  1. Unpack the archive and move QymCAD.app to Applications.
 
   2. Open Terminal: Command+Space, type "Terminal", press Enter.
 
-  3. Type this into it, with a space at the end. Do NOT press Enter yet:
+  3. Type these two lines into it, pressing Enter after each:
 
-        xattr -cr 
+        cd /Applications
+        xattr -cr QymCAD.app
 
-  4. Drag QymCAD.app into the Terminal window - the path fills itself in. Now press Enter.
      Nothing is printed in reply; that is how it should be.
 
-  5. Open QymCAD.app with an ordinary double click.
+  4. Open QymCAD.app with an ordinary double click.
 
 The mark is gone for good on this copy: a restart does not bring it back. A build downloaded anew
 has to be cleared the same way.
@@ -179,18 +180,18 @@ QymCAD - збірка для macOS (Apple Silicon).
 «карантином»: вона скаже, що програму пошкоджено, і запропонує перемістити її в Смітник. Програму не
 пошкоджено. Позначку треба зняти, один раз.
 
-  1. Розпакуйте архів.
+  1. Розпакуйте архів і перенесіть QymCAD.app у «Програми».
 
   2. Відкрийте Термінал: Command+Пробіл, наберіть «Термінал», Enter.
 
-  3. Наберіть у ньому ось це, з пробілом у кінці. Enter поки НЕ натискайте:
+  3. Наберіть у ньому ці два рядки, після кожного натискаючи Enter:
 
-        xattr -cr 
+        cd /Applications
+        xattr -cr QymCAD.app
 
-  4. Перетягніть QymCAD.app мишею просто у вікно Термінала - шлях підставиться сам. Тепер Enter.
      У відповідь нічого не надрукується, так і має бути.
 
-  5. Відкрийте QymCAD.app звичайним подвійним клацанням.
+  4. Відкрийте QymCAD.app звичайним подвійним клацанням.
 
 Позначку знято назавжди для цієї копії: перезавантаження її не поверне. Збірку, завантажену знову,
 доведеться звільнити так само.

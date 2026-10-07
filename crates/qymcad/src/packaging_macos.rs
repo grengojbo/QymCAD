@@ -218,3 +218,29 @@ fn the_server_for_claude_travels_inside_the_app() {
     );
     assert!(calls.lines().any(|l| l.starts_with("-change ") && l.ends_with("MacOS/qymcad-mcp")), "the server was left naming the build machine:\n{calls}");
 }
+
+/// THE NOTES CLEAR THE QUARANTINE WITH ONE COMMAND THAT NAMES THE APP. Reported behaviour: the line `xattr -cr `
+/// waited for the app to be dragged into the terminal, and typed as written it cleared nothing. Each note moves the
+/// app to Applications, goes there and names it, so the command is typed whole the same way on every Mac.
+#[test]
+fn every_note_names_the_app_in_the_command_that_clears_it() {
+    let dir = sandbox("notes", Deps::Rpath);
+    let out = bundle(&dir);
+    assert!(out.status.success(), "the script refused:\n{}", said(&out));
+    let notes: Vec<PathBuf> = fs::read_dir(dir.join("dist")).expect("dist/ reads").flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
+    assert_eq!(notes.len(), 2, "both notes must be written: {notes:?}");
+    let mut wrong = Vec::new();
+    for note in &notes {
+        let text = fs::read_to_string(note).expect("a note reads");
+        let lines: Vec<&str> = text.lines().map(str::trim).collect();
+        let to_the_folder = lines.iter().position(|l| *l == "cd /Applications");
+        let clear = lines.iter().position(|l| *l == "xattr -cr QymCAD.app");
+        if !clear.is_some_and(|x| to_the_folder.is_some_and(|c| c < x)) {
+            wrong.push(format!("{}: no \"cd /Applications\" followed by \"xattr -cr QymCAD.app\"", note.display()));
+        }
+        if lines.iter().any(|l| l.ends_with("xattr -cr")) {
+            wrong.push(format!("{}: a command waits for a path to be dragged in", note.display()));
+        }
+    }
+    assert!(wrong.is_empty(), "{}", wrong.join("\n"));
+}
