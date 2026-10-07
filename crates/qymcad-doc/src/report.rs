@@ -98,7 +98,7 @@ pub fn report(project: &Project, shapes: &HashMap<Id, Shape>, shown: &dyn Fn(&st
         .map(|n| Feature {
             key: n.id,
             name: shown(&n.name),
-            kind: format!("{:?}", n.kind).split([' ', '{', '(']).next().unwrap_or_default().to_string(),
+            kind: kind_of(&n.kind),
             part: n.parent,
             suppressed: n.suppressed,
             error: p.regen_errors.get(&n.id).cloned(),
@@ -132,6 +132,12 @@ pub fn report(project: &Project, shapes: &HashMap<Id, Shape>, shown: &dyn Fn(&st
         .collect();
     let parameters = p.parameters.iter().map(|q| Parameter { name: q.name.clone(), expr: q.expr.clone(), value: q.value }).collect();
     Report { parts, features, bodies, parameters }
+}
+
+/// The kind of a node, as the program names it in code: `Extrude`, `Fillet`, `Sketch` - the name of the variant without
+/// its fields.
+pub fn kind_of(kind: &qymcad_core::feature::FeatureKind) -> String {
+    format!("{kind:?}").split([' ', '{', '(']).next().unwrap_or_default().to_string()
 }
 
 /// The area of a mesh, mm^2: the sum of its triangles.

@@ -37,6 +37,41 @@ fn shape(ctx: &Ctx, body: Id) -> Result<&qymcad_kernel::Shape, Refusal> {
     ctx.doc.shape(body).ok_or_else(|| Refusal::new("no-body", &format!("Body {body} has no shape: it did not build."), Stage::Validate).with_hint("Read get_document for what went red."))
 }
 
+/// WHO MADE A FACE: the feature the document's name table records as its creator, not the last one that touched it;
+/// its kind, the role the face plays in it, how many faces of `body` it made, and its sizes with the expressions they
+/// follow. A face with no structural name (a solid from a file, a face the kernel numbered by position) has no
+/// recipe to tell, and answers `null` rather than a guess.
+fn face_made_by(project: &Project, body: Id, face: u32) -> Value {
+    let Some(name) = project.names.get(face) else { return Value::Null };
+    author(project, body, name.feature, json!(format!("{:?}", name.role)))
+}
+
+/// WHO MADE AN EDGE: the later, in the timeline, of the creators of the two faces it lies between - the rim of a
+/// rounding lies between the rounding and the wall it runs into, and it is the rounding that put it there. The edge
+/// has no role of its own.
+fn edge_made_by(project: &Project, body: Id, edge: u32) -> Value {
+    let Some(name) = project.names.edge(edge) else { return Value::Null };
+    let place = |feature: Id| project.timeline.iter().position(|n| n.id == feature);
+    let later = name.faces.iter().filter_map(|&f| project.names.get(f)).filter_map(|n| place(n.feature).map(|at| (at, n.feature))).max_by_key(|(at, _)| *at);
+    match later {
+        Some((_, feature)) => author(project, body, feature, Value::Null),
+        None => Value::Null,
+    }
+}
+
+/// The account of `feature` as the author of a face or an edge of `body`.
+fn author(project: &Project, body: Id, feature: Id, role: Value) -> Value {
+    let Some(node) = project.timeline.iter().find(|n| n.id == feature) else { return Value::Null };
+    let faces_made = project.regen_faces.get(&body).map_or(0, |faces| faces.iter().filter(|f| project.names.get(f.id).is_some_and(|n| n.feature == feature)).count());
+    json!({
+        "feature": feature,
+        "kind": qymcad_doc::report::kind_of(&node.kind),
+        "role": role,
+        "faces_made": faces_made,
+        "sizes": crate::tools::timeline::sizes(project, feature),
+    })
+}
+
 /// WHAT KIND OF SURFACE A FACE LIES ON, from what the model and the kernel already tell: a cylinder when the kernel
 /// gives its radius, a plane when every triangle of the face faces one way, a turned surface (a cone, a sphere, a
 /// torus) when it has an axis, and otherwise another.
@@ -75,7 +110,7 @@ fn body_only() -> Value {
 
 pub const LIST_FACES: Tool = Tool {
     name: "list_faces",
-    description: "The faces of a body: key, kind (plane, cylinder, turned - a cone, sphere or torus - or other), centre, normal, area in mm^2, and for a cylinder its radius and axis. World coordinates. A key goes into a query as {\"ids\": [key]}.",
+    description: "The faces of a body: key, kind (plane, cylinder, turned - a cone, sphere or torus - or other), centre, normal, area in mm^2, and for a cylinder its radius and axis. made_by: the feature that created the face (key, kind, the role of the face, how many faces of the body it made, its sizes with their expressions) - edit_feature on that key changes it; null for a face with no recipe, as from a STEP file. World coordinates. A key goes into a query as {\"ids\": [key]}.",
     schema: body_only,
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: BodyArgs = tool::args(arguments)?;
@@ -93,6 +128,7 @@ pub const LIST_FACES: Tool = Tool {
                     "centre": at(&wt, [f.centroid.x, f.centroid.y, f.centroid.z]),
                     "normal": dir(&wt, f.normal),
                     "area": round(f.area),
+                    "made_by": face_made_by(project, body, f.id),
                 });
                 if let Some((o, axis, r)) = shape.face_cylinder(f.id) {
                     v["radius"] = json!(round(r));
@@ -110,7 +146,7 @@ pub const LIST_FACES: Tool = Tool {
 
 pub const LIST_EDGES: Tool = Tool {
     name: "list_edges",
-    description: "The edges of a body: key, ends a and b, middle, length in mm, and for a circular edge (the rim of a hole, a rounded corner) its centre, axis and radius. World coordinates. A key goes into a query as {\"ids\": [key]}.",
+    description: "The edges of a body: key, ends a and b, middle, length in mm, and for a circular edge (the rim of a hole, a rounded corner) its centre, axis and radius. made_by: the later of the features that created its two faces, as list_faces tells it. World coordinates. A key goes into a query as {\"ids\": [key]}.",
     schema: body_only,
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: BodyArgs = tool::args(arguments)?;
@@ -122,7 +158,7 @@ pub const LIST_EDGES: Tool = Tool {
             .edge_pool(body)
             .iter()
             .map(|c| {
-                let mut v = json!({ "key": c.desc, "middle": at(&wt, c.centroid), "length": round(c.area) });
+                let mut v = json!({ "key": c.desc, "middle": at(&wt, c.centroid), "length": round(c.area), "made_by": edge_made_by(project, body, c.desc) });
                 if let Some(e) = &c.edge {
                     v["a"] = json!(at(&wt, e.a));
                     v["b"] = json!(at(&wt, e.b));
