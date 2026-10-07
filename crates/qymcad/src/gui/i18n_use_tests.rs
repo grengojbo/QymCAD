@@ -211,9 +211,14 @@ fn check_partial(ftl: &str, key: &str) -> String {
 #[test]
 fn the_menu_bar_actually_uses_the_catalogue() {
     let panels = crate::gui::panels_source::PANELS;
-    for key in ["menu-file", "menu-edit", "menu-view", "menu-windows", "menu-help", "file-save", "file-quit", "help-about"] {
-        assert!(panels.contains(&format!(r#"tr("{key}")"#)), "the menu must take \"{key}\" from the localisation rather than from a literal");
+    // the titles of the menus are keys of the catalogue, and an item is made from a key by `item(..)`
+    for key in ["menu-file", "menu-edit", "menu-view", "menu-windows", "menu-help"] {
+        assert!(panels.contains(&format!(r#"=> "{key}","#)), "the menu must take \"{key}\" from the localisation rather than from a literal");
     }
+    for key in ["file-save", "file-quit", "help-about"] {
+        assert!(panels.contains(&format!(r#", "{key}")"#)), "the menu must take \"{key}\" from the localisation rather than from a literal");
+    }
+    assert!(panels.contains("MenuItem::new(action, qymcad_i18n::tr(key))"), "an item of the menu must turn its key into words through the catalogue");
     // AND THE OTHER WAY ROUND, BY THE MECHANISM RATHER THAN BY FORMER WORDS: no menu is opened with a
     // caption typed straight into the code. A guard keyed on the old literals would stop meaning anything
     // the moment somebody wrote them back in another language.

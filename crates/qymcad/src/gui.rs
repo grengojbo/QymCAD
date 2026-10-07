@@ -3979,6 +3979,8 @@ mod key_leak;
 pub(crate) mod session;
 mod export_menu;
 mod bar_menu;
+/// The menu bar said once, as data, for every place that shows it.
+mod menu_model;
 mod import_scale;
 mod format_samples_look;
 mod import_door;

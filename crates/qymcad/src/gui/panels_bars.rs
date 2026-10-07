@@ -13,232 +13,24 @@ impl App {
     }
 }
 
+/// THE MENU BAR OF THE WINDOW: the list said once in `menu_model`, drawn as egui menus. Whatever is chosen
+/// goes through `apply_menu_action` after the drawing, the same door the menu bar of the system uses.
 pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     use crate::gui::bar_menu::BarMenu as _;
-    // The panel lives inside a `Ui` now; the context is still wanted for windows,
-    // input and viewport commands, and it comes from the same place.
+    // The panel lives inside a `Ui` now; the context is still wanted for windows, input and viewport
+    // commands, and it comes from the same place.
     let ctx = &ui.ctx().clone();
-    // The menu items belonging to CAM (the machine, the tools, the G-code, the setup, the rapids) appear only
-    // when the machining module is enabled. That module is under development and hidden by default.
+    let model = crate::gui::menu_model::menu_model(&crate::gui::menu_model::menu_state(bc));
+    let mut chosen = None;
     ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
     egui::MenuBar::new().ui(ui, |ui| {
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-        ui.bar_menu_button(qymcad_i18n::tr("menu-file"), |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            // A NEW PROJECT IS AN EMPTY ASSEMBLY: a part is made by "New part" of the start screen or of the assembly,
-            // by the person's own intent (decided 29.09) - a project that came with a part to delete made them clean up
-            if ui.button(format!("{}  {}", ph::FILE, qymcad_i18n::tr("file-new"))).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Nav(qymcad_ui_state::Nav::NewAssembly));
-                ui.close();
-            }
-            // TEMPLATES ARE CHOSEN IN THE CHOOSER, opened in the folder of templates, as a new document from a template is
-            // chosen in the professional systems. A submenu of saved templates stood here, disabled and silent while
-            // there were none: the item did nothing and said nothing.
-            if ui.button(format!("{}  {}", ph::FILE_TEXT, qymcad_i18n::tr("file-new-from-template"))).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Nav(qymcad_ui_state::Nav::NewFromTemplate));
-                ui.close();
-            }
-            if ui.button(format!("{}  {}", ph::PACKAGE, qymcad_i18n::tr("file-save-as-template"))).on_hover_text(qymcad_i18n::tr("file-save-as-template-hint")).clicked() {
-                bc.win.tpl_name = bc.project.meta.title.clone();
-                bc.win.open(WinKind::SaveTemplate);
-                ui.close();
-            }
-            ui.separator();
-            if ui.button(format!("{}  {}", ph::FOLDER_OPEN, qymcad_i18n::tr("file-open"))).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Nav(qymcad_ui_state::Nav::OpenDialog));
-                ui.close();
-            }
-            // RECENT FILES: a basic expectation of any program that has files. The submenu always opens: empty, it says
-            // so in words, and "Clear the list" stands in it disabled. A disabled item said nothing at all on a clean start.
-            let recent = bc.set.recent.clone();
-            {
-                ui.menu_button(format!("{}  {}", ph::CLOCK_COUNTER_CLOCKWISE, qymcad_i18n::tr("file-recent")), |ui| {
-                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-                    if recent.is_empty() {
-                        ui.label(egui::RichText::new(qymcad_i18n::tr("file-recent-empty")).weak());
-                    }
-                    for path in &recent {
-                        // the row shows THE FILE NAME with the full path in the tooltip: paths are longer than the menu
-                        let name = std::path::Path::new(path).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_else(|| path.clone());
-                        if ui.button(name).on_hover_text(path).clicked() {
-                            bc.ask.push(qymcad_ui_state::BarAsk::Nav(qymcad_ui_state::Nav::OpenPath(path.clone())));
-                            ui.close();
-                        }
-                    }
-                    ui.separator();
-                    if ui.add_enabled(!recent.is_empty(), egui::Button::new(format!("{}  {}", ph::TRASH, qymcad_i18n::tr("file-recent-clear")))).clicked() {
-                        bc.set.recent.clear();
-                        ui.close();
-                    }
-                });
-            }
-            if ui.add(egui::Button::new(format!("{}  {}", ph::FLOPPY_DISK, qymcad_i18n::tr("file-save"))).shortcut_text("Ctrl+S")).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Save);
-                ui.close();
-            }
-            if ui.button(format!("{}  {}", ph::FILE_TEXT, qymcad_i18n::tr("file-doc-props"))).clicked() {
-                bc.win.open(WinKind::DocProps);
-                ui.close();
-            }
-            if ui.add(egui::Button::new(format!("{}  {}", ph::FLOPPY_DISK, qymcad_i18n::tr("file-save-as"))).shortcut_text("Ctrl+Shift+S")).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::SaveAs);
-                ui.close();
-            }
-            ui.separator();
-            // ONE DOOR FOR EVERY FORMAT: the file's extension decides what it becomes (see `import_door`)
-            let formats = qymcad_io::Format::names_of(&qymcad_io::Format::ALL);
-            if ui.button(format!("{}  {}", ph::FILE_ARROW_DOWN, qymcad_i18n::tr("file-import"))).on_hover_text(qymcad_i18n::tr1("file-import-hint", "formats", &formats)).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Import(qymcad_ui_state::Want::Anything));
-                ui.close();
-            }
-            ui.separator();
-            // ONE ITEM, THE FORMATS INSIDE IT (see `export_menu`)
-            match crate::gui::export_menu::export_submenu(ui, crate::gui::export_menu::ExportFrom::Project) {
-                Some(crate::gui::export_menu::ExportChoice::Exact(f)) => {
-                    bc.ask.push(qymcad_ui_state::BarAsk::ExportExact(f, qymcad_ui_state::ExportTarget::Project));
-                    ui.close();
-                }
-                Some(crate::gui::export_menu::ExportChoice::Mesh(f)) => {
-                    *bc.mesh_export = Some((f, qymcad_ui_state::ExportTarget::Project));
-                    ui.close();
-                }
-                None => {}
-            }
-            ui.separator();
-            if ui.button(format!("{}  {}", ph::SIGN_OUT, qymcad_i18n::tr("file-quit"))).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Nav(qymcad_ui_state::Nav::Exit));
-            }
-        });
-        ui.bar_menu_button(qymcad_i18n::tr("menu-edit"), |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            // THE OPERATION'S NAME IN THE MENU: what exactly will be undone is visible - a step knows its
-            // own name, because it was created by a command rather than by the frame.
-            let undo_label = match bc.edits.undo.last() {
-                Some(s) => format!("{}  {}", ph::ARROW_COUNTER_CLOCKWISE, qymcad_i18n::tr1("menu-undo-named", "what", &s.name)),
-                None => format!("{}  {}", ph::ARROW_COUNTER_CLOCKWISE, qymcad_i18n::tr("menu-undo")),
-            };
-            if ui.add_enabled(!bc.edits.undo.is_empty(), egui::Button::new(undo_label).shortcut_text("Ctrl+Z")).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Undo);
-                ui.close();
-            }
-            let redo_label = match bc.edits.redo.last() {
-                Some(s) => format!("{}  {}", ph::ARROW_CLOCKWISE, qymcad_i18n::tr1("menu-redo-named", "what", &s.name)),
-                None => format!("{}  {}", ph::ARROW_CLOCKWISE, qymcad_i18n::tr("menu-redo")),
-            };
-            if ui.add_enabled(!bc.edits.redo.is_empty(), egui::Button::new(redo_label).shortcut_text("Ctrl+Shift+Z")).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Redo);
-                ui.close();
-            }
-            ui.separator();
-            // The clipboard: sketches, parts and subassemblies in the tree, or geometry in the sketch editor.
-            let can_copy = qymcad_ui_state::clipboard_can_copy(&*bc.project, *bc.sel, &*bc.sel_sk, *bc.sketch_ses);
-            let can_paste = bc.clip.tree.is_some() || bc.clip.geom.is_some();
-            if ui.add_enabled(can_copy, egui::Button::new(format!("{}  {}", ph::COPY, qymcad_i18n::tr("menu-copy"))).shortcut_text("Ctrl+C")).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Clipboard { cut: false });
-                ui.close();
-            }
-            if ui.add_enabled(can_copy, egui::Button::new(format!("{}  {}", ph::SCISSORS, qymcad_i18n::tr("menu-cut"))).shortcut_text("Ctrl+X")).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Clipboard { cut: true });
-                ui.close();
-            }
-            if ui.add_enabled(can_paste, egui::Button::new(format!("{}  {}", ph::CLIPBOARD, qymcad_i18n::tr("win-insert"))).shortcut_text("Ctrl+V")).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Paste);
-                ui.close();
-            }
-            ui.separator();
-            // REBUILD EVERYTHING. The file stores finished meshes and computes nothing anew on opening -
-            // that is fast, but it means a part built by an older version of the kernel stays as it was.
-            // Reported behaviour: a thread profile was fixed, the CAD restarted, and the same ragged part
-            // appeared - nobody had recomputed its mesh. Without this command, fixing that meant poking
-            // every feature by hand.
-            if ui
-                .add_enabled(!bc.project.timeline.is_empty(), egui::Button::new(format!("{}  {}", ph::ARROWS_CLOCKWISE, qymcad_i18n::tr("menu-rebuild"))))
-                .on_hover_text(qymcad_i18n::tr("menu-rebuild-hint"))
-                .clicked()
-            {
-                bc.ask.push(qymcad_ui_state::BarAsk::RebuildEverything);
-                ui.close();
-            }
-        });
-        ui.bar_menu_button(qymcad_i18n::tr("menu-view"), |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            ui.checkbox(&mut *bc.mode_3d, format!("{}  {}", ph::CUBE, qymcad_i18n::tr("menu-orbit3d")));
-            if ui.button(format!("{}  {}", ph::CORNERS_OUT, qymcad_i18n::tr("menu-fit-view"))).clicked() {
-                bc.view.initialized = false;
-                bc.cam.init = false;
-                ui.close();
-            }
-            ui.separator();
-            ui.label(qymcad_i18n::tr("settings-scheme"));
-            // THE SCHEMES COME FROM THE LIVE LIST (the built-in ones and the user's), and the label from
-            // `title()`: a built-in scheme has NO name of its own, it comes from the language catalogue.
-            // This used to be `p.name`, and after the identifier and the label were separated the menu
-            // items were left as bare icons with no words.
-            let rows: Vec<(String, String, bool)> = bc.scheme.all.iter().map(|p| (p.id.clone(), p.title(), p.light)).collect();
-            for (id, title, light) in rows {
-                let icon = if qymcad_scheme::store::is_builtin(&id) {
-                    if light {
-                        ph::SUN
-                    } else {
-                        ph::MOON
-                    }
-                } else {
-                    ph::PENCIL_SIMPLE
-                };
-                if ui.button(format!("{icon}  {title}")).clicked() {
-                    bc.set.scheme = id.clone();
-                    qymcad_ui_state::apply_theme(&mut *bc.scheme, &*bc.set, ctx);
-                    ui.close();
-                }
-            }
-        });
-        ui.bar_menu_button(qymcad_i18n::tr("menu-windows"), |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            if ui.button(format!("{}  {}", ph::GEAR, qymcad_i18n::tr("win-settings"))).clicked() {
-                bc.win.toggle(WinKind::Settings);
-                ui.close();
-            }
-            if ui.button(format!("{}  {}", ph::PACKAGE, qymcad_i18n::tr("win-parts-library"))).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::ToggleLibrary);
-                ui.close();
-            }
-            if ui.button(format!("{}  {}", ph::HOUSE, qymcad_i18n::tr("win-start"))).clicked() {
-                bc.win.start_asked = true; // it was ASKED for rather than raising itself - see `start_screen_visible`
-                ui.close();
-            }
-        });
-        ui.bar_menu_button(qymcad_i18n::tr("menu-help"), |ui| {
-            ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
-            if ui.button(format!("{} {}", ph::BOOK_OPEN, qymcad_i18n::tr("help-title"))).clicked() {
-                bc.ask.push(qymcad_ui_state::BarAsk::Help("index".to_string()));
-                ui.close();
-            }
-            ui.separator();
-            if ui.button(format!("{} {}", ph::KEYBOARD, qymcad_i18n::tr("help-hotkeys"))).clicked() {
-                bc.win.open(WinKind::Hotkeys);
-                ui.close();
-            }
-            // CHECK FOR UPDATES. Pressed by hand it asks ALWAYS - even with the automatic check switched
-            // off, because pressing it IS the asking. Absent where it cannot work: inside Flatpak there
-            // is no network, and a build with no release tag has nothing to compare against.
-            if crate::gui::update_ui::available() && ui.button(format!("{} {}", ph::ARROW_CLOCKWISE, qymcad_i18n::tr("help-check-updates"))).clicked() {
-                crate::gui::update_ui::ask(bc.set);
-                bc.win.open(WinKind::Updates);
-                ui.close();
-            }
-            if ui.button(format!("{} {}", ph::PLUGS_CONNECTED, qymcad_i18n::tr("help-connect-claude"))).clicked() {
-                bc.win.open(WinKind::Claude);
-                ui.close();
-            }
-            if ui.button(format!("{} {}", ph::BUG, qymcad_i18n::tr("help-report"))).clicked() {
-                bc.win.open(WinKind::Report);
-                ui.close();
-            }
-            if ui.button(format!("{} {}", ph::INFO, qymcad_i18n::tr("help-about"))).clicked() {
-                bc.win.open(WinKind::About);
-                ui.close();
-            }
-        });
+        for menu in &model {
+            ui.bar_menu_button(menu.caption.as_str(), |ui| {
+                ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+                menu_nodes(ui, &menu.nodes, &mut chosen);
+            });
+        }
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
             if let Some(p) = &*bc.dxf_path {
@@ -247,6 +39,107 @@ pub(crate) fn menu_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
             }
         });
     });
+    if let Some(action) = chosen {
+        crate::gui::menu_model::apply_menu_action(&action, bc, ctx);
+    }
+}
+
+/// The lines of one menu, drawn; the item picked this frame lands in `chosen`.
+fn menu_nodes(ui: &mut egui::Ui, nodes: &[crate::gui::menu_model::MenuNode], chosen: &mut Option<crate::gui::menu_model::MenuAction>) {
+    use crate::gui::menu_model::{Checked, Enabled, MenuNode, NoteTone};
+    for node in nodes {
+        match node {
+            MenuNode::Item(item) => {
+                let mut button = egui::Button::new(with_glyph(action_glyph(&item.action), &item.caption));
+                if let Some(key) = item.shortcut {
+                    button = button.shortcut_text(key.label());
+                }
+                let mut response = ui.add_enabled(item.enabled == Enabled::Yes, button);
+                if let Some(hint) = &item.hint {
+                    response = response.on_hover_text(hint);
+                }
+                if response.clicked() {
+                    *chosen = Some(item.action.clone());
+                    ui.close();
+                }
+            }
+            // a tick stays in the menu: choosing it does not close the menu
+            MenuNode::Check { item, checked } => {
+                let mut on = *checked == Checked::Yes;
+                if ui.checkbox(&mut on, with_glyph(action_glyph(&item.action), &item.caption)).clicked() {
+                    *chosen = Some(item.action.clone());
+                }
+            }
+            MenuNode::Sub(sub) => {
+                ui.menu_button(with_glyph(sub_glyph(sub.kind), &sub.caption), |ui| {
+                    ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend); // a menu item is a command, not a paragraph
+                    menu_nodes(ui, &sub.nodes, chosen);
+                });
+            }
+            MenuNode::Separator => {
+                ui.separator();
+            }
+            MenuNode::Note { text, tone: NoteTone::Weak } => {
+                ui.label(egui::RichText::new(text).weak());
+            }
+            MenuNode::Note { text, tone: NoteTone::Plain } => {
+                ui.label(text);
+            }
+        }
+    }
+}
+
+/// An icon before the caption, when the item has one.
+fn with_glyph(glyph: Option<&str>, caption: &str) -> String {
+    match glyph {
+        Some(g) => format!("{g}  {caption}"),
+        None => caption.to_string(),
+    }
+}
+
+/// The icon of a submenu of the menu bar.
+fn sub_glyph(kind: crate::gui::menu_model::SubKind) -> Option<&'static str> {
+    use crate::gui::menu_model::SubKind;
+    Some(match kind {
+        SubKind::Recent => ph::CLOCK_COUNTER_CLOCKWISE,
+        SubKind::Export => ph::EXPORT,
+    })
+}
+
+/// The icon of an item of the menu bar. A recent file and an export format are rows of a list and go without.
+fn action_glyph(action: &crate::gui::menu_model::MenuAction) -> Option<&'static str> {
+    use crate::gui::menu_model::{MenuAction as A, SchemeLook};
+    match action {
+        A::New => Some(ph::FILE),
+        A::NewFromTemplate | A::DocProps => Some(ph::FILE_TEXT),
+        A::SaveAsTemplate | A::PartsLibrary => Some(ph::PACKAGE),
+        A::Open => Some(ph::FOLDER_OPEN),
+        A::OpenRecent(_) | A::Export(_) => None,
+        A::ClearRecent => Some(ph::TRASH),
+        A::Save | A::SaveAs => Some(ph::FLOPPY_DISK),
+        A::Import => Some(ph::FILE_ARROW_DOWN),
+        A::Quit => Some(ph::SIGN_OUT),
+        A::Undo => Some(ph::ARROW_COUNTER_CLOCKWISE),
+        A::Redo | A::CheckUpdates => Some(ph::ARROW_CLOCKWISE),
+        A::Copy => Some(ph::COPY),
+        A::Cut => Some(ph::SCISSORS),
+        A::Paste => Some(ph::CLIPBOARD),
+        A::Rebuild => Some(ph::ARROWS_CLOCKWISE),
+        A::Orbit3d => Some(ph::CUBE),
+        A::FitView => Some(ph::CORNERS_OUT),
+        A::Scheme(s) => Some(match s.look {
+            SchemeLook::Light => ph::SUN,
+            SchemeLook::Dark => ph::MOON,
+            SchemeLook::Own => ph::PENCIL_SIMPLE,
+        }),
+        A::Settings => Some(ph::GEAR),
+        A::Start => Some(ph::HOUSE),
+        A::Help => Some(ph::BOOK_OPEN),
+        A::Hotkeys => Some(ph::KEYBOARD),
+        A::ConnectClaude => Some(ph::PLUGS_CONNECTED),
+        A::Report => Some(ph::BUG),
+        A::About => Some(ph::INFO),
+    }
 }
 
 /// WHAT THE CHECK FOR A NEWER VERSION HAS TO SAY, in the status line.
