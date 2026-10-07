@@ -26,6 +26,18 @@ mod tests {
         assert!(rank(DeviceType::Cpu) > 0, "the processor must still be TAKEN when it is the only one on offer");
     }
 
+    /// AN OLD CARD ON OPENGL LOSES TO THE PROCESSOR ON WINDOWS, and keeps its place elsewhere.
+    #[test]
+    fn on_windows_an_opengl_card_ranks_below_the_software_adapter() {
+        use crate::gui::{Host, rank_backend_and_type as rank};
+        use eframe::wgpu::Backend;
+        let old_card = rank(Host::Windows, Backend::Gl, DeviceType::IntegratedGpu);
+        let software = rank(Host::Windows, Backend::Dx12, DeviceType::Cpu);
+        assert!(software > old_card, "the OpenGL card of an old machine is taken over the software adapter");
+        assert!(rank(Host::Windows, Backend::Dx12, DeviceType::IntegratedGpu) > software, "a Direct3D 12 card must still beat the software adapter");
+        assert!(rank(Host::Other, Backend::Gl, DeviceType::IntegratedGpu) > rank(Host::Other, Backend::Vulkan, DeviceType::Cpu), "off Windows OpenGL is an ordinary choice");
+    }
+
     /// A START THAT NEVER REACHED A WINDOW LEAVES A REPORT. This is the whole of "there was nothing in the
     /// crash folder": the failure is an ordinary error, not a panic, so nothing was written and nothing
     /// could be sent.

@@ -281,13 +281,38 @@ fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
 /// HOW GOOD AN ADAPTER IS, highest first. A real card beats a shared one, a shared one beats a virtual one,
 /// and everything beats the processor - which is taken only when nothing else answers.
 fn rank_adapter(a: &eframe::wgpu::Adapter) -> u8 {
-    rank_device_type(a.get_info().device_type)
+    let info = a.get_info();
+    let host = if cfg!(windows) { Host::Windows } else { Host::Other };
+    rank_backend_and_type(host, info.backend, info.device_type)
+}
+
+/// The operating system an adapter is ranked on; the order differs between them.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub(crate) enum Host {
+    Windows,
+    Other,
+}
+
+/// On Windows an OpenGL adapter is the last resort, below the processor's Direct3D 12 one.
+///
+/// Reported behaviour: on Windows 11 with an Intel HD Graphics 2500 (OpenGL driver 4.0, build 10.18) the
+/// program panicked a few seconds into the session with "We timed out while waiting on the last successful
+/// submission to complete". The machine offered that card through OpenGL only; Direct3D 12 offered just the
+/// software adapter, which was passed over for the "better" card. A card of that generation has no Direct3D
+/// 12 driver, and its OpenGL driver does not keep up with the submissions of the viewport. The software
+/// adapter is slow and says so in the status line, but it runs. Elsewhere OpenGL stays an ordinary choice:
+/// on Linux it is often the only path to the real card.
+pub(crate) fn rank_backend_and_type(host: Host, backend: eframe::wgpu::Backend, t: eframe::wgpu::DeviceType) -> u8 {
+    if host == Host::Windows && backend == eframe::wgpu::Backend::Gl {
+        return 0;
+    }
+    rank_device_type(t)
 }
 
 /// The ranking itself, apart from any adapter: a machine with no graphics is exactly the machine a test
 /// cannot be run on, so the order is checked here instead.
 ///
-/// NOTHING SCORES ZERO. The processor is the worst choice and the one that must still be TAKEN when it is
+/// NOTHING SCORES ZERO HERE. The processor is the worst choice and the one that must still be TAKEN when it is
 /// the only one - refusing it is the program that would not start.
 pub(crate) fn rank_device_type(t: eframe::wgpu::DeviceType) -> u8 {
     use eframe::wgpu::DeviceType;
