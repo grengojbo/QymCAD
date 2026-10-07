@@ -17,27 +17,22 @@ path = "src/main.rs"
 
 [dependencies]
 qymcad-core.workspace = true
-qymcad-doc.workspace = true
-qymcad-io.workspace = true
-qymcad-kernel.workspace = true
 qymcad-i18n = { path = "../qymcad-i18n" }
-# THE PICTURE: the window's own drawing state at rest, its software rasteriser and its palette. egui comes with them
-# for its colour and rectangle types; no window is opened.
-qymcad-ui-state = { path = "../qymcad-ui-state" }
-qymcad-render = { path = "../qymcad-render" }
-qymcad-scheme = { path = "../qymcad-scheme" }
-egui = "0.35"
+qymcad-tools = { path = "../qymcad-tools" }
 # THE PROTOCOL BY HAND, over this one crate: JSON-RPC 2.0 on stdin and stdout, one message per line. A protocol
 # SDK would bring an asynchronous runtime for a server that answers one request at a time on one thread - the
 # thread the interface language is bound to.
 serde_json = "1.0.151"
-serde = { workspace = true }
 
 [dev-dependencies]
 # THE WINDOW, FOR THE CHECKS ONLY: a document the server wrote is opened the way a person opens it, and the two
 # accounts of it are held together. The program itself stays without a window.
 qymcad = { path = "../qymcad" }
 qymcad-acceptance = { path = "../qymcad-acceptance" }
+# the document, the palette and the picture types the checks measure what the tools did with
+qymcad-doc.workspace = true
+qymcad-scheme = { path = "../qymcad-scheme" }
+egui = "0.35"
 # the kept pictures read back as pixels; the version the window already takes
 image = { version = "0.25", default-features = false, features = ["png"] }
 

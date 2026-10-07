@@ -44,7 +44,7 @@ struct SaveArgs {
 /// How much of the document the account gives.
 #[derive(Deserialize, Default)]
 #[serde(rename_all = "lowercase")]
-pub(crate) enum Detail {
+pub enum Detail {
     /// The bodies standing on their own.
     #[default]
     Summary,
@@ -63,7 +63,7 @@ fn coded(e: &qymcad_core::errors::CoreError) -> Value {
     json!({ "code": e.key(), "message": qymcad_i18n::error_words::error_text(e) })
 }
 
-pub(crate) fn feature(f: &qymcad_doc::report::Feature) -> Value {
+pub fn feature(f: &qymcad_doc::report::Feature) -> Value {
     json!({
         "key": f.key, "name": f.name, "kind": f.kind, "part": f.part, "suppressed": f.suppressed, "bodies": f.bodies,
         "error": f.error.as_ref().map(coded), "warning": f.warning.as_ref().map(coded),
@@ -78,7 +78,7 @@ fn body(b: &qymcad_doc::report::Body) -> Value {
 }
 
 /// The account of the document as the model reads it; the names in English.
-pub(crate) fn document(ctx: &Ctx, detail: Detail) -> Value {
+pub fn document(ctx: &Ctx, detail: Detail) -> Value {
     let r: Report = ctx.doc.document(&qymcad_i18n::name);
     let parts: Vec<Value> = r.parts.iter().map(|p| json!({ "key": p.key, "name": p.name, "assembly": p.assembly, "parent": p.parent, "visible": p.visible })).collect();
     let features: Vec<Value> = r.features.iter().map(feature).collect();

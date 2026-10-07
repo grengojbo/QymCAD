@@ -3328,12 +3328,8 @@ dependencies = [
  "qymcad-core",
  "qymcad-doc",
  "qymcad-i18n",
- "qymcad-io",
- "qymcad-kernel",
- "qymcad-render",
  "qymcad-scheme",
- "qymcad-ui-state",
- "serde",
+ "qymcad-tools",
  "serde_json",
 ]
 
@@ -3438,6 +3434,23 @@ dependencies = [
  "qymcad-io",
  "qymcad-kernel",
  "ron",
+]
+
+[[package]]
+name = "qymcad-tools"
+version = "0.1.0"
+dependencies = [
+ "egui 0.35.0",
+ "qymcad-core",
+ "qymcad-doc",
+ "qymcad-i18n",
+ "qymcad-io",
+ "qymcad-kernel",
+ "qymcad-render",
+ "qymcad-scheme",
+ "qymcad-ui-state",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]

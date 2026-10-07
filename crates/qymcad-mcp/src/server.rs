@@ -6,7 +6,7 @@ use std::io::{BufRead, Write};
 use serde_json::{json, Value};
 
 use crate::rpc::{self, Fault, Incoming};
-use crate::tool::{self, Ctx};
+use qymcad_tools::tool::{self, Ctx};
 
 /// The revisions of the protocol this server speaks, newest first. A client asking for one of them gets it
 /// back; a client asking for anything else gets the newest, and decides itself whether to go on.

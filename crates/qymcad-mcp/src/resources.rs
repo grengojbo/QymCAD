@@ -4,8 +4,8 @@
 use serde_json::{json, Value};
 
 use crate::rpc::Fault;
-use crate::tool::Ctx;
-use crate::tools::doc::{document, feature, Detail};
+use qymcad_tools::tool::Ctx;
+use qymcad_tools::tools::doc::{document, feature, Detail};
 
 /// The address of the whole document.
 const DOCUMENT: &str = "qymcad://document";
@@ -50,7 +50,7 @@ pub fn read(ctx: &Ctx, uri: &str) -> Result<Value, Missing> {
         let report = ctx.doc.document(&qymcad_i18n::name);
         let found = report.features.iter().find(|f| f.key == key).ok_or_else(|| Missing { fault: Fault::ResourceNotFound, message: format!("There is no feature {key}.") })?;
         let mut v = feature(found);
-        v["sizes"] = crate::tools::timeline::sizes(ctx.doc.project(), key);
+        v["sizes"] = qymcad_tools::tools::timeline::sizes(ctx.doc.project(), key);
         v
     } else {
         return Err(Missing { fault: Fault::ResourceNotFound, message: format!("There is nothing at {uri}.") });

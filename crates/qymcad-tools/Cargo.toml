@@ -1,0 +1,27 @@
+[package]
+name = "qymcad-tools"
+edition.workspace = true
+version.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+homepage.workspace = true
+description = "The tools a language model drives the document with, shared by the stdio server and the window"
+
+[dependencies]
+qymcad-core.workspace = true
+qymcad-doc.workspace = true
+qymcad-io.workspace = true
+qymcad-kernel.workspace = true
+qymcad-i18n = { path = "../qymcad-i18n" }
+# THE PICTURE: the window's own drawing state at rest, its software rasteriser and its palette. egui comes with them
+# for its colour and rectangle types; no window is opened.
+qymcad-ui-state = { path = "../qymcad-ui-state" }
+qymcad-render = { path = "../qymcad-render" }
+qymcad-scheme = { path = "../qymcad-scheme" }
+egui = "0.35"
+serde_json = "1.0.151"
+serde = { workspace = true }
+
+[lints]
+workspace = true
