@@ -12,6 +12,17 @@ menu-edit = Edit
 menu-view = View
 menu-windows = Windows
 menu-help = Help
+# The menu bar of the system on macOS: the application menu and the Window menu.
+menu-app-about = About { $app }
+menu-app-settings = Settings…
+menu-app-services = Services
+menu-app-hide = Hide { $app }
+menu-app-hide-others = Hide Others
+menu-app-show-all = Show All
+menu-app-quit = Quit { $app }
+menu-window = Window
+menu-window-minimize = Minimize
+menu-window-zoom = Zoom
 
 ## File menu
 

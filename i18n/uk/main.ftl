@@ -12,6 +12,17 @@ menu-edit = Правка
 menu-view = Вигляд
 menu-windows = Вікна
 menu-help = Довідка
+# The menu bar of the system on macOS: the application menu and the Window menu.
+menu-app-about = Про { $app }
+menu-app-settings = Налаштування…
+menu-app-services = Служби
+menu-app-hide = Сховати { $app }
+menu-app-hide-others = Сховати інші
+menu-app-show-all = Показати всі
+menu-app-quit = Вийти з { $app }
+menu-window = Вікно
+menu-window-minimize = Згорнути
+menu-window-zoom = Масштабувати
 
 ## Меню «Файл»
 

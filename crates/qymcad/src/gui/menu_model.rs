@@ -106,7 +106,7 @@ pub(crate) struct Shortcut {
 }
 
 impl Shortcut {
-    const fn command(key: egui::Key) -> Self {
+    pub(crate) const fn command(key: egui::Key) -> Self {
         Self { chord: Chord::Command, key }
     }
 
@@ -246,6 +246,14 @@ pub(crate) struct MenuState {
     pub schemes: Vec<SchemeRow>,
     pub orbit: Checked,
     pub updates: Offered,
+}
+
+#[cfg(test)]
+impl MenuState {
+    /// A fresh document: nothing to undo, nothing recent, nothing on the clipboard.
+    pub(crate) fn quiet() -> Self {
+        MenuState { undo: Step::None, redo: Step::None, copy: Enabled::No, paste: Enabled::No, rebuild: Enabled::No, recent: Vec::new(), schemes: Vec::new(), orbit: Checked::No, updates: Offered::No }
+    }
 }
 
 /// A scheme as the View menu lists it.
@@ -485,9 +493,8 @@ mod tests {
     use crate::gui::hand::Hand;
     use crate::gui::App;
 
-    /// A fresh document: nothing to undo, nothing recent, nothing on the clipboard.
     fn quiet() -> MenuState {
-        MenuState { undo: Step::None, redo: Step::None, copy: Enabled::No, paste: Enabled::No, rebuild: Enabled::No, recent: Vec::new(), schemes: Vec::new(), orbit: Checked::No, updates: Offered::No }
+        MenuState::quiet()
     }
 
     /// Every item of the bar, submenus walked into.

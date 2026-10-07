@@ -203,6 +203,9 @@ pub fn launch() -> eframe::Result<()> {
         options,
         Box::new(|cc| {
             let mut app = start_the_program(&cc.egui_ctx, cc.storage);
+            // THE MENUS GO TO THE MENU BAR OF THE SYSTEM, where a Mac program keeps them.
+            #[cfg(target_os = "macos")]
+            crate::gui::native_menu::install(&cc.egui_ctx);
             // the GPU viewport: when the wgpu backend is active, the bodies pass's GPU resources are installed.
             // Otherwise (on the glow fallback) the CPU raster remains.
             if let Some(rs) = &cc.wgpu_render_state {
@@ -1784,6 +1787,17 @@ impl App {
     }
 }
 
+/// THE PLACE OF THE MENU BAR. Where the system bar holds the menus, the place stays and takes no room: its
+/// filling is where the system bar catches up with the document each frame.
+fn menu_place() -> qymcad_shell::Place {
+    use qymcad_shell::{Place, Slot};
+    #[cfg(any(target_os = "macos", test))]
+    if crate::gui::native_menu::in_system_bar() {
+        return Place::new("menubar", Slot::Menu).sized(0.0, false).bare();
+    }
+    Place::new("menubar", Slot::Menu)
+}
+
 /// WHERE THE PANELS GO. The sizes and the framing that used to be written inside each panel are said here
 /// instead - they describe the container, not what is drawn in it.
 ///
@@ -1795,7 +1809,7 @@ impl App {
 pub(crate) fn shell(set: &Settings) -> qymcad_shell::Shell {
     use qymcad_shell::{Place, Slot};
     let mut s = qymcad_shell::Shell::default();
-    s.put(Place::new("menubar", Slot::Menu));
+    s.put(menu_place());
     s.put(Place::new("toolbar", Slot::Top));
     s.put(Place::new("section_bar", Slot::Top).framed());
     s.put(Place::new("comp_array_bar", Slot::Top).framed());
@@ -4176,6 +4190,9 @@ mod export_menu;
 mod bar_menu;
 /// The menu bar said once, as data, for every place that shows it.
 mod menu_model;
+/// The same menu bar in the menu bar of the system, on macOS; its plain part is checked on every system.
+#[cfg(any(target_os = "macos", test))]
+mod native_menu;
 mod import_scale;
 mod format_samples_look;
 mod import_door;

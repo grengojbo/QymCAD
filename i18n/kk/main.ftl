@@ -12,6 +12,17 @@ menu-edit = Түзету
 menu-view = Көрініс
 menu-windows = Терезелер
 menu-help = Анықтама
+# The menu bar of the system on macOS: the application menu and the Window menu.
+menu-app-about = { $app } туралы
+menu-app-settings = Баптаулар…
+menu-app-services = Қызметтер
+menu-app-hide = { $app } жасыру
+menu-app-hide-others = Басқаларын жасыру
+menu-app-show-all = Барлығын көрсету
+menu-app-quit = { $app } бағдарламасынан шығу
+menu-window = Терезе
+menu-window-minimize = Кішірейту
+menu-window-zoom = Масштабтау
 
 ## File menu
 

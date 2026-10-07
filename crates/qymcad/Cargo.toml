@@ -58,6 +58,11 @@ ab_glyph = "0.2.32"
 # which is too late and only on a machine with a GPU.
 naga = { version = "29", features = ["wgsl-in"] }
 
+# THE MENU BAR OF THE SYSTEM on macOS (see gui/native_menu.rs). Pinned: 0.20 and later ask for rustc 1.90,
+# above the workspace's 1.88. Without default features: they are the GTK menus of Linux, not used here.
+[target.'cfg(target_os = "macos")'.dependencies]
+muda = { version = "=0.19.3", default-features = false }
+
 # The icon is embedded into the .exe only when building FOR Windows (host = windows under CI). On Linux
 # and macOS the dependency is not pulled in at all, and build.rs cuts its windows block out through
 # cfg(windows).
