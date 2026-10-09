@@ -35,11 +35,7 @@ pub fn serve_engine(mut engine: Engine, mut input: impl BufRead, mut output: imp
         if text.trim().is_empty() {
             continue;
         }
-        let reply = match &mut engine {
-            Engine::Here(ctx) => answer(ctx, &text),
-            Engine::Window(window) => answer_window(window, &text),
-        };
-        if let Some(reply) = reply {
+        if let Some(reply) = answer_engine(&mut engine, &text) {
             serde_json::to_writer(&mut output, &reply)?;
             output.write_all(b"\n")?;
             output.flush()?;
@@ -62,10 +58,32 @@ pub fn answer_window(window: &mut Window, line: &str) -> Option<Value> {
     answer_to(Target::Window(window), line)
 }
 
+/// The reply to one line, the calls going where `engine` sends them; a call that reaches a document decides an engine
+/// not decided yet.
+pub fn answer_engine(engine: &mut Engine, line: &str) -> Option<Value> {
+    if reaches_a_document(line) {
+        engine.decide();
+    }
+    match engine {
+        Engine::Here(ctx) => answer(ctx, line),
+        Engine::Window(window) => answer_window(window, line),
+        Engine::Undecided(_) => answer_to(Target::Nowhere, line),
+    }
+}
+
+/// Whether `line` asks for a document: a call of a tool or the reading of an address. The handshake and the lists do
+/// not, and answering them decides nothing.
+fn reaches_a_document(line: &str) -> bool {
+    let method = serde_json::from_str::<Value>(line).ok().and_then(|v| v.get("method").and_then(Value::as_str).map(str::to_string));
+    matches!(method.as_deref(), Some("tools/call" | "resources/read"))
+}
+
 /// Where one request is answered.
 enum Target<'a> {
     Here(&'a mut Ctx),
     Window(&'a mut Window),
+    /// No document yet: only what reaches none is asked of it.
+    Nowhere,
 }
 
 fn answer_to(target: Target<'_>, line: &str) -> Option<Value> {
@@ -102,6 +120,7 @@ fn request(target: Target<'_>, id: &Value, method: &str, params: Value) -> Value
                     Ok(answer) => reading::answer_as_read(answer),
                     Err(cut) => Err(Unread::Nothing(format!("{} {}", cut.refusal.message, cut.refusal.hint.unwrap_or_default()))),
                 },
+                Target::Nowhere => Err(Unread::Nothing("No document is open yet.".into())),
             };
             match read {
                 Ok(contents) => rpc::success(id, contents),
@@ -136,6 +155,7 @@ fn call(target: Target<'_>, id: &Value, mut params: Value) -> Value {
             Ok(answer) => rpc::success(id, answer),
             Err(cut) => rpc::success(id, tool::refused_reply(&name, &cut.refusal, cut.after)),
         },
+        Target::Nowhere => rpc::fault(id, Fault::InvalidRequest, "no document is open yet"),
     }
 }
 

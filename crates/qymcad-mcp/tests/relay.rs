@@ -12,7 +12,7 @@ use std::time::Duration;
 
 use qymcad_bridge::{Listener, Wait, Wake};
 use qymcad_mcp::engine::{parse, Engine, Mode, Start, Window};
-use qymcad_mcp::server::{answer, answer_window};
+use qymcad_mcp::server::{answer_engine, answer_window};
 use qymcad_mcp::tool::Ctx;
 use serde_json::{json, Value};
 
@@ -76,7 +76,7 @@ fn start(mode: Mode, path: &Path, late: Duration) -> Engine {
 fn live(path: &Path) -> Window {
     match start(Mode::Live, path, Duration::from_secs(30)) {
         Engine::Window(w) => w,
-        Engine::Here(_) => panic!("--live kept a document of its own"),
+        _ => panic!("--live did not go to the window"),
     }
 }
 
@@ -155,7 +155,7 @@ fn a_late_window_is_told_and_the_next_call_reaches_it_again() {
     let window = stand_in(&path, 1500);
     let mut w = match start(Mode::Live, &path, Duration::from_millis(300)) {
         Engine::Window(w) => w,
-        Engine::Here(_) => panic!("--live kept a document of its own"),
+        _ => panic!("--live did not go to the window"),
     };
     let reply = call(&mut w, "box", json!({ "x": 10, "y": 10, "z": 10 }));
     assert_eq!(reply["error"]["code"], "window-late", "{reply}");
@@ -169,22 +169,37 @@ fn a_late_window_is_told_and_the_next_call_reaches_it_again() {
     assert!(kinds.iter().any(|k| k.starts_with("Box")) && kinds.iter().any(|k| k == "Cylinder"), "the late box and the cylinder are not both in the window: {kinds:?}");
 }
 
+fn box_through(engine: &mut Engine) -> Value {
+    answer_engine(engine, &line("tools/call", json!({ "name": "box", "arguments": { "x": 1, "y": 1, "z": 1 } }))).expect("answered")["result"]["structuredContent"].clone()
+}
+
+/// `--auto` TAKES THE WINDOW OPENED AFTER THE PROGRAM STARTED. Claude Desktop starts the program when it starts itself,
+/// mostly before QymCAD is opened: the handshake and the lists come first and decide nothing, and the first call that
+/// reaches a document goes to the window open by then.
 #[test]
-fn auto_takes_the_window_when_one_listens_and_its_own_otherwise() {
-    let path = place("auto");
-    match start(Mode::Auto, &path, Duration::from_secs(30)) {
-        Engine::Here(mut ctx) => {
-            let reply = answer(&mut ctx, &line("tools/call", json!({ "name": "box", "arguments": { "x": 1, "y": 1, "z": 1 } }))).expect("answered");
-            assert_eq!(reply["result"]["structuredContent"]["ok"], json!(true), "{reply}");
-        }
-        Engine::Window(_) => panic!("--auto took a window where none listens"),
-    }
+fn auto_takes_a_window_opened_after_the_start() {
+    let path = place("auto-late");
+    let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
+    let hello = answer_engine(&mut engine, &line("initialize", json!({ "protocolVersion": "2025-06-18" }))).expect("answered");
+    assert!(hello["result"]["serverInfo"].is_object(), "{hello}");
+    let _ = answer_engine(&mut engine, &line("tools/list", json!({}))).expect("answered");
     let window = stand_in(&path, 0);
-    match start(Mode::Auto, &path, Duration::from_secs(30)) {
-        Engine::Window(mut w) => assert_eq!(call(&mut w, "box", json!({ "x": 1, "y": 1, "z": 1 }))["ok"], json!(true)),
-        Engine::Here(_) => panic!("--auto kept a document of its own where a window listens"),
-    }
-    assert_eq!(bodies(&window.close()), 1);
+    assert_eq!(box_through(&mut engine)["ok"], json!(true));
+    assert!(matches!(engine, Engine::Window(_)), "the first call did not take the window that was open by then");
+    assert_eq!(bodies(&window.close()), 1, "the box did not land in the window");
+}
+
+/// `--auto` WITH NO WINDOW AT THE FIRST CALL keeps a document of its own for the run: a window opened afterwards may
+/// hold another document, and the session does not move to it unawares.
+#[test]
+fn auto_with_no_window_at_the_first_call_keeps_its_own() {
+    let path = place("auto-own");
+    let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
+    assert_eq!(box_through(&mut engine)["ok"], json!(true));
+    assert!(matches!(engine, Engine::Here(_)), "--auto with no window did not keep a document of its own");
+    let window = stand_in(&path, 0);
+    assert_eq!(box_through(&mut engine)["ok"], json!(true));
+    assert_eq!(bodies(&window.close()), 0, "the session moved to a window opened after it had decided");
 }
 
 #[test]

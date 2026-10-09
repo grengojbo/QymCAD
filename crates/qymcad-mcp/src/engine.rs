@@ -1,9 +1,13 @@
 //! WHERE THE CALLS GO: to a document of the program's own, or over the channel to the open window, whose document the
 //! person sees.
 //!
-//! The choice is made once, at the start, and said on the command line: `--headless` keeps a document here, `--live`
-//! sends every call to the window, `--auto` (the default) takes the window when one listens at the start and a
-//! document of its own otherwise.
+//! The choice is said on the command line: `--headless` keeps a document here, `--live` sends every call to the
+//! window, `--auto` (the default) takes the window when one listens at the first call that reaches a document, and a
+//! document of its own otherwise - and keeps that choice for the run.
+//!
+//! THE FIRST CALL DECIDES, NOT THE START. Claude Desktop starts the program when Claude Desktop itself starts, which
+//! is mostly before QymCAD is opened; decided at the start, the session would keep a document of its own for good and
+//! the window would never see a thing.
 //!
 //! A WINDOW LOST IS NOT REPLACED. Once the window this session reached has closed, every call is refused: a window
 //! opened afterwards may hold another document, and a model working on in it unawares would edit a part it never
@@ -70,23 +74,32 @@ pub enum Engine {
     Here(Box<Ctx>),
     /// The window's document, over the channel.
     Window(Window),
+    /// Not decided yet (`--auto`): the first call that reaches a document decides, by whether a window listens then.
+    Undecided(Window),
 }
 
 impl Engine {
-    /// The engine `start` asks for. `--auto` looks for a window once, now.
+    /// The engine `start` asks for; `--auto` is left to the first call.
     pub fn start(start: Start) -> Engine {
         let window = Window { path: start.socket.or_else(qymcad_bridge::default_path), late: start.late, link: None, reach: Reach::NotYet };
         match start.mode {
             Mode::Headless => Engine::Here(Box::new(Ctx::blank())),
             Mode::Live => Engine::Window(window),
-            Mode::Auto => {
-                let mut window = window;
-                match window.connect() {
-                    Ok(()) => Engine::Window(window),
-                    Err(_) => Engine::Here(Box::new(Ctx::blank())),
-                }
-            }
+            Mode::Auto => Engine::Undecided(window),
         }
+    }
+
+    /// DECIDE, when not yet decided: a window that listens now takes the run, and a document of its own otherwise.
+    pub fn decide(&mut self) {
+        if !matches!(self, Engine::Undecided(_)) {
+            return;
+        }
+        let placeholder = Window { path: None, late: Duration::ZERO, link: None, reach: Reach::NotYet };
+        let Engine::Undecided(mut window) = std::mem::replace(self, Engine::Window(placeholder)) else { return };
+        *self = match window.connect() {
+            Ok(()) => Engine::Window(window),
+            Err(_) => Engine::Here(Box::new(Ctx::blank())),
+        };
     }
 }
 

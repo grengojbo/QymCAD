@@ -11,8 +11,10 @@ fn main() -> std::process::ExitCode {
         }
     };
     let engine = qymcad_mcp::engine::Engine::start(start);
-    if matches!(engine, qymcad_mcp::engine::Engine::Window(_)) {
-        eprintln!("qymcad-mcp: the calls go to the open window");
+    match engine {
+        qymcad_mcp::engine::Engine::Window(_) => eprintln!("qymcad-mcp: the calls go to the open window"),
+        qymcad_mcp::engine::Engine::Undecided(_) => eprintln!("qymcad-mcp: the first call goes to the open window if one listens then"),
+        qymcad_mcp::engine::Engine::Here(_) => {}
     }
     let stdin = std::io::stdin();
     let stdout = std::io::stdout();
