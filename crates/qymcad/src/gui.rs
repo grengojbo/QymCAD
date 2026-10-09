@@ -4026,6 +4026,7 @@ mod a_mesh_edge_stays_sharp;
 mod update_ui;
 /// Claude in the open window lives in `gui/bridge_ui.rs` - state and all, off the application.
 mod bridge_ui;
+mod mcp_live_case;
 mod update_notice;
 mod dim_to_axis;
 mod deaf_while_the_system_asks;

@@ -38,6 +38,12 @@ enum End {
 
 thread_local! {
     static END: RefCell<End> = const { RefCell::new(End::Closed) };
+    /// WHERE CLAUDE WORKS: the part its calls lay new nodes in, kept apart from where the person is looking. A call
+    /// that makes a part (a sketch in an assembly) or steps into one works there from then on; the window does not
+    /// follow it, and the next call does not lose it to the window's own context, which every frame lays back on the
+    /// document. Reported behaviour, found by the live chain: a sketch made its part, the next call - a rounding with no
+    /// body named - looked for "part 1", the assembly the window stood at, and was refused.
+    static WORKS_IN: std::cell::Cell<Option<qymcad_core::model::Id>> = const { std::cell::Cell::new(None) };
 }
 
 #[cfg(test)]
@@ -156,6 +162,12 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
     // what the person has selected is read by its indices, before the document is lent away; and the eye they look through
     let seen = Seen::Window(InWindow { picked: picked(pc), eye: Eye { cam: *pc.cam, projection: pc.set.projection } });
     qymcad_ui_state::begin_edit(pc.edits, pc.project, qymcad_i18n::tr1("bridge-step", "what", tool));
+    // the person's context goes back on the document after the call; Claude's own, while its part still stands, is
+    // what the call works in
+    let window_at = pc.project.active_component;
+    if let Some(part) = WORKS_IN.get().filter(|p| pc.project.components.iter().any(|c| c.id == *p)) {
+        pc.project.set_active_component(Some(part));
+    }
     let lent = qymcad_doc::Lent {
         project: std::mem::take(pc.project),
         shapes: std::mem::take(&mut pc.live.shapes),
@@ -172,6 +184,8 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
     qymcad_i18n::set_language(&person);
     let back = ctx.doc.hand_back();
     *pc.project = back.project;
+    WORKS_IN.set(pc.project.active_component);
+    pc.project.set_active_component(window_at);
     pc.live.shapes = back.shapes;
     pc.live.shelved = back.shelved;
     pc.live.shelved_sources = back.shelved_sources;
@@ -197,7 +211,7 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::super::hand::Hand;
     use super::super::App;
     use qymcad_bridge::Link;
@@ -210,7 +224,7 @@ mod tests {
 
     /// A socket of the check's own, in the temporary folder: a checkout shared into a virtual machine refuses to hold
     /// one.
-    fn place(name: &str) -> PathBuf {
+    pub(crate) fn place(name: &str) -> PathBuf {
         let dir = std::env::temp_dir().join("qymcad-window").join(format!("{}-{name}", std::process::id()));
         std::fs::create_dir_all(&dir).expect("a folder for the check");
         dir.join("mcp.sock")
@@ -225,7 +239,7 @@ mod tests {
         })
     }
 
-    fn reply_of(answer: &Value) -> &Value {
+    pub(crate) fn reply_of(answer: &Value) -> &Value {
         &answer["structuredContent"]
     }
 
@@ -409,7 +423,7 @@ mod tests {
     }
 
     /// Run whole frames until Claude's thread is done; its answer.
-    fn served<T>(hand: &mut Hand, job: std::thread::JoinHandle<T>) -> T {
+    pub(crate) fn served<T>(hand: &mut Hand, job: std::thread::JoinHandle<T>) -> T {
         for _ in 0..1000 {
             if job.is_finished() {
                 break;
@@ -421,7 +435,7 @@ mod tests {
     }
 
     /// CLAUDE, on a thread of its own: a run of calls on one link, and their answers.
-    fn claude_says(path: &std::path::Path, calls: Vec<(&'static str, Value)>) -> std::thread::JoinHandle<Vec<Value>> {
+    pub(crate) fn claude_says(path: &std::path::Path, calls: Vec<(&'static str, Value)>) -> std::thread::JoinHandle<Vec<Value>> {
         let path = path.to_path_buf();
         std::thread::spawn(move || {
             let mut link = Link::connect(&path, Duration::from_secs(60)).unwrap_or_else(|e| panic!("Claude did not reach the window: {e:?}"));
@@ -431,7 +445,7 @@ mod tests {
 
     /// STEP INTO THE PART OF `body`, LOOK AT `at` AND CLICK IT, with nothing selected before: the first frame fits the
     /// camera to the scene, so the aim comes after it.
-    fn aim_and_click(hand: &mut Hand, body: Id, at: [f64; 3], scale: f32) {
+    pub(crate) fn aim_and_click(hand: &mut Hand, body: Id, at: [f64; 3], scale: f32) {
         hand.frame(Vec::new());
         hand.key(egui::Key::Escape);
         // in an assembly a click takes the whole part; a face is clicked inside its part, as a person steps in first
@@ -445,7 +459,7 @@ mod tests {
 
     /// A POINT ON A FACE THE ROUNDING MADE, in the world: the middle of one of its triangles, which lies on the surface,
     /// where the middle of the whole curved face would lie inside the body.
-    fn on_the_rounding(app: &App, fillet: Id, body: Id) -> [f64; 3] {
+    pub(crate) fn on_the_rounding(app: &App, fillet: Id, body: Id) -> [f64; 3] {
         let b = app.project.bodies.iter().find(|b| b.id == body).expect("the rounded body");
         let face = b.faces.iter().find(|f| app.project.names.get(f.id).is_some_and(|n| n.feature == fillet)).expect("a face the rounding made");
         let tri = b.mesh.triangle(face.triangles[face.triangles.len() / 2] as usize);

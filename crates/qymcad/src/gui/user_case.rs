@@ -9,13 +9,13 @@
 //! on the right, the lists of bodies, the absence of keys where words belong. That is how a person works,
 //! and that is how it must be checked.
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::super::check_folder::tests::CheckFolder;
     use super::super::hand::Hand;
     use super::super::App;
 
     /// THE SINGLE "EVERYTHING ADDS UP" CHECK - run after every action rather than as a separate test.
-    fn check_all(app: &mut App, step: &str, problems: &mut Vec<String>) {
+    pub(crate) fn check_all(app: &mut App, step: &str, problems: &mut Vec<String>) {
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         // 1. THE GEOMETRY: not a single red node.
         // WHAT COUNTS AS RED IS WHAT THE PROGRAM COULD NOT EXPLAIN. A named refusal is a conversation: "the
@@ -735,6 +735,33 @@ mod tests {
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 20.0, 10.0], 8.0).tool(1).set("height", 25.0).enter();
         check_all(&mut app, "the housing was extruded", &mut problems);
+
+        // --- CLAUDE IN THE WINDOW: the housing 5 mm taller, and the person taking it back ---
+        {
+            use super::super::bridge_ui::tests::{claude_says, place, reply_of, served};
+            app.set.claude_link = qymcad_ui_state::ClaudeLink::On;
+            let path = place("user-case");
+            super::super::bridge_ui::listen_at(path.clone());
+            let extrude = app.project.timeline.iter().rev().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).map(|n| n.id).expect("the housing's extrusion");
+            let mut hand = Hand::new(&mut app);
+            hand.frame(Vec::new());
+            let did = served(&mut hand, claude_says(&path, vec![("edit_feature", serde_json::json!({ "feature": extrude, "values": { "height": 30 } }))]));
+            if reply_of(&did[0])["ok"] != serde_json::json!(true) {
+                problems.push(format!("[Claude makes the housing taller] the window refused: {}", did[0]));
+            }
+            hand.close_window(); // the frames marked the window live: what they started is waited for, and the mark taken away
+            drop(hand);
+            check_all(&mut app, "Claude made the housing taller through the window", &mut problems);
+            Hand::new(&mut app).undo().close_window();
+            check_all(&mut app, "the person took Claude's change back", &mut problems);
+            let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
+            let top = app.project.bodies.iter().find(|b| b.id == body).map_or(f64::NAN, |b| b.faces.iter().map(|f| f.centroid.z).fold(f64::NEG_INFINITY, f64::max));
+            if (top - 25.0).abs() > 1e-6 {
+                problems.push(format!("[the person took Claude's change back] the housing stands {top} high, not 25"));
+            }
+            app.set.claude_link = qymcad_ui_state::ClaudeLink::Off;
+            Hand::new(&mut app).frame(Vec::new()).close_window(); // the window closes its end of the channel
+        }
 
         // --- FILLETS ON THE VERTICAL EDGES ---
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
