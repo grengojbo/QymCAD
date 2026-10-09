@@ -105,7 +105,7 @@ fn with_glyph(glyph: Option<&str>, caption: &str) -> String {
 }
 
 /// The icon of a submenu of the menu bar.
-fn sub_glyph(kind: crate::gui::menu_model::SubKind) -> Option<&'static str> {
+pub(crate) fn sub_glyph(kind: crate::gui::menu_model::SubKind) -> Option<&'static str> {
     use crate::gui::menu_model::SubKind;
     Some(match kind {
         SubKind::Recent => ph::CLOCK_COUNTER_CLOCKWISE,
@@ -114,7 +114,7 @@ fn sub_glyph(kind: crate::gui::menu_model::SubKind) -> Option<&'static str> {
 }
 
 /// The icon of an item of the menu bar. A recent file and an export format are rows of a list and go without.
-fn action_glyph(action: &crate::gui::menu_model::MenuAction) -> Option<&'static str> {
+pub(crate) fn action_glyph(action: &crate::gui::menu_model::MenuAction) -> Option<&'static str> {
     use crate::gui::menu_model::{MenuAction as A, SchemeLook};
     match action {
         A::New => Some(ph::FILE),

@@ -79,6 +79,18 @@ what = "линейная алгебра решателя: SVD, ранг, ква�
 latest = "0.15.0"
 what = "производные решателя автоматическим дифференцированием"
 
+[objc2]
+latest = "0.6.4"
+what = "вызовы Objective-C на macOS: значки SF Symbols в строке меню системы; версия задана muda"
+
+[objc2-app-kit]
+latest = "0.3.2"
+what = "NSMenu, NSMenuItem, NSImage на macOS: значки SF Symbols в строке меню системы; версия задана muda"
+
+[objc2-foundation]
+latest = "0.3.2"
+what = "NSString: значки SF Symbols в строке меню системы; версия задана muda"
+
 [petgraph]
 latest = "0.8.3"
 what = "граф сопряжений: связные части, обход от закреплённых тел"
