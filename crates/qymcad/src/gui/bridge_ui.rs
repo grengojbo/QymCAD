@@ -149,6 +149,11 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
     qymcad_ui_state::commit_edit_if_changed(&mut pc.rebuild());
     if changed {
         qymcad_part::resync_after_topology_change(pc);
+        // WHAT CLAUDE DID IS SAID where the window says what happened: a body that appears with no hand on the mouse is
+        // otherwise a mystery, and the line names the step Ctrl+Z takes back
+        if let Some(last) = pc.edits.undo.last() {
+            *pc.status = last.name.clone();
+        }
     }
     reply
 }
@@ -216,6 +221,7 @@ mod tests {
         assert_eq!(app.disk.edits.undo.len(), steps + 1, "the call is not one step of undo");
         let want = qymcad_i18n::tr1("bridge-step", "what", &qymcad_i18n::tr("cmd-box"));
         assert_eq!(app.disk.edits.undo.last().map(|s| s.name.as_str()), Some(want.as_str()), "the step is not named for what Claude did");
+        assert_eq!(app.status, want, "the status line does not say what Claude did");
 
         Hand::new(&mut app).undo();
         assert_eq!(boxes(&app), before, "Ctrl+Z did not take Claude's box back");

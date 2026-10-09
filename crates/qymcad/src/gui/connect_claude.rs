@@ -235,6 +235,17 @@ pub(crate) fn window(win: &mut Windows, scheme: &qymcad_ui_state::SchemeUi, mach
                     ui.output_mut(|o| o.commands.push(egui::OutputCommand::CopyText(line.clone())));
                 }
             });
+
+            // CLAUDE IN THIS WINDOW: the same server, sending its calls to the document open here when the setting
+            // lets them in. The switch itself stays in the settings, with the others; this says where it is.
+            ui.add_space(10.0);
+            ui.separator();
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new(tr("settings-claude")).strong());
+            ui.label(tr("claude-window-how"));
+            if ui.button(format!("{} {}", ph::GEAR, tr("claude-window-open"))).clicked() {
+                win.open(WinKind::Settings);
+            }
         },
     );
     ctx.data_mut(|d| d.insert_temp(said_id(), said));
@@ -411,6 +422,20 @@ mod tests {
             let up = egui::RawInput { events: vec![egui::Event::PointerButton { pos: spot, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() }], ..raw() };
             self.run(machine, up)
         }
+    }
+
+    /// THE WAY TO CLAUDE IN THIS WINDOW IS SHOWN: the window says what the setting does and its button opens the settings
+    /// where the switch is.
+    #[test]
+    fn the_window_leads_to_the_switch_for_claude_in_this_window() {
+        let machine = sandboxed("switch", Presence::There);
+        let mut f = Frame::open();
+        let _ = f.run(&machine, raw()); // the window lays itself out on its first frame
+        let texts: Vec<String> = painted(&f.run(&machine, raw()).shapes).into_iter().map(|p| p.text).collect();
+        assert!(texts.iter().any(|t| t.contains(&crate::i18n::tr("settings-claude"))), "the window does not name Claude in this window: {texts:?}");
+        assert!(!f.win.is(WinKind::Settings), "setup: the settings were open before anything was pressed");
+        let _ = f.press(&machine, &crate::i18n::tr("claude-window-open"));
+        assert!(f.win.is(WinKind::Settings), "the button did not open the settings");
     }
 
     /// THE BUTTON ADDS THE SERVER TO CLAUDE DESKTOP'S SETTINGS and the window says so, and how to finish.

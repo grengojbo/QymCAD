@@ -19,6 +19,19 @@ button now shows **qymcad**.
 The window shows a command. Press **Copy**, paste it into a terminal and run it once. `claude mcp list` then shows
 `qymcad` as connected.
 
+## Claude in this window
+
+Claude can also work in the document open in this window instead of a document of its own. Turn it on:
+**Settings -> General -> Claude in this window -> On**.
+
+Then every change Claude makes appears in the window at once and is a step of its own: **Ctrl+Z** takes it back, as
+it takes back your own steps. The status line says what Claude did last.
+
+While you drag a part or hold a tool, Claude waits. If that lasts more than a few seconds, Claude is told the window
+is busy and asks again later; the change it waited with does not happen behind your back.
+
+Starting, opening and saving a document, and undoing, stay yours: Claude asks you to do them from the window's menu.
+
 ## If it did not work
 
 - **The window says there is no server** — this build was not installed from a release. Install QymCAD from the
@@ -28,3 +41,12 @@ The window shows a command. Press **Copy**, paste it into a terminal and run it 
 - **Claude does not show qymcad** — quit Claude Desktop completely, not just its window, and open it again.
 - **QymCAD was moved or updated** — press **Add to Claude Desktop** again, or run the command again: the path to the
   server may have changed.
+- **Claude works in a document of its own, not in this window** — the setting was off, or QymCAD was closed, when
+  Claude made its first change. Turn the setting on, then start Claude again: close and open Claude Desktop, or in
+  Claude Code type `/mcp` and reconnect `qymcad`.
+- **Claude says the window is busy** — finish what you are doing in the window: release the mouse, close the tool.
+  Then ask Claude again.
+- **Claude says the window has closed** — open QymCAD and start Claude again, as above. Claude does not move on to
+  another window by itself: it could hold another document.
+- **The status line says Claude cannot connect to this window** — turn the setting off and on again. If the same
+  words come back, send them through **Help -> Report a problem**.
