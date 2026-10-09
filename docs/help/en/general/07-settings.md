@@ -5,8 +5,8 @@ The settings window is split into sections; above them is a search that finds a 
 ![The settings window: sections on the left, search above them, “Reset this section” at the bottom.](img/settings.png)
 
 - **General** — language of the program and of the help, how to open the help, the start screen and
-  the last project, units on import, autosave, undo depth, how many processors to give to computing, update checks, recent
-  files, the settings profile.
+  the last project, where the menus stand on a Mac (at the top of the screen or in the window), units on import,
+  autosave, undo depth, how many processors to give to computing, update checks, recent files, the settings profile.
 - **Appearance** — colour scheme, interface scale.
 - **Viewport** — engine, projection, shading, view cube, mouse navigation, wheel zoom, pointing
   precision, ghost transparency, field of view, antialiasing.

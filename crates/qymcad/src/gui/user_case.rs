@@ -777,6 +777,24 @@ mod tests {
             problems.push(format!("[a cut from the sketch on the face] the volume did not decrease: it was {v_before_cut:.1}, it is {after_cut:.1} - the cut did not cut through"));
         }
 
+        // --- UNDO AND REDO FROM THE MENU BAR, in the middle of the work: the step named in the Edit menu goes and
+        // comes back, and the chain after it carries on from the restored document ---
+        let steps = app.disk.edits.undo.len();
+        let named = app.disk.edits.undo.last().map(|s| s.name.clone()).unwrap_or_default();
+        let at_menu = egui::pos2(0.0, 0.0);
+        let mut hand = Hand::new(&mut app);
+        let undone = hand.press_word(&crate::i18n::tr("menu-edit"), at_menu) && hand.press_word(&crate::i18n::tr1("menu-undo-named", "what", &named), at_menu);
+        if !undone || app.disk.edits.undo.len() + 1 != steps {
+            problems.push(format!("[Edit -> Undo] the menu did not take back \"{named}\": {} steps, {steps} before", app.disk.edits.undo.len()));
+        }
+        check_all(&mut app, "the cut was undone from the Edit menu", &mut problems);
+        let mut hand = Hand::new(&mut app);
+        let redone = hand.press_word(&crate::i18n::tr("menu-edit"), at_menu) && hand.press_word(&crate::i18n::tr1("menu-redo-named", "what", &named), at_menu);
+        if !redone || app.disk.edits.undo.len() != steps {
+            problems.push(format!("[Edit -> Redo] the menu did not bring back \"{named}\": {} steps, {steps} before", app.disk.edits.undo.len()));
+        }
+        check_all(&mut app, "the cut was redone from the Edit menu", &mut problems);
+
         // --- SAVE AND REOPEN ---
         let mut app = save_and_reopen(&mut app, &folder, "the housing is finished", &mut problems);
 

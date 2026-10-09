@@ -4,7 +4,10 @@
 
 ## At the top — the menu, the path and the bar of the command
 
-* **The menu**: File, Edit, View, Windows, Help.
+* **The menu**: File, Edit, View, Windows, Help. On a Mac the menus stand in the menu bar at the top of the screen,
+  after the name of the program, as in every Mac program: the QymCAD menu holds About, **Settings** (Cmd+,) and
+  **Quit** (Cmd+Q), the Window menu holds Minimize (Cmd+M) and Zoom. To have them in the window instead, choose
+  Settings -> General -> **Menus: in the window**.
 * Below it — **the path through the document**: `Assembly › Part › Sketch`. It shows where you are, and a click on a
   link takes you back up. Beside it — **Finish** (leave the sketch or the part), **ƒx Parameters**, **Snap** with the
   grid and rotation steps, **In context**.
