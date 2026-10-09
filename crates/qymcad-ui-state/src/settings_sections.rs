@@ -66,6 +66,7 @@ impl SettingsSection {
                 "settings-undo-cap",
                 "settings-kernel-threads",
                 "settings-updates",
+                "settings-claude",
                 "settings-recent-limit",
                 "settings-profile",
             ],
@@ -135,6 +136,7 @@ impl SettingsSection {
                 // The time of the last check goes back with it: left behind, "once a week" would
                 // silently mean "not for another week" right after the setting was put back.
                 s.update_last_checked = d.update_last_checked;
+                s.claude_link = d.claude_link;
                 // THE RECENT LIST ITSELF IS NOT TOUCHED BY A RESET: it is not a setting but a
                 // history of work. "Reset the section" means "restore the factory values", not
                 // "forget what I did"; the File menu has a separate item for the latter.

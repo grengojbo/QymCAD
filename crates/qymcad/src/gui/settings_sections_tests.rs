@@ -79,6 +79,7 @@ mod tests {
             menu_place: qymcad_ui_state::MenuPlace::Window,
             update_check: qymcad_ui_state::UpdateCheck::Weekly,
             update_last_checked: 1_788_900_000,
+            claude_link: qymcad_ui_state::ClaudeLink::On,
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual,
             orbit_about: qymcad_ui_state::OrbitAbout::Pointer,
             msaa: 8,

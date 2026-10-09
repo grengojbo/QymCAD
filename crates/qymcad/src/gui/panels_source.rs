@@ -130,12 +130,14 @@ mod tests {
         // KEYED BY PATH, not by file name. Every workbench crate is a single `lib.rs`, so an exception
         // written as "lib.rs" would have quietly excused the Part, the sketcher and the assembly along with
         // the one file it was meant for.
-        const NOT_A_PANEL: [(&str, &str); 7] = [
+        const NOT_A_PANEL: [(&str, &str); 9] = [
             ("qymcad/src/gui/input.rs", "keyboard handling: it draws nothing, it only takes a frame's context to read keys from"),
             ("qymcad/src/gui/orbit_about.rs", "the centre of a turn of the view: it draws nothing, it only keeps the point of a turn in a frame's context memory"),
             ("qymcad-part/src/trial.rs", "the trial build of a command: it draws nothing, it only keeps its verdict in a frame's context memory"),
             ("qymcad/src/gui/expr_field.rs", "a widget drawn INTO a panel, not a panel: it is reached through the panels that place it"),
             ("qymcad/src/gui/native_menu.rs", "the menu bar of the system: it draws nothing in the window, it hands the list of `menu_model.rs`, which the lists read, to the system"),
+            ("qymcad/src/gui/bridge_ui.rs", "the calls from Claude: it draws nothing, it only takes a frame's context to be woken by a call"),
+            ("qymcad/src/gui/window_title.rs", "the title of the window: it draws nothing, it only hands the title to the system through a frame's context"),
             ("qymcad/src/gui/bar_menu.rs", "a widget drawn INTO the menu bar, not a panel: its captions and items are handed to it by `panels_bars.rs`, which the lists read"),
             (
                 "qymcad-shell/src/lib.rs",

@@ -12,7 +12,7 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{LinkError, Opened, Wait};
+use crate::{LinkError, Opened, Wait, Wake};
 
 /// The longest socket path the systems take: `sun_path` holds 104 bytes on macOS and 108 on Linux, the closing zero
 /// among them.
@@ -95,8 +95,9 @@ pub struct Listener {
 
 impl Listener {
     /// OPEN THE SOCKET AT `path`. A socket another window listens on is refused; a file nobody listens on - what a
-    /// window that died without closing leaves - is cleared first. The socket is made its owner's alone.
-    pub fn open(path: &Path, wait: Wait) -> Result<Listener, Opened> {
+    /// window that died without closing leaves - is cleared first. The socket is made its owner's alone. `wake` is
+    /// called each time a call is queued.
+    pub fn open(path: &Path, wait: Wait, wake: Wake) -> Result<Listener, Opened> {
         if path.as_os_str().len() > PATH_LIMIT {
             return Err(Opened::TooLong(path.to_path_buf()));
         }
@@ -116,7 +117,7 @@ impl Listener {
         let (queue_in, queue) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
         let stop_seen = stop.clone();
-        std::thread::spawn(move || accept(socket, queue_in, wait, &stop_seen));
+        std::thread::spawn(move || accept(socket, queue_in, Answering { wait, wake }, &stop_seen));
         Ok(Listener { path: path.to_path_buf(), queue, stop })
     }
 
@@ -144,19 +145,26 @@ impl Drop for Listener {
 }
 
 /// ACCEPT CLIENTS until the window's end closes, each answered on a thread of its own.
-fn accept(socket: UnixListener, queue: Sender<Call>, wait: Wait, stop: &AtomicBool) {
+/// How a client is answered: how long a call may wait to be taken, and how the window is woken for it.
+#[derive(Clone)]
+struct Answering {
+    wait: Wait,
+    wake: Wake,
+}
+
+fn accept(socket: UnixListener, queue: Sender<Call>, answering: Answering, stop: &AtomicBool) {
     for stream in socket.incoming() {
         if stop.load(Ordering::Acquire) {
             return;
         }
         let Ok(stream) = stream else { continue };
-        let queue = queue.clone();
-        std::thread::spawn(move || serve(stream, &queue, wait));
+        let (queue, answering) = (queue.clone(), answering.clone());
+        std::thread::spawn(move || serve(stream, &queue, &answering));
     }
 }
 
 /// ANSWER ONE CLIENT, a line at a time, until it goes or the window closes.
-fn serve(stream: UnixStream, queue: &Sender<Call>, wait: Wait) {
+fn serve(stream: UnixStream, queue: &Sender<Call>, answering: &Answering) {
     let Ok(read) = stream.try_clone() else { return };
     let mut out = stream;
     for line in BufReader::new(read).lines() {
@@ -172,7 +180,8 @@ fn serve(stream: UnixStream, queue: &Sender<Call>, wait: Wait) {
                 if queue.send(Call { tool: r.tool, arguments: r.arguments, back, stand: stand.clone() }).is_err() {
                     return; // the window has closed
                 }
-                match wait_for(&answer, &stand, wait.answer_within) {
+                (answering.wake)();
+                match wait_for(&answer, &stand, answering.wait.answer_within) {
                     Answer::Given(result) => Reply { id: Some(r.id), result: Some(result), error: None },
                     Answer::NotTaken => Reply::fault(Some(r.id), BUSY, "The window did not take the call in time; it will not happen."),
                     Answer::Dropped => Reply::fault(Some(r.id), NO_ANSWER, "The window closed before it answered."),

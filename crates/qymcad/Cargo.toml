@@ -35,6 +35,10 @@ qymcad-assembly = { path = "../qymcad-assembly" }
 qymcad-sketch = { path = "../qymcad-sketch" }
 qymcad-part = { path = "../qymcad-part" }
 qymcad-meshfit = { path = "../qymcad-meshfit" } # the viewport draws where a body made of a mesh did not close
+# CLAUDE IN THE OPEN WINDOW: the channel the program Claude starts sends its calls over, and the same tools it would
+# run on a document of its own
+qymcad-bridge = { path = "../qymcad-bridge" }
+qymcad-tools = { path = "../qymcad-tools" }
 bytemuck = { version = "1", features = ["derive"] }
 rfd = "0.17"
 # holding the file chooser's answer on a worker thread - the future is built on the frame thread, and

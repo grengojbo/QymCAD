@@ -31,6 +31,10 @@ pub struct Wait {
     pub answer_within: Duration,
 }
 
+/// WHAT WAKES THE WINDOW when a call comes in. A window asks for calls once a frame, and a window nobody touches draws
+/// no frames: without a wake a call would wait for the next movement of the mouse.
+pub type Wake = std::sync::Arc<dyn Fn() + Send + Sync>;
+
 /// WHY THE WINDOW'S END DID NOT OPEN.
 #[derive(Debug)]
 pub enum Opened {

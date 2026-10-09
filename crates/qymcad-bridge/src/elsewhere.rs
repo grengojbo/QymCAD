@@ -6,7 +6,7 @@ use std::time::Duration;
 
 use serde_json::Value;
 
-use crate::{LinkError, Opened, Wait};
+use crate::{LinkError, Opened, Wait, Wake};
 
 /// One call for the window; none ever comes here.
 pub struct Call {
@@ -21,7 +21,7 @@ impl Call {
 pub struct Listener;
 
 impl Listener {
-    pub fn open(_path: &Path, _wait: Wait) -> Result<Listener, Opened> {
+    pub fn open(_path: &Path, _wait: Wait, _wake: Wake) -> Result<Listener, Opened> {
         Err(Opened::Unsupported)
     }
 

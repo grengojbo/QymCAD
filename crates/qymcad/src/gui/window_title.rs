@@ -10,6 +10,17 @@
 //! Composed by a pure function on purpose - the shape of the title is worth checking, and checking it
 //! must not need a window.
 
+/// SAY `title` TO THE WINDOW when it differs from the one `shown`: which file is open, and whether it holds unsaved work.
+///
+/// Sent only when it has changed. A viewport command every frame is a message to the window manager sixty times a
+/// second for a string that moves a few times an hour, and on some of them it makes the title flicker.
+pub(crate) fn say(title: String, shown: &mut String, ctx: &egui::Context) {
+    if title != *shown {
+        ctx.send_viewport_cmd(egui::ViewportCommand::Title(title.clone()));
+        *shown = title;
+    }
+}
+
 /// The title for a document at `path`, changed or not.
 ///
 /// The name is the file's STEM: `Filter-v2`, not `Filter-v2.qcad`. The extension is the program's own
@@ -63,6 +74,11 @@ mod tests {
         let mut app = crate::gui::screen_keys::tests::populated();
         let ctx = egui::Context::default();
         crate::gui::install_fonts(&ctx);
+        // what the frame does: the dirty flag, the title, and saying it when it changed
+        let keep = |app: &mut crate::gui::App, c: &egui::Context| {
+            let dirty = qymcad_ui_state::is_dirty(&mut app.rebuild_ctx());
+            super::say(super::window_title(app.disk.project_path.as_deref(), dirty), &mut app.disk.title_shown, c);
+        };
         let raw = || egui::RawInput { screen_rect: Some(egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(800.0, 600.0))), ..Default::default() };
         let titles = |out: &egui::FullOutput| -> Vec<String> {
             out.viewport_output
@@ -77,15 +93,15 @@ mod tests {
 
         // The fixture holds a document with work in it that has never been saved, so the mark belongs there.
         crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, "/tmp/Bracket.qcad".into());
-        let first = ctx.run_ui(raw(), |c| app.keep_the_title_current(c.ctx()));
+        let first = ctx.run_ui(raw(), |c| keep(&mut app, c.ctx()));
         assert_eq!(titles(&first), vec!["QymCAD — Bracket *".to_string()], "the window was not told the new title");
 
-        let again = ctx.run_ui(raw(), |c| app.keep_the_title_current(c.ctx()));
+        let again = ctx.run_ui(raw(), |c| keep(&mut app, c.ctx()));
         assert!(titles(&again).is_empty(), "the title was sent a second time although nothing changed");
 
         // AND THE MARK GOES AWAY WHEN THE WORK IS SAVED. A mark that only ever appears is not a signal.
         app.disk.edits.saved_key = qymcad_ui_state::edit_key(&app.draw_ctx());
-        let saved = ctx.run_ui(raw(), |c| app.keep_the_title_current(c.ctx()));
+        let saved = ctx.run_ui(raw(), |c| keep(&mut app, c.ctx()));
         assert_eq!(titles(&saved), vec!["QymCAD — Bracket".to_string()], "the title still claims unsaved work");
     }
 

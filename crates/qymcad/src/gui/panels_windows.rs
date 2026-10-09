@@ -1107,6 +1107,16 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 });
                 ui.label(egui::RichText::new(crate::i18n::tr("settings-updates-hint")).weak());
             }
+            // CLAUDE IN THIS WINDOW. Walked over `ClaudeLink::ALL`, like the check for updates above.
+            if show("settings-claude") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-claude"));
+                    for c in qymcad_ui_state::ClaudeLink::ALL {
+                        ui.selectable_value(&mut wc.set.claude_link, c, crate::i18n::tr(c.key()));
+                    }
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-claude-hint")).weak());
+            }
             if show("settings-profile") {
                 ui.add_space(4.0);
                 ui.label(egui::RichText::new(crate::i18n::tr("settings-profile")).strong());

@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use qymcad_bridge::{Link, LinkError, Listener, Opened, Wait};
+use qymcad_bridge::{Link, LinkError, Listener, Opened, Wait, Wake};
 use serde_json::{json, Value};
 
 /// A socket path of its own for each check and each run, short enough for the system's limit - in the system's
@@ -20,10 +20,15 @@ fn place(name: &str) -> PathBuf {
     dir.join("mcp.sock")
 }
 
+/// A wake nobody hears: the checks ask for calls in a loop of their own.
+fn quiet() -> Wake {
+    std::sync::Arc::new(|| {})
+}
+
 const SOON: Wait = Wait { answer_within: Duration::from_secs(10) };
 
 fn open(path: &std::path::Path, wait: Wait) -> Listener {
-    match Listener::open(path, wait) {
+    match Listener::open(path, wait, quiet()) {
         Ok(l) => l,
         Err(e) => panic!("the window's end did not open at {}: {e:?}", path.display()),
     }
@@ -82,7 +87,7 @@ fn the_socket_is_its_owners_alone() {
 fn a_second_window_is_refused_and_a_left_file_is_cleared() {
     let path = place("twice");
     let first = open(&path, SOON);
-    match Listener::open(&path, SOON) {
+    match Listener::open(&path, SOON, quiet()) {
         Err(Opened::Taken) => {}
         Err(e) => panic!("a second window was refused for the wrong reason: {e:?}"),
         Ok(_) => panic!("a second window took the socket of a living one"),
@@ -179,5 +184,32 @@ fn a_line_that_is_no_call_is_answered_and_the_link_goes_on() {
     assert_eq!(reply["id"], 7, "{reply}");
     assert_eq!(reply["result"]["tool"], "box", "{reply}");
     let _ = link(&path).call("stop", Value::Null);
+    window.join().expect("the window's thread ends");
+}
+
+/// THE WINDOW IS WOKEN FOR EVERY CALL: a window nobody touches draws no frames and asks for nothing, so a call that
+/// did not wake it would wait for the next movement of the mouse.
+#[test]
+fn every_call_wakes_the_window() {
+    use std::sync::atomic::{AtomicUsize, Ordering};
+    let path = place("wake");
+    let woken = std::sync::Arc::new(AtomicUsize::new(0));
+    let seen = woken.clone();
+    let listener = match Listener::open(
+        &path,
+        SOON,
+        std::sync::Arc::new(move || {
+            seen.fetch_add(1, Ordering::SeqCst);
+        }),
+    ) {
+        Ok(l) => l,
+        Err(e) => panic!("{e:?}"),
+    };
+    let window = answering(listener);
+    let mut l = link(&path);
+    let _ = l.call("box", json!({})).expect("answered");
+    let _ = l.call("cylinder", json!({})).expect("answered");
+    assert_eq!(woken.load(Ordering::SeqCst), 2, "the window was not woken once for each call");
+    let _ = l.call("stop", Value::Null);
     window.join().expect("the window's thread ends");
 }

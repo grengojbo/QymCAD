@@ -1916,7 +1916,9 @@ impl App {
         // this rate. Taken before the prologue can return - a report is wanted most when the start-up
         // load is what went wrong.
         crate::diagnostics::note_viewport(ctx.viewport_rect().size(), ctx.pixels_per_point());
-        self.keep_the_title_current(ctx);
+        // the dirty flag first: taken inside the argument list it would borrow `self` twice in one expression
+        let dirty = qymcad_ui_state::is_dirty(&mut self.rebuild_ctx());
+        crate::gui::window_title::say(crate::gui::window_title::window_title(self.disk.project_path.as_deref(), dirty), &mut self.disk.title_shown, ctx);
         // THE FRAME PROLOGUE: until it says "carry on", there is nothing to draw (the start-up load is running).
         if !self.frame_prologue(ctx) {
             return;
@@ -1964,6 +1966,7 @@ impl App {
             self.handle_tool_hotkeys(ctx); // the tool shortcuts (L/R/C/A/P/G/D/S, E)
         }
         self.maybe_autosave(false); // a silent autosave every 3 minutes while there are unsaved edits
+        crate::gui::bridge_ui::pump(&mut self.part_ctx(), ctx); // a call from Claude, when the setting lets one in
         self.help_window(ctx); // the help window
         {
             let mut asks = Vec::new();
@@ -2086,22 +2089,6 @@ impl App {
     }
 
     // ============ The splash screen and the progress of background work ============
-
-    /// THE TITLE FOLLOWS THE DOCUMENT: which file is open, and whether it holds unsaved work.
-    ///
-    /// Sent only when it has changed. A viewport command every frame is a message to the window manager
-    /// sixty times a second for a string that moves a few times an hour, and on some of them it makes the
-    /// title flicker.
-    fn keep_the_title_current(&mut self, ctx: &egui::Context) {
-        // THE DIRTY FLAG FIRST: it is a `&mut self` call now (the rebuild moved behind a context), and
-        // taking it inside the argument list would borrow `self` twice in one expression.
-        let dirty = qymcad_ui_state::is_dirty(&mut self.rebuild_ctx());
-        let want = crate::gui::window_title::window_title(self.disk.project_path.as_deref(), dirty);
-        if want != self.disk.title_shown {
-            ctx.send_viewport_cmd(egui::ViewportCommand::Title(want.clone()));
-            self.disk.title_shown = want;
-        }
-    }
 
     /// Recompute the WHOLE timeline from scratch (the Edit -> Rebuild everything item). Every node is
     /// marked dirty and the work goes into a background regeneration — the screen does not collapse, an
@@ -4037,6 +4024,8 @@ mod a_mesh_edge_stays_sharp;
 
 /// Whether a newer version exists lives in `gui/update_ui.rs` - state and all, off the application.
 mod update_ui;
+/// Claude in the open window lives in `gui/bridge_ui.rs` - state and all, off the application.
+mod bridge_ui;
 mod update_notice;
 mod dim_to_axis;
 mod deaf_while_the_system_asks;

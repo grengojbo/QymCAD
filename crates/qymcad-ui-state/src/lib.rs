@@ -1527,6 +1527,9 @@ pub struct Settings {
     /// "at every start", since nothing else in the program remembers that a start happened.
     #[serde(default)]
     pub update_last_checked: u64,
+    /// Whether Claude works in this window (see `ClaudeLink`).
+    #[serde(default = "default_claude_link")]
+    pub claude_link: ClaudeLink,
     /// ASK FOR THE UNITS AND THE SCALE ON EVERY IMPORT. Off, the window comes up only for a file without units and
     /// for a model under 1 mm or over 10 m.
     #[serde(default)]
@@ -1551,6 +1554,10 @@ fn default_zoom_at() -> ZoomAt {
 
 fn default_update_check() -> UpdateCheck {
     UpdateCheck::Daily
+}
+
+fn default_claude_link() -> ClaudeLink {
+    ClaudeLink::Off
 }
 
 fn default_zoom_editing() -> ZoomWhileEditing {
@@ -1630,6 +1637,7 @@ impl Default for Settings {
             menu_place: default_menu_place(),
             update_check: default_update_check(),
             update_last_checked: 0,
+            claude_link: default_claude_link(),
             zoom_editing: default_zoom_editing(),
             orbit_about: default_orbit_about(),
             import_ask_always: false,
@@ -6119,6 +6127,28 @@ impl OrbitAbout {
         match self {
             OrbitAbout::ViewCentre => "settings-orbit-about-centre-hint",
             OrbitAbout::Pointer => "settings-orbit-about-pointer-hint",
+        }
+    }
+}
+
+/// WHETHER CLAUDE WORKS IN THIS WINDOW: the program Claude Code or Claude Desktop starts sends its calls to the document
+/// open here, each a step of undo, instead of keeping a document of its own.
+///
+/// OFF UNTIL A PERSON TURNS IT ON. A window that takes calls changes the document a person is looking at; that is
+/// asked for, not found switched on.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum ClaudeLink {
+    Off,
+    On,
+}
+
+impl ClaudeLink {
+    pub const ALL: [ClaudeLink; 2] = [ClaudeLink::Off, ClaudeLink::On];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            ClaudeLink::Off => "settings-claude-off",
+            ClaudeLink::On => "settings-claude-on",
         }
     }
 }

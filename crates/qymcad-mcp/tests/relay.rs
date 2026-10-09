@@ -10,7 +10,7 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
 
-use qymcad_bridge::{Listener, Wait};
+use qymcad_bridge::{Listener, Wait, Wake};
 use qymcad_mcp::engine::{parse, Engine, Mode, Start, Window};
 use qymcad_mcp::server::{answer, answer_window};
 use qymcad_mcp::tool::Ctx;
@@ -24,6 +24,11 @@ fn place(name: &str) -> PathBuf {
     dir.join("mcp.sock")
 }
 
+/// A wake nobody hears: the stand-in window asks for calls in a loop of its own.
+fn quiet() -> Wake {
+    std::sync::Arc::new(|| {})
+}
+
 /// THE STAND-IN WINDOW: a document of its own, answering every call the way the window does, until stopped; then it
 /// hands its document back for reading. `hold` keeps the first call that many milliseconds before answering it.
 struct StandIn {
@@ -32,7 +37,7 @@ struct StandIn {
 }
 
 fn stand_in(path: &Path, hold: u64) -> StandIn {
-    let listener = Listener::open(path, Wait { answer_within: Duration::from_secs(10) }).unwrap_or_else(|e| panic!("the stand-in window did not open: {e:?}"));
+    let listener = Listener::open(path, Wait { answer_within: Duration::from_secs(10) }, quiet()).unwrap_or_else(|e| panic!("the stand-in window did not open: {e:?}"));
     let stop = Arc::new(AtomicBool::new(false));
     let seen = stop.clone();
     let thread = std::thread::spawn(move || {
@@ -136,7 +141,7 @@ fn a_window_lost_is_not_replaced() {
 #[test]
 fn a_busy_window_is_told_and_nothing_happens() {
     let path = place("busy");
-    let listener = Listener::open(&path, Wait { answer_within: Duration::from_millis(200) }).unwrap_or_else(|e| panic!("{e:?}"));
+    let listener = Listener::open(&path, Wait { answer_within: Duration::from_millis(200) }, quiet()).unwrap_or_else(|e| panic!("{e:?}"));
     let mut w = live(&path);
     let reply = call(&mut w, "box", json!({ "x": 10, "y": 10, "z": 10 }));
     assert_eq!(reply["error"]["code"], "window-busy", "{reply}");
