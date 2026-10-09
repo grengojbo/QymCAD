@@ -27,6 +27,8 @@ pub enum View {
     Back,
     Left,
     Right,
+    /// As the person sees it in the open window: their camera, their projection.
+    Window,
 }
 
 impl View {
@@ -40,6 +42,8 @@ impl View {
             View::Back => [0.0, 1.0, 0.0],
             View::Left => [-1.0, 0.0, 0.0],
             View::Right => [1.0, 0.0, 0.0],
+            // the window's camera stands where the person put it; the direction is never asked of it
+            View::Window => [1.0, -1.0, 1.0],
         }
     }
 }
@@ -51,12 +55,21 @@ pub struct Size {
     pub height: u32,
 }
 
-/// What to draw: from which side, how large, which bodies to light as selected, and whether the edges are drawn.
+/// What to draw: from which side, how large, which bodies to light as selected, whether the edges are drawn, and the
+/// window's eye when there is a window to look through.
 pub struct Look {
     pub view: View,
     pub size: Size,
     pub lit: Lit,
     pub edges: Edges,
+    pub window: Option<Eye>,
+}
+
+/// THE EYE OF THE OPEN WINDOW: where its camera stands, and how it projects.
+#[derive(Clone, Copy)]
+pub struct Eye {
+    pub cam: Cam3,
+    pub projection: Projection,
 }
 
 /// Whether the sharp edges of the bodies are drawn over them.
@@ -211,17 +224,27 @@ fn selection(project: &Project, lit: Lit) -> Sel {
 
 /// THE PICTURE as RGBA, or `None` when there is nothing to draw it at (a size of nothing). `lines` are drawn over the
 /// bodies when the look asks for edges.
+///
+/// `View::Window` draws through the window's eye as it stands - its camera is not fitted, the picture shows what the
+/// person sees - and is `None` with no window to look through.
 pub fn draw(project: &Project, look: &Look, lines: &[Line]) -> Option<egui::ColorImage> {
-    let rest = AtRest {
-        set: Settings { projection: Projection::Ortho, ..Settings::default() },
-        scheme: qymcad_ui_state::SchemeUi { pal: qymcad_scheme::light(), ..Default::default() },
-        ..Default::default()
+    let projection = match (look.view, look.window) {
+        (View::Window, Some(eye)) => eye.projection,
+        (View::Window, None) => return None,
+        _ => Projection::Ortho,
     };
+    let rest = AtRest { set: Settings { projection, ..Settings::default() }, scheme: qymcad_ui_state::SchemeUi { pal: qymcad_scheme::light(), ..Default::default() }, ..Default::default() };
     let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(look.size.width as f32, look.size.height as f32));
-    let qymcad_render::Angles { yaw, pitch } = qymcad_render::dir_to_angles(look.view.from());
-    let mut cam = Cam3 { yaw, pitch, ..Cam3::default() };
-    qymcad_render::fit3d(&mut cam, project, rect);
-    frame_tightly(&mut cam, project, rect);
+    let cam = match (look.view, look.window) {
+        (View::Window, Some(eye)) => eye.cam,
+        _ => {
+            let qymcad_render::Angles { yaw, pitch } = qymcad_render::dir_to_angles(look.view.from());
+            let mut cam = Cam3 { yaw, pitch, ..Cam3::default() };
+            qymcad_render::fit3d(&mut cam, project, rect);
+            frame_tightly(&mut cam, project, rect);
+            cam
+        }
+    };
     let painting = rest.painting(project, cam, selection(project, look.lit));
     let basis = cam.basis();
     let mut raster = qymcad_render::rasterize_3d_with_depth(&painting, rect, &basis, 1.0, 1.0)?;
@@ -325,9 +348,19 @@ fn over(top: Color32, ground: Color32) -> Color32 {
 }
 
 /// THE PICTURE of the document as PNG bytes, its edges taken from the bodies' shapes.
-pub fn png(doc: &qymcad_doc::DocEngine, look: &Look) -> Option<Vec<u8>> {
+pub fn png(doc: &qymcad_doc::DocEngine, look: &Look) -> Option<Shot> {
     let lines = if look.edges == Edges::Drawn { lines(doc) } else { Vec::new() };
-    qymcad_render::color_image_to_png(&draw(doc.project(), look, &lines)?)
+    let image = draw(doc.project(), look, &lines)?;
+    let ground = qymcad_scheme::light().viewport_bg();
+    let filled = image.pixels.iter().filter(|p| **p != ground).count() as f64 / image.pixels.len().max(1) as f64;
+    Some(Shot { png: qymcad_render::color_image_to_png(&image)?, filled })
+}
+
+/// A PICTURE WRITTEN OUT, and the share of it the model covers: the pixels that are not the ground. A picture with
+/// nothing in it reads as a picture all the same; the share says it is empty.
+pub struct Shot {
+    pub png: Vec<u8>,
+    pub filled: f64,
 }
 
 /// Bytes in base64 (RFC 4648, with padding): the form the protocol carries a picture in.

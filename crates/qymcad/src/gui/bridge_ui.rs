@@ -17,7 +17,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use qymcad_bridge::{Call, Listener, Wait};
-use qymcad_tools::tool::{After, Ctx, Refusal, Seen, Stage};
+use qymcad_tools::picture::Eye;
+use qymcad_tools::tool::{After, Ctx, InWindow, Refusal, Seen, Stage};
 use qymcad_tools::tools::selection::{End as Tip, Picked};
 use qymcad_ui_state::{ClaudeLink, PartCtx};
 use serde_json::Value;
@@ -152,8 +153,8 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
         return qymcad_tools::tool::refused_reply(tool, &refusal, After::Untouched);
     }
     // the step is named for the tool now and for what it did once that is known
-    // what the person has selected is read by its indices, before the document is lent away
-    let seen = Seen::Window(picked(pc));
+    // what the person has selected is read by its indices, before the document is lent away; and the eye they look through
+    let seen = Seen::Window(InWindow { picked: picked(pc), eye: Eye { cam: *pc.cam, projection: pc.set.projection } });
     qymcad_ui_state::begin_edit(pc.edits, pc.project, qymcad_i18n::tr1("bridge-step", "what", tool));
     let lent = qymcad_doc::Lent {
         project: std::mem::take(pc.project),
@@ -567,5 +568,45 @@ mod tests {
         assert_eq!(item["use"]["face"]["ids"][0], item["key"], "the face is not handed on by its own key: {item}");
         assert_eq!(item["use"]["body"]["body"], item["body"], "{item}");
         assert!(item["normal"].is_array() && item["kind"].is_string(), "the face is not told by its kind and place: {item}");
+    }
+
+    /// THE PICTURE IN THE WINDOW IS WHAT THE PERSON SEES: drawn through their camera, not fitted to the model. Aimed
+    /// at the plate, the plate covers much of it; turned away to empty space, nothing is in sight - and the answer
+    /// says so. A side named explicitly is still drawn from that side, fitted; and `render: true` on a call shows the
+    /// person's view too.
+    #[test]
+    fn the_picture_is_what_the_person_sees() {
+        let mut app = crate::gui::screen_keys::tests::populated();
+        app.set.claude_link = ClaudeLink::On;
+        let path = place("look");
+        super::listen_at(path.clone());
+        let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).expect("the plate");
+        let body = node.kind.body().expect("the plate's body");
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
+        let middle = app
+            .project
+            .regen_faces
+            .get(&body)
+            .and_then(|fs| fs.iter().max_by(|a, b| a.area.total_cmp(&b.area)))
+            .map(|f| qymcad_core::feature::apply12(&wt, [f.centroid.x, f.centroid.y, f.centroid.z]))
+            .expect("a face");
+
+        let mut hand = Hand::new(&mut app);
+        hand.frame(Vec::new());
+        hand.look_at(middle, 30.0);
+        hand.frame(Vec::new());
+        let aimed = served(&mut hand, claude_says(&path, vec![("render", json!({}))]));
+        let aimed = reply_of(&aimed[0]);
+        assert_eq!(aimed["view"], "window", "the picture in the window is not drawn through the person's eye: {aimed}");
+        let near = aimed["filled"].as_f64().expect("the share the model covers");
+        assert!(near > 0.2, "the camera aimed at the plate shows it covering only {near}");
+
+        hand.look_at([middle[0] + 10_000.0, middle[1], middle[2]], 4.0);
+        hand.frame(Vec::new());
+        let away = served(&mut hand, claude_says(&path, vec![("render", json!({})), ("render", json!({ "view": "top" })), ("cylinder", json!({ "radius": 2, "height": 2, "render": true }))]));
+        assert_eq!(reply_of(&away[0])["filled"].as_f64(), Some(0.0), "the camera turned to empty space still shows the model: {}", reply_of(&away[0]));
+        let top = reply_of(&away[1]);
+        assert!(top["view"] == "top" && top["filled"].as_f64().is_some_and(|f| f > 0.1), "a side named is not drawn from that side, fitted: {top}");
+        assert_eq!(reply_of(&away[2])["picture"]["view"], "window", "render: true in the window does not show the person's view: {}", reply_of(&away[2]));
     }
 }

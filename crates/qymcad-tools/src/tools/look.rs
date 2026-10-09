@@ -5,7 +5,7 @@ use serde_json::{json, Value};
 
 use crate::args::BodyRef;
 use crate::picture::{self, Edges, Lit, Look, Size, View};
-use crate::tool::{self, Answer, Ctx, Refusal, Stage, Tool, PICTURE};
+use crate::tool::{self, Answer, Ctx, Refusal, Seen, Stage, Tool, PICTURE};
 
 /// The bounds of a side of a picture, in pixels: under 64 nothing can be made out, over 2048 the picture outweighs
 /// what it shows.
@@ -14,8 +14,7 @@ const SIDE: std::ops::RangeInclusive<u32> = 64..=2048;
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RenderArgs {
-    #[serde(default)]
-    view: View,
+    view: Option<View>,
     width: Option<u32>,
     height: Option<u32>,
     highlight: Option<BodyRef>,
@@ -33,22 +32,48 @@ pub fn picture_answer(ctx: &Ctx, look: &Look) -> Result<Answer, Refusal> {
     if project.bodies.is_empty() {
         return Err(Refusal::new("no-body", "The document has no body to draw.", Stage::Validate).with_hint("Lay a body first: a primitive, or a sketch extruded."));
     }
-    let png = picture::png(&ctx.doc, look).ok_or_else(|| Refusal::new("bad-size", "The picture could not be drawn at that size.", Stage::Validate))?;
+    if look.view == View::Window && look.window.is_none() {
+        return Err(window_only());
+    }
+    let shot = picture::png(&ctx.doc, look).ok_or_else(|| Refusal::new("bad-size", "The picture could not be drawn at that size.", Stage::Validate))?;
     let mut a = Answer::new();
     a.insert("view".into(), json!(look.view));
     a.insert("size".into(), json!({ "width": look.size.width, "height": look.size.height }));
-    a.insert(PICTURE.into(), json!(picture::base64(&png)));
+    a.insert("filled".into(), json!((shot.filled * 1000.0).round() / 1000.0));
+    a.insert(PICTURE.into(), json!(picture::base64(&shot.png)));
     Ok(a)
+}
+
+fn window_only() -> Refusal {
+    Refusal::new("no-window", "The view of the window is drawn only in the open QymCAD window, and this server works on a document of its own.", Stage::Window)
+        .with_hint("Name a side instead: iso, top, bottom, front, back, left, right.")
+}
+
+/// THE SIDE A PICTURE IS DRAWN FROM when none is named: in the open window, as the person sees it; with no window, the
+/// window's opening view.
+pub fn default_view(ctx: &Ctx) -> View {
+    match ctx.seen {
+        Seen::Window(_) => View::Window,
+        Seen::NoWindow => View::Iso,
+    }
+}
+
+/// The window's eye, when there is a window.
+pub fn eye(ctx: &Ctx) -> Option<picture::Eye> {
+    match &ctx.seen {
+        Seen::Window(w) => Some(w.eye),
+        Seen::NoWindow => None,
+    }
 }
 
 pub const RENDER: Tool = Tool {
     name: "render",
-    description: "Draw the document as a picture (PNG) to look at the result: view iso (front-right-above, the default), top, bottom, front (-Y), back, left, right; width and height in pixels (800 x 600 by default, 64..2048); highlight lights a body ({\"body\": key} or {\"part\": key}) as the window lights a selection; edges (true by default) draws the sharp edges of the bodies, hidden ones left out. The camera is fitted to the whole model. Sketch lines are not drawn.",
+    description: "Draw the document as a picture (PNG) to look at the result: view iso (front-right-above), top, bottom, front (-Y), back, left, right, or window - as the person sees it in the open QymCAD window, their camera as it stands (the default there; iso is the default with no window); width and height in pixels (800 x 600 by default, 64..2048); highlight lights a body ({\"body\": key} or {\"part\": key}) as the window lights a selection; edges (true by default) draws the sharp edges of the bodies, hidden ones left out. A side is fitted to the whole model. filled tells the share of the picture the model covers - 0 means nothing is in sight. Sketch lines are not drawn.",
     schema: || {
         json!({
             "type": "object",
             "properties": {
-                "view": { "type": "string", "enum": ["iso", "top", "bottom", "front", "back", "left", "right"], "default": "iso" },
+                "view": { "type": "string", "enum": ["iso", "top", "bottom", "front", "back", "left", "right", "window"] },
                 "width": { "type": "integer", "minimum": SIDE.start(), "maximum": SIDE.end(), "default": 800 },
                 "height": { "type": "integer", "minimum": SIDE.start(), "maximum": SIDE.end(), "default": 600 },
                 "highlight": crate::args::body_schema(),
@@ -77,6 +102,7 @@ pub const RENDER: Tool = Tool {
             Some(b) => Lit::Body(b.resolve(ctx.doc.project())?),
         };
         let edges = if a.edges { Edges::Drawn } else { Edges::Left };
-        picture_answer(ctx, &Look { view: a.view, size, lit, edges })
+        let view = a.view.unwrap_or_else(|| default_view(ctx));
+        picture_answer(ctx, &Look { view, size, lit, edges, window: eye(ctx) })
     },
 };

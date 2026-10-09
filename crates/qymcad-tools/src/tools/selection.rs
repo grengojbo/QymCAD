@@ -140,7 +140,7 @@ pub const GET_SELECTION: Tool = Tool {
                 return Err(Refusal::new("no-window", "What is selected is known only in the open QymCAD window, and this server works on a document of its own.", Stage::Window)
                     .with_hint("Ask the person to switch Claude in this window on (Settings -> General) and to restart the QymCAD server; or ask them to name what they mean."));
             }
-            Seen::Window(picked) => picked.clone(),
+            Seen::Window(w) => w.picked.clone(),
         };
         let listed: Vec<Value> = picked.iter().map(|p| describe(ctx, p)).collect();
         let mut out = Answer::new();

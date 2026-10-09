@@ -92,7 +92,7 @@ fn filled(img: &egui::ColorImage) -> Filled {
 }
 
 fn look(view: View, lit: Lit) -> Look {
-    Look { view, size: Size { width: 600, height: 600 }, lit, edges: Edges::Left }
+    Look { view, size: Size { width: 600, height: 600 }, lit, edges: Edges::Left, window: None }
 }
 
 #[test]
@@ -194,4 +194,19 @@ fn the_edges_behind_the_body_are_not_drawn() {
     let l = 270.0;
     let edges = drawn / l;
     assert!((7.6..=8.8).contains(&edges), "the picture draws {edges:.2} L of edges, not the 8.2 L of the nine in sight");
+}
+
+/// WITH NO WINDOW THE PICTURE IS DRAWN FROM A SIDE: iso when none is named, and the window's view refused with the way
+/// to a side instead. The share of the picture the model covers is told - a plate fitted to the frame covers much of
+/// it.
+#[test]
+fn with_no_window_a_side_is_drawn_and_the_window_view_refused() {
+    let mut ctx = plate();
+    let drawn = call(&mut ctx, "render", json!({}));
+    assert_eq!(drawn["ok"], json!(true), "{drawn}");
+    assert_eq!(drawn["view"], "iso", "with no window the picture is not drawn from iso: {drawn}");
+    let filled = drawn["filled"].as_f64().unwrap_or_else(|| panic!("the share the model covers is not told: {drawn}"));
+    assert!(filled > 0.1 && filled < 1.0, "a plate fitted to the frame covers {filled} of it");
+    let refused = call(&mut ctx, "render", json!({ "view": "window" }));
+    assert_eq!(refused["error"]["code"], "no-window", "{refused}");
 }

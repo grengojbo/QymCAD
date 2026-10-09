@@ -19,12 +19,19 @@ pub struct Ctx {
 }
 
 /// WHAT A PERSON HAS SELECTED, as far as the tools can know.
-#[derive(Clone, Debug, PartialEq)]
+#[derive(Clone)]
 pub enum Seen {
     /// A document of the program's own: nobody is looking at it.
     NoWindow,
-    /// The open window's document, and what is selected in it - possibly nothing.
-    Window(Vec<crate::tools::selection::Picked>),
+    /// The open window's document: what is selected in it - possibly nothing - and the eye it is seen through.
+    Window(InWindow),
+}
+
+/// WHAT THE OPEN WINDOW TELLS THE TOOLS: what is selected, and the eye the person looks through.
+#[derive(Clone)]
+pub struct InWindow {
+    pub picked: Vec<crate::tools::selection::Picked>,
+    pub eye: crate::picture::Eye,
 }
 
 impl Ctx {
@@ -223,8 +230,13 @@ pub fn call(ctx: &mut Ctx, tool: &Tool, mut arguments: Value) -> Value {
         Ok(Ok(mut answer)) => {
             if picture_too {
                 // a document with nothing to draw answers without a picture: the call itself went through
-                let look =
-                    crate::picture::Look { view: Default::default(), size: crate::picture::Size { width: 800, height: 600 }, lit: crate::picture::Lit::Nothing, edges: crate::picture::Edges::Drawn };
+                let look = crate::picture::Look {
+                    view: crate::tools::look::default_view(ctx),
+                    size: crate::picture::Size { width: 800, height: 600 },
+                    lit: crate::picture::Lit::Nothing,
+                    edges: crate::picture::Edges::Drawn,
+                    window: crate::tools::look::eye(ctx),
+                };
                 if let Ok(picture) = crate::tools::look::picture_answer(ctx, &look) {
                     answer.insert("picture".into(), Value::Object(picture));
                 }
