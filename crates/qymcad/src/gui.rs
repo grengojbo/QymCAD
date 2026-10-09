@@ -1881,6 +1881,12 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.draw_frame(ui);
     }
+
+    /// A KEY CHOSEN IN THE MENU BAR OF THE SYSTEM arrives as the key itself, before the frame reads its input.
+    #[cfg(target_os = "macos")]
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw_input: &mut egui::RawInput) {
+        crate::gui::native_menu::feed_keys(ctx, raw_input);
+    }
 }
 
 impl App {
