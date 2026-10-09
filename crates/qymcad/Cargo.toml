@@ -64,6 +64,12 @@ naga = { version = "29", features = ["wgsl-in"] }
 # above the workspace's 1.88. Without default features: they are the GTK menus of Linux, not used here.
 [target.'cfg(target_os = "macos")'.dependencies]
 muda = { version = "=0.19.3", default-features = false }
+# THE ICONS OF THE SYSTEM MENU BAR (SF Symbols, macOS 27 and later): muda sets a picture, not a symbol of the
+# system, and leaves the item to the menu's own choice of hiding it, so the symbols are put on the menu items
+# directly. The versions muda itself already brings.
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSMenu", "NSMenuItem"] }
+objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
 
 # The icon is embedded into the .exe only when building FOR Windows (host = windows under CI). On Linux
 # and macOS the dependency is not pulled in at all, and build.rs cuts its windows block out through

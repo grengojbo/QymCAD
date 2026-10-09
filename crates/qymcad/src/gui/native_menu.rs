@@ -154,6 +154,64 @@ pub(crate) fn shown_bar(model: &[TopMenu], focus: Focus, place: qymcad_ui_state:
     bar
 }
 
+/// THE SYMBOL OF THE SYSTEM AN ITEM IS SHOWN WITH (SF Symbols), the same thing the icon of the window's menu says.
+/// A recent file and an export format are rows of a list and go without, as in the window.
+pub(crate) fn symbol_of(action: &MenuAction) -> Option<&'static str> {
+    use crate::gui::menu_model::SchemeLook;
+    match action {
+        MenuAction::New => Some("doc"),
+        MenuAction::NewFromTemplate => Some("doc.text"),
+        MenuAction::SaveAsTemplate => Some("shippingbox"),
+        MenuAction::Open => Some("folder"),
+        MenuAction::OpenRecent(_) | MenuAction::Export(_) => None,
+        MenuAction::ClearRecent => Some("trash"),
+        MenuAction::Save => Some("square.and.arrow.down"),
+        MenuAction::DocProps | MenuAction::About => Some("info.circle"),
+        MenuAction::SaveAs => Some("square.and.arrow.down.on.square"),
+        MenuAction::Import => Some("tray.and.arrow.down"),
+        MenuAction::Quit => Some("power"),
+        MenuAction::Undo => Some("arrow.uturn.backward"),
+        MenuAction::Redo => Some("arrow.uturn.forward"),
+        MenuAction::Copy => Some("doc.on.doc"),
+        MenuAction::Cut => Some("scissors"),
+        MenuAction::Paste => Some("doc.on.clipboard"),
+        MenuAction::Rebuild => Some("arrow.triangle.2.circlepath"),
+        MenuAction::Orbit3d => Some("cube"),
+        MenuAction::FitView => Some("arrow.up.left.and.arrow.down.right"),
+        MenuAction::Scheme(s) => Some(match s.look {
+            SchemeLook::Light => "sun.max",
+            SchemeLook::Dark => "moon",
+            SchemeLook::Own => "paintbrush",
+        }),
+        MenuAction::Settings => Some("gearshape"),
+        MenuAction::PartsLibrary => Some("books.vertical"),
+        MenuAction::Start => Some("house"),
+        MenuAction::Help => Some("book"),
+        MenuAction::Hotkeys => Some("keyboard"),
+        MenuAction::CheckUpdates => Some("arrow.down.circle"),
+        MenuAction::ConnectClaude => Some("powerplug"),
+        MenuAction::Report => Some("ladybug"),
+    }
+}
+
+/// The symbol of a submenu, as its icon in the window's menu.
+pub(crate) fn sub_symbol(kind: SubKind) -> &'static str {
+    match kind {
+        SubKind::Recent => "clock.arrow.circlepath",
+        SubKind::Export => "square.and.arrow.up",
+    }
+}
+
+/// The symbol of one line of a menu, `None` for a line without one.
+pub(crate) fn line_symbol(node: &NativeNode) -> Option<&'static str> {
+    match node {
+        NativeNode::Item(item) | NativeNode::Check { item, .. } => symbol_of(&item.action),
+        NativeNode::Sub { kind, .. } => Some(sub_symbol(*kind)),
+        // the system's own items are drawn by the system, a line and a note have no picture
+        NativeNode::Separator | NativeNode::Note(_) | NativeNode::System { .. } => None,
+    }
+}
+
 /// THE NAME AN ITEM GOES BY IN THE SYSTEM BAR: the event of a chosen item carries it back. Unique within the
 /// bar, since two items never do the same thing.
 pub(crate) fn id_of(action: &MenuAction) -> String {
@@ -498,6 +556,9 @@ mod mac {
                 bar.menu = menu;
                 bar.tops = tops;
                 mark_roles(bar, &new);
+                for (at, top) in new.iter().enumerate() {
+                    put_symbols(&bar.menu, at, &top.nodes);
+                }
             }
             Refresh::Parts { rebuild, changes } => {
                 for role in &rebuild {
@@ -505,6 +566,7 @@ mod mac {
                     let sub = build_top(&new[at], &mut bar.items, &mut bar.sub_ids)?;
                     bar.menu.remove(&bar.tops[at])?;
                     bar.menu.insert(&sub, at)?;
+                    put_symbols(&bar.menu, at, &new[at].nodes);
                     bar.tops[at] = sub;
                 }
                 if !rebuild.is_empty() {
@@ -559,6 +621,58 @@ mod mac {
             Edit::Checked(checked) => {
                 if let Live::Check(m) = live {
                     m.set_checked(checked == Checked::Yes);
+                }
+            }
+        }
+    }
+
+    /// `NSMenuItemImageVisibilityVisible`. Measured on macOS 27.0.1 with a program linked against the 26.2 SDK:
+    /// 1 shows the image of an item, 0 (automatic, the default) and 2 hide it.
+    const IMAGE_VISIBLE: isize = 1;
+
+    /// WHETHER THIS SYSTEM DRAWS THE SYMBOLS AT ALL. From macOS 27 the menu hides an image a program sets on an item
+    /// unless the item asks for it with `preferredImageVisibility`; a symbol was measured to stay hidden without
+    /// it. A system without that property (macOS 26 and earlier) hides a symbol with no way to ask, so nothing is
+    /// set there.
+    fn symbols_shown(item: &objc2_app_kit::NSMenuItem) -> bool {
+        use objc2::runtime::NSObjectProtocol as _;
+        item.respondsToSelector(objc2::sel!(setPreferredImageVisibility:))
+    }
+
+    /// Put the symbols of `nodes` on the items of the menu at place `at` of the bar: one item per line, in the
+    /// same order, so a line and its item meet by their place.
+    ///
+    /// THE MENU ON SCREEN IS REACHED FROM THE BAR, not from the submenu: muda gives a submenu a fresh NSMenu for
+    /// every menu it is put into, and the one `Submenu::ns_menu` returns is its own, for a menu at the pointer,
+    /// never shown in the bar. Symbols set there were measured to reach no menu on screen.
+    fn put_symbols(bar: &muda::Menu, at: usize, nodes: &[NativeNode]) {
+        use muda::ContextMenu as _;
+        // SAFETY: `ns_menu` of a muda menu is the NSMenu it made and installed as the menu bar of the application,
+        // kept for as long as the menu lives; it is retained here for the length of the walk.
+        let Some(root) = (unsafe { objc2::rc::Retained::retain(bar.ns_menu().cast::<objc2_app_kit::NSMenu>()) }) else { return };
+        if at as isize >= root.numberOfItems() {
+            return;
+        }
+        let Some(shown) = root.itemAtIndex(at as isize).and_then(|item| item.submenu()) else { return };
+        put_symbols_into(&shown, nodes);
+    }
+
+    fn put_symbols_into(menu: &objc2_app_kit::NSMenu, nodes: &[NativeNode]) {
+        // past the end of a menu `itemAtIndex` raises an exception of the system, which ends the program: a menu
+        // shorter than its list gets symbols up to its own end
+        let length = usize::try_from(menu.numberOfItems()).unwrap_or(0);
+        for (at, node) in nodes.iter().enumerate().take(length) {
+            let Some(item) = menu.itemAtIndex(at as isize) else { return };
+            if let Some(name) = line_symbol(node).filter(|_| symbols_shown(&item)) {
+                let image = objc2_app_kit::NSImage::imageWithSystemSymbolName_accessibilityDescription(&objc2_foundation::NSString::from_str(name), None);
+                item.setImage(image.as_deref());
+                // SAFETY: the item answers to the selector (checked by `symbols_shown`), which takes one NSInteger
+                // and returns nothing.
+                let () = unsafe { objc2::msg_send![&*item, setPreferredImageVisibility: IMAGE_VISIBLE] };
+            }
+            if let NativeNode::Sub { nodes, .. } = node {
+                if let Some(inner) = item.submenu() {
+                    put_symbols_into(&inner, nodes);
                 }
             }
         }
@@ -1034,6 +1148,36 @@ mod tests {
         assert!(hand.press_word(&qymcad_i18n::tr("win-settings"), egui::pos2(0.0, 0.0)), "setup: the settings open from the menu");
         assert!(hand.shows(&qymcad_i18n::tr("settings-show-start")), "setup: the General section is open");
         assert!(!hand.shows(&qymcad_i18n::tr("settings-menu-place")), "a window without the system bar offers a choice it cannot make");
+    }
+
+    /// THE SYSTEM BAR SAYS WITH ITS SYMBOLS WHAT THE WINDOW'S MENU SAYS WITH ITS ICONS: every item and submenu
+    /// with an icon in the window has a symbol, and the rows of a list go without in both.
+    #[test]
+    fn every_item_with_an_icon_has_a_symbol() {
+        let bar = system_bar(&menu_model(&busy()), Focus::Document);
+        let all = actions(&bar);
+        for action in all.iter().chain([MenuAction::Export(crate::gui::export_menu::choices().next().expect("a format"))].iter()) {
+            let icon = crate::gui::panels_bars::action_glyph(action);
+            assert_eq!(symbol_of(action).is_some(), icon.is_some(), "{action:?}: an icon in the window and a symbol in the system bar must go together");
+        }
+        for kind in [SubKind::Recent, SubKind::Export] {
+            assert!(crate::gui::panels_bars::sub_glyph(kind).is_some() && !sub_symbol(kind).is_empty());
+        }
+        let file = top(&bar, NativeRole::Bar(MenuRole::File));
+        let subs = file.nodes.iter().filter(|n| matches!(n, NativeNode::Sub { .. })).count();
+        assert_eq!(file.nodes.iter().filter(|n| matches!(n, NativeNode::Sub { .. }) && line_symbol(n).is_some()).count(), subs, "every submenu of File has its symbol");
+        assert!(file.nodes.iter().filter(|n| **n == NativeNode::Separator).all(|n| line_symbol(n).is_none()), "a line has no symbol");
+    }
+
+    /// EVERY SYMBOL NAMED IS ONE THE SYSTEM HAS: a name it does not know draws nothing, silently.
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn every_symbol_is_known_to_the_system() {
+        let mut names: Vec<&str> = actions(&system_bar(&menu_model(&busy()), Focus::Document)).iter().filter_map(symbol_of).collect();
+        names.extend([sub_symbol(SubKind::Recent), sub_symbol(SubKind::Export), "sun.max", "moon", "paintbrush"]);
+        let unknown: Vec<&str> =
+            names.into_iter().filter(|name| objc2_app_kit::NSImage::imageWithSystemSymbolName_accessibilityDescription(&objc2_foundation::NSString::from_str(name), None).is_none()).collect();
+        assert!(unknown.is_empty(), "the system has no symbols named {unknown:?}");
     }
 
     /// THE KEYS OF THE MENU BECOME KEYS OF THE SYSTEM: every key the bar carries has a key code there.
