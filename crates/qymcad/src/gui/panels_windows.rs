@@ -1048,6 +1048,17 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             if show("settings-show-start") {
                 ui.checkbox(&mut wc.set.show_start_screen, crate::i18n::tr("settings-show-start")).on_hover_text(crate::i18n::tr("settings-show-start-hint"));
             }
+            // WHERE THE MENUS LIVE. Offered only where the menu bar of the system can hold them: anywhere else
+            // there is nothing to choose between.
+            if crate::gui::system_bar_offered() && show("settings-menu-place") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-menu-place"));
+                    for place in qymcad_ui_state::MenuPlace::ALL {
+                        ui.selectable_value(&mut wc.set.menu_place, place, crate::i18n::tr(place.key()));
+                    }
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-menu-place-hint")).weak().small());
+            }
             if show("settings-import-ask") {
                 ui.checkbox(&mut wc.set.import_ask_always, crate::i18n::tr("settings-import-ask")).on_hover_text(crate::i18n::tr("settings-import-ask-hint"));
             }

@@ -1509,6 +1509,9 @@ pub struct Settings {
     /// Where the view zooms from: the cursor, or the middle of the viewport.
     #[serde(default = "default_zoom_at")]
     pub zoom_at: ZoomAt,
+    /// WHERE THE MENUS LIVE on a Mac. See `MenuPlace`.
+    #[serde(default = "default_menu_place")]
+    pub menu_place: MenuPlace,
     /// The exception to that while a command is open.
     #[serde(default = "default_zoom_editing")]
     pub zoom_editing: ZoomWhileEditing,
@@ -1538,6 +1541,10 @@ fn default_orbit_about() -> OrbitAbout {
 }
 
 /// The factory layout: ours.
+fn default_menu_place() -> MenuPlace {
+    MenuPlace::SystemBar // where every Mac program keeps them
+}
+
 fn default_zoom_at() -> ZoomAt {
     ZoomAt::Cursor // what every CAD a person comes from does
 }
@@ -1620,6 +1627,7 @@ impl Default for Settings {
             show_start_screen: true,
             mouse_nav: default_mouse_nav(),
             zoom_at: default_zoom_at(),
+            menu_place: default_menu_place(),
             update_check: default_update_check(),
             update_last_checked: 0,
             zoom_editing: default_zoom_editing(),
@@ -6057,6 +6065,26 @@ impl ZoomAt {
         match self {
             ZoomAt::Cursor => "settings-zoom-at-cursor",
             ZoomAt::ViewCentre => "settings-zoom-at-centre",
+        }
+    }
+}
+
+/// WHERE THE MENUS LIVE ON A MAC: in the menu bar at the top of the screen, where every Mac program keeps them, or
+/// in the window, as on Windows and Linux - the habit of a person who works on both. Elsewhere the menus are in the
+/// window and the choice is not offered.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum MenuPlace {
+    SystemBar,
+    Window,
+}
+
+impl MenuPlace {
+    pub const ALL: [MenuPlace; 2] = [MenuPlace::SystemBar, MenuPlace::Window];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            MenuPlace::SystemBar => "settings-menu-place-system",
+            MenuPlace::Window => "settings-menu-place-window",
         }
     }
 }
