@@ -61,6 +61,16 @@ impl<'a> Hand<'a> {
         self.run(modifiers, events)
     }
 
+    /// ONE WHOLE FRAME with `events` in it and `modifiers` held: the input a frame of the live window is given.
+    pub fn frame_with(&mut self, modifiers: egui::Modifiers, events: Vec<egui::Event>) -> &mut Self {
+        self.frame_holding(modifiers, events)
+    }
+
+    /// WHAT THE PROGRAM PUT ON THE CLIPBOARD OF THE SYSTEM, oldest first.
+    pub fn copied(&self) -> &[String] {
+        &self.win.copied
+    }
+
     fn run(&mut self, modifiers: egui::Modifiers, events: Vec<egui::Event>) -> &mut Self {
         self.win.run(self.app, modifiers, events, false);
         self

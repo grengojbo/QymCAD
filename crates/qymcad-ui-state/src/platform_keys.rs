@@ -14,9 +14,10 @@
 //! * a text field: egui erases with Ctrl+H, Ctrl+U and Ctrl+W on Linux and Windows; on a Mac it erases with
 //!   Control+H/K/U/W and walks the caret with Control+A/B/E/F/N/P - a tool there would run while the expression
 //!   lost a word or the caret jumped;
-//! * the system and the window: on a Mac the application menu winit installs hides the program on Cmd+H and quits
-//!   it on Cmd+Q, and macOS itself takes the screenshots (Shift+Cmd+3/4/5), logging out (Shift+Cmd+Q), locking the
-//!   screen (Control+Cmd+Q) and the keyboard-navigation keys (Control+F3..F8);
+//! * the system and the window: on a Mac the application menu hides the program on Cmd+H and quits it on Cmd+Q,
+//!   the Window menu minimizes the window on Cmd+M, and macOS itself takes the screenshots (Shift+Cmd+3/4/5),
+//!   logging out (Shift+Cmd+Q), locking the screen (Control+Cmd+Q) and the keyboard-navigation keys
+//!   (Control+F3..F8);
 //! * the program's own General keys (`GENERAL`), the same on every system today and listed in each table, so a
 //!   system that ever answers them differently changes one table.
 //!
@@ -139,9 +140,10 @@ const MAC_FIELD: [Kept; 10] = [
 ];
 
 /// What macOS and the application menu take before the program hears a key.
-const MAC_SYSTEM: [Kept; 13] = [
+const MAC_SYSTEM: [Kept; 14] = [
     Kept::new("Ctrl+H", Held::Exact, "hotkeys-os-hide"),
     Kept::new("Ctrl+Q", Held::Exact, "hotkeys-os-quit"),
+    Kept::new("Ctrl+M", Held::Exact, "hotkeys-os-system"),
     Kept::new("Ctrl+Shift+Q", Held::Exact, "hotkeys-os-system"),
     Kept::new("Control+Ctrl+Q", Held::Exact, "hotkeys-os-system"),
     Kept::new("Ctrl+Shift+3", Held::Exact, "hotkeys-os-system"),

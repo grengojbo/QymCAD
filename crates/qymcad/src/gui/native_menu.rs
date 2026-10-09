@@ -89,7 +89,10 @@ fn system(item: SystemItem, key: &str) -> NativeNode {
 ///
 /// About, Settings and Quit move into the application menu and are not repeated where the window keeps them;
 /// the Window menu starts with what the system does to a window.
-pub(crate) fn system_bar(model: &[TopMenu]) -> Vec<NativeTop> {
+///
+/// WHILE A TEXT FIELD HOLDS THE KEYBOARD, undo, redo and the clipboard stay choosable whatever the document
+/// says: chosen, they go to the field (see `forward`), and a disabled item would keep its key from it.
+pub(crate) fn system_bar(model: &[TopMenu], focus: Focus) -> Vec<NativeTop> {
     let mut bar: Vec<NativeTop> = model.iter().map(|m| NativeTop { role: NativeRole::Bar(m.role), caption: m.caption.clone(), nodes: native(&m.nodes) }).collect();
     let mut moved = |role: MenuRole, action: MenuAction| bar.iter_mut().find(|t| t.role == NativeRole::Bar(role)).and_then(|t| take(&mut t.nodes, &action));
     let about = moved(MenuRole::Help, MenuAction::About);
@@ -118,6 +121,15 @@ pub(crate) fn system_bar(model: &[TopMenu]) -> Vec<NativeTop> {
     }
     for top in &mut bar {
         tidy(&mut top.nodes);
+        if focus == Focus::Field {
+            for node in &mut top.nodes {
+                if let NativeNode::Item(item) = node {
+                    if matches!(item.action, MenuAction::Undo | MenuAction::Redo | MenuAction::Copy | MenuAction::Cut | MenuAction::Paste) {
+                        item.enabled = Enabled::Yes;
+                    }
+                }
+            }
+        }
         if top.role == NativeRole::Bar(MenuRole::Windows) {
             top.caption = qymcad_i18n::tr("menu-window");
             let mut window = vec![system(SystemItem::Minimize, "menu-window-minimize"), system(SystemItem::Zoom, "menu-window-zoom")];
@@ -276,6 +288,82 @@ pub(crate) fn plan_refresh(old: &[NativeTop], new: &[NativeTop]) -> Refresh {
     }
 }
 
+/// Whether a text field holds the keyboard, or the keys go to the document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Focus {
+    Field,
+    Document,
+}
+
+/// Whether a forwarded item asks the system for its clipboard.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum Paste {
+    Ask,
+    No,
+}
+
+/// AN ITEM CHOSEN IN THE SYSTEM BAR, ARRIVING AS ITS KEY: the events of the key and the modifiers held for
+/// that frame.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct Forward {
+    pub events: Vec<egui::Event>,
+    pub held: egui::Modifiers,
+    pub paste: Paste,
+}
+
+/// WHAT AN ITEM WITH A KEY THE WINDOW READS ITSELF ARRIVES AS.
+///
+/// The menu of the system sees Cmd+Z, Cmd+C and the rest before the window does, so a pressed key reaches the
+/// window only as the menu's event. Done as a menu item it would skip what the key does today: in a text field
+/// the key edits the text, and Cmd+Z in a sketch first drops the shape being sized. So the item arrives as the
+/// key itself, by whichever way it was chosen, and the window reads it the way it always has. A click on the
+/// item goes the same way: Edit -> Copy copies the text of the field that holds the keyboard, as on any Mac.
+///
+/// Copy, Cut and Paste arrive as what the window turns those keys into: the copy and cut events, and for
+/// Paste a request for the clipboard of the system, which comes back as the paste event on the next frame.
+/// The modifiers are held for the frame as well: undo and save read the held Cmd, not the key's own.
+pub(crate) fn forward(action: &MenuAction) -> Option<Forward> {
+    let command = egui::Modifiers::COMMAND;
+    let shifted = egui::Modifiers::COMMAND | egui::Modifiers::SHIFT;
+    let key = |key: egui::Key, held: egui::Modifiers| {
+        let event = |pressed| egui::Event::Key { key, physical_key: None, pressed, repeat: false, modifiers: held };
+        Forward { events: vec![event(true), event(false)], held, paste: Paste::No }
+    };
+    match action {
+        MenuAction::Save => Some(key(egui::Key::S, command)),
+        MenuAction::SaveAs => Some(key(egui::Key::S, shifted)),
+        MenuAction::Undo => Some(key(egui::Key::Z, command)),
+        MenuAction::Redo => Some(key(egui::Key::Z, shifted)),
+        MenuAction::Copy => Some(Forward { events: vec![egui::Event::Copy], held: command, paste: Paste::No }),
+        MenuAction::Cut => Some(Forward { events: vec![egui::Event::Cut], held: command, paste: Paste::No }),
+        MenuAction::Paste => Some(Forward { events: Vec::new(), held: command, paste: Paste::Ask }),
+        _ => None,
+    }
+}
+
+thread_local! {
+    /// The keys chosen in the system bar, waiting for the next frame's input.
+    static KEYS: std::cell::RefCell<Vec<Forward>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// Hand a chosen key to the next frame, and make sure there is one.
+pub(crate) fn send_key(forward: Forward, ctx: &egui::Context) {
+    KEYS.with(|k| k.borrow_mut().push(forward));
+    ctx.request_repaint();
+}
+
+/// THE KEYS CHOSEN IN THE SYSTEM BAR JOIN THE INPUT OF THE FRAME, before anything reads it.
+pub(crate) fn feed_keys(ctx: &egui::Context, raw: &mut egui::RawInput) {
+    for forward in KEYS.with(|k| std::mem::take(&mut *k.borrow_mut())) {
+        raw.modifiers |= forward.held;
+        raw.events.extend(forward.events);
+        if forward.paste == Paste::Ask {
+            ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste);
+            ctx.request_repaint();
+        }
+    }
+}
+
 /// Whether the menu bar of this window is the one of the system.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum Where {
@@ -354,9 +442,12 @@ mod mac {
         let chosen: Vec<String> = CHOSEN.lock().map(|mut c| std::mem::take(&mut *c)).unwrap_or_default();
         let actions: Vec<MenuAction> = BAR.with(|b| b.borrow().as_ref().map(|bar| chosen.iter().filter_map(|id| resolve(&bar.shown, id)).collect()).unwrap_or_default());
         for action in &actions {
-            crate::gui::menu_model::apply_menu_action(action, bc, ctx);
+            match forward(action) {
+                Some(key) => send_key(key, ctx),
+                None => crate::gui::menu_model::apply_menu_action(action, bc, ctx),
+            }
         }
-        let new = system_bar(&crate::gui::menu_model::menu_model(&crate::gui::menu_model::menu_state(bc)));
+        let new = system_bar(&crate::gui::menu_model::menu_model(&crate::gui::menu_model::menu_state(bc)), focus_of(ctx));
         let failed = BAR.with(|b| {
             let mut b = b.borrow_mut();
             let Some(bar) = b.as_mut() else { return false };
@@ -367,6 +458,15 @@ mod mac {
         if failed {
             BAR.with(|b| *b.borrow_mut() = None);
             WHERE.with(|w| w.set(Where::Window));
+        }
+    }
+
+    /// Whether a text field holds the keyboard this frame.
+    fn focus_of(ctx: &egui::Context) -> Focus {
+        if ctx.egui_wants_keyboard_input() {
+            Focus::Field
+        } else {
+            Focus::Document
         }
     }
 
@@ -502,13 +602,9 @@ mod mac {
         Ok(())
     }
 
-    /// THE KEY AN ITEM ANSWERS TO IN THE SYSTEM BAR. Only the application's own keys: a key the window reads
-    /// itself (Cmd+Z, Cmd+C, Cmd+S and the rest) would be taken by the menu before the window sees it, and a
-    /// text field would lose its undo and its clipboard.
+    /// THE KEY AN ITEM ANSWERS TO IN THE SYSTEM BAR. A key the window reads itself (Cmd+Z, Cmd+C, Cmd+S and the
+    /// rest) is taken by the menu before the window sees it, and comes back to the window through `forward`.
     fn accelerator(item: &MenuItem) -> Option<Accelerator> {
-        if !matches!(item.action, MenuAction::Quit | MenuAction::Settings) {
-            return None;
-        }
         key_of(item.shortcut?)
     }
 
@@ -573,7 +669,7 @@ mod tests {
     /// THE APPLICATION MENU COMES FIRST and holds what a Mac keeps there, in the order a Mac keeps it.
     #[test]
     fn the_application_menu_leads_the_bar() {
-        let bar = system_bar(&menu_model(&busy()));
+        let bar = system_bar(&menu_model(&busy()), Focus::Document);
         assert_eq!(bar[0].role, NativeRole::App, "the first menu of a Mac bar is the application's own");
         let own: Vec<MenuAction> = actions(&bar[..1]);
         assert_eq!(own, [MenuAction::About, MenuAction::Settings, MenuAction::Quit]);
@@ -597,7 +693,7 @@ mod tests {
     fn every_item_of_the_window_is_in_the_system_bar_once() {
         let state = busy();
         let window: Vec<MenuAction> = actions(&menu_model(&state).iter().map(|m| NativeTop { role: NativeRole::Bar(m.role), caption: m.caption.clone(), nodes: native(&m.nodes) }).collect::<Vec<_>>());
-        let system = actions(&system_bar(&menu_model(&state)));
+        let system = actions(&system_bar(&menu_model(&state), Focus::Document));
         for action in &window {
             assert_eq!(system.iter().filter(|a| *a == action).count(), 1, "{action:?} must stand once in the system bar");
         }
@@ -608,7 +704,7 @@ mod tests {
     /// and no menu ends on a line.
     #[test]
     fn the_window_menu_starts_with_the_system_and_no_menu_ends_on_a_line() {
-        let bar = system_bar(&menu_model(&quiet()));
+        let bar = system_bar(&menu_model(&quiet()), Focus::Document);
         let window = top(&bar, NativeRole::Bar(MenuRole::Windows));
         assert_eq!(window.caption, qymcad_i18n::tr("menu-window"));
         assert_eq!(systems(&window.nodes), [SystemItem::Minimize, SystemItem::Zoom]);
@@ -621,7 +717,7 @@ mod tests {
     /// THE KEYS OF THE APPLICATION MENU: Cmd+, for the settings and Cmd+Q to quit.
     #[test]
     fn settings_and_quit_carry_the_keys_of_a_mac() {
-        let bar = system_bar(&menu_model(&quiet()));
+        let bar = system_bar(&menu_model(&quiet()), Focus::Document);
         let key = |action: MenuAction| bar[0].nodes.iter().find_map(|n| if let NativeNode::Item(i) = n { (i.action == action).then_some(i.shortcut) } else { None }).flatten();
         assert_eq!(key(MenuAction::Settings), Some(Shortcut::command(egui::Key::Comma)));
         assert_eq!(key(MenuAction::Quit), Some(Shortcut::command(egui::Key::Q)));
@@ -630,7 +726,7 @@ mod tests {
     /// AN ITEM CHOSEN IN THE SYSTEM BAR IS FOUND BY ITS NAME; a name no item has any more does nothing.
     #[test]
     fn a_chosen_name_leads_back_to_its_item() {
-        let bar = system_bar(&menu_model(&busy()));
+        let bar = system_bar(&menu_model(&busy()), Focus::Document);
         let all = actions(&bar);
         let mut names: Vec<String> = all.iter().map(id_of).collect();
         names.sort();
@@ -647,11 +743,11 @@ mod tests {
     /// THE BAR ON SCREEN IS TOUCHED ONLY WHERE THE LIST CHANGED.
     #[test]
     fn the_bar_catches_up_by_what_changed() {
-        let before = system_bar(&menu_model(&quiet()));
+        let before = system_bar(&menu_model(&quiet()), Focus::Document);
         assert_eq!(plan_refresh(&before, &before), Refresh::Same, "an unchanged list must not touch the bar");
 
         // a new step to undo: the words and the state of one item
-        let after = system_bar(&menu_model(&MenuState { undo: Step::Named("Extrude".into()), ..quiet() }));
+        let after = system_bar(&menu_model(&MenuState { undo: Step::Named("Extrude".into()), ..quiet() }), Focus::Document);
         let undo = Target::Item(id_of(&MenuAction::Undo));
         let expected = Refresh::Parts {
             rebuild: Vec::new(),
@@ -663,16 +759,16 @@ mod tests {
         assert_eq!(plan_refresh(&before, &after), expected);
 
         // the 3D orbit ticked
-        let ticked = system_bar(&menu_model(&MenuState { orbit: Checked::Yes, ..quiet() }));
+        let ticked = system_bar(&menu_model(&MenuState { orbit: Checked::Yes, ..quiet() }), Focus::Document);
         let tick = Change { target: Target::Item(id_of(&MenuAction::Orbit3d)), edit: Edit::Checked(Checked::Yes) };
         assert_eq!(plan_refresh(&before, &ticked), Refresh::Parts { rebuild: Vec::new(), changes: vec![tick] });
 
         // a file opened: the File menu has a line more, and only it is built anew
-        let opened = system_bar(&menu_model(&MenuState { recent: vec!["/tmp/a/box.qcad".into()], ..quiet() }));
+        let opened = system_bar(&menu_model(&MenuState { recent: vec!["/tmp/a/box.qcad".into()], ..quiet() }), Focus::Document);
         assert_eq!(plan_refresh(&before, &opened), Refresh::Parts { rebuild: vec![NativeRole::Bar(MenuRole::File)], changes: Vec::new() });
 
         // the check for updates became possible: the Help menu is built anew
-        let offered = system_bar(&menu_model(&MenuState { updates: Offered::Yes, ..quiet() }));
+        let offered = system_bar(&menu_model(&MenuState { updates: Offered::Yes, ..quiet() }), Focus::Document);
         assert_eq!(plan_refresh(&before, &offered), Refresh::Parts { rebuild: vec![NativeRole::Bar(MenuRole::Help)], changes: Vec::new() });
 
         // a bar with a menu less is a different bar
@@ -682,7 +778,7 @@ mod tests {
     /// ANOTHER LANGUAGE CHANGES ONLY WORDS: the titles of the menus are renamed in place, nothing is rebuilt.
     #[test]
     fn another_language_renames_in_place() {
-        let mut renamed = system_bar(&menu_model(&quiet()));
+        let mut renamed = system_bar(&menu_model(&quiet()), Focus::Document);
         let before = renamed.clone();
         renamed[1].caption = "Fichier".into();
         let rename = Change { target: Target::Top(NativeRole::Bar(MenuRole::File)), edit: Edit::Text("Fichier".into()) };
@@ -739,6 +835,137 @@ mod tests {
         assert!(words.is_empty(), "the menu bar of the window still draws while the system bar holds the menus: {words:?}");
     }
 
+    /// AN ITEM WITH A KEY THE WINDOW READS ARRIVES AS THAT KEY, and it is the key the item shows: what the
+    /// menu promises is what the window is handed.
+    #[test]
+    fn an_item_with_a_key_arrives_as_that_key() {
+        let bar = system_bar(&menu_model(&busy()), Focus::Document);
+        let shown = |action: &MenuAction| {
+            fn find(nodes: &[NativeNode], action: &MenuAction) -> Option<Shortcut> {
+                nodes.iter().find_map(|n| match n {
+                    NativeNode::Item(item) if item.action == *action => item.shortcut,
+                    NativeNode::Sub { nodes, .. } => find(nodes, action),
+                    _ => None,
+                })
+            }
+            bar.iter().find_map(|t| find(&t.nodes, action))
+        };
+        for action in [MenuAction::Save, MenuAction::SaveAs, MenuAction::Undo, MenuAction::Redo] {
+            let key = forward(&action).unwrap_or_else(|| panic!("{action:?} must arrive as its key"));
+            let shortcut = shown(&action).expect("the item shows its key");
+            let pressed: Vec<egui::Key> = key.events.iter().filter_map(|e| if let egui::Event::Key { key, pressed: true, .. } = e { Some(*key) } else { None }).collect();
+            assert_eq!(pressed, [shortcut.key], "{action:?} shows one key and sends another");
+            assert!(key.events.iter().any(|e| matches!(e, egui::Event::Key { pressed: false, .. })), "{action:?} is pressed and never let go");
+            let shift = shortcut.chord == crate::gui::menu_model::Chord::CommandShift;
+            assert!(key.held.command && key.held.shift == shift, "{action:?} holds {:?}, the item shows {:?}", key.held, shortcut.chord);
+        }
+        assert_eq!(forward(&MenuAction::Copy).map(|f| f.events), Some(vec![egui::Event::Copy]));
+        assert_eq!(forward(&MenuAction::Cut).map(|f| f.events), Some(vec![egui::Event::Cut]));
+        assert_eq!(forward(&MenuAction::Paste).map(|f| f.paste), Some(Paste::Ask));
+        for action in [MenuAction::Quit, MenuAction::Settings, MenuAction::Open, MenuAction::About] {
+            assert_eq!(forward(&action), None, "{action:?} is no key the window reads: it is done as an item");
+        }
+    }
+
+    /// The next frame's input, as the window would get it once the system bar handed its keys over.
+    fn handed_over(ctx: &egui::Context, actions: &[MenuAction]) -> egui::RawInput {
+        for action in actions {
+            send_key(forward(action).expect("the item arrives as a key"), ctx);
+        }
+        let mut raw = egui::RawInput::default();
+        feed_keys(ctx, &mut raw);
+        raw
+    }
+
+    /// EDIT -> UNDO CHOSEN IN THE SYSTEM BAR takes back a step of the document, and REDO brings it back, through
+    /// a real frame. A click on the item holds no Cmd; the key alone would be read as a bare Z.
+    #[test]
+    fn undo_and_redo_from_the_system_bar_reach_the_document() {
+        use crate::gui::hand::Hand;
+        let mut app = crate::gui::App::default();
+        app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        let steps = app.disk.edits.undo.len();
+        let mut hand = Hand::new(&mut app);
+        hand.frame(Vec::new());
+        let ctx = egui::Context::default();
+        let raw = handed_over(&ctx, &[MenuAction::Undo]);
+        hand.frame_with(raw.modifiers, raw.events);
+        assert_eq!(hand.app.disk.edits.undo.len(), steps - 1, "Undo chosen in the system bar did not take back the step");
+        let raw = handed_over(&ctx, &[MenuAction::Redo]);
+        hand.frame_with(raw.modifiers, raw.events);
+        assert_eq!(hand.app.disk.edits.undo.len(), steps, "Redo chosen in the system bar did not bring the step back");
+    }
+
+    /// COPY AND CUT CHOSEN IN THE SYSTEM BAR GO TO THE TEXT FIELD THAT HOLDS THE KEYBOARD: the words leave
+    /// for the clipboard of the system, the field is emptied, and the clipboard of the document is untouched.
+    #[test]
+    fn copy_and_cut_from_the_system_bar_go_to_the_text_field() {
+        use crate::gui::hand::Hand;
+        let mut app = crate::gui::App::default();
+        let mut hand = Hand::new(&mut app);
+        assert!(hand.press_word(&qymcad_i18n::tr("tree-search"), egui::pos2(0.0, 0.0)), "setup: the tree has a search field");
+        hand.type_text("bracket");
+        hand.chord(egui::Modifiers::COMMAND, egui::Key::A);
+        assert_eq!(hand.app.tree.search, "bracket", "setup: the words are in the field");
+        let ctx = egui::Context::default();
+        let raw = handed_over(&ctx, &[MenuAction::Copy]);
+        hand.frame_with(raw.modifiers, raw.events);
+        assert_eq!(hand.copied().last().map(String::as_str), Some("bracket"), "Copy chosen in the system bar did not copy the words of the field");
+        let raw = handed_over(&ctx, &[MenuAction::Cut]);
+        hand.frame_with(raw.modifiers, raw.events);
+        assert!(hand.app.tree.search.is_empty(), "Cut chosen in the system bar did not take the words out of the field");
+        assert!(hand.app.side.clip.tree.is_none() && hand.app.side.clip.geom.is_none(), "the clipboard of the document took what belonged to the field");
+    }
+
+    /// PASTE CHOSEN IN THE SYSTEM BAR asks the system for its clipboard, as the key does: the words come back
+    /// as the paste event of the next frame.
+    #[test]
+    fn paste_from_the_system_bar_asks_for_the_clipboard() {
+        let ctx = egui::Context::default();
+        let raw = handed_over(&ctx, &[MenuAction::Paste]);
+        let out = ctx.run_ui(raw, |_| {});
+        let asked = out.viewport_output.get(&egui::ViewportId::ROOT).is_some_and(|v| v.commands.contains(&egui::ViewportCommand::RequestPaste));
+        assert!(asked, "Paste chosen in the system bar did not ask for the clipboard of the system");
+    }
+
+    /// WHILE A TEXT FIELD HOLDS THE KEYBOARD, undo, redo and the clipboard stay choosable whatever the document
+    /// says; with the document holding it, they follow the document.
+    #[test]
+    fn a_text_field_keeps_the_edit_items_choosable() {
+        let editing = [MenuAction::Undo, MenuAction::Redo, MenuAction::Copy, MenuAction::Cut, MenuAction::Paste];
+        let state = |focus| {
+            let bar = system_bar(&menu_model(&quiet()), focus);
+            let edit = top(&bar, NativeRole::Bar(MenuRole::Edit)).nodes.clone();
+            edit.into_iter().filter_map(|n| if let NativeNode::Item(i) = n { editing.contains(&i.action).then_some(i.enabled) } else { None }).collect::<Vec<_>>()
+        };
+        assert_eq!(state(Focus::Field), [Enabled::Yes; 5], "a disabled item keeps its key from the text field");
+        assert_eq!(state(Focus::Document), [Enabled::No; 5], "with nothing to undo or copy, the document's items stand disabled");
+    }
+
+    /// EVERY KEY THE SYSTEM BAR ANSWERS TO IS KEPT FROM THE TOOLS ON A MAC: bound to a tool, it would never
+    /// reach the tool, because the menu takes it first.
+    #[test]
+    fn the_keys_of_the_system_bar_are_kept_from_the_tools() {
+        use qymcad_ui_state::platform_keys::Os;
+        let mut chords: Vec<qymcad_ui_state::Chord> = Vec::new();
+        fn keys(nodes: &[NativeNode], out: &mut Vec<qymcad_ui_state::Chord>) {
+            for node in nodes {
+                match node {
+                    NativeNode::Item(item) | NativeNode::Check { item, .. } => {
+                        out.extend(item.shortcut.map(|s| qymcad_ui_state::Chord::parse(&s.label()).expect("a key of the menu reads as a chord")))
+                    }
+                    NativeNode::Sub { nodes, .. } => keys(nodes, out),
+                    _ => {}
+                }
+            }
+        }
+        system_bar(&menu_model(&busy()), Focus::Document).iter().for_each(|t| keys(&t.nodes, &mut chords));
+        // the system's own items answer to Cmd+H (Hide) and Cmd+M (Minimize)
+        chords.extend(["Ctrl+H", "Ctrl+M"].map(|k| qymcad_ui_state::Chord::parse(k).expect("a chord")));
+        let free: Vec<String> = chords.iter().filter(|c| qymcad_ui_state::hotkey_refusal_on(Os::Mac, "part.extrude", c).is_none()).map(|c| c.name()).collect();
+        assert!(free.is_empty(), "these keys of the system bar can still be bound to a tool on a Mac: {free:?}");
+    }
+
     /// THE KEYS OF THE MENU BECOME KEYS OF THE SYSTEM: every key the bar carries has a key code there.
     #[cfg(target_os = "macos")]
     #[test]
@@ -753,7 +980,7 @@ mod tests {
             }
         }
         let mut all = Vec::new();
-        system_bar(&menu_model(&busy())).iter().for_each(|t| keys(&t.nodes, &mut all));
+        system_bar(&menu_model(&busy()), Focus::Document).iter().for_each(|t| keys(&t.nodes, &mut all));
         assert!(!all.is_empty(), "setup: the bar carries keys");
         for key in all {
             assert!(mac::key_of(key).is_some(), "{key:?} has no key code in the system bar");
