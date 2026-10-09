@@ -160,3 +160,14 @@ fn an_end_that_is_not_one_thing_is_refused() {
     let nothing = call(&mut ctx, "list_faces", json!({ "body": { "body": 999 } }));
     assert_eq!(nothing["error"]["code"], "no-body", "{nothing}");
 }
+
+/// WHAT IS SELECTED IS KNOWN ONLY IN A WINDOW: the program on a document of its own says so, with the way to a window,
+/// rather than an empty list that would read as "nothing is selected".
+#[test]
+fn the_selection_without_a_window_is_refused() {
+    let mut ctx = block();
+    let reply = call(&mut ctx, "get_selection", json!({}));
+    assert_eq!(reply["ok"], json!(false), "{reply}");
+    assert_eq!(reply["error"]["code"], "no-window", "{reply}");
+    assert_eq!(reply["error"]["stage"], "window", "{reply}");
+}

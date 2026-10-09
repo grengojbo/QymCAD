@@ -10,16 +10,27 @@ use qymcad_doc::{DocEngine, DocError};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Map, Value};
 
-/// What a tool works on: the one document the server keeps, and the file it was opened from or last saved to.
+/// What a tool works on: the one document the server keeps, the file it was opened from or last saved to, and what
+/// a person has selected in a window, when there is one.
 pub struct Ctx {
     pub doc: DocEngine,
     pub path: Option<String>,
+    pub seen: Seen,
+}
+
+/// WHAT A PERSON HAS SELECTED, as far as the tools can know.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Seen {
+    /// A document of the program's own: nobody is looking at it.
+    NoWindow,
+    /// The open window's document, and what is selected in it - possibly nothing.
+    Window(Vec<crate::tools::selection::Picked>),
 }
 
 impl Ctx {
     /// A new document with one part, as the window starts.
     pub fn blank() -> Self {
-        Ctx { doc: DocEngine::blank(), path: None }
+        Ctx { doc: DocEngine::blank(), path: None, seen: Seen::NoWindow }
     }
 }
 
@@ -164,6 +175,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::query::RESOLVE,
     crate::tools::query::INSPECT,
     crate::tools::query::MEASURE,
+    crate::tools::selection::GET_SELECTION,
     crate::tools::batch::APPLY_OPS,
 ];
 

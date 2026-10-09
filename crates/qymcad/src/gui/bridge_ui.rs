@@ -17,7 +17,8 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use qymcad_bridge::{Call, Listener, Wait};
-use qymcad_tools::tool::{After, Ctx, Refusal, Stage};
+use qymcad_tools::tool::{After, Ctx, Refusal, Seen, Stage};
+use qymcad_tools::tools::selection::{End as Tip, Picked};
 use qymcad_ui_state::{ClaudeLink, PartCtx};
 use serde_json::Value;
 
@@ -106,6 +107,40 @@ fn holds_the_document(pc: &PartCtx) -> bool {
     pc.edits.open.is_some() || pc.regen.regen_running()
 }
 
+/// WHAT THE PERSON HAS SELECTED, by the keys the document keeps it under: the one thing the window marks as selected,
+/// and the faces gathered for a tool, when there are any.
+fn picked(pc: &PartCtx) -> Vec<Picked> {
+    use qymcad_ui_state::Sel;
+    let p = &*pc.project;
+    let one = match *pc.sel {
+        Sel::None => None,
+        Sel::Mesh(mi) => p.mesh_id(mi).map(Picked::Body),
+        Sel::Face(mi, fi) => p.mesh_id(mi).zip(p.bodies.get(mi).and_then(|b| b.faces.get(fi))).map(|(body, f)| Picked::Face { body, face: f.id }),
+        Sel::Contour(i) => p.contour_id(i).map(Picked::Contour),
+        Sel::Sketch(i) => p.sketches.get(i).map(|s| Picked::Sketch(s.id)),
+        Sel::Plane(i) => p.planes.get(i).map(|w| Picked::Plane(w.id)),
+        Sel::DatumPoint(i) => p.datum_points.get(i).map(|d| Picked::Point(d.id)),
+        Sel::DatumAxis(i) => p.datum_axes.get(i).map(|d| Picked::Axis(d.id)),
+        Sel::Feature(i) => p.timeline.get(i).map(|n| Picked::Feature(n.id)),
+        Sel::Component(i) => p.components.get(i).map(|c| Picked::Part(c.id)),
+        Sel::Joint(id) => Some(Picked::Joint(id)),
+        Sel::Edge(body, edge) => Some(Picked::Edge { body, edge }),
+        Sel::Vertex(body, edge, far) => Some(Picked::Corner { body, edge, end: if far { Tip::B } else { Tip::A } }),
+    };
+    let mut out: Vec<Picked> = one.into_iter().collect();
+    if let Some(body) = pc.gsel.faces_body {
+        let mut faces: Vec<u32> = pc.gsel.faces.iter().copied().collect();
+        faces.sort_unstable();
+        for face in faces {
+            let f = Picked::Face { body, face };
+            if !out.contains(&f) {
+                out.push(f);
+            }
+        }
+    }
+    out
+}
+
 /// The tools that act on the window itself rather than on its document; a person does these from the window.
 const THE_WINDOWS_OWN: [&str; 5] = ["new_project", "open_project", "save_project", "undo", "redo"];
 
@@ -117,6 +152,8 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
         return qymcad_tools::tool::refused_reply(tool, &refusal, After::Untouched);
     }
     // the step is named for the tool now and for what it did once that is known
+    // what the person has selected is read by its indices, before the document is lent away
+    let seen = Seen::Window(picked(pc));
     qymcad_ui_state::begin_edit(pc.edits, pc.project, qymcad_i18n::tr1("bridge-step", "what", tool));
     let lent = qymcad_doc::Lent {
         project: std::mem::take(pc.project),
@@ -128,7 +165,7 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
     // THE ANSWER IS ENGLISH, as the program's own answers are; the window's language is the person's, and comes back
     let person = qymcad_i18n::language();
     qymcad_i18n::set_language("en");
-    let mut ctx = Ctx { doc: qymcad_doc::DocEngine::lend(lent), path: None };
+    let mut ctx = Ctx { doc: qymcad_doc::DocEngine::lend(lent), path: None, seen };
     let reply = qymcad_tools::channel::answer(&mut ctx, tool, arguments);
     let step: Option<String> = ctx.doc.history().undo_names().last().map(|s| s.to_string());
     qymcad_i18n::set_language(&person);
@@ -368,5 +405,167 @@ mod tests {
         }
         drop(hand);
         assert_eq!(app.disk.edits.undo.len(), steps, "a refused call left a step");
+    }
+
+    /// Run whole frames until Claude's thread is done; its answer.
+    fn served<T>(hand: &mut Hand, job: std::thread::JoinHandle<T>) -> T {
+        for _ in 0..1000 {
+            if job.is_finished() {
+                break;
+            }
+            hand.frame(Vec::new());
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        job.join().expect("Claude's thread ends")
+    }
+
+    /// CLAUDE, on a thread of its own: a run of calls on one link, and their answers.
+    fn claude_says(path: &std::path::Path, calls: Vec<(&'static str, Value)>) -> std::thread::JoinHandle<Vec<Value>> {
+        let path = path.to_path_buf();
+        std::thread::spawn(move || {
+            let mut link = Link::connect(&path, Duration::from_secs(60)).unwrap_or_else(|e| panic!("Claude did not reach the window: {e:?}"));
+            calls.into_iter().map(|(tool, args)| link.call(tool, args).unwrap_or_else(|e| panic!("the window did not answer {tool}: {e:?}"))).collect()
+        })
+    }
+
+    /// STEP INTO THE PART OF `body`, LOOK AT `at` AND CLICK IT, with nothing selected before: the first frame fits the
+    /// camera to the scene, so the aim comes after it.
+    fn aim_and_click(hand: &mut Hand, body: Id, at: [f64; 3], scale: f32) {
+        hand.frame(Vec::new());
+        hand.key(egui::Key::Escape);
+        // in an assembly a click takes the whole part; a face is clicked inside its part, as a person steps in first
+        if let Some(part) = hand.app.project.body_owner(body) {
+            hand.app.enter_component(part);
+        }
+        hand.look_at(at, scale);
+        hand.frame(Vec::new());
+        hand.click(at);
+    }
+
+    /// A POINT ON A FACE THE ROUNDING MADE, in the world: the middle of one of its triangles, which lies on the surface,
+    /// where the middle of the whole curved face would lie inside the body.
+    fn on_the_rounding(app: &App, fillet: Id, body: Id) -> [f64; 3] {
+        let b = app.project.bodies.iter().find(|b| b.id == body).expect("the rounded body");
+        let face = b.faces.iter().find(|f| app.project.names.get(f.id).is_some_and(|n| n.feature == fillet)).expect("a face the rounding made");
+        let tri = b.mesh.triangle(face.triangles[face.triangles.len() / 2] as usize);
+        let mid = [(tri[0].x + tri[1].x + tri[2].x) / 3.0, (tri[0].y + tri[1].y + tri[2].y) / 3.0, (tri[0].z + tri[1].z + tri[2].z) / 3.0];
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
+        qymcad_core::feature::apply12(&wt, mid)
+    }
+
+    /// "MAKE THIS ROUNDING 0.2 MM SMALLER" (US-10). The person clicks the rounding in the window; Claude reads the
+    /// selection, finds the feature that made it, and gives that feature a radius 0.2 smaller - one step of undo.
+    #[test]
+    fn a_selected_rounding_gets_smaller() {
+        let mut app = crate::gui::screen_keys::tests::populated();
+        app.set.claude_link = ClaudeLink::On;
+        let path = place("round");
+        super::listen_at(path.clone());
+        let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind) == "Fillet").expect("the fixture's rounding");
+        let (fillet, body) = (node.id, node.kind.body().expect("the rounding makes a body"));
+        // THE RADIUS AS BUILT: the round surface of the rounding in the live body, not a number stored beside it
+        let radius = |app: &App| {
+            let shape = app.live.shapes.get(&body).expect("the rounded body is live");
+            let faces = app.project.regen_faces.get(&body).expect("the rounded body has faces");
+            faces.iter().filter(|f| app.project.names.get(f.id).is_some_and(|n| n.feature == fillet)).find_map(|f| shape.face_cylinder(f.id).map(|(_, _, r)| r)).expect("a round face of the rounding")
+        };
+        let before = radius(&app);
+        let at = on_the_rounding(&app, fillet, body);
+
+        let mut hand = Hand::new(&mut app);
+        aim_and_click(&mut hand, body, at, 60.0);
+        let taken = hand.app.chosen.sel;
+        assert!(matches!(taken, qymcad_ui_state::Sel::Face(..) | qymcad_ui_state::Sel::Edge(..)), "setup: the click on the rounding took neither a face nor an edge");
+
+        let read = served(&mut hand, claude_says(&path, vec![("get_selection", json!({}))]));
+        let item = &reply_of(&read[0])["selected"][0];
+        assert_eq!(item["made_by"]["feature"], json!(fillet), "the selection does not name the rounding as its author: {}", read[0]);
+        assert_eq!(item["made_by"]["kind"], "Fillet", "{item}");
+        let said = item["made_by"]["sizes"].as_array().and_then(|s| s.iter().find(|s| s["key"] == "radius")).and_then(|s| s["value"].as_f64()).expect("the rounding's radius");
+        assert!((said - before).abs() < 1e-6, "the selection told radius {said}, the rounding is built at {before}");
+
+        let steps = hand.app.disk.edits.undo.len();
+        let done = served(&mut hand, claude_says(&path, vec![("edit_feature", json!({ "feature": fillet, "values": { "radius": said - 0.2 } }))]));
+        assert_eq!(reply_of(&done[0])["ok"], json!(true), "{}", done[0]);
+        assert_eq!(hand.app.disk.edits.undo.len(), steps + 1, "reading the selection and changing the rounding are not one step");
+        drop(hand);
+        assert!((radius(&app) - (before - 0.2)).abs() < 1e-6, "the rounding is built at {} after the change, not {}", radius(&app), before - 0.2);
+    }
+
+    /// A ROUNDING THAT FOLLOWS A PARAMETER keeps following it: the change is written into the rounding's own expression
+    /// ("r - 0.2"), and the parameter, which other features may read, stays as it was.
+    #[test]
+    fn a_selected_rounding_that_follows_a_parameter_keeps_following_it() {
+        let mut app = crate::gui::screen_keys::tests::populated();
+        app.set.claude_link = ClaudeLink::On;
+        let path = place("round-expr");
+        super::listen_at(path.clone());
+        let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind) == "Fillet").expect("the fixture's rounding");
+        let (fillet, body) = (node.id, node.kind.body().expect("the rounding makes a body"));
+        let mut hand = Hand::new(&mut app);
+        hand.frame(Vec::new());
+        let set = served(&mut hand, claude_says(&path, vec![("set_parameter", json!({ "name": "r", "expr": "1" })), ("edit_feature", json!({ "feature": fillet, "values": { "radius": "r" } }))]));
+        assert!(set.iter().all(|a| reply_of(a)["ok"] == json!(true)), "setup: {set:?}");
+        drop(hand);
+
+        let at = on_the_rounding(&app, fillet, body);
+        let mut hand = Hand::new(&mut app);
+        aim_and_click(&mut hand, body, at, 60.0);
+        let read = served(&mut hand, claude_says(&path, vec![("get_selection", json!({}))]));
+        let radius = reply_of(&read[0])["selected"][0]["made_by"]["sizes"].as_array().and_then(|s| s.iter().find(|s| s["key"] == "radius").cloned()).expect("the rounding's radius");
+        assert_eq!(radius["expr"], "r", "the selection does not say the radius follows r: {radius}");
+        let done = served(&mut hand, claude_says(&path, vec![("edit_feature", json!({ "feature": fillet, "values": { "radius": "r - 0.2" } }))]));
+        assert_eq!(reply_of(&done[0])["ok"], json!(true), "{}", done[0]);
+        drop(hand);
+        assert_eq!(app.project.feat_dims.get(&fillet).and_then(|m| m.get("radius")).map(String::as_str), Some("r - 0.2"), "the expression was not kept");
+        assert!((app.project.parameters.iter().find(|p| p.name == "r").map(|p| p.value).expect("the parameter") - 1.0).abs() < 1e-12, "the parameter changed");
+    }
+
+    /// WHAT IS SELECTED IS TOLD BY ITS KIND, with the key the tools take: a face and an edge clicked in the scene, and
+    /// nothing at all. Every kind of selection the window has is turned into one (`picked` matches them all, so a new
+    /// kind does not compile without its line).
+    #[test]
+    fn what_is_selected_is_told_by_its_kind() {
+        let mut app = crate::gui::screen_keys::tests::populated();
+        app.set.claude_link = ClaudeLink::On;
+        let path = place("kinds");
+        super::listen_at(path.clone());
+        let mut hand = Hand::new(&mut app);
+        hand.frame(Vec::new());
+        hand.key(egui::Key::Escape); // the fixture comes with a sketch selected; Escape lets it go, as by hand
+        let nothing = served(&mut hand, claude_says(&path, vec![("get_selection", json!({}))]));
+        assert_eq!(reply_of(&nothing[0])["selected"], json!([]), "{}", nothing[0]);
+        assert!(reply_of(&nothing[0])["hint"].is_string(), "an empty selection gives no hint: {}", nothing[0]);
+        drop(hand);
+
+        // the top face of the plate, clicked in its middle
+        let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).expect("the plate");
+        let body = node.kind.body().expect("the plate's body");
+        let wt = app.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(&app.active_path, &app.project));
+        let top = app.project.regen_faces.get(&body).and_then(|fs| fs.iter().max_by(|a, b| a.area.total_cmp(&b.area).then(a.centroid.z.total_cmp(&b.centroid.z)))).cloned().expect("a face");
+        let at = qymcad_core::feature::apply12(&wt, [top.centroid.x, top.centroid.y, top.centroid.z]);
+        // at the top of the assembly a click takes the whole part, told by the name a person reads
+        let mut hand = Hand::new(&mut app);
+        hand.frame(Vec::new());
+        hand.key(egui::Key::Escape);
+        hand.look_at(at, 8.0);
+        hand.frame(Vec::new());
+        hand.click(at);
+        let read = served(&mut hand, claude_says(&path, vec![("get_selection", json!({}))]));
+        let item = &reply_of(&read[0])["selected"][0];
+        assert_eq!(item["what"], "part", "{}", read[0]);
+        let name = item["name"].as_str().unwrap_or_default();
+        assert!(!name.is_empty() && !name.contains('#') && !name.starts_with("name-"), "the part is told by the document's stored key, not its name: {name:?}");
+        assert_eq!(item["use"]["part"], item["key"], "{item}");
+        drop(hand);
+
+        let mut hand = Hand::new(&mut app);
+        aim_and_click(&mut hand, body, at, 8.0);
+        let read = served(&mut hand, claude_says(&path, vec![("get_selection", json!({}))]));
+        let item = &reply_of(&read[0])["selected"][0];
+        assert_eq!(item["what"], "face", "{}", read[0]);
+        assert_eq!(item["use"]["face"]["ids"][0], item["key"], "the face is not handed on by its own key: {item}");
+        assert_eq!(item["use"]["body"]["body"], item["body"], "{item}");
+        assert!(item["normal"].is_array() && item["kind"].is_string(), "the face is not told by its kind and place: {item}");
     }
 }

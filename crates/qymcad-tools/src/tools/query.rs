@@ -108,6 +108,40 @@ fn body_only() -> Value {
     json!({ "type": "object", "properties": { "body": body_field() }, "additionalProperties": false })
 }
 
+/// ONE FACE OF `body` AS THE MODEL READS IT: its key, kind, centre, normal and area, a cylinder's radius and axis, and
+/// who made it. World coordinates.
+pub(crate) fn face_entry(project: &Project, shape: &qymcad_kernel::Shape, body: Id, f: &qymcad_core::geom::MeshFace) -> Value {
+    let wt = project.body_world_transform(body);
+    let mut v = json!({
+        "key": f.id,
+        "kind": face_kind(project, shape, body, f),
+        "centre": at(&wt, [f.centroid.x, f.centroid.y, f.centroid.z]),
+        "normal": dir(&wt, f.normal),
+        "area": round(f.area),
+        "made_by": face_made_by(project, body, f.id),
+    });
+    if let Some((o, axis, r)) = shape.face_cylinder(f.id) {
+        v["radius"] = json!(round(r));
+        v["axis"] = json!({ "origin": at(&wt, o), "dir": dir(&wt, axis) });
+    }
+    v
+}
+
+/// ONE EDGE OF `body` AS THE MODEL READS IT: its key, middle, length, ends, a circle's centre, axis and radius, and who
+/// made it. World coordinates.
+pub(crate) fn edge_entry(project: &Project, body: Id, c: &qymcad_core::refs::Candidate) -> Value {
+    let wt = project.body_world_transform(body);
+    let mut v = json!({ "key": c.desc, "middle": at(&wt, c.centroid), "length": round(c.area), "made_by": edge_made_by(project, body, c.desc) });
+    if let Some(e) = &c.edge {
+        v["a"] = json!(at(&wt, e.a));
+        v["b"] = json!(at(&wt, e.b));
+        if e.radius > 0.0 {
+            v["circle"] = json!({ "centre": at(&wt, e.center), "axis": dir(&wt, e.axis), "radius": round(e.radius) });
+        }
+    }
+    v
+}
+
 pub const LIST_FACES: Tool = Tool {
     name: "list_faces",
     description: "The faces of a body: key, kind (plane, cylinder, turned - a cone, sphere or torus - or other), centre, normal, area in mm^2, and for a cylinder its radius and axis. made_by: the feature that created the face (key, kind, the role of the face, how many faces of the body it made, its sizes with their expressions) - edit_feature on that key changes it; null for a face with no recipe, as from a STEP file. World coordinates. A key goes into a query as {\"ids\": [key]}.",
@@ -117,26 +151,8 @@ pub const LIST_FACES: Tool = Tool {
         let project = ctx.doc.project();
         let body = target(project, a.body)?;
         let shape = shape(ctx, body)?;
-        let wt = project.body_world_transform(body);
         let faces = project.regen_faces.get(&body).cloned().unwrap_or_default();
-        let listed: Vec<Value> = faces
-            .iter()
-            .map(|f| {
-                let mut v = json!({
-                    "key": f.id,
-                    "kind": face_kind(project, shape, body, f),
-                    "centre": at(&wt, [f.centroid.x, f.centroid.y, f.centroid.z]),
-                    "normal": dir(&wt, f.normal),
-                    "area": round(f.area),
-                    "made_by": face_made_by(project, body, f.id),
-                });
-                if let Some((o, axis, r)) = shape.face_cylinder(f.id) {
-                    v["radius"] = json!(round(r));
-                    v["axis"] = json!({ "origin": at(&wt, o), "dir": dir(&wt, axis) });
-                }
-                v
-            })
-            .collect();
+        let listed: Vec<Value> = faces.iter().map(|f| face_entry(project, shape, body, f)).collect();
         let mut out = Answer::new();
         out.insert("body".into(), json!(body));
         out.insert("faces".into(), json!(listed));
@@ -153,22 +169,7 @@ pub const LIST_EDGES: Tool = Tool {
         let project = ctx.doc.project();
         let body = target(project, a.body)?;
         let _ = shape(ctx, body)?;
-        let wt = project.body_world_transform(body);
-        let listed: Vec<Value> = project
-            .edge_pool(body)
-            .iter()
-            .map(|c| {
-                let mut v = json!({ "key": c.desc, "middle": at(&wt, c.centroid), "length": round(c.area), "made_by": edge_made_by(project, body, c.desc) });
-                if let Some(e) = &c.edge {
-                    v["a"] = json!(at(&wt, e.a));
-                    v["b"] = json!(at(&wt, e.b));
-                    if e.radius > 0.0 {
-                        v["circle"] = json!({ "centre": at(&wt, e.center), "axis": dir(&wt, e.axis), "radius": round(e.radius) });
-                    }
-                }
-                v
-            })
-            .collect();
+        let listed: Vec<Value> = project.edge_pool(body).iter().map(|c| edge_entry(project, body, c)).collect();
         let mut out = Answer::new();
         out.insert("body".into(), json!(body));
         out.insert("edges".into(), json!(listed));

@@ -10,5 +10,6 @@ pub mod modify;
 pub mod params;
 pub mod prim;
 pub mod query;
+pub mod selection;
 pub mod sketch;
 pub mod timeline;

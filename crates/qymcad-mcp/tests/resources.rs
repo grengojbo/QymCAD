@@ -70,7 +70,7 @@ fn the_prompts_are_listed_and_filled_with_the_persons_words() {
     let mut ctx = Ctx::blank();
     let listed = ask(&mut ctx, "prompts/list", json!({}));
     let names: Vec<&str> = listed["result"]["prompts"].as_array().expect("prompts").iter().filter_map(|p| p["name"].as_str()).collect();
-    assert_eq!(names, ["design_for_fdm", "edit_stl", "edit_step"], "{listed}");
+    assert_eq!(names, ["design_for_fdm", "edit_stl", "edit_step", "edit_what_i_selected"], "{listed}");
 
     let got = ask(&mut ctx, "prompts/get", json!({ "name": "design_for_fdm", "arguments": { "part": "a bracket 60 x 40 x 4", "nozzle": "0.6" } }));
     let text = got["result"]["messages"][0]["content"]["text"].as_str().unwrap_or_else(|| panic!("no text in {got}"));

@@ -74,7 +74,19 @@ fn edit_step(given: &Map<String, Value>) -> String {
     )
 }
 
-const PROMPTS: [Prompt; 3] = [
+fn edit_what_i_selected(given: &Map<String, Value>) -> String {
+    let change = arg(given, "change", "the change the person asks for");
+    format!(
+        "In the open QymCAD window, on what the person has selected: {change}.\n\n\
+         1. Read what is selected with get_selection. Nothing selected: ask the person to click what they mean, and stop.\n\
+         2. Say back what you see, in their words: \"the rounding of radius 2 on the top edges\", \"the flat top face of the plate\".\n\
+         3. A change of size goes to the feature that made the thing (made_by): edit_feature on its key. When the size follows an expression, write the change into that feature's expression (\"r - 0.2\"), not into the parameter - other features may read the parameter. When the feature makes several faces or edges at once (faces_made more than one), tell the person they all change together.\n\
+         4. Something new on what is selected takes the item's use: create_sketch on a face or a plane, hole on a face, fillet or chamfer on an edge.\n\
+         5. Each call is one step the person can take back with Ctrl+Z; say which step it is. If the window is busy, the person is working in it - ask again after they finish."
+    )
+}
+
+const PROMPTS: [Prompt; 4] = [
     Prompt {
         name: "design_for_fdm",
         title: "Design a part for FDM printing",
@@ -98,6 +110,13 @@ const PROMPTS: [Prompt; 3] = [
         description: "Bring in an exact solid (STEP, IGES), find the faces and edges to change, change them with features, and write it out again.",
         arguments: &[Arg { name: "path", description: "The STEP or IGES file", need: Need::Required }, Arg { name: "change", description: "What to change", need: Need::Required }],
         text: edit_step,
+    },
+    Prompt {
+        name: "edit_what_i_selected",
+        title: "Change what is selected in the window",
+        description: "In the open QymCAD window: read what the person selected, say it back, and change the feature that made it - one step of undo.",
+        arguments: &[Arg { name: "change", description: "What to change, in the person's words", need: Need::Required }],
+        text: edit_what_i_selected,
     },
 ];
 
