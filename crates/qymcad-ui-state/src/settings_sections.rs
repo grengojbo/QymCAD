@@ -60,6 +60,7 @@ impl SettingsSection {
                 "settings-help-open",
                 "settings-open-last",
                 "settings-show-start",
+                "settings-menu-place",
                 "settings-import-ask",
                 "settings-autosave",
                 "settings-undo-cap",
@@ -124,6 +125,7 @@ impl SettingsSection {
                 s.help_external = d.help_external;
                 s.open_last = d.open_last;
                 s.show_start_screen = d.show_start_screen;
+                s.menu_place = d.menu_place;
                 s.import_ask_always = d.import_ask_always;
                 s.import_units = d.import_units.clone();
                 s.autosave_secs = d.autosave_secs;

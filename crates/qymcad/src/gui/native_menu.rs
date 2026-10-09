@@ -144,6 +144,16 @@ pub(crate) fn system_bar(model: &[TopMenu], focus: Focus) -> Vec<NativeTop> {
     bar
 }
 
+/// THE BAR AS IT IS SHOWN: the whole of it, or - while the person keeps the menus in the window - the application
+/// menu alone, so that Hide, Quit and the rest stay where a Mac keeps them.
+pub(crate) fn shown_bar(model: &[TopMenu], focus: Focus, place: qymcad_ui_state::MenuPlace) -> Vec<NativeTop> {
+    let mut bar = system_bar(model, focus);
+    if place == qymcad_ui_state::MenuPlace::Window {
+        bar.retain(|t| t.role == NativeRole::App);
+    }
+    bar
+}
+
 /// THE NAME AN ITEM GOES BY IN THE SYSTEM BAR: the event of a chosen item carries it back. Unique within the
 /// bar, since two items never do the same thing.
 pub(crate) fn id_of(action: &MenuAction) -> String {
@@ -376,12 +386,12 @@ thread_local! {
     static WHERE: std::cell::Cell<Where> = const { std::cell::Cell::new(Where::Window) };
 }
 
-/// Whether the menus live in the menu bar of the system rather than in the window.
-pub(crate) fn in_system_bar() -> bool {
+/// Whether this window has taken over the menu bar of the system.
+pub(crate) fn installed() -> bool {
     WHERE.with(|w| w.get()) == Where::SystemBar
 }
 
-/// For the checks: the window behaves as if the system bar had been taken over, without touching the system.
+/// For the checks: the window behaves as if it had taken over the system bar, without touching the system.
 #[cfg(test)]
 pub(crate) fn pretend_system_bar() {
     WHERE.with(|w| w.set(Where::SystemBar));
@@ -447,7 +457,7 @@ mod mac {
                 None => crate::gui::menu_model::apply_menu_action(action, bc, ctx),
             }
         }
-        let new = system_bar(&crate::gui::menu_model::menu_model(&crate::gui::menu_model::menu_state(bc)), focus_of(ctx));
+        let new = shown_bar(&crate::gui::menu_model::menu_model(&crate::gui::menu_model::menu_state(bc)), focus_of(ctx), bc.set.menu_place);
         let failed = BAR.with(|b| {
             let mut b = b.borrow_mut();
             let Some(bar) = b.as_mut() else { return false };
@@ -964,6 +974,66 @@ mod tests {
         chords.extend(["Ctrl+H", "Ctrl+M"].map(|k| qymcad_ui_state::Chord::parse(k).expect("a chord")));
         let free: Vec<String> = chords.iter().filter(|c| qymcad_ui_state::hotkey_refusal_on(Os::Mac, "part.extrude", c).is_none()).map(|c| c.name()).collect();
         assert!(free.is_empty(), "these keys of the system bar can still be bound to a tool on a Mac: {free:?}");
+    }
+
+    /// WITH THE MENUS KEPT IN THE WINDOW, the system bar holds the application menu alone - Hide and Quit stay
+    /// where a Mac keeps them; with the menus in the system bar, it holds them all.
+    #[test]
+    fn the_system_bar_follows_where_the_menus_live() {
+        use qymcad_ui_state::MenuPlace;
+        let model = menu_model(&quiet());
+        let roles = |place| shown_bar(&model, Focus::Document, place).iter().map(|t| t.role).collect::<Vec<_>>();
+        assert_eq!(roles(MenuPlace::Window), [NativeRole::App], "with the menus in the window the system bar repeats none of them");
+        assert_eq!(roles(MenuPlace::SystemBar).len(), 6, "with the menus in the system bar it holds all of them");
+        let app = shown_bar(&model, Focus::Document, MenuPlace::Window);
+        assert!(actions(&app).contains(&MenuAction::Quit), "Quit stays in the application menu");
+        assert!(systems(&app[0].nodes).contains(&SystemItem::Hide), "Hide stays in the application menu");
+    }
+
+    /// THE MENUS GO TO THE TOP OF THE SCREEN UNLESS A PERSON SAID OTHERWISE: a settings record from before the
+    /// choice existed keeps them there too, and resetting the General section brings them back.
+    #[test]
+    fn the_menus_live_in_the_system_bar_unless_told_otherwise() {
+        use qymcad_ui_state::{MenuPlace, Settings};
+        assert_eq!(Settings::default().menu_place, MenuPlace::SystemBar);
+        let old: Settings = ron::from_str("(language: \"en\")").expect("a settings record without the choice reads");
+        assert_eq!(old.menu_place, MenuPlace::SystemBar, "a record from before the choice must not move the menus");
+        let mut set = Settings { menu_place: MenuPlace::Window, ..Settings::default() };
+        qymcad_ui_state::settings_sections::SettingsSection::General.reset(&mut set);
+        assert_eq!(set.menu_place, MenuPlace::SystemBar, "resetting General must bring the menus back to the system bar");
+    }
+
+    /// THE CHOICE IN THE SETTINGS MOVES THE MENUS AT ONCE, through a real frame: chosen "in the window", the
+    /// menu bar of the window comes back; chosen "at the top of the screen", it goes again.
+    #[test]
+    fn the_settings_move_the_menus_at_once() {
+        use crate::gui::hand::Hand;
+        use qymcad_ui_state::MenuPlace;
+        pretend_system_bar();
+        let file = qymcad_i18n::tr("menu-file");
+        let mut app = crate::gui::App::default();
+        app.set.menu_place = MenuPlace::Window;
+        let mut hand = Hand::new(&mut app);
+        assert!(hand.shows(&file), "with the menus kept in the window, the window must draw them");
+        assert!(hand.press_word(&qymcad_i18n::tr("menu-windows"), egui::pos2(0.0, 0.0)), "setup: the Windows menu");
+        assert!(hand.press_word(&qymcad_i18n::tr("win-settings"), egui::pos2(0.0, 0.0)), "setup: the settings open from the menu");
+        assert!(hand.press_word(&qymcad_i18n::tr(MenuPlace::SystemBar.key()), egui::pos2(0.0, 0.0)), "the settings do not offer the menu bar of the system");
+        assert_eq!(hand.app.set.menu_place, MenuPlace::SystemBar);
+        assert!(!hand.shows(&file), "chosen at the top of the screen, the menus must leave the window at once");
+        assert!(hand.press_word(&qymcad_i18n::tr(MenuPlace::Window.key()), egui::pos2(0.0, 0.0)), "the settings do not offer the window");
+        assert!(hand.shows(&file), "chosen in the window, the menus must come back at once");
+    }
+
+    /// AWAY FROM A MAC THE CHOICE IS NOT OFFERED: the window keeps its menus, and there is nothing to choose.
+    #[test]
+    fn without_the_system_bar_the_choice_is_not_offered() {
+        use crate::gui::hand::Hand;
+        let mut app = crate::gui::App::default();
+        let mut hand = Hand::new(&mut app);
+        assert!(hand.press_word(&qymcad_i18n::tr("menu-windows"), egui::pos2(0.0, 0.0)), "setup: the Windows menu");
+        assert!(hand.press_word(&qymcad_i18n::tr("win-settings"), egui::pos2(0.0, 0.0)), "setup: the settings open from the menu");
+        assert!(hand.shows(&qymcad_i18n::tr("settings-show-start")), "setup: the General section is open");
+        assert!(!hand.shows(&qymcad_i18n::tr("settings-menu-place")), "a window without the system bar offers a choice it cannot make");
     }
 
     /// THE KEYS OF THE MENU BECOME KEYS OF THE SYSTEM: every key the bar carries has a key code there.
