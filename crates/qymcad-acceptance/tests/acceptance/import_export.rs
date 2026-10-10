@@ -5,7 +5,7 @@ use qymcad_acceptance::{build, probe};
 
 /// The path of a file of this check's own.
 fn a_path(name: &str, ext: &str) -> String {
-    format!("{}/through-{name}.{ext}", std::env::temp_dir().display())
+    qymcad_acceptance::scratch::file(&format!("through-{name}.{ext}"))
 }
 
 /// Write the block of the first part out in the format the menu calls `item`, into `path`. The mesh formats ask for
@@ -232,7 +232,7 @@ probe! {
 /// `.bin` beside it, metres and +Y up. Written by hand, not by our own export - what comes out of another program
 /// is a pair of files, not the single `.glb` we write.
 fn a_gltf_beside_its_buffer(name: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("qymcad-gltf-{name}"));
+    let dir = qymcad_acceptance::scratch::place(&format!("gltf-{name}"));
     std::fs::create_dir_all(&dir).expect("the folder of the glTF is made");
     let corners = [[0.0, 0.0, 0.0], [40.0, 0.0, 0.0], [40.0, 30.0, 0.0], [0.0, 30.0, 0.0], [0.0, 0.0, 10.0], [40.0, 0.0, 10.0], [40.0, 30.0, 10.0], [0.0, 30.0, 10.0]];
     let mut bin: Vec<u8> = Vec::new();
@@ -335,7 +335,7 @@ probe! {
 probe! {
     /// A PATH WITH SPACES AND LETTERS OF ANOTHER ALPHABET is written and read like any other.
     fn a_path_with_spaces_and_other_letters_is_read() {
-        let dir = std::env::temp_dir().join("\u{43f}\u{430}\u{43f}\u{43a}\u{430} \u{441} \u{43f}\u{440}\u{43e}\u{431}\u{435}\u{43b}\u{430}\u{43c}\u{438}");
+        let dir = qymcad_acceptance::scratch::place("\u{43f}\u{430}\u{43f}\u{43a}\u{430} \u{441} \u{43f}\u{440}\u{43e}\u{431}\u{435}\u{43b}\u{430}\u{43c}\u{438}");
         std::fs::create_dir_all(&dir).expect("the folder with spaces in its name is made");
         let path = dir.join("\u{434}\u{435}\u{442}\u{430}\u{43b}\u{44c} 1.stl").display().to_string();
         let mut s = Session::start();

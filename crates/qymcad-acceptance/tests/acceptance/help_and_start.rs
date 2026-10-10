@@ -121,7 +121,7 @@ probe! {
     /// A CRASH IN THE RUN BEFORE IS TOLD ABOUT ONCE: the report left on the machine is named at the next start,
     /// and the start after it says nothing.
     fn a_crash_in_the_run_before_is_told_about_once() {
-        let home = std::env::temp_dir().join(format!("qymcad-crash-probe-{}", std::process::id()));
+        let home = qymcad_acceptance::scratch::place("home");
         let crashes = home.join("crashes"); // the one folder of the person's files, the crash reports in it
         std::fs::create_dir_all(&crashes).expect("the folder of the reports is made");
         std::fs::write(crashes.join("crash_20260101_000000.txt"), "step: extrude\nmessage: the check wrote this\n").expect("the report of the run before is written");
@@ -159,7 +159,7 @@ probe! {
     /// THE NOTICE OF A CRASH IS THE TOP THING ON SCREEN: at a first start it stands over the start screen, and its
     /// Close can be pressed without putting anything else away first.
     fn the_notice_of_a_crash_stands_over_the_start_screen() {
-        let home = std::env::temp_dir().join(format!("qymcad-crash-over-{}", std::process::id()));
+        let home = qymcad_acceptance::scratch::place("home");
         let crashes = home.join("crashes"); // the one folder of the person's files, the crash reports in it
         std::fs::create_dir_all(&crashes).expect("the folder of the reports is made");
         let report = crashes.join("crash_20260101_000000.txt");

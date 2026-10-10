@@ -171,7 +171,7 @@ probe! {
     /// that id and lit the first face of the body wherever the cursor stood, while a click took the face pointed at.
     /// Reported behaviour: on a project of meshes the highlight stayed on one face, "especially on the two islands".
     fn the_face_under_the_cursor_is_lit_on_a_body_of_a_mesh() {
-        let path = format!("{}/qymcad-box-{}.stl", std::env::temp_dir().display(), std::process::id());
+        let path = qymcad_acceptance::scratch::file("box.stl");
         box_stl(&path);
         let mut s = Session::start();
         build::into_the_first_part(&mut s);

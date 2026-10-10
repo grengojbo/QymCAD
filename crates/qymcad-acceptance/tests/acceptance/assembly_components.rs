@@ -76,7 +76,7 @@ probe! {
     fn a_part_is_brought_in_from_a_file() {
         let mut s = a_first_start();
         build::block(&mut s); // it steps into the first part itself
-        let path = format!("{}/insert-me.step", std::env::temp_dir().display());
+        let path = qymcad_acceptance::scratch::file("insert-me.step");
         let (file, export) = (s.word("menu-file"), s.word("file-export"));
         s.menu(&[&file, &export, "STEP\u{2026}"]);
         s.answer_file(&path);

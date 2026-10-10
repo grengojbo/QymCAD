@@ -440,7 +440,7 @@ fn draw(s: &mut Session, hint: &str, places: &[(f64, f64)]) {
 /// The block written out as STL and brought back into a fresh project as a mesh, as a person does it.
 fn mesh_of_block(s: &mut Session) {
     build::block(s);
-    let path = format!("{}/qymcad-contract-mesh-{}.stl", std::env::temp_dir().display(), std::process::id());
+    let path = crate::scratch::file("contract-mesh.stl");
     let (file, export) = (s.word("menu-file"), s.word("file-export"));
     s.menu(&[&file, &export, "STL\u{2026}"]);
     let quality = s.word("stl-standard");

@@ -343,7 +343,7 @@ pub fn run(tool: &PartTool, case: &Case, round_trips: bool) -> Vec<String> {
                 problems.extend(change_above(&mut s, tool, then, was.kinds, added));
             }
             if round_trips && problems.is_empty() {
-                let path = std::env::temp_dir().join(format!("qymcad-matrix-{}.qcad", std::process::id())).to_string_lossy().into_owned();
+                let path = crate::scratch::file("matrix.qcad");
                 for trip in [crate::oracles::undo_redo(&mut s), crate::oracles::save_open(&mut s, &path), crate::oracles::rebuild_everything(&mut s)] {
                     if let Err(e) = trip {
                         problems.push(e);

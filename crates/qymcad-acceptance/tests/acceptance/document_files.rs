@@ -3,9 +3,9 @@
 use qymcad::{Key, Session};
 use qymcad_acceptance::{build, probe};
 
-/// A file of this check's own, in the folder for temporary things.
+/// A file of this check's own.
 fn a_path(name: &str) -> String {
-    format!("{}/{name}.qcad", std::env::temp_dir().display())
+    qymcad_acceptance::scratch::file(&format!("{name}.qcad"))
 }
 
 /// Walk the menu of files down to `keys`.

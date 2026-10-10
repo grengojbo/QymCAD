@@ -97,7 +97,7 @@ probe! {
     /// THE PIECES LIVE THROUGH UNDO, REDO, SAVING, OPENING AND REBUILDING: each gives back the same two pieces.
     fn split_pieces_survive_the_round_trips() {
         let mut s = halves();
-        let path = std::env::temp_dir().join(format!("qymcad-split-{}.qcad", std::process::id())).to_string_lossy().into_owned();
+        let path = qymcad_acceptance::scratch::file("split.qcad");
         let problems: Vec<String> = [oracles::undo_redo(&mut s), oracles::save_open(&mut s, &path), oracles::rebuild_everything(&mut s)].into_iter().filter_map(Result::err).collect();
         assert!(problems.is_empty(), "the pieces did not come back the same:\n{}", problems.join("\n"));
     }

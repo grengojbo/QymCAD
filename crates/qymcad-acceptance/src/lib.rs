@@ -15,6 +15,7 @@ pub mod isolation;
 pub mod matrix;
 pub mod mouse;
 pub mod oracles;
+pub mod scratch;
 pub mod tools;
 
 /// RUN `f` AND ANSWER THE MESSAGE IT FAILED WITH; empty when it did not fail. For the checks of a refusal: a

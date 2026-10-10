@@ -5,7 +5,7 @@ use qymcad_acceptance::{build, probe};
 
 /// The path of a file of this check's own.
 fn a_path(name: &str, ext: &str) -> String {
-    format!("{}/written-{name}.{ext}", std::env::temp_dir().display())
+    qymcad_acceptance::scratch::file(&format!("written-{name}.{ext}"))
 }
 
 /// AN ASSEMBLY OF TWO BLOCKS, each in a part of its own: 40 x 30 x 10 at the origin and 20 x 20 x 10 beside it at

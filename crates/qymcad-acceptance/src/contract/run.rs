@@ -1484,9 +1484,7 @@ fn undo(tool: &Tool) {
 
 /// A file of this check's own to save into.
 fn scratch(tool: &Tool, what: &str) -> String {
-    let dir = std::env::temp_dir().join(format!("qymcad-contract-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("the scratch folder is made");
-    dir.join(format!("{}-{what}.qcad", tool.id.replace('.', "-"))).to_string_lossy().into_owned()
+    crate::scratch::file(&format!("{}-{what}.qcad", tool.id.replace('.', "-")))
 }
 
 /// 12. SAVED AND OPENED, THE NODE AND THE BODY ARE THE SAME: names, numbers and the names of the faces.

@@ -107,6 +107,8 @@ pub fn apart(path: &str, budget: Duration, memory: u64, env: &[(&str, String)]) 
         command.env(k, v);
     }
     let mut child = command.stdout(file.try_clone().expect("the log is shared by both streams")).stderr(file).spawn().expect("the check's own process starts");
+    // what the check wrote goes with it, however it ended: a check stopped past its time leaves no guard of its own
+    let _written = [crate::scratch::Folder::left_at(crate::scratch::folder_of(child.id())), crate::scratch::Folder::left_at(qymcad::Machine::home_of_run(child.id()))];
     let started = Instant::now();
     let ended = loop {
         if let Some(status) = child.try_wait().expect("the child is waited on") {

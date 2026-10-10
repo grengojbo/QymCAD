@@ -406,7 +406,7 @@ fn hold(scene: Scene, steps: &[Step]) -> Result<Played, String> {
     let played = play(&mut s, steps).map_err(|stop| format!("stopped at step {} ({:?}):\n{}", stop.at, steps[stop.at], stop.said))?;
     // THE ROUND TRIPS, each named: they look at a program that may still not come to rest, and which of them it did
     // not come to rest in is the first thing to know about such a chain
-    let path = format!("{}/qymcad-chain-{}-round.qcad", std::env::temp_dir().display(), std::process::id());
+    let path = crate::scratch::file("chain-round.qcad");
     let rounds: [Round; 3] = [
         Round { name: "undo and redo", run: &|s| crate::oracles::undo_redo(s) },
         Round { name: "save and open", run: &|s| crate::oracles::save_open(s, &path) },
@@ -593,11 +593,6 @@ pub fn as_probe(seed: u64, scene: Scene, steps: &[Step]) -> String {
     )
 }
 
-/// The file a chain saves the document into, one per process.
-fn scratch() -> String {
-    format!("{}/qymcad-chain-{}.qcad", std::env::temp_dir().display(), std::process::id())
-}
-
 /// MAKE ONE STEP in `s`, as a person makes it.
 fn perform(s: &mut Session, step: &Step) {
     match step {
@@ -647,7 +642,7 @@ fn perform(s: &mut Session, step: &Step) {
             s.chord(Modifiers::COMMAND, Key::Y);
         }
         Step::SaveAndOpen => {
-            let path = scratch();
+            let path = crate::scratch::file("chain.qcad");
             build::save_as(s, &path);
             build::open_project(s, &path);
         }

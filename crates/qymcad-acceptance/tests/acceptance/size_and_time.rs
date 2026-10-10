@@ -109,7 +109,7 @@ probe! {
     /// A MESH OF TWO HUNDRED THOUSAND TRIANGLES - a sphere of 50, 200 bands by 500 slices - comes into a part within
     /// its time, holding the sphere's volume, and no frame after it stalls.
     fn a_mesh_of_two_hundred_thousand_triangles_comes_in_in_time() {
-        let path = format!("{}/qymcad-sphere-{}.stl", std::env::temp_dir().display(), std::process::id());
+        let path = qymcad_acceptance::scratch::file("sphere.stl");
         sphere_stl(&path, 50.0, 200, 500);
         let mut s = Session::start();
         s.budget(Duration::from_secs(600));

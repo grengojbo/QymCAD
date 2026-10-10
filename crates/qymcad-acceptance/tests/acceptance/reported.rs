@@ -63,7 +63,7 @@ probe! {
 
 /// A BLOCK WRITTEN AS AN STL, and its path.
 fn an_stl_of_a_block(name: &str) -> String {
-    let path = format!("{}/reported-{name}-{}.stl", std::env::temp_dir().display(), std::process::id());
+    let path = qymcad_acceptance::scratch::file(&format!("reported-{name}.stl"));
     let _ = std::fs::remove_file(&path);
     let mut s = Session::start();
     build::block(&mut s);

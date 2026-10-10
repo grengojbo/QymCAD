@@ -34,7 +34,7 @@ fn a_mesh_of_a_block(name: &str) -> Session {
 fn a_mesh_of(name: &str, make: fn(&mut Session)) -> Session {
     let mut s = Session::start();
     make(&mut s);
-    let path = format!("{}/{name}.stl", std::env::temp_dir().display());
+    let path = qymcad_acceptance::scratch::file(&format!("{name}.stl"));
     let (file, export) = (s.word("menu-file"), s.word("file-export"));
     s.menu(&[&file, &export, "STL\u{2026}"]);
     let quality = s.word("stl-standard");

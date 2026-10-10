@@ -170,8 +170,8 @@ mod tests {
     /// SIGNED, THE SAME PICTURE PASSES; UNSIGNED OR CHANGED, IT FAILS and leaves the candidate and its differences.
     #[test]
     fn a_picture_passes_only_as_signed() {
-        let root = std::env::temp_dir().join(format!("qymcad-golden-check-{}", std::process::id()));
-        let (signed, candidates) = (root.join("signed"), root.join("candidates"));
+        let root = crate::scratch::Folder::fresh(std::env::temp_dir().join(format!("qymcad-golden-check-{}", std::process::id())));
+        let (signed, candidates) = (root.path().join("signed"), root.path().join("candidates"));
         let a = grey(40, 30, 90);
         let unsigned = crate::refusal(|| super::check(&signed, &candidates, "grey", &a, false));
         assert!(unsigned.contains("no picture is signed") && candidates.join("grey.png").exists(), "an unsigned picture: {unsigned:?}");
@@ -183,6 +183,5 @@ mod tests {
         }
         let changed = crate::refusal(|| super::check(&signed, &candidates, "grey", &b, false));
         assert!(changed.contains("does not look as signed") && candidates.join("grey.diff.png").exists(), "a picture with a row changed: {changed:?}");
-        let _ = std::fs::remove_dir_all(&root);
     }
 }

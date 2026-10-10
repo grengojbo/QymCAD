@@ -76,7 +76,7 @@ fn round_trips(s: &mut Session, doc: &Document) -> Vec<String> {
         if (only.is_empty() || only == "undo") && !s.typing() {
             problems.extend(undo_redo(s).err());
         }
-        let path = std::env::temp_dir().join(format!("qymcad-round-trip-{}-{:?}.qcad", std::process::id(), std::thread::current().id())).to_string_lossy().into_owned();
+        let path = crate::scratch::file(&format!("round-trip-{:?}.qcad", std::thread::current().id()));
         if only.is_empty() || only == "save" {
             problems.extend(save_copy_open(s, &path).err());
         }
