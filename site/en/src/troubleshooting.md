@@ -7,4 +7,5 @@
 | After QymCAD is updated Claude does not see its tools | Press "Connect to Claude" again and restart Claude |
 | The part came out in the wrong place / the holes miss | Remind Claude that starting shapes stand centred on the origin; ask "show it from the top" |
 | A feature is red | Ask "why is it red?" — the answer has the reason; ask for another value |
+| Claude does not see what is selected in the window | Turn on **Settings -> General -> Claude in this window** and ask again; more in [Claude in the QymCAD window](live.md) |
 | A file is not found | Give the full path (`~/Downloads/...`) — a relative one is counted from the folder Claude Code was started in |

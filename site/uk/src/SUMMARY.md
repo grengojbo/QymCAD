@@ -6,6 +6,7 @@
 - [Встановлення](install.md)
 - [Перша деталь за п'ять хвилин](first-part.md)
 - [Як говорити з Claude про деталь](talking.md)
+- [Claude у вікні QymCAD](live.md)
 - [Приклади](examples.md)
 - [Поради для 3D-друку (FDM)](printing.md)
 - [Чого поки не вміє](limits.md)

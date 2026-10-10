@@ -9,5 +9,5 @@ What you need:
 | What | What for |
 |---|---|
 | **Claude Desktop** or **Claude Code** | The conversation with Claude. Desktop is an ordinary program with a chat window; Code is the same in a terminal, for those who work there. |
-| **QymCAD** | The program itself. It installs with it the `qymcad-mcp` server, through which Claude does the modelling "behind the scenes", with no window. The window is there to connect Claude, to open the result, turn it around and touch something up by hand. |
+| **QymCAD** | The program itself. It installs with it the `qymcad-mcp` server, through which Claude does the modelling "behind the scenes", with no window. The window is there to connect Claude, to open the result, turn it around and touch something up by hand — or for Claude to work right in it (see [Claude in the QymCAD window](live.md)). |
 | **A slicer** (optional) | Bambu Studio, OrcaSlicer, PrusaSlicer — to print the 3MF or the STL. |
