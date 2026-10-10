@@ -26,6 +26,46 @@ static ADAPTERS: Mutex<Vec<String>> = Mutex::new(Vec::new());
 /// treacle, and it is the same reason a report of "slow" would otherwise waste a round trip.
 static ON_THE_PROCESSOR: Mutex<Option<String>> = Mutex::new(None);
 
+/// WHO DRAWS, for the person: the adapter the window took, by name, the system's drawing interface and the kind of
+/// device. The line in `GPU` is for a report; this is shown in the settings, where "GPU (fast)" alone said nothing of
+/// a GPU that was the processor.
+static DRAWER: Mutex<Option<Drawer>> = Mutex::new(None);
+
+/// What kind of device an adapter is, as far as a person cares: a card draws fast, the processor slowly.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum DrawerKind {
+    Card,
+    Virtual,
+    Processor,
+    Other,
+}
+
+/// THE ADAPTER THE WINDOW DRAWS WITH: its name, the system's drawing interface (Direct3D 12, Vulkan, Metal, OpenGL)
+/// and the kind of device.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Drawer {
+    pub name: String,
+    pub interface: String,
+    pub kind: DrawerKind,
+}
+
+/// The window has taken this adapter. Called once, with the adapter the window draws with.
+pub fn note_drawer(drawer: Drawer) {
+    if let Ok(mut d) = DRAWER.lock() {
+        *d = Some(drawer);
+    }
+}
+
+/// The adapter the window draws with, once it has taken one.
+pub fn drawer() -> Option<Drawer> {
+    DRAWER.lock().ok().and_then(|d| d.clone())
+}
+
+/// Every adapter the machine offered, one line each.
+pub fn adapters() -> Vec<String> {
+    ADAPTERS.lock().map(|a| a.clone()).unwrap_or_default()
+}
+
 /// Why the program never opened a window, where that was written down, and whether the reason was that no
 /// adapter would draw - which is the one cause with advice a person can act on.
 static START_FAILURE: Mutex<Option<StartFailure>> = Mutex::new(None);

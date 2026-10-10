@@ -199,6 +199,7 @@ pub fn launch() -> eframe::Result<()> {
                 // and by nothing else, and it cannot be guessed from a screenshot.
                 let i = rs.adapter.get_info();
                 crate::diagnostics::note_gpu(format!("wgpu {:?}, {} ({:?}), driver {} {}", i.backend, i.name, i.device_type, i.driver, i.driver_info));
+                crate::diagnostics::note_drawer(drawer_of(&i));
             } else {
                 // The glow fallback: no adapter to ask, but WHICH PATH is drawing is itself the answer to
                 // "the viewport is slow" and "the viewport is black".
@@ -273,6 +274,27 @@ fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
             }),
         }
     }));
+}
+
+/// THE ADAPTER AS A PERSON READS IT: the name, the drawing interface by its own name, and whether it is a card or the
+/// processor.
+pub(crate) fn drawer_of(info: &eframe::wgpu::AdapterInfo) -> crate::diagnostics::Drawer {
+    use crate::diagnostics::DrawerKind;
+    use eframe::wgpu::{Backend, DeviceType};
+    let interface = match info.backend {
+        Backend::Dx12 => "Direct3D 12".to_string(),
+        Backend::Vulkan => "Vulkan".to_string(),
+        Backend::Metal => "Metal".to_string(),
+        Backend::Gl => "OpenGL".to_string(),
+        other => format!("{other:?}"),
+    };
+    let kind = match info.device_type {
+        DeviceType::DiscreteGpu | DeviceType::IntegratedGpu => DrawerKind::Card,
+        DeviceType::VirtualGpu => DrawerKind::Virtual,
+        DeviceType::Cpu => DrawerKind::Processor,
+        DeviceType::Other => DrawerKind::Other,
+    };
+    crate::diagnostics::Drawer { name: info.name.clone(), interface, kind }
 }
 
 /// One adapter in one line, for the report.

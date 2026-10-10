@@ -288,6 +288,71 @@ mod applicability_tests {
         assert!(!persp.iter().any(|t| t.contains(&why)), "under perspective the setting works and the window still makes excuses");
     }
 
+    /// WHO DRAWS IS SAID IN THE VIEWPORT'S SETTINGS. Reported behaviour: on Windows the program was "very slow" with
+    /// "GPU (fast)" chosen, and nothing in the window said that the GPU there was Microsoft's software adapter - the
+    /// processor. With the processor drawing, the line names it and says what to do, with the words of the rows it
+    /// points to; with a card, the line names the card and holds no advice; before the window has taken an adapter, it
+    /// says so. The Viewport section shows the line.
+    #[test]
+    fn the_viewport_settings_say_who_draws() {
+        use crate::diagnostics::{Drawer, DrawerKind};
+        let prev = crate::i18n::language();
+        crate::i18n::set_language("uk");
+        let tr = crate::i18n::tr;
+        let draw = |drawer: Option<Drawer>, offered: Vec<String>| {
+            let mut app = App::default();
+            super::super::screen_keys::tests::frame_text(&mut app, move |_, c| {
+                egui::CentralPanel::default().show(c, |ui| crate::gui::panels_windows::drawer_rows(ui, drawer.as_ref(), &offered, egui::Color32::RED));
+            })
+        };
+        let warp = Drawer { name: "Microsoft Basic Render Driver".into(), interface: "Direct3D 12".into(), kind: DrawerKind::Processor };
+        let offered = vec!["Dx12/Cpu Microsoft Basic Render Driver".to_string(), "Gl/IntegratedGpu Intel(R) HD Graphics 2500".to_string()];
+        let slow = draw(Some(warp), offered);
+        let card = draw(Some(Drawer { name: "Apple M2".into(), interface: "Metal".into(), kind: DrawerKind::Card }), Vec::new());
+        let unknown = draw(None, Vec::new());
+
+        // the line stands last in the section, below the fold of a test frame: the search for the engine's row finds it
+        let mut app = App::default();
+        app.win.open(WinKind::Settings);
+        app.scheme.section = super::super::settings_sections::SettingsSection::Viewport;
+        app.scheme.search = tr("settings-engine").trim_end_matches(':').to_string();
+        let section = super::super::screen_keys::tests::frame_text(&mut app, |a, c| {
+            let mut asks = Vec::new();
+            crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c);
+            a.do_win_asks(asks, c);
+        });
+
+        // the words looked for are read in the language the texts were drawn in, not in the one restored
+        let has = |texts: &[String], what: &str| texts.iter().any(|t| t.contains(what));
+        let mut wrong = Vec::new();
+        for must in [
+            "Microsoft Basic Render Driver",
+            "Direct3D 12",
+            &tr("settings-drawer-processor"),
+            &tr("settings-engine-cpu"),
+            &tr("settings-msaa-off"),
+            &tr("settings-drawer-offered"),
+        ] {
+            if !has(&slow, must) {
+                wrong.push(format!("the processor drawing does not say {must:?}: {slow:?}"));
+            }
+        }
+        if !has(&card, "Apple M2") || !has(&card, &tr("settings-drawer-card")) {
+            wrong.push(format!("the card drawing is not named: {card:?}"));
+        }
+        if has(&card, &tr("settings-engine-cpu")) || has(&card, &tr("settings-drawer-offered")) {
+            wrong.push(format!("a card drawing is given advice or a list of one: {card:?}"));
+        }
+        if !has(&unknown, &tr("settings-drawer-unknown")) {
+            wrong.push(format!("no adapter yet and the line does not say so: {unknown:?}"));
+        }
+        if !has(&section, &tr("settings-drawer-unknown")) {
+            wrong.push(format!("the Viewport section does not say who draws: {section:?}"));
+        }
+        crate::i18n::set_language(&prev);
+        assert!(wrong.is_empty(), "who draws is not said:\n  {}", wrong.join("\n  "));
+    }
+
     /// AND THE ORDER OF THE ROWS RUNS FROM THE IMPORTANT TO THE RARE.
     ///
     /// A guard over the source: the projection is switched daily and the shading once in a lifetime, and

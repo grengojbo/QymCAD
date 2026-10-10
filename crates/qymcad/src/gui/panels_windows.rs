@@ -991,6 +991,40 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
 ///
 /// Every row goes through `row`, and its key must appear in its section's `row_keys`: a guard checks that in
 /// both directions, which makes "present in the window but not searchable" inexpressible.
+/// WHO DRAWS, under the viewport's engine: the adapter by name, its drawing interface and whether it is a card or the
+/// processor, with the other adapters the system offered folded below. Reported behaviour: on Windows the program was
+/// "very slow" with "GPU (fast)" chosen, and nothing in the window said that the GPU there was Microsoft's software
+/// adapter - the processor; the one sentence saying so passed through the status line at the start.
+pub(crate) fn drawer_rows(ui: &mut egui::Ui, drawer: Option<&crate::diagnostics::Drawer>, offered: &[String], warning: egui::Color32) {
+    use crate::diagnostics::DrawerKind;
+    let tr = crate::i18n::tr;
+    let Some(d) = drawer else {
+        ui.label(egui::RichText::new(tr("settings-drawer-unknown")).weak().small());
+        return;
+    };
+    let kind = match d.kind {
+        DrawerKind::Card => tr("settings-drawer-card"),
+        DrawerKind::Virtual => tr("settings-drawer-virtual"),
+        DrawerKind::Processor => tr("settings-drawer-processor"),
+        DrawerKind::Other => tr("settings-drawer-other"),
+    };
+    let line = crate::i18n::trn("settings-drawer", &[("name", d.name.as_str()), ("interface", d.interface.as_str()), ("kind", kind.as_str())]);
+    if d.kind == DrawerKind::Processor {
+        ui.colored_label(warning, format!("{} {line}", ph::WARNING));
+        let hint = crate::i18n::trn("settings-drawer-processor-hint", &[("gpu", &tr("settings-engine-gpu")), ("cpu", &tr("settings-engine-cpu")), ("off", &tr("settings-msaa-off"))]);
+        ui.label(egui::RichText::new(hint).weak().small());
+    } else {
+        ui.label(egui::RichText::new(line).small());
+    }
+    if offered.len() > 1 {
+        egui::CollapsingHeader::new(egui::RichText::new(tr("settings-drawer-offered")).small()).id_salt("qym-drawer-offered").show(ui, |ui| {
+            for a in offered {
+                ui.label(egui::RichText::new(a).monospace().small().weak());
+            }
+        });
+    }
+}
+
 pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context, sec: super::settings_sections::SettingsSection, query: &str) {
     use super::settings_sections::SettingsSection as Sec;
     let show = |k: &str| Sec::row_matches(k, query, &|s: &str| crate::i18n::tr(s));
@@ -1376,6 +1410,10 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 // start-up; silently not applying it would be a lie, so it is stated plainly. And on the CPU
                 // raster what is said is not "restart" but that the setting has nothing to do with it.
                 ui.label(egui::RichText::new(if gpu { crate::i18n::tr("settings-msaa-restart") } else { crate::i18n::tr("settings-msaa-needs-gpu") }).weak().small());
+            }
+            // WHO DRAWS, last: read when the viewport is slow, not set like the rows above
+            if show("settings-engine") {
+                drawer_rows(ui, crate::diagnostics::drawer().as_ref(), &crate::diagnostics::adapters(), wc.scheme.pal.warning());
             }
         }
         Sec::Sketch => {

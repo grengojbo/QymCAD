@@ -61,6 +61,19 @@ missing is taken from the factory values.
 Almost everything applies at once. The single exception is named in the window itself: **GPU
 antialiasing** takes effect the next time the program starts.
 
+## When the model turns slowly
+
+At the bottom of the **Viewport** section the line **Draws** names what draws the window: the graphics card, or
+the processor. On a computer whose graphics card has no working driver, Windows hands the drawing to the processor,
+and then **GPU (fast)** is the processor too.
+
+If the line says **the processor**:
+
+1. Install the driver of the graphics card from its maker's site.
+2. Until then choose **CPU (compatibility)** in **Viewport engine** and **Off** in antialiasing, and see which turns
+   the model faster.
+3. If neither helps, send the words of the line through **Help -> Report a problem**: the report carries them.
+
 ## The panel layout
 
 In the **Layout** section every panel picks its place: menu, top, left, right, bottom or the middle.
