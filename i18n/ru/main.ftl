@@ -2644,3 +2644,7 @@ settings-drawer-other = другое устройство
 settings-drawer-unknown = Рисует: пока неизвестно — окно ещё не выбрало адаптер.
 settings-drawer-processor-hint = Рабочей видеокарты не нашлось, поэтому «{ $gpu }» тоже рисует процессор, и повороты модели медленные. Установка драйвера видеокарты это исправит. До тех пор попробуйте «{ $cpu }» и сглаживание «{ $off }».
 settings-drawer-offered = Адаптеры, которые предложила система
+settings-frame-time = Время кадра
+settings-frame-time-hidden = Не показывать
+settings-frame-time-shown = В углу вьюпорта
+frame-time = кадр { $frame } мс · { $fps } к/с · 3D { $view } мс

@@ -2644,3 +2644,7 @@ settings-drawer-other = other device
 settings-drawer-unknown = Draws: not known yet - the window has not chosen an adapter.
 settings-drawer-processor-hint = No working graphics card was found, so "{ $gpu }" is drawn by the processor too and turning a model is slow. Installing the graphics card's driver fixes this. Until then try "{ $cpu }" and antialiasing "{ $off }".
 settings-drawer-offered = Adapters the system offered
+settings-frame-time = The time of a frame
+settings-frame-time-hidden = Hidden
+settings-frame-time-shown = In the corner of the view
+frame-time = frame { $frame } ms · { $fps } fps · 3D { $view } ms

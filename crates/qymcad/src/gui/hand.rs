@@ -57,6 +57,15 @@ impl<'a> Hand<'a> {
         self.frame_holding(modifiers, events)
     }
 
+    /// EVERY TEXT THE LAST FRAME DREW, as a person reads the window.
+    pub fn texts(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for cs in &self.win.shapes {
+            super::screen_keys::tests::collect_text(&cs.shape, &mut out);
+        }
+        out
+    }
+
     /// WHAT THE PROGRAM PUT ON THE CLIPBOARD OF THE SYSTEM, oldest first.
     pub fn copied(&self) -> &[String] {
         &self.win.copied

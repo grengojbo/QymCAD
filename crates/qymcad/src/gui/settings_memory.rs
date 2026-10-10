@@ -33,6 +33,7 @@ mod tests {
             menu_place: qymcad_ui_state::MenuPlace::Window,           // the factory value is SystemBar
             update_check: qymcad_ui_state::UpdateCheck::Weekly,       // the factory value is Daily
             update_last_checked: 1_788_900_000,                       // the factory value is 0 - never asked
+            frame_time: qymcad_ui_state::FrameTime::Shown,            // the factory value is Hidden
             claude_link: qymcad_ui_state::ClaudeLink::On,             // the factory value is Off
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual, // the factory value is PartCentre
             orbit_about: qymcad_ui_state::OrbitAbout::Pointer,        // the factory value is ViewCentre

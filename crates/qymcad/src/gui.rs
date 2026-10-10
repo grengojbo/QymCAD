@@ -1917,7 +1917,8 @@ impl eframe::App for App {
     /// THE FRAME. Named `ui` rather than `update` since egui 0.36: panels now live inside a `Ui`, and
     /// the framework hands the root one in. The context is still wanted for windows, input and viewport
     /// commands, and it comes from the same place.
-    fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
+    fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
+        crate::gui::frame_time::note_frame(frame.info().cpu_usage);
         self.draw_frame(ui);
     }
 
@@ -3971,6 +3972,7 @@ mod pick;
 mod array_axis;
 
 /// Drawing the scene and the overlays lives in `gui/render.rs`.
+mod frame_time;
 mod render;
 
 /// The Part commands (starting them, their parameters, applying them) live in `gui/commands.rs`.

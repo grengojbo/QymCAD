@@ -83,6 +83,7 @@ impl SettingsSection {
                 "settings-ghost-alpha",
                 "settings-fov",
                 "settings-msaa",
+                "settings-frame-time",
             ],
             Sketch => &[
                 "settings-snap-on",
@@ -158,6 +159,7 @@ impl SettingsSection {
                 s.ghost_alpha = d.ghost_alpha;
                 s.persp_fov_deg = d.persp_fov_deg;
                 s.msaa = d.msaa;
+                s.frame_time = d.frame_time;
             }
             Sketch => {
                 s.snap = d.snap;

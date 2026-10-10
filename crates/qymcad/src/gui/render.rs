@@ -100,7 +100,16 @@ pub(crate) fn draw_3d_gpu(pn: &qymcad_ui_state::Painting, painter: &egui::Painte
     painter.add(eframe::egui_wgpu::Callback::new_paint_callback(rect, crate::viewport_gpu::MeshPaint::new(cam, size_px, pieces, looks, key)));
 }
 
+/// THE 3D VIEW, timed: the time it took goes to the corner line of the frame's time, which is drawn over it when the
+/// setting asks.
 pub(crate) fn draw_3d(pn: &Painting, painter: &egui::Painter, rect: Rect) {
+    let started = std::time::Instant::now();
+    draw_3d_view(pn, painter, rect);
+    crate::gui::frame_time::note_view(started.elapsed());
+    crate::gui::frame_time::paint(painter, rect, pn.set.frame_time, pn.scheme.pal.text_dim());
+}
+
+fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let basis = pn.cam.basis();
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };
     let p3 = |p: [f64; 3]| scr.at(p).0;

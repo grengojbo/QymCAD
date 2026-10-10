@@ -80,6 +80,7 @@ mod tests {
             update_check: qymcad_ui_state::UpdateCheck::Weekly,
             update_last_checked: 1_788_900_000,
             claude_link: qymcad_ui_state::ClaudeLink::On,
+            frame_time: qymcad_ui_state::FrameTime::Shown,
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual,
             orbit_about: qymcad_ui_state::OrbitAbout::Pointer,
             msaa: 8,
@@ -372,6 +373,7 @@ mod applicability_tests {
             "settings-ghost-alpha",
             "settings-fov",
             "settings-msaa",
+            "settings-frame-time",
         ];
         let mut prev = 0;
         for k in order {

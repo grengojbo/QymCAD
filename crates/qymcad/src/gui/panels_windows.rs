@@ -1411,6 +1411,14 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 // raster what is said is not "restart" but that the setting has nothing to do with it.
                 ui.label(egui::RichText::new(if gpu { crate::i18n::tr("settings-msaa-restart") } else { crate::i18n::tr("settings-msaa-needs-gpu") }).weak().small());
             }
+            if show("settings-frame-time") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-frame-time"));
+                    for f in qymcad_ui_state::FrameTime::ALL {
+                        ui.selectable_value(&mut wc.set.frame_time, f, crate::i18n::tr(f.key()));
+                    }
+                });
+            }
             // WHO DRAWS, last: read when the viewport is slow, not set like the rows above
             if show("settings-engine") {
                 drawer_rows(ui, crate::diagnostics::drawer().as_ref(), &crate::diagnostics::adapters(), wc.scheme.pal.warning());

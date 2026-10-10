@@ -1530,6 +1530,9 @@ pub struct Settings {
     /// Whether Claude works in this window (see `ClaudeLink`).
     #[serde(default = "default_claude_link")]
     pub claude_link: ClaudeLink,
+    /// Whether the viewport shows the time of a frame in its corner (see `FrameTime`).
+    #[serde(default = "default_frame_time")]
+    pub frame_time: FrameTime,
     /// ASK FOR THE UNITS AND THE SCALE ON EVERY IMPORT. Off, the window comes up only for a file without units and
     /// for a model under 1 mm or over 10 m.
     #[serde(default)]
@@ -1558,6 +1561,10 @@ fn default_update_check() -> UpdateCheck {
 
 fn default_claude_link() -> ClaudeLink {
     ClaudeLink::Off
+}
+
+fn default_frame_time() -> FrameTime {
+    FrameTime::Hidden
 }
 
 fn default_zoom_editing() -> ZoomWhileEditing {
@@ -1638,6 +1645,7 @@ impl Default for Settings {
             update_check: default_update_check(),
             update_last_checked: 0,
             claude_link: default_claude_link(),
+            frame_time: default_frame_time(),
             zoom_editing: default_zoom_editing(),
             orbit_about: default_orbit_about(),
             import_ask_always: false,
@@ -6127,6 +6135,25 @@ impl OrbitAbout {
         match self {
             OrbitAbout::ViewCentre => "settings-orbit-about-centre-hint",
             OrbitAbout::Pointer => "settings-orbit-about-pointer-hint",
+        }
+    }
+}
+
+/// WHETHER THE VIEWPORT SHOWS THE TIME OF A FRAME in its corner: for a person finding out why turning a model is slow,
+/// not for every day.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum FrameTime {
+    Hidden,
+    Shown,
+}
+
+impl FrameTime {
+    pub const ALL: [FrameTime; 2] = [FrameTime::Hidden, FrameTime::Shown];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            FrameTime::Hidden => "settings-frame-time-hidden",
+            FrameTime::Shown => "settings-frame-time-shown",
         }
     }
 }
