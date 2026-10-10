@@ -1,6 +1,6 @@
 //! THE PROGRAM SENDING ITS CALLS TO THE WINDOW, against a stand-in window on a real socket that answers with the same
 //! tools on a document of its own: a call in live mode lands in the window's document and not in the program's; with
-//! no window a call is refused until one opens; a window lost is never replaced by the next one; a busy window and a
+//! no window a call is refused until one opens; a window opened again is reached after a warning; a busy window and a
 //! late one are each told, with what they left of the document; `--auto` takes the window when one listens and a
 //! document of its own otherwise; and the command line is read as it is meant.
 #![cfg(unix)]
@@ -123,8 +123,11 @@ fn with_no_window_a_call_is_refused_until_one_opens() {
     assert_eq!(bodies(&window.close()), 1);
 }
 
+/// A WINDOW OPENED AGAIN IS REACHED, AFTER A WARNING. The window this session worked with closed; one opened later may
+/// hold another document. Its first call is refused untouched with `window-new`, so the model reads the document
+/// before changing it; the call after goes through - no restart of Claude.
 #[test]
-fn a_window_lost_is_not_replaced() {
+fn a_window_opened_again_is_reached_after_a_warning() {
     let path = place("lost");
     let first = stand_in(&path, 0);
     let mut w = live(&path);
@@ -134,8 +137,13 @@ fn a_window_lost_is_not_replaced() {
     assert_eq!(reply["error"]["code"], "window-gone", "{reply}");
     let second = stand_in(&path, 0);
     let reply = call(&mut w, "box", json!({ "x": 5, "y": 5, "z": 5 }));
-    assert_eq!(reply["error"]["code"], "window-gone", "a window opened later took the lost one's place: {reply}");
-    assert_eq!(bodies(&second.close()), 0, "a call reached the second window");
+    assert_eq!(reply["error"]["code"], "window-new", "a window opened later took the lost one's place unannounced: {reply}");
+    assert_eq!(reply["rolled_back"], json!(true), "the warning does not say nothing happened: {reply}");
+    let reply = call(&mut w, "cylinder", json!({ "radius": 2, "height": 2 }));
+    assert_eq!(reply["ok"], json!(true), "the window opened again is not reached after the warning: {reply}");
+    let ctx = second.close();
+    let kinds: Vec<String> = ctx.doc.project().timeline.iter().map(|n| qymcad_doc::report::kind_of(&n.kind)).collect();
+    assert_eq!(kinds, vec!["Cylinder".to_string()], "the second window holds {kinds:?}: the warned call went through, or the next one did not");
 }
 
 #[test]

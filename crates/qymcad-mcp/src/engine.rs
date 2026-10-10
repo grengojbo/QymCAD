@@ -12,9 +12,10 @@
 //! nothing, so until the own document is changed every call looks for the window again; once it is changed, moving to
 //! a window would drop that work unseen.
 //!
-//! A WINDOW LOST IS NOT REPLACED. Once the window this session reached has closed, every call is refused: a window
-//! opened afterwards may hold another document, and a model working on in it unawares would edit a part it never
-//! read. The program is started again for a new window.
+//! A WINDOW OPENED AGAIN IS ANNOUNCED. Once the window this session reached has closed, a window opened afterwards
+//! may hold another document, and a model working on in it unawares would edit a part it never read. So the first
+//! call that reaches the new window is refused untouched with `window-new`, and the calls after it go through: the
+//! model reads the document in between, and nobody restarts Claude.
 
 use std::path::PathBuf;
 use std::time::Duration;
@@ -126,7 +127,7 @@ enum Reach {
     NotYet,
     /// A window answered; the link to it may be dropped and made again, to the same window.
     Reached,
-    /// The window answered once and has closed since: nothing goes to a window again this run.
+    /// The window answered once and has closed since: the next window reached is announced before it takes a call.
     Lost,
 }
 
@@ -140,16 +141,17 @@ pub struct Window {
 
 impl Window {
     fn connect(&mut self) -> Result<(), Refusal> {
-        if self.reach == Reach::Lost {
-            return Err(gone());
-        }
         let Some(path) = &self.path else { return Err(no_window()) };
         match Link::connect(path, self.late) {
             Ok(link) => {
                 self.link = Some(link);
-                self.reach = Reach::Reached;
+                let was = std::mem::replace(&mut self.reach, Reach::Reached);
+                if was == Reach::Lost {
+                    return Err(new_window());
+                }
                 Ok(())
             }
+            Err(_) if self.reach == Reach::Lost => Err(gone()),
             Err(_) if self.reach == Reach::Reached => {
                 self.reach = Reach::Lost;
                 Err(gone())
@@ -202,7 +204,12 @@ fn no_window() -> Refusal {
 
 fn gone() -> Refusal {
     Refusal::new("window-gone", "The QymCAD window this session worked with has closed.", Stage::Window)
-        .with_hint("Nothing goes to a window again in this session: another window may hold another document. Ask the person to reopen QymCAD and restart the QymCAD server.")
+        .with_hint("Ask the person to open QymCAD again; the next call reaches the window opened, after a warning that it may hold another document.")
+}
+
+fn new_window() -> Refusal {
+    Refusal::new("window-new", "A QymCAD window was opened again after the one this session worked with closed; it may hold another document. Nothing was done.", Stage::Window)
+        .with_hint("Read get_document before changing anything; the calls after this one go to this window.")
 }
 
 fn busy() -> Refusal {
