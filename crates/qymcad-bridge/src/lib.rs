@@ -5,8 +5,9 @@
 //! {"code", "message"}}` out. A thread of the channel accepts the clients and reads their lines; the window takes the
 //! calls one by one from a queue on its own thread, does them, and answers.
 //!
-//! THE SOCKET IS ITS OWNER'S ALONE: it lies in the person's own folder and is made readable and writable by them only.
-//! Nothing goes over a network.
+//! THE CHANNEL IS ITS OWNER'S ALONE. On macOS and Linux it is a Unix socket in the person's own folder, readable and
+//! writable by them only; on Windows a named pipe whose owner and one allowed user is the person, refusing clients
+//! from other machines (see `windows.rs`). Nothing goes over a network.
 //!
 //! A CALL NOBODY TOOK IS WITHDRAWN, NOT LEFT TO HAPPEN LATER. A window busy with a person's own action takes nothing
 //! from the queue; past [`Wait::answer_within`] the caller is told the window is busy, and the call is marked so the
@@ -38,14 +39,12 @@ pub type Wake = std::sync::Arc<dyn Fn() + Send + Sync>;
 /// WHY THE WINDOW'S END DID NOT OPEN.
 #[derive(Debug)]
 pub enum Opened {
-    /// Another window listens on this socket.
+    /// Another window listens on this socket; on Windows, a pipe of that name exists already, whoever made it.
     Taken,
     /// The path is longer than a socket path may be.
     TooLong(PathBuf),
     /// The system refused: the folder, the socket or its mode.
     Io(String),
-    /// This system has no channel yet.
-    Unsupported,
 }
 
 /// WHY A CALL OVER THE LINK CAME BACK WITHOUT AN ANSWER.
@@ -61,18 +60,30 @@ pub enum LinkError {
     Late,
     /// The window answered with a refusal of the channel itself: its code and words.
     Refused { code: String, message: String },
-    /// The answer could not be read.
+    /// The answer could not be read, or the channel reached is not the person's own.
     Broken(String),
-    /// This system has no channel yet.
-    Unsupported,
 }
+
+mod wire;
+pub use wire::{Call, Link};
 
 #[cfg(unix)]
 mod unix;
 #[cfg(unix)]
-pub use unix::{Call, Link, Listener};
+use unix as system;
 
-#[cfg(not(unix))]
-mod elsewhere;
-#[cfg(not(unix))]
-pub use elsewhere::{Call, Link, Listener};
+#[cfg(windows)]
+mod windows;
+#[cfg(windows)]
+use windows as system;
+#[cfg(windows)]
+pub use windows::pipe_name;
+
+pub use system::Listener;
+
+impl Link {
+    /// CONNECT TO THE WINDOW AT `path`; an answer is waited for at most `late`.
+    pub fn connect(path: &std::path::Path, late: Duration) -> Result<Link, LinkError> {
+        system::connect(path, late)
+    }
+}

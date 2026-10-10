@@ -16,5 +16,29 @@ qymcad-paths = { path = "../qymcad-paths" }
 serde_json = "1.0.151"
 serde = { workspace = true }
 
+# THE NAMED PIPE ON WINDOWS: the calls of the system, through the bindings the window already builds for its own windows.
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
+# the checks read the pipe's owner and access list back from the system, and make a pipe as another owner would
+[target.'cfg(windows)'.dev-dependencies]
+windows-sys = { version = "0.61.2", features = [
+    "Win32_Foundation",
+    "Win32_Security",
+    "Win32_Security_Authorization",
+    "Win32_Storage_FileSystem",
+    "Win32_System_IO",
+    "Win32_System_Pipes",
+    "Win32_System_Threading",
+] }
+
 [lints]
 workspace = true

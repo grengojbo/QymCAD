@@ -2,8 +2,8 @@
 //! answer comes back; the socket is its owner's alone; a second window is refused while the first lives, and a file a
 //! closed window left behind is cleared; a window that does not answer in time and a window that has closed are each
 //! told as such rather than waited on for ever; two clients at once are both answered; a line that is no call is
-//! answered as one and the link goes on.
-#![cfg(unix)]
+//! answered as one and the link goes on. The same checks run on Windows, over the named pipe; what belongs to one
+//! system alone - the mode of a socket file, the access list of a pipe - is checked on that system.
 
 use std::time::{Duration, Instant};
 
@@ -105,6 +105,7 @@ fn a_call_reaches_the_window_and_its_answer_comes_back() {
     window.join().expect("the window's thread ends");
 }
 
+#[cfg(unix)]
 #[test]
 fn the_socket_is_its_owners_alone() {
     use std::os::unix::fs::PermissionsExt;
@@ -126,10 +127,12 @@ fn a_second_window_is_refused_and_a_left_file_is_cleared() {
         Ok(_) => panic!("a second window took the socket of a living one"),
     }
     drop(first);
-    assert!(!path.exists(), "a closed window left its socket behind");
-
-    // what a window that died without closing leaves: a file nobody listens on
-    std::fs::write(&path, b"").expect("a left file");
+    #[cfg(unix)]
+    {
+        assert!(!path.exists(), "a closed window left its socket behind");
+        // what a window that died without closing leaves: a file nobody listens on
+        std::fs::write(&path, b"").expect("a left file");
+    }
     let _again = open(&path, SOON);
 }
 
@@ -202,15 +205,29 @@ fn two_clients_at_once_are_both_answered() {
     window.join().expect("the window's thread ends");
 }
 
+/// A CONNECTION BY HAND, past the program's end: what a client that writes anything at all is met with.
+#[cfg(unix)]
+fn by_hand(path: &std::path::Path) -> (impl std::io::Read, impl std::io::Write) {
+    let s = std::os::unix::net::UnixStream::connect(path).expect("the socket takes a client");
+    (s.try_clone().expect("the stream clones"), s)
+}
+
+/// A CONNECTION BY HAND, past the program's end: what a client that writes anything at all is met with.
+#[cfg(windows)]
+fn by_hand(path: &std::path::Path) -> (impl std::io::Read, impl std::io::Write) {
+    let s = std::fs::OpenOptions::new().read(true).write(true).open(qymcad_bridge::pipe_name(path)).expect("the pipe takes a client");
+    (s.try_clone().expect("the pipe clones"), s)
+}
+
 #[test]
 fn a_line_that_is_no_call_is_answered_and_the_link_goes_on() {
     use std::io::{BufRead, Write};
     let folder = place("junk");
     let path = folder.path().join(SOCKET);
     let window = answering(open(&path, SOON));
-    let mut s = std::os::unix::net::UnixStream::connect(&path).expect("the socket takes a client");
+    let (read, mut s) = by_hand(&path);
     s.write_all(b"this is not json\n").expect("a line goes out");
-    let mut reader = std::io::BufReader::new(s.try_clone().expect("the stream clones"));
+    let mut reader = std::io::BufReader::new(read);
     let mut line = String::new();
     reader.read_line(&mut line).expect("an answer comes");
     let reply: Value = serde_json::from_str(&line).expect("the answer is JSON");

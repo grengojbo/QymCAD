@@ -156,7 +156,7 @@ impl Window {
                 self.reach = Reach::Lost;
                 Err(gone())
             }
-            Err(LinkError::NoWindow | LinkError::Unsupported) => Err(no_window()),
+            Err(LinkError::NoWindow) => Err(no_window()),
             Err(e) => Err(broken(&format!("{e:?}"))),
         }
     }

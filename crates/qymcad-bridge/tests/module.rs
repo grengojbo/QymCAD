@@ -18,4 +18,16 @@ fn the_channel_stays_a_channel() {
     let allowed = ["qymcad-paths", "serde_json", "serde"];
     let wrong: Vec<&&str> = deps.iter().filter(|d| !allowed.contains(d)).collect();
     assert!(wrong.is_empty(), "the channel took a dependency beyond its own: {wrong:?}");
+    // on Windows the system's own calls, and nothing else
+    let windows: Vec<&str> = manifest
+        .split("[target.'cfg(windows)'.dependencies]")
+        .nth(1)
+        .expect("the manifest names the dependencies on Windows")
+        .lines()
+        .take_while(|l| !l.trim_start().starts_with('['))
+        .filter_map(|l| l.split(['=', '.']).next())
+        .map(str::trim)
+        .filter(|n| !n.is_empty() && !n.starts_with('#') && !n.starts_with('"') && !n.starts_with(']'))
+        .collect();
+    assert_eq!(windows, vec!["windows-sys"], "the channel on Windows took a dependency beyond the system's calls");
 }
