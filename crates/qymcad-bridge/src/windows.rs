@@ -14,7 +14,8 @@ use std::os::windows::io::{AsRawHandle, FromRawHandle};
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{self, Receiver, Sender};
-use std::sync::Arc;
+use std::sync::{Arc, Mutex};
+use std::thread::JoinHandle;
 use std::time::Duration;
 
 use windows_sys::Win32::Foundation::{
@@ -27,6 +28,7 @@ use windows_sys::Win32::System::Pipes::{
     ConnectNamedPipe, CreateNamedPipeW, PeekNamedPipe, WaitNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
 };
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
+use windows_sys::Win32::System::IO::CancelSynchronousIo;
 
 use crate::wire::{self, Answering, Answers, Call, Heard, Link};
 use crate::{LinkError, Opened, Wait, Wake};
@@ -41,6 +43,10 @@ const FREE_WITHIN: u32 = 2000;
 /// How often the program looks for an answer in the pipe while it waits. A call to the window takes from some
 /// milliseconds to minutes; a look every 2 ms costs nothing beside that.
 const LOOK_EVERY: Duration = Duration::from_millis(2);
+
+/// How long the window waits for a thread of its channel to give up its pipe when the channel closes; a thread
+/// woken from its read ends in a millisecond.
+const LET_GO_WITHIN: Duration = Duration::from_secs(2);
 
 /// THE PIPE FOR `path`: the folder a socket would lie in names the pipe, through a digest of its path, so each person's
 /// folder - and each check's - has a pipe of its own in the machine's one namespace.
@@ -170,12 +176,17 @@ fn instance(name: &[u16], owner: &OwnerOnly, which: Instance) -> Result<File, u3
     Ok(unsafe { File::from_raw_handle(handle) })
 }
 
-/// THE WINDOW'S END: the pipe, and the queue of calls the window takes from.
+/// THE WINDOW'S END: the pipe, the queue of calls the window takes from, and the threads holding the pipe's instances.
 pub struct Listener {
     name: Vec<u16>,
     queue: Receiver<Call>,
     stop: Arc<AtomicBool>,
+    accepting: Option<JoinHandle<()>>,
+    served: Served,
 }
+
+/// The threads answering clients, each holding one instance of the pipe.
+type Served = Arc<Mutex<Vec<JoinHandle<()>>>>;
 
 impl Listener {
     /// OPEN THE PIPE FOR `path`. A pipe of that name that already exists - another window's, or another user's - is
@@ -191,10 +202,10 @@ impl Listener {
         };
         let (queue_in, queue) = mpsc::channel();
         let stop = Arc::new(AtomicBool::new(false));
-        let stop_seen = stop.clone();
-        let accepting = Accepting { name: name.clone(), owner, queue: queue_in, answering: Answering { wait, wake } };
-        std::thread::spawn(move || accept(first, &accepting, &stop_seen));
-        Ok(Listener { name, queue, stop })
+        let served: Served = Arc::new(Mutex::new(Vec::new()));
+        let accepting = Accepting { name: name.clone(), owner, queue: queue_in, answering: Answering { wait, wake }, served: served.clone(), stop: stop.clone() };
+        let accepting = std::thread::spawn(move || accept(first, &accepting));
+        Ok(Listener { name, queue, stop, accepting: Some(accepting), served })
     }
 
     /// THE NEXT CALL TO DO, or nothing when none waits. Never blocks: the window asks once a frame.
@@ -204,24 +215,52 @@ impl Listener {
 }
 
 impl Drop for Listener {
-    /// CLOSE THE WINDOW'S END: the thread waiting for a client is woken by a connection of its own and stops. A client
-    /// connected now learns it at its next call: the queue is gone, its thread ends and closes the pipe, and a call
-    /// waiting in the queue is dropped unanswered - each read on the program's end as the window gone.
+    /// CLOSE THE WINDOW'S END, EVERY INSTANCE OF THE PIPE WITH IT. A pipe's name lives while any of its instances is
+    /// open, and an instance a connected client held kept it: the same window switched off and on again was refused
+    /// its own name as taken. So the queue goes first - a call waiting in it is dropped unanswered and read on the
+    /// program's end as the window gone - then the thread waiting for a client and each thread answering one is
+    /// woken from its wait and let end, closing its instance.
     fn drop(&mut self) {
         self.stop.store(true, Ordering::Release);
+        drop(std::mem::replace(&mut self.queue, mpsc::channel().1));
         if let Ok(f) = open_pipe(&self.name) {
             drop(f);
+        }
+        if let Some(t) = self.accepting.take() {
+            let_go(t);
+        }
+        let served = std::mem::take(&mut *self.served.lock().unwrap_or_else(std::sync::PoisonError::into_inner));
+        for t in served {
+            let_go(t);
         }
     }
 }
 
-/// What the thread accepting clients holds: the pipe's name and access list for each new instance, and how a client
-/// is answered.
+/// WAKE THE THREAD `t` FROM A READ OR A WAIT ON ITS PIPE and let it end, for at most `LET_GO_WITHIN`. A wait for a
+/// client or a read of a pipe opened without overlapping has no timeout; cancelling the thread's waiting call is the
+/// one way to end it from outside.
+fn let_go(t: JoinHandle<()>) {
+    use std::os::windows::io::AsRawHandle as _;
+    let until = std::time::Instant::now() + LET_GO_WITHIN;
+    while !t.is_finished() && std::time::Instant::now() < until {
+        // SAFETY: the handle of a thread that has not been joined, so it is alive; a thread not waiting is not touched.
+        unsafe { CancelSynchronousIo(t.as_raw_handle() as HANDLE) };
+        std::thread::sleep(Duration::from_millis(1));
+    }
+    if t.is_finished() {
+        let _ = t.join();
+    }
+}
+
+/// What the thread accepting clients holds: the pipe's name and access list for each new instance, how a client is
+/// answered, the list the threads answering them go to, and the sign to stop.
 struct Accepting {
     name: Vec<u16>,
     owner: OwnerOnly,
     queue: Sender<Call>,
     answering: Answering,
+    served: Served,
+    stop: Arc<AtomicBool>,
 }
 
 // SAFETY: the descriptor is read by the system only while an instance is created, on this thread alone, and freed when
@@ -230,12 +269,13 @@ unsafe impl Send for Accepting {}
 
 /// ACCEPT CLIENTS until the window's end closes: wait for a client on the instance in hand, lay the next instance
 /// before answering it, and answer it on a thread of its own.
-fn accept(first: File, accepting: &Accepting, stop: &AtomicBool) {
+fn accept(first: File, accepting: &Accepting) {
     let mut waiting = first;
     loop {
-        // SAFETY: a live handle owned by `waiting`; no overlapped structure, so the call blocks until a client comes.
+        // SAFETY: a live handle owned by `waiting`; no overlapped structure, so the call blocks until a client comes
+        // or the window's end cancels it.
         let joined = unsafe { ConnectNamedPipe(waiting.as_raw_handle() as HANDLE, std::ptr::null_mut()) } != 0 || last_error() == ERROR_PIPE_CONNECTED;
-        if stop.load(Ordering::Acquire) {
+        if accepting.stop.load(Ordering::Acquire) {
             return;
         }
         let Ok(next) = instance(&accepting.name, &accepting.owner, Instance::Further) else { return };
@@ -245,7 +285,10 @@ fn accept(first: File, accepting: &Accepting, stop: &AtomicBool) {
         }
         let Ok(read) = client.try_clone() else { continue };
         let (queue, answering) = (accepting.queue.clone(), accepting.answering.clone());
-        std::thread::spawn(move || wire::serve(read, client, &queue, &answering));
+        let t = std::thread::spawn(move || wire::serve(read, client, &queue, &answering));
+        let mut served = accepting.served.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        served.retain(|t| !t.is_finished());
+        served.push(t);
     }
 }
 

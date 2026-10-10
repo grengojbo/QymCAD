@@ -136,6 +136,23 @@ fn a_second_window_is_refused_and_a_left_file_is_cleared() {
     let _again = open(&path, SOON);
 }
 
+/// THE SAME WINDOW SWITCHED OFF AND ON AGAIN OPENS ITS END AT ONCE, though Claude stays connected to the end that
+/// closed. On Windows a pipe's name lives while any instance of it is open, and the instance a connected client held
+/// kept the name: the window was refused its own name as taken.
+#[test]
+fn a_window_switched_off_and_on_opens_again_with_a_client_connected() {
+    let folder = place("again");
+    let path = folder.path().join(SOCKET);
+    let first = open(&path, SOON);
+    let mut l = link(&path);
+    drop(first);
+    let _again = open(&path, SOON);
+    match l.call("fillet", json!({})) {
+        Err(LinkError::Gone) => {}
+        other => panic!("the client of the closed end was not told gone: {other:?}"),
+    }
+}
+
 #[test]
 fn a_window_that_does_not_answer_in_time_is_told_busy() {
     let folder = place("busy");
