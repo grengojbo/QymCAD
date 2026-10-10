@@ -258,6 +258,7 @@ pub(crate) fn window(win: &mut Windows, scheme: &qymcad_ui_state::SchemeUi, mach
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::gui::check_folder::tests::CheckFolder;
 
     fn server() -> ServerCommand {
         ServerCommand { command: "/Applications/QymCAD.app/Contents/MacOS/qymcad-mcp".into(), args: Vec::new() }
@@ -320,10 +321,8 @@ mod tests {
         for broken in ["{ not json", "[1, 2]", r#"{ "mcpServers": [] }"#] {
             assert!(merged(Some(broken), &server()).is_err(), "{broken} was taken as settings");
         }
-        let dir = std::env::temp_dir().join(format!("qym-claude-broken-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("a folder");
-        let config = dir.join("claude_desktop_config.json");
+        let folder = CheckFolder::new("claude-broken");
+        let config = folder.file("claude_desktop_config.json");
         std::fs::write(&config, "{ not json").expect("written");
         assert!(add_to_desktop(&config, &server()).is_err(), "broken settings were written over");
         assert_eq!(std::fs::read_to_string(&config).expect("read"), "{ not json", "the broken file was touched");
@@ -333,9 +332,8 @@ mod tests {
     /// THE FILE AS IT WAS IS KEPT BESIDE IT, and a folder that is not there yet is made.
     #[test]
     fn the_old_settings_are_kept_beside_the_new() {
-        let dir = std::env::temp_dir().join(format!("qym-claude-kept-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        let config = dir.join("Claude").join("claude_desktop_config.json");
+        let folder = CheckFolder::new("claude-kept");
+        let config = folder.file("Claude").join("claude_desktop_config.json");
         let first = add_to_desktop(&config, &server()).expect("added to no file");
         assert_eq!(first, Added { kept: None });
         let before = std::fs::read_to_string(&config).expect("written");
@@ -382,11 +380,9 @@ mod tests {
         out
     }
 
-    /// A machine whose Claude Desktop keeps its settings in a sandbox.
-    fn sandboxed(case: &str, present: Presence) -> Machine {
-        let dir = std::env::temp_dir().join(format!("qym-claude-window-{case}-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        Machine { config: Some(dir.join("Claude").join("claude_desktop_config.json")), server: server(), present }
+    /// A machine whose Claude Desktop keeps its settings in the check's own folder.
+    fn sandboxed(folder: &CheckFolder, present: Presence) -> Machine {
+        Machine { config: Some(folder.file("Claude").join("claude_desktop_config.json")), server: server(), present }
     }
 
     struct Frame {
@@ -428,7 +424,8 @@ mod tests {
     /// where the switch is.
     #[test]
     fn the_window_leads_to_the_switch_for_claude_in_this_window() {
-        let machine = sandboxed("switch", Presence::There);
+        let folder = CheckFolder::new("claude-window-switch");
+        let machine = sandboxed(&folder, Presence::There);
         let mut f = Frame::open();
         let _ = f.run(&machine, raw()); // the window lays itself out on its first frame
         let texts: Vec<String> = painted(&f.run(&machine, raw()).shapes).into_iter().map(|p| p.text).collect();
@@ -441,7 +438,8 @@ mod tests {
     /// THE BUTTON ADDS THE SERVER TO CLAUDE DESKTOP'S SETTINGS and the window says so, and how to finish.
     #[test]
     fn the_button_gives_claude_desktop_the_server() {
-        let machine = sandboxed("add", Presence::There);
+        let folder = CheckFolder::new("claude-window-add");
+        let machine = sandboxed(&folder, Presence::There);
         let mut f = Frame::open();
         let _ = f.run(&machine, raw()); // the first frame lays the window out
         let _ = f.press(&machine, &crate::i18n::tr("claude-desktop-add"));
@@ -456,7 +454,8 @@ mod tests {
     /// CLAUDE CODE'S COMMAND IS SHOWN AND COPIED whole.
     #[test]
     fn the_command_for_claude_code_is_shown_and_copied() {
-        let machine = sandboxed("code", Presence::There);
+        let folder = CheckFolder::new("claude-window-code");
+        let machine = sandboxed(&folder, Presence::There);
         let mut f = Frame::open();
         let _ = f.run(&machine, raw()); // the first frame lays the window out
         let out = f.run(&machine, raw());
@@ -470,7 +469,8 @@ mod tests {
     /// A BUILD WITHOUT THE SERVER SAYS SO, and offers nothing to press that would point Claude at nothing.
     #[test]
     fn a_build_without_the_server_says_so() {
-        let machine = sandboxed("missing", Presence::Missing);
+        let folder = CheckFolder::new("claude-window-missing");
+        let machine = sandboxed(&folder, Presence::Missing);
         let mut f = Frame::open();
         let _ = f.run(&machine, raw());
         let out = f.run(&machine, raw());

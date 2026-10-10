@@ -156,24 +156,36 @@ fn run(dir: &std::path::Path) -> Run {
     r
 }
 
-fn fresh_dir(name: &str) -> std::path::PathBuf {
-    let dir = std::env::temp_dir().join(format!("qym-mcp-case-{name}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).expect("a folder for the files");
-    dir
+/// The folder of one chain in this run, emptied when made and removed with its files when dropped, a panicking chain
+/// included.
+struct Folder {
+    path: std::path::PathBuf,
+}
+
+impl Drop for Folder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+fn fresh_dir(name: &str) -> Folder {
+    let path = std::env::temp_dir().join(format!("qym-mcp-case-{name}-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&path);
+    std::fs::create_dir_all(&path).expect("a folder for the files");
+    Folder { path }
 }
 
 #[test]
 fn a_bracket_is_made_and_rebuilt_at_a_new_thickness() {
-    let r = run(&fresh_dir("one"));
+    let r = run(&fresh_dir("one").path);
     assert!(r.wrong.is_empty(), "the chain went wrong:\n{}\nfound: {:?}", r.wrong.join("\n"), r.found);
 }
 
 /// THE SAME CHAIN TWICE gives the same answers, word for word, and finds the same.
 #[test]
 fn the_chain_answers_the_same_twice() {
-    let first = run(&fresh_dir("first"));
-    let second = run(&fresh_dir("second"));
+    let first = run(&fresh_dir("first").path);
+    let second = run(&fresh_dir("second").path);
     let apart: Vec<String> = first.answers.iter().zip(&second.answers).enumerate().filter(|(_, (a, b))| a != b).map(|(i, (a, b))| format!("step {}:\n  {a}\n  {b}", i + 1)).collect();
     assert!(apart.is_empty(), "the answers differ:\n{}", apart.join("\n"));
     assert_eq!(first.found, second.found);
