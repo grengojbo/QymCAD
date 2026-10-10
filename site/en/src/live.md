@@ -8,8 +8,6 @@ In QymCAD: **Settings -> General -> Claude in this window -> On**. Nothing else 
 
 Turn it on any time: even when Claude Desktop was opened before QymCAD, or the switch was turned on mid-conversation, Claude finds the window at its next request. The one exception: once Claude has built something in a document of its own, it stays with it so the work is not lost.
 
-For now this works on macOS and Linux. On Windows Claude works on a document of its own.
-
 ## What you see
 
 Every change Claude makes appears in the window at once and is a step of its own: **Ctrl+Z** takes it back, like your own steps. The status line says what Claude did last, e.g. "Claude: Fillet".
