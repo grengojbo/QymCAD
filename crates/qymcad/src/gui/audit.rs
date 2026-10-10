@@ -126,7 +126,8 @@ mod live_session {
         check(&mut fails, "4b. the timeline is free of errors after the edit", app.project.regen_errors.is_empty(), format!("{:?}", app.project.regen_errors.values().next()));
 
         // 5. SAVING AND OPENING: the volume must match
-        let path = std::env::temp_dir().join("qym_audit.qcad");
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("audit");
+        let path = folder.file("audit.qcad");
         let p = path.to_string_lossy().to_string();
         crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, p.clone(), false);
         app.wait_bg();
@@ -296,7 +297,8 @@ mod live_session {
         run(&mut app, 1, &[("height", 10.0)]);
         assert!(!app.disk.edits.undo.is_empty(), "the step from the extrusion is there");
 
-        let path = std::env::temp_dir().join("qym_audit_open.qcad");
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("audit-open");
+        let path = folder.file("audit_open.qcad");
         let p = path.to_string_lossy().to_string();
         crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, p.clone(), false);
         app.wait_bg();
@@ -531,7 +533,8 @@ mod live_session {
         run(&mut app, 1, &[("height", 10.0)]);
         let before = vol(&app);
 
-        let path = std::env::temp_dir().join("qym_bg_edit.qcad").to_string_lossy().to_string();
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("bg-edit");
+        let path = folder.file("bg_edit.qcad").to_string_lossy().to_string();
         crate::gui::io_jobs::spawn_save(&mut app.disk.io, &mut app.live, &mut app.project, &mut app.regen, &mut app.status, path.clone(), false);
         // WHILE THE WRITE IS UNDER WAY the document is edited
         let si2 = rect(&mut app, 30.0, 0.0, 60.0, 10.0); // ACROSS the edge of the plate: inside it the union adds nothing, apart from it the part would be two pieces

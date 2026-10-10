@@ -42,13 +42,19 @@ impl Default for Machine {
             // `QYM_LOCALE` runs the whole acceptance in another language, to see what it shows in that one
             locale: std::env::var("QYM_LOCALE").unwrap_or_else(|_| "en".into()),
             kept,
-            home: std::env::temp_dir().join(format!("qymcad-sessions-{}", std::process::id())),
+            home: Machine::home_of_run(std::process::id()),
             greeting: false,
         }
     }
 }
 
 impl Machine {
+    /// The home of the program on a machine of its defaults in the process `run`: the process that started a check
+    /// in a process of its own removes it when that process ends.
+    pub fn home_of_run(run: u32) -> std::path::PathBuf {
+        std::env::temp_dir().join(format!("qymcad-sessions-{run}"))
+    }
+
     /// A MACHINE THE PROGRAM HAS NEVER RUN ON: nothing kept, the first start.
     pub fn first_run() -> Self {
         Self { kept: Kept::default(), ..Self::default() }

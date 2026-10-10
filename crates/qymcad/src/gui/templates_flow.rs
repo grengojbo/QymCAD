@@ -12,6 +12,7 @@
 //! where they left them.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::App;
     use qymcad_core::model::GeomQuality;
 
@@ -24,12 +25,8 @@ mod tests {
         app
     }
 
-    fn tpl_path(name: &str) -> String {
-        let dir = std::env::temp_dir().join("qym_templates_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
-        let p = dir.join(format!("{name}.qcad")).to_string_lossy().into_owned();
-        let _ = std::fs::remove_file(&p);
-        p
+    fn tpl_path(folder: &CheckFolder, name: &str) -> String {
+        folder.file(&format!("{name}.qcad")).to_string_lossy().into_owned()
     }
 
     /// THE POINT: a new document from a template DOES NOT REMEMBER THE PATH OF THE TEMPLATE.
@@ -39,7 +36,8 @@ mod tests {
     /// template is a quiet loss.
     #[test]
     fn a_document_made_from_a_template_forgets_where_it_came_from() {
-        let path = tpl_path("forget");
+        let folder = CheckFolder::new("templates-forget");
+        let path = tpl_path(&folder, "forget");
         let mut author = marked_document();
         crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
         author.save_project();
@@ -55,7 +53,8 @@ mod tests {
     /// THE DOCUMENT PROPERTIES COME ALONG — that is what templates were made for.
     #[test]
     fn the_document_properties_come_along() {
-        let path = tpl_path("props");
+        let folder = CheckFolder::new("templates-props");
+        let path = tpl_path(&folder, "props");
         let mut author = marked_document();
         crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
         author.save_project();
@@ -71,7 +70,8 @@ mod tests {
     /// THE CREATION DATE IS CLEARED: the document is created NOW, not when the template was saved.
     #[test]
     fn the_creation_date_starts_over() {
-        let path = tpl_path("date");
+        let folder = CheckFolder::new("templates-date");
+        let path = tpl_path(&folder, "date");
         let mut author = marked_document();
         crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
         author.save_project(); // the first save is what sets the date
@@ -88,7 +88,8 @@ mod tests {
     /// obliged to ask about unsaved work while nobody has touched anything.
     #[test]
     fn a_fresh_document_from_a_template_is_not_dirty() {
-        let path = tpl_path("clean");
+        let folder = CheckFolder::new("templates-clean");
+        let path = tpl_path(&folder, "clean");
         let mut author = marked_document();
         crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
         author.save_project();
@@ -103,7 +104,8 @@ mod tests {
     /// A TEMPLATE DOES NOT GET INTO THE RECENT FILES: it is a blank, not a file that was worked on.
     #[test]
     fn a_template_is_not_a_recent_file() {
-        let path = tpl_path("recent");
+        let folder = CheckFolder::new("templates-recent");
+        let path = tpl_path(&folder, "recent");
         let mut author = marked_document();
         crate::gui::set_project_path(&mut author.disk.project_path, &mut author.set, path.clone());
         author.save_project();
@@ -130,7 +132,8 @@ mod tests {
     /// data, and one day it will come from somewhere else.
     #[test]
     fn removing_a_template_stays_inside_the_folder() {
-        let outside = tpl_path("outside_guard");
+        let folder = CheckFolder::new("templates-outside-guard");
+        let outside = tpl_path(&folder, "outside_guard");
         std::fs::write(&outside, "not a template").expect("the file writes");
         let err = crate::templates::remove(&outside);
         assert!(err.is_err(), "deleting a file OUTSIDE the template directory must be refused");

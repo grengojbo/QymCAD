@@ -37,7 +37,8 @@ mod tests {
             maker.exit_context();
         }
         qymcad_ui_state::rebuild_if_dirty(&mut maker.rebuild_ctx());
-        let path = std::env::temp_dir().join("qym-edge-anchor-reopen.qcad").to_string_lossy().into_owned();
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("edge-anchor-reopen");
+        let path = folder.file("edge-anchor-reopen.qcad").to_string_lossy().into_owned();
         qymcad_io::save_project(&maker.project, &path).expect("the document was written");
 
         let project = qymcad_io::load_project(&path).expect("the document opened");
@@ -117,7 +118,8 @@ mod tests {
         // edges worked in the session they were made in and died on the next opening — "the anchor is
         // lost", travel 0.000. The fix was half a fix: the two sources of edges were reconciled at the
         // moment an anchor is PLACED and not at the moment a document is OPENED.
-        let path = std::env::temp_dir().join("qym-edge-anchor-roundtrip.qcad").to_string_lossy().into_owned();
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("edge-anchor-roundtrip");
+        let path = folder.file("edge-anchor-roundtrip.qcad").to_string_lossy().into_owned();
         qymcad_io::save_project(&app.project, &path).expect("the document was written");
         let project = qymcad_io::load_project(&path).expect("the document opened");
         let mut again = App::default();

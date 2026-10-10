@@ -234,8 +234,8 @@ mod exporting_over_a_rebuild {
 
     #[test]
     fn an_export_does_not_shoulder_a_rebuild_out_of_the_way() {
-        let dir = std::env::temp_dir().join("qym_export_over_rebuild");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("export-over-rebuild");
+        let dir = folder.path();
         let path = dir.join("late.step");
         let _ = std::fs::remove_file(&path);
 

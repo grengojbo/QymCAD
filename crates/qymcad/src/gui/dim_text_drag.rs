@@ -78,7 +78,8 @@ mod tests {
         h.undo();
         let ((x3, _), _) = length_text(h.app, si, length);
         assert!((x3 - x1).abs() < 1.5, "Ctrl+Z did not take the last drag back: the text stands at x {x3}, it stood at {x1}");
-        let path = format!("{}/dim-text-along.qcad", std::env::temp_dir().display());
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("dim-text-along");
+        let path = folder.file("dim-text-along.qcad").to_string_lossy().into_owned();
         qymcad_io::save_project(&h.app.project, &path).expect("saved");
         let read = qymcad_io::load_project(&path).expect("read back");
         let kept = match read.sketches[si].constraints[length] {

@@ -17,15 +17,13 @@
 //! on a sketch that has an unbuilt source earlier in the timeline — and on a FRESH opening.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::{App, Sel};
 
     /// A plate with a cut from a second sketch — the smallest timeline where the last feature has a
     /// source. Saved to a bundle and opened again: exactly the state in which the error is caught.
-    fn saved_and_reopened() -> Option<(App, String, usize)> {
-        let dir = std::env::temp_dir().join("qym_sketch_reopen_test");
-        std::fs::create_dir_all(&dir).ok()?;
-        let path = dir.join("late_sketch.qcad").to_string_lossy().into_owned();
-        let _ = std::fs::remove_file(&path);
+    fn saved_and_reopened(folder: &CheckFolder) -> Option<(App, String, usize)> {
+        let path = folder.file("late_sketch.qcad").to_string_lossy().into_owned();
 
         let mut app = App::default();
         // 1) the plate
@@ -63,7 +61,8 @@ mod tests {
     /// LEAVING AN UNTOUCHED LATE SKETCH DOES NOT BREAK THE FEATURE STANDING ON IT.
     #[test]
     fn leaving_a_late_sketch_right_after_opening_does_not_break_its_feature() {
-        let Some((mut app, path, si)) = saved_and_reopened() else { return };
+        let folder = CheckFolder::new("sketch-reopen-leave");
+        let Some((mut app, path, si)) = saved_and_reopened(&folder) else { return };
         assert!(app.live.shapes.is_empty(), "a freshly opened bundle has no live Shapes — that is the very condition of the defect");
         assert!(app.project.regen_errors.is_empty(), "an opened project shows no errors");
 
@@ -81,7 +80,8 @@ mod tests {
     /// "no errors" even if leaving a sketch had stopped rebuilding anything at all.
     #[test]
     fn editing_a_late_sketch_after_opening_actually_rebuilds_the_body() {
-        let Some((mut app, path, si)) = saved_and_reopened() else { return };
+        let folder = CheckFolder::new("sketch-reopen-edit");
+        let Some((mut app, path, si)) = saved_and_reopened(&folder) else { return };
         let before: f64 = app.project.bodies.iter().map(|b| b.mesh.verts.len() as f64).sum();
 
         app.chosen.sel = Sel::Sketch(si);

@@ -13,6 +13,7 @@
 //! COPY of the thread, and an edit that slipped through the dimming would land on a stale model.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::App;
 
     /// A frame with a button under the overlay; returns whether the click reached the button.
@@ -188,8 +189,8 @@ mod tests {
     #[test]
     fn a_project_opened_at_startup_actually_finishes_loading() {
         use qymcad_core::feature::SketchPlane;
-        let dir = std::env::temp_dir().join("qym_startup_load_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
+        let folder = CheckFolder::new("startup-load");
+        let dir = folder.path();
         let path = dir.join("startup.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
 

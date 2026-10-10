@@ -45,9 +45,8 @@ mod tests {
     fn a_start_that_never_happened_is_written_down() {
         // the report directory is one per process - wait for whoever else is redirecting it
         let _turn = crate::crash::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
-        let dir = std::env::temp_dir().join(format!("qymcad-no-graphics-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        crate::crash::use_dir_for_test(Some(&dir));
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("no-graphics");
+        crate::crash::use_dir_for_test(Some(folder.path()));
 
         let reason = "no graphics adapter this window can draw on. Offered 0: none at all";
         let path = crate::crash::note_failed_start(reason).expect("a report has to be written");
@@ -59,7 +58,6 @@ mod tests {
         assert!(crate::crash::unseen_reports().iter().any(|p| p == &path), "the report is not among the ones the next run shows - written and then invisible is the same as not written");
 
         crate::crash::use_dir_for_test(None);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// THE REPORT NAMES EVERY ADAPTER THAT WAS OFFERED, and says when the processor is the one drawing.

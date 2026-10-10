@@ -9,9 +9,14 @@
 //! The folder is `target/check-files/<check>-<run>`, the run being the process id: no other check of this run and no
 //! check of another run writes there. The files keep the names the check gives them, since the door names a part after
 //! its file. The folder is emptied when it is made and removed when it is dropped, a panicking check included.
+//!
+//! Two kinds of file cannot live under the checkout, and their folder is under the system's temporary folder, named
+//! the same way: a Unix socket - the checkout of the Linux container is a virtiofs mount, which refuses to bind one,
+//! and the path of a socket is held to 104 bytes on macOS and 108 on Linux - and the tree of a packaging script, which
+//! asks git about the folder it runs in and under the checkout would be answered about the repository itself.
 #[cfg(test)]
 pub(crate) mod tests {
-    use std::path::PathBuf;
+    use std::path::{Path, PathBuf};
 
     /// The folder of one check in one run; removed with everything in it when dropped.
     pub(crate) struct CheckFolder {
@@ -27,10 +32,25 @@ pub(crate) mod tests {
         /// The folder of the check `check` in the run `run` (a process id). A folder left by a run that ended before
         /// it could remove it, under a process id given out again, is emptied first.
         pub(crate) fn of_run(check: &str, run: u32) -> Self {
-            let path = PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/check-files")).join(format!("{check}-{run}"));
+            Self::made(PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/check-files")).join(format!("{check}-{run}")))
+        }
+
+        /// The folder of the check `check` in this run under the system's temporary folder, for a socket or the
+        /// tree of a packaging script.
+        pub(crate) fn outside_the_checkout(check: &str) -> Self {
+            Self::made(std::env::temp_dir().join(format!("qymcad-check-{check}-{}", std::process::id())))
+        }
+
+        /// The folder at `path`, emptied and made.
+        fn made(path: PathBuf) -> Self {
             let _ = std::fs::remove_dir_all(&path);
             std::fs::create_dir_all(&path).expect("a folder for the check");
             Self { path }
+        }
+
+        /// Where the folder is.
+        pub(crate) fn path(&self) -> &Path {
+            &self.path
         }
 
         /// The file `name` in the folder.

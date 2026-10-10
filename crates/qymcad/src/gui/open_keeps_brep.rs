@@ -11,6 +11,7 @@
 //! round trip puts it back and there is nothing left to rebuild.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::App;
 
     /// A part with a body, saved into a file of its own. Returns the path.
@@ -29,9 +30,9 @@ mod tests {
     /// THE LIVE BODY LIES IN THE FILE AND IS RAISED ON OPENING.
     #[test]
     fn opening_a_file_brings_the_live_body_back() {
-        let dir = std::env::temp_dir().join(format!("qym-brep-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("the temporary directory");
-        let (app, path) = saved_part(&dir);
+        let folder = CheckFolder::new("brep");
+        let dir = folder.path();
+        let (app, path) = saved_part(dir);
         let want: Vec<_> = {
             let mut v: Vec<_> = app.live.shapes.keys().copied().collect();
             v.sort_unstable();
@@ -57,7 +58,7 @@ mod tests {
         crate::gui::io_jobs::ensure_brep(&mut fresh.rebuild_ctx());
         let dirty: Vec<String> = fresh.project.timeline.iter().filter(|n| n.dirty).map(|n| n.name.clone()).collect();
         assert!(dirty.is_empty(), "opening demands a rebuild of nodes {dirty:?} again — the live body from the file was not picked up");
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }
 
@@ -81,8 +82,8 @@ mod blob_cache {
         assert_eq!(bodies.len(), 2, "setup: two bodies, and it came out {}", bodies.len());
 
         // the first save fills the cache
-        let dir = std::env::temp_dir().join(format!("qym-blob-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("the temporary directory");
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("blob");
+        let dir = folder.path();
         crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, dir.join("blobs.qcad").to_string_lossy().into_owned());
         app.save_project();
         app.wait_bg();
@@ -94,6 +95,6 @@ mod blob_cache {
         crate::gui::io_jobs::regenerate_now(&mut app.rebuild_ctx());
         assert!(!app.live.blobs.contains_key(&bodies[0]), "a rebuilt body must lose its stale blob");
         assert!(app.live.blobs.contains_key(&bodies[1]), "an untouched body is not obliged to recompute its blob on every save");
-        let _ = std::fs::remove_dir_all(&dir);
+        let _ = std::fs::remove_dir_all(dir);
     }
 }

@@ -229,10 +229,8 @@ mod tests {
         qymcad_io::save_part(&sub, &man, &[], None, &path.to_string_lossy()).unwrap();
     }
 
-    fn temp_root(tag: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join(format!("qym_lib_test_{tag}"));
-        let _ = std::fs::remove_dir_all(&dir);
-        dir
+    fn temp_root(tag: &str) -> crate::gui::check_folder::tests::CheckFolder {
+        crate::gui::check_folder::tests::CheckFolder::new(&format!("lib-{tag}"))
     }
 
     #[test]
@@ -273,7 +271,8 @@ mod tests {
 
     #[test]
     fn user_scan_builds_category_tree_with_parts() {
-        let root = temp_root("scan");
+        let folder = temp_root("scan");
+        let root = folder.path().to_path_buf();
         write_qpart(&root.join("Profiles").join("profile_2020.qpart"), "Profile 20x20");
         write_qpart(&root.join("Fasteners").join("Bolts").join("bolt_m8.qpart"), "Bolt M8");
         // a `category.ron` with an order and a name
@@ -299,7 +298,8 @@ mod tests {
 
     #[test]
     fn missing_user_dir_yields_empty_node() {
-        let root = temp_root("missing").join("nope");
+        let folder = temp_root("missing");
+        let root = folder.path().join("nope");
         let node = build_user(&root, "My parts");
         assert_eq!(node.total_parts(), 0);
         assert!(node.subcats.is_empty());
@@ -309,7 +309,8 @@ mod tests {
     fn portable_dir_detected_by_library_folder_next_to_exe() {
         // Portable mode: a `library/` folder beside the executable puts the parts there
         // (`base/library/parts`), otherwise `None`.
-        let root = temp_root("portable");
+        let folder = temp_root("portable");
+        let root = folder.path().to_path_buf();
         std::fs::create_dir_all(&root).unwrap();
         assert_eq!(portable_dir_from(&root), None, "no library/ beside it, so not portable");
         std::fs::create_dir_all(root.join("library")).unwrap();
@@ -331,7 +332,8 @@ mod tests {
     fn category_paths_lists_nested_folders_relative() {
         // The category picker used when saving something as a part — the relative paths of ALL the
         // folders (for writing to disk).
-        let root = temp_root("catpaths");
+        let folder = temp_root("catpaths");
+        let root = folder.path().to_path_buf();
         std::fs::create_dir_all(root.join("Profiles").join("Aluminium")).unwrap();
         std::fs::create_dir_all(root.join("Fasteners").join("Bolts")).unwrap();
         // a `.qpart` file in a folder does not count as a category (only folders do)
@@ -343,7 +345,8 @@ mod tests {
 
     #[test]
     fn categories_sorted_by_order_then_title() {
-        let root = temp_root("sort");
+        let folder = temp_root("sort");
+        let root = folder.path().to_path_buf();
         for (cat, ord) in [("Alpha", 3), ("Beta", 1), ("Gamma", 1)] {
             std::fs::create_dir_all(root.join(cat)).unwrap();
             std::fs::write(root.join(cat).join("category.ron"), format!("(order: {ord})").as_bytes()).unwrap();

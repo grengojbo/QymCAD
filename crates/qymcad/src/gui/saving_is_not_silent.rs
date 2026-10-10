@@ -9,15 +9,13 @@
 //! indistinguishable from a frozen program.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::{App, Nav, Sel};
     use qymcad_core::feature::SketchPlane;
 
     /// A document with a body, saved to a file. Returns (application, path).
-    fn project_with_a_body(name: &str) -> (App, String) {
-        let dir = std::env::temp_dir().join("qym_saving_not_silent");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
-        let path = dir.join(name).to_string_lossy().into_owned();
-        let _ = std::fs::remove_file(&path);
+    fn project_with_a_body(folder: &CheckFolder, name: &str) -> (App, String) {
+        let path = folder.file(name).to_string_lossy().into_owned();
 
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
@@ -51,7 +49,8 @@ mod tests {
     /// WHILE THE WRITE IS RUNNING the frame shows a waiting card, and the navigation waits its turn.
     #[test]
     fn while_saving_the_window_says_what_it_is_doing() {
-        let (mut app, _path) = project_with_a_body("wait.qcad");
+        let folder = CheckFolder::new("saving-not-silent-wait");
+        let (mut app, _path) = project_with_a_body(&folder, "wait.qcad");
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
 
@@ -102,7 +101,8 @@ mod tests {
             ("opening another project", Nav::OpenPath(String::new())),
             ("leaving the program", Nav::Exit),
         ] {
-            let (mut app, path) = project_with_a_body(&format!("way-{}.qcad", what.replace(' ', "-")));
+            let folder = CheckFolder::new(&format!("saving-not-silent-{}", &format!("way-{}.qcad", what.replace(' ', "-"))));
+            let (mut app, path) = project_with_a_body(&folder, &format!("way-{}.qcad", what.replace(' ', "-")));
             // OPENING NEEDS SOMETHING TO OPEN: the document is written once, and that same file is what
             // the navigation will go to.
             let nav = match nav {
@@ -148,7 +148,8 @@ mod tests {
     /// ONCE THE WRITE ENDS THE CARD GOES AWAY BY ITSELF (no flicker, no sticking).
     #[test]
     fn the_card_goes_away_by_itself() {
-        let (mut app, _path) = project_with_a_body("gone.qcad");
+        let folder = CheckFolder::new("saving-not-silent-gone");
+        let (mut app, _path) = project_with_a_body(&folder, "gone.qcad");
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
 
@@ -169,7 +170,8 @@ mod tests {
     /// not blink. A card up for a single frame is not an answer, it reads as a glitch.
     #[test]
     fn an_instant_write_does_not_blink() {
-        let (mut app, _path) = project_with_a_body("blink.qcad");
+        let folder = CheckFolder::new("saving-not-silent-blink");
+        let (mut app, _path) = project_with_a_body(&folder, "blink.qcad");
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
 
@@ -192,7 +194,8 @@ mod tests {
     /// after the grace has passed.
     #[test]
     fn a_shown_card_is_not_snatched_away() {
-        let (mut app, _path) = project_with_a_body("floor.qcad");
+        let folder = CheckFolder::new("saving-not-silent-floor");
+        let (mut app, _path) = project_with_a_body(&folder, "floor.qcad");
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);
         let saying = crate::i18n::tr("io-saving");
@@ -250,7 +253,8 @@ mod tests {
     /// taken the real Save As opens none - leaving exactly the state it would have left.
     #[test]
     fn a_document_with_no_name_still_gets_where_it_was_going() {
-        let (mut app, _path) = project_with_a_body("unnamed.qcad");
+        let folder = CheckFolder::new("saving-not-silent-unnamed");
+        let (mut app, _path) = project_with_a_body(&folder, "unnamed.qcad");
         app.disk.project_path = None; // never saved: Save turns into Save As
         let ctx = egui::Context::default();
         super::super::install_fonts(&ctx);

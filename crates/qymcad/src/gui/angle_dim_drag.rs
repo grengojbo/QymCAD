@@ -101,7 +101,8 @@ mod tests {
         assert!(back.1.is_some_and(|t| (0.0..=1.0).contains(&t)), "{what}: Ctrl+Z did not take the drag past the side back: the label stands at {back:?}");
 
         // AND THE PLACE IS KEPT IN THE FILE
-        let path = format!("{}/angle-label-{shared}.qcad", std::env::temp_dir().display());
+        let folder = crate::gui::check_folder::tests::CheckFolder::new(&format!("angle-label-{shared}"));
+        let path = folder.file(&format!("angle-label-{shared}.qcad")).to_string_lossy().into_owned();
         qymcad_io::save_project(&h.app.project, &path).expect("saved");
         let read = qymcad_io::load_project(&path).expect("read back");
         let kept = match read.sketches[si].constraints[ci] {

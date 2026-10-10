@@ -32,7 +32,8 @@ mod tests {
         p.new_document();
         let plate = p.add_box(60.0, 40.0, 4.0);
         let round = p.add_fillet_ref(plate, 5.0, Ref { query: vertical_edges(), expect: Cardinality::Some, hint: Default::default() });
-        let path = std::env::temp_dir().join("qym-rounding-by-description.qcad").to_string_lossy().into_owned();
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("rounding-by-description");
+        let path = folder.file("rounding-by-description.qcad").to_string_lossy().into_owned();
         qymcad_io::save_project(&p, &path).expect("the document was written");
         let project = qymcad_io::load_project(&path).expect("the document opened");
         app.finish_project_load(path, project, Vec::new());

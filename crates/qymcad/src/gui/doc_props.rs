@@ -6,6 +6,7 @@
 //! division: if it must travel with the file when the file is sent, its place is in the document.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::App;
     use qymcad_core::model::{DocMeta, Project};
 
@@ -71,8 +72,8 @@ mod tests {
         let mut app = App::default();
         assert!(app.project.meta.created.is_empty(), "setup: the new document has not been created yet");
 
-        let dir = std::env::temp_dir().join("qym_doc_props_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
+        let folder = CheckFolder::new("doc-props-created");
+        let dir = folder.path();
         let path = dir.join("props.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
 
@@ -91,8 +92,8 @@ mod tests {
     #[test]
     fn an_autosave_does_not_stamp_the_date() {
         let mut app = App::default();
-        let dir = std::env::temp_dir().join("qym_doc_props_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
+        let folder = CheckFolder::new("doc-props-autosave");
+        let dir = folder.path();
         let path = dir.join("auto.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
 

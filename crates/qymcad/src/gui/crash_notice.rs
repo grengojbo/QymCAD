@@ -36,9 +36,8 @@ mod tests {
 
     #[test]
     fn the_next_start_says_the_last_run_crashed() {
-        let dir = std::env::temp_dir().join(format!("qymcad-notice-test-{}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("the directory is made");
-        let report = dir.join("crash_1756150000.txt");
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("crash-notice");
+        let report = folder.file("crash_1756150000.txt");
         std::fs::write(&report, "QymCAD 0.0.0\nPanic: a wall fell over\n").expect("the report is written");
 
         let mut app = crate::gui::screen_keys::tests::populated();
@@ -72,9 +71,7 @@ mod tests {
 
         assert!(app.disk.crash_report.is_empty(), "the window stayed open after it was closed");
         assert!(!report.exists(), "the report was not marked seen");
-        assert!(dir.join("crash_1756150000.seen.txt").exists(), "marking it seen deleted the report instead of renaming it");
-
-        let _ = std::fs::remove_dir_all(&dir);
+        assert!(folder.file("crash_1756150000.seen.txt").exists(), "marking it seen deleted the report instead of renaming it");
     }
 
     /// CLOSING IT ONCE CLOSES IT FOR ALL OF THEM.
@@ -89,13 +86,11 @@ mod tests {
     /// that returns every start is a window people learn to dismiss without reading.
     #[test]
     fn closing_it_once_answers_for_every_report_waiting() {
-        let dir = std::env::temp_dir().join(format!("qymcad-notice-many-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).expect("the directory is made");
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("crash-notice-many");
         let reports: Vec<std::path::PathBuf> = ["crash_1756150001.txt", "crash_1756150002.txt", "crash_1756150003.txt"]
             .iter()
             .map(|n| {
-                let p = dir.join(n);
+                let p = folder.file(n);
                 std::fs::write(&p, "QymCAD 0.0.0\nPanic: a wall fell over\n").expect("the report is written");
                 p
             })
@@ -122,7 +117,5 @@ mod tests {
         for p in &reports {
             assert!(p.with_extension("seen.txt").exists(), "marking it seen deleted the report instead of renaming it: {}", p.display());
         }
-
-        let _ = std::fs::remove_dir_all(&dir);
     }
 }

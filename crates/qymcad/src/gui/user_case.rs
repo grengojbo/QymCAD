@@ -738,9 +738,10 @@ pub(crate) mod tests {
 
         // --- CLAUDE IN THE WINDOW: the housing 5 mm taller, and the person taking it back ---
         {
-            use super::super::bridge_ui::tests::{claude_says, place, reply_of, served};
+            use super::super::bridge_ui::tests::{claude_says, place, reply_of, served, SOCKET};
             app.set.claude_link = qymcad_ui_state::ClaudeLink::On;
-            let path = place("user-case");
+            let folder = place("user-case");
+            let path = folder.file(SOCKET);
             super::super::bridge_ui::listen_at(path.clone());
             let extrude = app.project.timeline.iter().rev().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).map(|n| n.id).expect("the housing's extrusion");
             let mut hand = Hand::new(&mut app);
@@ -2657,7 +2658,8 @@ pub(crate) mod tests {
 
             // The STL is really written, into a temporary directory: the file must exist and be non-empty.
             let meshes: Vec<qymcad_core::geom::Mesh> = out.iter().filter_map(|b| app.project.mesh_index(*b).map(|mi| app.project.bodies[mi].mesh.clone())).collect();
-            let path = std::env::temp_dir().join("qym-user-case.stl").to_string_lossy().into_owned();
+            let folder = crate::gui::check_folder::tests::CheckFolder::new("user-case");
+            let path = folder.file("user-case.stl").to_string_lossy().into_owned();
             match qymcad_io::export_stl(&meshes, &path) {
                 Ok(()) => match std::fs::metadata(&path).map(|m| m.len()) {
                     Ok(n) if n > 0 => {}

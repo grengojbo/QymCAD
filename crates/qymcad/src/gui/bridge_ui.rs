@@ -219,16 +219,17 @@ pub(crate) mod tests {
     use qymcad_core::model::Id;
     use qymcad_ui_state::ClaudeLink;
     use serde_json::{json, Value};
-    use std::path::PathBuf;
+    use crate::gui::check_folder::tests::CheckFolder;
     use std::time::Duration;
 
-    /// A socket of the check's own, in the temporary folder: a checkout shared into a virtual machine refuses to hold
-    /// one.
-    pub(crate) fn place(name: &str) -> PathBuf {
-        let dir = std::env::temp_dir().join("qymcad-window").join(format!("{}-{name}", std::process::id()));
-        std::fs::create_dir_all(&dir).expect("a folder for the check");
-        dir.join("mcp.sock")
+    /// The folder of a socket of the check's own, in the temporary folder: a checkout shared into a virtual machine
+    /// refuses to hold one. The socket is `SOCKET` in it.
+    pub(crate) fn place(name: &str) -> CheckFolder {
+        CheckFolder::outside_the_checkout(&format!("window-{name}"))
     }
+
+    /// The name of the socket in its folder.
+    pub(crate) const SOCKET: &str = "mcp.sock";
 
     /// CLAUDE, on a thread of its own: one call, and its answer when it comes.
     fn claude(path: &std::path::Path, tool: &'static str, arguments: Value) -> std::thread::JoinHandle<Value> {
@@ -253,7 +254,8 @@ pub(crate) mod tests {
     fn a_call_from_claude_is_one_step_of_undo() {
         let mut app = crate::gui::screen_keys::tests::populated();
         app.set.claude_link = ClaudeLink::On;
-        let path = place("step");
+        let folder = place("step");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let (before, steps) = (boxes(&app), app.disk.edits.undo.len());
         let mut hand = Hand::new(&mut app);
@@ -286,7 +288,8 @@ pub(crate) mod tests {
     fn a_feature_claude_changes_is_seen_changed() {
         let mut app = crate::gui::screen_keys::tests::populated();
         app.set.claude_link = ClaudeLink::On;
-        let path = place("edit");
+        let folder = place("edit");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).expect("the plate's extrusion");
         let (key, body) = (node.id, node.kind.body().expect("the extrusion makes a body"));
@@ -341,7 +344,8 @@ pub(crate) mod tests {
         let mut app = App::default();
         let body = a_slider(&mut app);
         app.set.claude_link = ClaudeLink::On;
-        let path = place("hand");
+        let folder = place("hand");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let ctx = egui::Context::default();
         super::pump(&mut app.part_ctx(), &ctx); // the window opens its end of the channel
@@ -383,7 +387,8 @@ pub(crate) mod tests {
     #[test]
     fn switched_off_the_window_offers_nothing() {
         let mut app = crate::gui::screen_keys::tests::populated();
-        let path = place("off");
+        let folder = place("off");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new());
@@ -401,7 +406,8 @@ pub(crate) mod tests {
     fn what_the_window_does_itself_is_refused() {
         let mut app = crate::gui::screen_keys::tests::populated();
         app.set.claude_link = ClaudeLink::On;
-        let path = place("own");
+        let folder = place("own");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let steps = app.disk.edits.undo.len();
         let mut hand = Hand::new(&mut app);
@@ -474,7 +480,8 @@ pub(crate) mod tests {
     fn a_selected_rounding_gets_smaller() {
         let mut app = crate::gui::screen_keys::tests::populated();
         app.set.claude_link = ClaudeLink::On;
-        let path = place("round");
+        let folder = place("round");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind) == "Fillet").expect("the fixture's rounding");
         let (fillet, body) = (node.id, node.kind.body().expect("the rounding makes a body"));
@@ -513,7 +520,8 @@ pub(crate) mod tests {
     fn a_selected_rounding_that_follows_a_parameter_keeps_following_it() {
         let mut app = crate::gui::screen_keys::tests::populated();
         app.set.claude_link = ClaudeLink::On;
-        let path = place("round-expr");
+        let folder = place("round-expr");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind) == "Fillet").expect("the fixture's rounding");
         let (fillet, body) = (node.id, node.kind.body().expect("the rounding makes a body"));
@@ -543,7 +551,8 @@ pub(crate) mod tests {
     fn what_is_selected_is_told_by_its_kind() {
         let mut app = crate::gui::screen_keys::tests::populated();
         app.set.claude_link = ClaudeLink::On;
-        let path = place("kinds");
+        let folder = place("kinds");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new());
@@ -602,7 +611,8 @@ pub(crate) mod tests {
     fn the_picture_is_what_the_person_sees() {
         let mut app = crate::gui::screen_keys::tests::populated();
         app.set.claude_link = ClaudeLink::On;
-        let path = place("look");
+        let folder = place("look");
+        let path = folder.file(SOCKET);
         super::listen_at(path.clone());
         let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).expect("the plate");
         let body = node.kind.body().expect("the plate's body");

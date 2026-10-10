@@ -16,15 +16,13 @@
 //!    must not be lost.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::{App, Nav, Sel};
     use qymcad_core::feature::SketchPlane;
 
     /// A plate and a save to a file; returns the path.
-    fn saved_project(name: &str) -> (App, String) {
-        let dir = std::env::temp_dir().join("qym_unsaved_prompt_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
-        let path = dir.join(name).to_string_lossy().into_owned();
-        let _ = std::fs::remove_file(&path);
+    fn saved_project(folder: &CheckFolder, name: &str) -> (App, String) {
+        let path = folder.file(name).to_string_lossy().into_owned();
 
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
@@ -52,7 +50,8 @@ mod tests {
     /// OPENED IT AND DID NOTHING — THERE IS NOTHING TO SAVE.
     #[test]
     fn a_freshly_opened_project_is_not_dirty() {
-        let (_src, path) = saved_project("clean.qcad");
+        let folder = CheckFolder::new("unsaved-prompt-clean");
+        let (_src, path) = saved_project(&folder, "clean.qcad");
 
         let mut app = App::default();
         app.open_for_test(path.clone());
@@ -75,7 +74,8 @@ mod tests {
     /// A REAL EDIT AFTER OPENING IS DIRT. Otherwise the first test is green for "never ask" as well.
     #[test]
     fn a_real_edit_after_opening_is_still_dirty() {
-        let (_src, path) = saved_project("edited.qcad");
+        let folder = CheckFolder::new("unsaved-prompt-edited");
+        let (_src, path) = saved_project(&folder, "edited.qcad");
 
         let mut app = App::default();
         app.open_for_test(path.clone());
@@ -97,7 +97,8 @@ mod tests {
     /// background write did not make it in time and the navigation silently vanished.
     #[test]
     fn choosing_save_keeps_the_pending_navigation() {
-        let (mut app, path) = saved_project("nav.qcad");
+        let folder = CheckFolder::new("unsaved-prompt-nav");
+        let (mut app, path) = saved_project(&folder, "nav.qcad");
 
         // an edit makes the project dirty, so the navigation is deferred
         let si = app.create_sketch_on(SketchPlane::default());
@@ -152,7 +153,8 @@ mod tests {
     #[test]
     fn changing_a_feature_parameter_counts_as_unsaved() {
         use qymcad_core::feature::FeatureKind as FK;
-        let (mut app, path) = saved_project("param.qcad");
+        let folder = CheckFolder::new("unsaved-prompt-param");
+        let (mut app, path) = saved_project(&folder, "param.qcad");
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         app.drain_busy_for_test();
         assert!(!qymcad_ui_state::is_dirty(&mut app.rebuild_ctx()), "setup: a saved project is clean");
@@ -174,7 +176,8 @@ mod tests {
     /// AND A REBUILD IS NOT, however many frames go by. Exactly the reported complaint, in full.
     #[test]
     fn no_number_of_rebuilds_ever_makes_an_untouched_project_dirty() {
-        let (_src, path) = saved_project("stable.qcad");
+        let folder = CheckFolder::new("unsaved-prompt-stable");
+        let (_src, path) = saved_project(&folder, "stable.qcad");
         let mut app = App::default();
         app.open_for_test(path.clone());
         for i in 0..10 {

@@ -9,6 +9,7 @@
 //! it is decided by whoever drew it, not by whoever opened it.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::App;
     use qymcad_core::model::GeomQuality;
 
@@ -57,8 +58,8 @@ mod tests {
     /// two people always differ, and had the tolerance lived there the export would drift silently.
     #[test]
     fn the_same_file_gives_the_same_geometry_on_any_machine() {
-        let dir = std::env::temp_dir().join("qym_geom_quality_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
+        let folder = CheckFolder::new("geom-quality");
+        let dir = folder.path();
         let path = dir.join("quality.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
 

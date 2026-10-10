@@ -47,8 +47,8 @@ mod tests {
     }
 
     /// A path that certainly exists, and one that certainly does not.
-    fn a_real_file() -> std::path::PathBuf {
-        let p = std::env::temp_dir().join("qymcad-opening-probe.qcad");
+    fn a_real_file(folder: &crate::gui::check_folder::tests::CheckFolder) -> std::path::PathBuf {
+        let p = folder.file("opening-probe.qcad");
         std::fs::write(&p, b"probe").expect("the probe file is written");
         p
     }
@@ -59,7 +59,8 @@ mod tests {
     /// of them broke.
     #[test]
     fn the_two_ticks_decide_the_opening_between_them() {
-        let file = a_real_file();
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("opening-probe");
+        let file = a_real_file(&folder);
         let path = file.to_string_lossy().into_owned();
 
         let mut set = Settings { open_last: true, show_start_screen: true, ..Default::default() };

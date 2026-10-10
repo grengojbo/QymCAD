@@ -254,23 +254,21 @@ mod tests {
     #[test]
     fn two_reports_in_one_second_do_not_share_a_name() {
         let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
-        let dir = std::env::temp_dir().join(format!("qymcad-crash-names-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        super::use_dir_for_test(Some(&dir));
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("crash-names");
+        let dir = folder.path();
+        super::use_dir_for_test(Some(dir));
 
         let a = super::next_report_path().expect("a name for the first report");
         let b = super::next_report_path().expect("a name for the second report");
         super::use_dir_for_test(None);
-        let _ = std::fs::remove_dir_all(&dir);
         assert_ne!(a, b, "two panics in the same second would write over each other");
     }
 
     #[test]
     fn a_crash_leaves_a_report() {
         let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
-        let dir = std::env::temp_dir().join(format!("qymcad-crash-test-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        super::use_dir_for_test(Some(&dir));
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("crash-report");
+        super::use_dir_for_test(Some(folder.path()));
 
         super::note_step("Extrude");
         super::note_step("Fillet");
@@ -319,15 +317,14 @@ mod tests {
         assert!(report.with_extension("seen.txt").exists(), "marking it seen deleted the file");
 
         super::use_dir_for_test(None);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// A repeated command must not fill the whole trail with one word.
     #[test]
     fn the_trail_does_not_repeat_itself() {
         let _turn = super::TAKE_TURNS.lock().unwrap_or_else(|e| e.into_inner());
-        let dir = std::env::temp_dir().join(format!("qymcad-trail-test-{}", std::process::id()));
-        super::use_dir_for_test(Some(&dir));
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("crash-trail");
+        super::use_dir_for_test(Some(folder.path()));
         for _ in 0..50 {
             super::note_step("Move");
         }

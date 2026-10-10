@@ -7,7 +7,7 @@
 //! end-to-end check of the window runs (`user_case::check_all`) and the window's own document is measured.
 #[cfg(test)]
 mod tests {
-    use super::super::bridge_ui::tests::{aim_and_click, claude_says, on_the_rounding, place, reply_of, served};
+    use super::super::bridge_ui::tests::{aim_and_click, claude_says, on_the_rounding, place, reply_of, served, SOCKET};
     use super::super::hand::Hand;
     use super::super::user_case::tests::check_all;
     use super::super::App;
@@ -37,7 +37,8 @@ mod tests {
         let mut problems: Vec<String> = Vec::new();
         let mut app = App::default();
         app.set.claude_link = qymcad_ui_state::ClaudeLink::On;
-        let path = place("live-chain");
+        let folder = place("live-chain");
+        let path = folder.file(SOCKET);
         super::super::bridge_ui::listen_at(path.clone());
         Hand::new(&mut app).frame(Vec::new()).close_window(); // the window opens its end of the channel
         let steps = app.disk.edits.undo.len();

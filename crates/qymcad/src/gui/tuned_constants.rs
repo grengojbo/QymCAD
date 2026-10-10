@@ -10,6 +10,7 @@
 //! nothing.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use qymcad_ui_state::Projection;
     use super::super::App;
 
@@ -73,8 +74,8 @@ mod tests {
     /// the short one must fire and the long one must stay quiet. Otherwise the value can be ignored.
     #[test]
     fn the_autosave_period_is_obeyed_and_zero_turns_it_off() {
-        let dir = std::env::temp_dir().join("qym_tuned_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
+        let folder = CheckFolder::new("tuned");
+        let dir = folder.path();
         let path = dir.join("auto.qcad").to_string_lossy().into_owned();
         let auto = std::path::Path::new(&path).with_extension("").to_string_lossy().into_owned() + ".autosave.qcad";
         let _ = std::fs::remove_file(&auto);

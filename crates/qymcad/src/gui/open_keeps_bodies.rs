@@ -15,6 +15,7 @@
 //! it.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::{App, BgKind, Busy, JobResult, Sel};
     use qymcad_core::feature::SketchPlane;
     use qymcad_core::model::Constraint;
@@ -25,11 +26,8 @@ mod tests {
     /// project holds no parameter whose "has it changed" started the circle) and the expression on a
     /// MODIFIER feature (the base is built from the sketch and asks for no live B-rep, so the failure
     /// is not visible on it).
-    fn saved_parametric_project(name: &str) -> String {
-        let dir = std::env::temp_dir().join("qym_open_keeps_bodies_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
-        let path = dir.join(name).to_string_lossy().into_owned();
-        let _ = std::fs::remove_file(&path);
+    fn saved_parametric_project(folder: &CheckFolder, name: &str) -> String {
+        let path = folder.file(name).to_string_lossy().into_owned();
 
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
@@ -114,7 +112,8 @@ mod tests {
     /// THE PART IS ON SCREEN — and stays there however many frames are run.
     #[test]
     fn opening_a_parametric_project_keeps_its_bodies_on_screen() {
-        let path = saved_parametric_project("keeps_bodies.qcad");
+        let folder = CheckFolder::new("open-keeps-bodies-keeps-bodies");
+        let path = saved_parametric_project(&folder, "keeps_bodies.qcad");
         let mut app = opened_in_a_live_window(&path);
         assert!(app.visible_mesh_count() > 0, "right after opening the part must be on screen: the geometry came from the file");
 
@@ -129,7 +128,8 @@ mod tests {
     /// there is no work.
     #[test]
     fn opening_a_parametric_project_rebuilds_once_not_every_frame() {
-        let path = saved_parametric_project("rebuild_once.qcad");
+        let folder = CheckFolder::new("open-keeps-bodies-rebuild-once");
+        let path = saved_parametric_project(&folder, "rebuild_once.qcad");
         let mut app = opened_in_a_live_window(&path);
 
         let regens = (0..8).filter(|_| pump_frame(&mut app)).count();
@@ -142,7 +142,8 @@ mod tests {
     /// line.
     #[test]
     fn the_rebuild_that_opening_schedules_does_not_fail() {
-        let path = saved_parametric_project("no_error.qcad");
+        let folder = CheckFolder::new("open-keeps-bodies-no-error");
+        let path = saved_parametric_project(&folder, "no_error.qcad");
         let mut app = opened_in_a_live_window(&path);
         for _ in 0..4 {
             pump_frame(&mut app);
@@ -158,7 +159,8 @@ mod tests {
     /// assembly it is seconds.
     #[test]
     fn opening_marks_nothing_for_rebuild() {
-        let path = saved_parametric_project("no_dirt.qcad");
+        let folder = CheckFolder::new("open-keeps-bodies-no-dirt");
+        let path = saved_parametric_project(&folder, "no_dirt.qcad");
         let mut app = opened_in_a_live_window(&path);
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx()); // this is where the "which parameters changed" check stands
         let dirty: Vec<&str> = app.project.timeline.iter().filter(|n| n.dirty).map(|n| n.name.as_str()).collect();
@@ -175,7 +177,8 @@ mod tests {
     /// back after the very first edit.
     #[test]
     fn editing_a_global_parameter_rebuilds_once_and_the_body_follows() {
-        let path = saved_parametric_project("param_edit.qcad");
+        let folder = CheckFolder::new("open-keeps-bodies-param-edit");
+        let path = saved_parametric_project(&folder, "param_edit.qcad");
         let mut app = opened_in_a_live_window(&path);
         for _ in 0..4 {
             pump_frame(&mut app); // carry the opening through to silence
@@ -198,8 +201,8 @@ mod tests {
     #[test]
     fn a_mesh_piece_opens_without_reading_its_source_again() {
         use crate::gui::import_door::tests::{answer, cube_stl, frame, key, running, settle};
-        let dir = std::env::temp_dir().join("qym_open_keeps_bodies_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
+        let folder = CheckFolder::new("open-keeps-bodies-mesh-piece");
+        let dir = folder.path();
         let stl = dir.join("piece.stl");
         std::fs::write(&stl, cube_stl(10.0)).expect("written");
         let path = dir.join("mesh-piece.qcad").to_string_lossy().into_owned();

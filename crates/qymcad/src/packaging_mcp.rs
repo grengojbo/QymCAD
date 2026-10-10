@@ -10,7 +10,11 @@
 //! script is run here, in a sandbox, with the two binaries stood in for by scripts that say who they are.
 #[cfg(test)]
 mod tests {
-    use std::path::{Path, PathBuf};
+    #[cfg(unix)]
+    use crate::gui::check_folder::tests::CheckFolder;
+    #[cfg(unix)]
+    use std::path::Path;
+    use std::path::PathBuf;
 
     fn root() -> PathBuf {
         PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../..")
@@ -23,10 +27,10 @@ mod tests {
     /// An AppImage's tree as it is mounted: its door, and the two binaries as scripts that print who they are and
     /// what they were given.
     #[cfg(unix)]
-    fn mounted(case: &str) -> PathBuf {
+    fn mounted(case: &str) -> CheckFolder {
         use std::os::unix::fs::PermissionsExt;
-        let dir = std::env::temp_dir().join(format!("qym_apprun_{case}"));
-        let _ = std::fs::remove_dir_all(&dir);
+        let folder = CheckFolder::new(&format!("apprun-{case}"));
+        let dir = folder.path();
         std::fs::create_dir_all(dir.join("usr/bin")).expect("the sandbox is writable");
         let put = |rel: &str, text: &str| {
             let p = dir.join(rel);
@@ -36,7 +40,7 @@ mod tests {
         put("AppRun", &read("packaging/linux/AppRun"));
         put("usr/bin/qymcad", "#!/bin/sh\necho \"program $*\"\n");
         put("usr/bin/qymcad-mcp", "#!/bin/sh\necho \"server $*\"\n");
-        dir
+        folder
     }
 
     #[cfg(unix)]
@@ -51,11 +55,12 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn the_appimage_starts_the_server_when_run_with_mcp() {
-        let dir = mounted("door");
-        assert_eq!(run(&dir, &["mcp"]), "server", "the package run with mcp did not start the server");
-        assert_eq!(run(&dir, &["mcp", "--verbose"]), "server --verbose", "what follows mcp did not reach the server");
-        assert_eq!(run(&dir, &["part.qcad"]), "program part.qcad", "a file to open did not reach the program");
-        assert_eq!(run(&dir, &[]), "program", "the package run bare did not open the program");
+        let folder = mounted("door");
+        let dir = folder.path();
+        assert_eq!(run(dir, &["mcp"]), "server", "the package run with mcp did not start the server");
+        assert_eq!(run(dir, &["mcp", "--verbose"]), "server --verbose", "what follows mcp did not reach the server");
+        assert_eq!(run(dir, &["part.qcad"]), "program part.qcad", "a file to open did not reach the program");
+        assert_eq!(run(dir, &[]), "program", "the package run bare did not open the program");
     }
 
     /// EVERY PACKAGE BUILDS THE SERVER AND PUTS IT BESIDE THE PROGRAM: the release run compiles both binaries for

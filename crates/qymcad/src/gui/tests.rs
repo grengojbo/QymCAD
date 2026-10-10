@@ -12,6 +12,7 @@ mod command_flow_tests {
     //! GUI PARITY: real user flows through App's COMMAND LAYER (headless, with the real OCCT kernel). Every fault
     //! found by hand ("it does not extrude", stale states) lived exactly here - the model-level matrices never saw
     //! them. Every new GUI fault becomes a flow in this module.
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::{App, BgKind, Busy, ExportTarget, JobResult, Picking, Sel};
     use qymcad_core::geom::Point3;
     use qymcad_core::model::Id;
@@ -932,8 +933,8 @@ mod command_flow_tests {
     /// without a single edit.
     #[test]
     fn opening_and_preparing_brep_keeps_project_clean() {
-        let dir = std::env::temp_dir().join("qym_open_clean_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let folder = CheckFolder::new("open-clean");
+        let dir = folder.path();
         let path = dir.join("proj.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
         let mut app = App::default();
@@ -1024,8 +1025,8 @@ mod command_flow_tests {
     #[test]
     fn save_during_import_restore_does_not_lose_shapes() {
         use qymcad_core::feature::FeatureKind;
-        let dir = std::env::temp_dir().join("qym_bg_jobs_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let folder = CheckFolder::new("bg-jobs");
+        let dir = folder.path();
         let step = dir.join("src.step");
         let proj_path = dir.join("proj.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&proj_path);
@@ -1065,8 +1066,8 @@ mod command_flow_tests {
     /// must WAIT rather than start in parallel; and it is not lost - it runs immediately after.
     #[test]
     fn second_save_is_queued_not_parallel() {
-        let dir = std::env::temp_dir().join("qym_bg_queue_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let folder = CheckFolder::new("bg-queue");
+        let dir = folder.path();
         let path = dir.join("proj.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
         let mut app = App::default();
@@ -1103,8 +1104,8 @@ mod command_flow_tests {
     /// running makes the project dirty again.
     #[test]
     fn successful_save_clears_dirty_but_edits_during_write_do_not() {
-        let dir = std::env::temp_dir().join("qym_save_dirty_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let folder = CheckFolder::new("save-dirty");
+        let dir = folder.path();
         let path = dir.join("proj.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
         let mut app = App::default();
@@ -1347,8 +1348,8 @@ mod command_flow_tests {
     /// tessellation running straight on the UI thread.
     #[test]
     fn open_uses_bundle_geometry_without_rebuild() {
-        let dir = std::env::temp_dir().join("qym_open_fast_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let folder = CheckFolder::new("open-fast");
+        let dir = folder.path();
         let path = dir.join("proj.qcad").to_string_lossy().into_owned();
         let _ = std::fs::remove_file(&path);
 
@@ -1807,8 +1808,8 @@ mod command_flow_tests {
     /// clean state is not written again.
     #[test]
     fn autosave_cycle() {
-        let dir = std::env::temp_dir().join("qym_autosave_test");
-        std::fs::create_dir_all(&dir).unwrap();
+        let folder = CheckFolder::new("autosave");
+        let dir = folder.path();
         let path = dir.join("proj.qcad").to_string_lossy().into_owned();
         let auto = std::path::Path::new(&path).with_extension("").to_string_lossy().into_owned() + ".autosave.qcad";
         let _ = std::fs::remove_file(&auto);

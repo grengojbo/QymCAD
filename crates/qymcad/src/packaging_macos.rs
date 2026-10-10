@@ -16,6 +16,8 @@ use std::os::unix::fs::PermissionsExt;
 use std::path::{Path, PathBuf};
 use std::process::{Command, Output};
 
+use crate::gui::check_folder::tests::CheckFolder;
+
 /// What the stub `otool` says a library depends on before anything rewrites it.
 #[derive(Clone, Copy, PartialEq)]
 enum Deps {
@@ -30,10 +32,11 @@ enum Deps {
 
 /// A tree that looks enough like the repository for the script: the binary, the icon, the licence, the
 /// notices, a manifest with a version, and an OCCT installation of two modules under three names each -
-/// `libTKernel.dylib` -> `libTKernel.7.8.dylib` -> `libTKernel.7.8.1.dylib`, exactly as OCCT installs.
-fn sandbox(case: &str, deps: Deps) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("qym_macos_bundle_{case}"));
-    let _ = fs::remove_dir_all(&dir);
+/// `libTKernel.dylib` -> `libTKernel.7.8.dylib` -> `libTKernel.7.8.1.dylib`, exactly as OCCT installs. Outside the
+/// checkout: the script asks git about the folder it runs in.
+fn sandbox(case: &str, deps: Deps) -> CheckFolder {
+    let folder = CheckFolder::outside_the_checkout(&format!("macos-bundle-{case}"));
+    let dir = folder.path().to_path_buf();
     let write = |rel: &str, text: &str| {
         let p = dir.join(rel);
         fs::create_dir_all(p.parent().expect("a parent")).expect("the sandbox is writable");
@@ -92,7 +95,7 @@ fn sandbox(case: &str, deps: Deps) -> PathBuf {
             before = before
         ),
     ));
-    dir
+    folder
 }
 
 /// Run the real script over the sandbox. HOME is moved inside it as well: the script asks git to trust the
@@ -133,11 +136,12 @@ fn listing(dir: &Path, form: &str) -> String {
 /// returning 1, and under `set -o pipefail` that ended the script in silence, six minutes in.
 #[test]
 fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
-    let dir = sandbox("rpath", Deps::Rpath);
-    let out = bundle(&dir);
+    let folder = sandbox("rpath", Deps::Rpath);
+    let dir = folder.path();
+    let out = bundle(dir);
     assert!(out.status.success(), "the script refused although every path was already @rpath:\n{}", said(&out));
 
-    let held = archive(&dir);
+    let held = archive(dir);
     for entry in [
         "QymCAD.app/Contents/MacOS/qymcad",
         "QymCAD.app/Contents/Info.plist",
@@ -161,12 +165,13 @@ fn a_bundle_where_nothing_names_the_build_machine_is_still_assembled() {
 /// 33 and 35 for the other two systems. Only the name written into the dependencies is ever loaded.
 #[test]
 fn every_library_travels_once_and_its_other_names_are_links() {
-    let dir = sandbox("weight", Deps::Rpath);
-    let out = bundle(&dir);
+    let folder = sandbox("weight", Deps::Rpath);
+    let dir = folder.path();
+    let out = bundle(dir);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains(">>> libraries: 2, links to them: 4"), "the two modules were not counted apart from their links:\n{}", said(&out));
 
-    let long = listing(&dir, "-Z");
+    let long = listing(dir, "-Z");
     let links = long.lines().filter(|l| l.starts_with('l') && l.contains(".dylib")).count();
     let files = long.lines().filter(|l| l.starts_with('-') && l.contains(".dylib")).count();
     assert_eq!((files, links), (2, 4), "each module must travel once, its other two names as links:\n{long}");
@@ -180,22 +185,24 @@ fn every_library_travels_once_and_its_other_names_are_links() {
 /// The case the script was written for: paths name the build machine and are rewritten to `@rpath`.
 #[test]
 fn paths_naming_the_build_machine_are_rewritten() {
-    let dir = sandbox("rewritten", Deps::BuildMachine);
-    let out = bundle(&dir);
+    let folder = sandbox("rewritten", Deps::BuildMachine);
+    let dir = folder.path();
+    let out = bundle(dir);
     assert!(out.status.success(), "the script refused although every path was rewritten:\n{}", said(&out));
 
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(calls.contains("-change ") && calls.contains(" @rpath/libTKernel.7.8.dylib "), "no path was rewritten to @rpath:\n{calls}");
     assert!(calls.contains("MacOS/qymcad"), "the program itself was left naming the build machine:\n{calls}");
-    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
+    assert!(archive(dir).contains("QymCAD.app/Contents/MacOS/qymcad"));
 }
 
 /// THE SENTINEL MUST STILL FIRE. One path left naming the build machine means a program that starts here
 /// and nowhere else, and says so only on somebody else's computer - so that must fail the build, loudly.
 #[test]
 fn a_path_left_naming_the_build_machine_fails_the_bundle() {
-    let dir = sandbox("stubborn", Deps::Stubborn);
-    let out = bundle(&dir);
+    let folder = sandbox("stubborn", Deps::Stubborn);
+    let dir = folder.path();
+    let out = bundle(dir);
     assert!(!out.status.success(), "a library still named the build machine and the script was happy:\n{}", said(&out));
     assert!(String::from_utf8_lossy(&out.stdout).contains("still points at the build machine"), "the refusal did not say what was wrong:\n{}", said(&out));
     assert!(!dir.join("dist/qymcad-0.1.0-macos-arm64.zip").exists(), "an archive was made out of a bundle that cannot start");
@@ -207,10 +214,11 @@ fn a_path_left_naming_the_build_machine_fails_the_bundle() {
 /// person connecting Claude to it would have a second thing to download.
 #[test]
 fn the_server_for_claude_travels_inside_the_app() {
-    let dir = sandbox("server", Deps::BuildMachine);
-    let out = bundle(&dir);
+    let folder = sandbox("server", Deps::BuildMachine);
+    let dir = folder.path();
+    let out = bundle(dir);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
-    assert!(archive(&dir).contains("QymCAD.app/Contents/MacOS/qymcad-mcp"), "the server is not in the app:\n{}", archive(&dir));
+    assert!(archive(dir).contains("QymCAD.app/Contents/MacOS/qymcad-mcp"), "the server is not in the app:\n{}", archive(dir));
     let calls = fs::read_to_string(dir.join("calls.txt")).expect("the tool was called");
     assert!(
         calls.contains("-add_rpath @executable_path/../Frameworks") && calls.lines().any(|l| l.starts_with("-add_rpath") && l.ends_with("MacOS/qymcad-mcp")),
@@ -224,8 +232,9 @@ fn the_server_for_claude_travels_inside_the_app() {
 /// app to Applications, goes there and names it, so the command is typed whole the same way on every Mac.
 #[test]
 fn every_note_names_the_app_in_the_command_that_clears_it() {
-    let dir = sandbox("notes", Deps::Rpath);
-    let out = bundle(&dir);
+    let folder = sandbox("notes", Deps::Rpath);
+    let dir = folder.path();
+    let out = bundle(dir);
     assert!(out.status.success(), "the script refused:\n{}", said(&out));
     let notes: Vec<PathBuf> = fs::read_dir(dir.join("dist")).expect("dist/ reads").flatten().map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "txt")).collect();
     assert_eq!(notes.len(), 2, "both notes must be written: {notes:?}");

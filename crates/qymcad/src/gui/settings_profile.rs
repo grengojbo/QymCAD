@@ -8,14 +8,11 @@
 //! shows the old thing.
 #[cfg(test)]
 mod tests {
+    use crate::gui::check_folder::tests::CheckFolder;
     use super::super::{App, Settings};
 
-    fn tmp(name: &str) -> String {
-        let dir = std::env::temp_dir().join("qym_settings_profile_test");
-        std::fs::create_dir_all(&dir).expect("the directory for the check");
-        let p = dir.join(name).to_string_lossy().into_owned();
-        let _ = std::fs::remove_file(&p);
-        p
+    fn tmp(folder: &CheckFolder, name: &str) -> String {
+        folder.file(name).to_string_lossy().into_owned()
     }
 
     /// THE POINT: a profile carries the settings whole and they TAKE EFFECT rather than merely
@@ -23,7 +20,8 @@ mod tests {
     #[test]
     fn a_profile_carries_the_settings_and_they_take_effect() {
         let ctx = egui::Context::default();
-        let path = tmp("profile.ron");
+        let folder = CheckFolder::new("settings-profile-profile");
+        let path = tmp(&folder, "profile.ron");
 
         let mut author = App::default();
         author.set.language = "en".into();
@@ -50,7 +48,8 @@ mod tests {
     #[test]
     fn a_broken_file_leaves_the_current_settings_alone() {
         let ctx = egui::Context::default();
-        let path = tmp("broken.ron");
+        let folder = CheckFolder::new("settings-profile-broken");
+        let path = tmp(&folder, "broken.ron");
         std::fs::write(&path, "this is not settings").expect("the file writes");
 
         let mut app = App::default();
@@ -68,7 +67,8 @@ mod tests {
     #[test]
     fn a_profile_from_another_version_still_loads() {
         let ctx = egui::Context::default();
-        let path = tmp("older.ron");
+        let folder = CheckFolder::new("settings-profile-older");
+        let path = tmp(&folder, "older.ron");
         let full = ron::ser::to_string_pretty(&Settings::default(), ron::ser::PrettyConfig::default()).expect("it writes");
         // drop a line — as if that setting had not existed in that version yet
         let older: String = full.lines().filter(|l| !l.contains("undo_cap")).collect::<Vec<_>>().join("\n");

@@ -4011,7 +4011,7 @@ mod native_menu;
 mod import_scale;
 mod format_samples_look;
 mod import_door;
-mod check_folder;
+pub(crate) mod check_folder;
 mod an_iges_import_survives_reopening;
 mod a_step_assembly_lands_as_its_tree;
 mod a_component_stepped_into_is_not_lit;
