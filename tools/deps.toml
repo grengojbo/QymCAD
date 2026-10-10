@@ -139,6 +139,10 @@ what = "единственный сетевой клиент — проверк�
 latest = "0.48.1"
 what = "импорт SVG в эскиз"
 
+[windows-sys]
+latest = "0.61.2"
+what = "the named pipe of the channel to Claude on Windows: its owner, its access list, the pipe calls"
+
 [winresource]
 latest = "0.1.31"
 what = "вшивание значка в .exe под Windows"
