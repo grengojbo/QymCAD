@@ -1,5 +1,6 @@
 //! The channel over a Unix domain socket: macOS and Linux.
 
+use std::io::{BufRead, BufReader};
 use std::os::unix::fs::PermissionsExt;
 use std::os::unix::net::{UnixListener, UnixStream};
 use std::path::{Path, PathBuf};
@@ -8,7 +9,7 @@ use std::sync::mpsc::{self, Receiver, Sender};
 use std::sync::Arc;
 use std::time::Duration;
 
-use crate::wire::{self, Answering, Call, Link};
+use crate::wire::{self, Answering, Answers, Call, Heard, Link};
 use crate::{LinkError, Opened, Wait, Wake};
 
 /// The longest socket path the systems take: `sun_path` holds 104 bytes on macOS and 108 on Linux, the closing zero
@@ -80,6 +81,26 @@ fn accept(socket: UnixListener, queue: Sender<Call>, answering: Answering, stop:
     }
 }
 
+/// The answers over a socket: a read with the socket's own timeout.
+struct SocketAnswers {
+    reader: BufReader<UnixStream>,
+}
+
+impl Answers for SocketAnswers {
+    fn line_within(&mut self, late: Duration) -> Heard {
+        if self.reader.get_ref().set_read_timeout(Some(late)).is_err() {
+            return Heard::End;
+        }
+        let mut line = String::new();
+        match self.reader.read_line(&mut line) {
+            Ok(0) => Heard::End,
+            Ok(_) => Heard::Line(line),
+            Err(e) if matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut) => Heard::Late,
+            Err(_) => Heard::End,
+        }
+    }
+}
+
 /// CONNECT TO THE WINDOW AT `path`; an answer is waited for at most `late`.
 pub fn connect(path: &Path, late: Duration) -> Result<Link, LinkError> {
     let stream = UnixStream::connect(path).map_err(|e| match e.kind() {
@@ -87,5 +108,5 @@ pub fn connect(path: &Path, late: Duration) -> Result<Link, LinkError> {
         _ => LinkError::Broken(e.to_string()),
     })?;
     let read = stream.try_clone().map_err(|e| LinkError::Broken(e.to_string()))?;
-    Ok(Link::over(read, stream, late))
+    Ok(Link::over(SocketAnswers { reader: BufReader::new(read) }, stream, late))
 }

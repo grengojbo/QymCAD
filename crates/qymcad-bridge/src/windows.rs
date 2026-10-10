@@ -23,10 +23,12 @@ use windows_sys::Win32::Foundation::{
 use windows_sys::Win32::Security::Authorization::{ConvertSidToStringSidW, ConvertStringSecurityDescriptorToSecurityDescriptorW, GetSecurityInfo, SDDL_REVISION_1, SE_KERNEL_OBJECT};
 use windows_sys::Win32::Security::{EqualSid, GetTokenInformation, TokenUser, OWNER_SECURITY_INFORMATION, PSECURITY_DESCRIPTOR, PSID, SECURITY_ATTRIBUTES, TOKEN_QUERY, TOKEN_USER};
 use windows_sys::Win32::Storage::FileSystem::{CreateFileW, FILE_FLAG_FIRST_PIPE_INSTANCE, OPEN_EXISTING, PIPE_ACCESS_DUPLEX};
-use windows_sys::Win32::System::Pipes::{ConnectNamedPipe, CreateNamedPipeW, WaitNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT};
+use windows_sys::Win32::System::Pipes::{
+    ConnectNamedPipe, CreateNamedPipeW, PeekNamedPipe, WaitNamedPipeW, PIPE_READMODE_BYTE, PIPE_REJECT_REMOTE_CLIENTS, PIPE_TYPE_BYTE, PIPE_UNLIMITED_INSTANCES, PIPE_WAIT,
+};
 use windows_sys::Win32::System::Threading::{GetCurrentProcess, OpenProcessToken};
 
-use crate::wire::{self, Answering, Call, Link};
+use crate::wire::{self, Answering, Answers, Call, Heard, Link};
 use crate::{LinkError, Opened, Wait, Wake};
 
 /// The size of each direction's buffer in the pipe, bytes: an answer with a picture runs to some hundreds of kB, and
@@ -35,6 +37,10 @@ const BUFFER: u32 = 64 * 1024;
 
 /// How long the program waits for a free instance of the pipe, ms, when the window is between two clients.
 const FREE_WITHIN: u32 = 2000;
+
+/// How often the program looks for an answer in the pipe while it waits. A call to the window takes from some
+/// milliseconds to minutes; a look every 2 ms costs nothing beside that.
+const LOOK_EVERY: Duration = Duration::from_millis(2);
 
 /// THE PIPE FOR `path`: the folder a socket would lie in names the pipe, through a digest of its path, so each person's
 /// folder - and each check's - has a pipe of its own in the machine's one namespace.
@@ -282,6 +288,46 @@ fn owned_by_this_user(pipe: &File) -> Result<bool, String> {
     Ok(same)
 }
 
+/// THE ANSWERS OVER A PIPE: what has come is looked at without waiting (`PeekNamedPipe`) and only that much is read,
+/// so the read never blocks the pipe; past the time the answer is late. A pipe has no timeout for a read, and a read
+/// waiting on a thread of its own held the next write of the same pipe for ever.
+struct PipeAnswers {
+    pipe: File,
+    /// What came after the last whole line.
+    pending: Vec<u8>,
+}
+
+impl Answers for PipeAnswers {
+    fn line_within(&mut self, late: Duration) -> Heard {
+        use std::io::Read;
+        let until = std::time::Instant::now() + late;
+        loop {
+            if let Some(end) = self.pending.iter().position(|b| *b == b'\n') {
+                let line: Vec<u8> = self.pending.drain(..=end).collect();
+                return Heard::Line(String::from_utf8_lossy(&line).into_owned());
+            }
+            let mut waiting = 0u32;
+            // SAFETY: a live handle; nothing is copied out, only the count of bytes waiting is written.
+            let looked = unsafe { PeekNamedPipe(self.pipe.as_raw_handle() as HANDLE, std::ptr::null_mut(), 0, std::ptr::null_mut(), &mut waiting, std::ptr::null_mut()) } != 0;
+            if !looked {
+                return Heard::End;
+            }
+            if waiting > 0 {
+                let mut chunk = vec![0u8; waiting as usize];
+                match self.pipe.read(&mut chunk) {
+                    Ok(0) | Err(_) => return Heard::End,
+                    Ok(n) => self.pending.extend_from_slice(&chunk[..n]),
+                }
+                continue;
+            }
+            if std::time::Instant::now() >= until {
+                return Heard::Late;
+            }
+            std::thread::sleep(LOOK_EVERY);
+        }
+    }
+}
+
 /// CONNECT TO THE WINDOW FOR `path`; an answer is waited for at most `late`.
 pub fn connect(path: &Path, late: Duration) -> Result<Link, LinkError> {
     let pipe = open_pipe(&wide(&pipe_name(path))).map_err(|e| match e {
@@ -292,5 +338,5 @@ pub fn connect(path: &Path, late: Duration) -> Result<Link, LinkError> {
         return Err(LinkError::Broken(format!("{} belongs to another user of this machine; no call is sent to it", pipe_name(path))));
     }
     let read = pipe.try_clone().map_err(|e| LinkError::Broken(e.to_string()))?;
-    Ok(Link::over(read, pipe, late))
+    Ok(Link::over(PipeAnswers { pipe: read, pending: Vec::new() }, pipe, late))
 }

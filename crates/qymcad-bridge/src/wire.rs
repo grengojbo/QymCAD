@@ -157,44 +157,36 @@ fn wait_for(answer: &Receiver<Value>, stand: &AtomicU8, within: Duration) -> Ans
     }
 }
 
-/// One line the program's end read from the window.
-enum Line {
-    Text(String),
+/// WHAT THE PROGRAM'S END HEARD from the window while it waited.
+pub(crate) enum Heard {
+    Line(String),
     /// The window closed its end.
     End,
+    /// Nothing came within the time.
+    Late,
+}
+
+/// HOW A SYSTEM'S END READS THE WINDOW'S ANSWER: one line, waited for at most `late`, on the thread that sent the call.
+///
+/// ON THAT THREAD, NOT ON ONE OF ITS OWN: on Windows the reads and writes of one pipe opened without overlapping are
+/// done one after another, and a read left waiting on another thread held the write of the next call for ever -
+/// the first call over the pipe never left.
+pub(crate) trait Answers: Send {
+    fn line_within(&mut self, late: Duration) -> Heard;
 }
 
 /// THE PROGRAM'S END: one connection to the window, carrying calls one at a time.
-///
-/// THE ANSWERS ARE READ ON A THREAD OF THEIR OWN and waited for with a clock, not by a timeout of the stream: a named
-/// pipe has no timeout for a read, and one way of waiting serves every system. A link dropped while an answer is owed
-/// leaves the thread to read that answer, find nobody to hand it to, and end, closing the connection.
 pub struct Link {
     out: Box<dyn Write + Send>,
-    lines: Receiver<Line>,
+    answers: Box<dyn Answers>,
     late: Duration,
     next_id: u64,
 }
 
 impl Link {
-    /// A LINK OVER ONE CONNECTION: `read` and `out` are its two directions; an answer is waited for at most `late`.
-    pub(crate) fn over(read: impl Read + Send + 'static, out: impl Write + Send + 'static, late: Duration) -> Link {
-        let (give, lines) = mpsc::channel();
-        std::thread::spawn(move || {
-            let mut reader = BufReader::new(read);
-            loop {
-                let mut text = String::new();
-                let line = match reader.read_line(&mut text) {
-                    Ok(0) | Err(_) => Line::End,
-                    Ok(_) => Line::Text(text),
-                };
-                let end = matches!(line, Line::End);
-                if give.send(line).is_err() || end {
-                    return;
-                }
-            }
-        });
-        Link { out: Box::new(out), lines, late, next_id: 0 }
+    /// A LINK OVER ONE CONNECTION: `answers` reads it, `out` writes it; an answer is waited for at most `late`.
+    pub(crate) fn over(answers: impl Answers + 'static, out: impl Write + Send + 'static, late: Duration) -> Link {
+        Link { out: Box::new(out), answers: Box::new(answers), late, next_id: 0 }
     }
 
     /// CALL `tool` IN THE WINDOW and wait for its answer.
@@ -204,10 +196,10 @@ impl Link {
         let mut text = serde_json::to_string(&request).map_err(|e| LinkError::Broken(e.to_string()))?;
         text.push('\n');
         self.out.write_all(text.as_bytes()).and_then(|()| self.out.flush()).map_err(|_| LinkError::Gone)?;
-        let line = match self.lines.recv_timeout(self.late) {
-            Ok(Line::Text(line)) => line,
-            Ok(Line::End) | Err(RecvTimeoutError::Disconnected) => return Err(LinkError::Gone),
-            Err(RecvTimeoutError::Timeout) => return Err(LinkError::Late),
+        let line = match self.answers.line_within(self.late) {
+            Heard::Line(line) => line,
+            Heard::End => return Err(LinkError::Gone),
+            Heard::Late => return Err(LinkError::Late),
         };
         let reply: Reply = serde_json::from_str(&line).map_err(|e| LinkError::Broken(format!("{e}: {line}")))?;
         if let Some(f) = reply.error {
