@@ -33,7 +33,11 @@ pub fn picture_answer(ctx: &Ctx, look: &Look) -> Result<Answer, Refusal> {
         return Err(Refusal::new("no-body", "The document has no body to draw.", Stage::Validate).with_hint("Lay a body first: a primitive, or a sketch extruded."));
     }
     if look.view == View::Window && look.window.is_none() {
-        return Err(window_only());
+        let missed = match &ctx.seen {
+            Seen::NoWindow(missed) => missed.clone(),
+            Seen::Window(_) => crate::tool::Missed { why: "the window gave no eye".into() },
+        };
+        return Err(window_only(&missed));
     }
     let shot = picture::png(&ctx.doc, look).ok_or_else(|| Refusal::new("bad-size", "The picture could not be drawn at that size.", Stage::Validate))?;
     let mut a = Answer::new();
@@ -44,8 +48,8 @@ pub fn picture_answer(ctx: &Ctx, look: &Look) -> Result<Answer, Refusal> {
     Ok(a)
 }
 
-fn window_only() -> Refusal {
-    Refusal::new("no-window", "The view of the window is drawn only in the open QymCAD window, and this server works on a document of its own.", Stage::Window)
+fn window_only(missed: &crate::tool::Missed) -> Refusal {
+    Refusal::new("no-window", &format!("The view of the window is drawn only in the open QymCAD window, and this session works on a document of its own: {}.", missed.why), Stage::Window)
         .with_hint("Name a side instead: iso, top, bottom, front, back, left, right.")
 }
 
@@ -54,7 +58,7 @@ fn window_only() -> Refusal {
 pub fn default_view(ctx: &Ctx) -> View {
     match ctx.seen {
         Seen::Window(_) => View::Window,
-        Seen::NoWindow => View::Iso,
+        Seen::NoWindow(_) => View::Iso,
     }
 }
 
@@ -62,7 +66,7 @@ pub fn default_view(ctx: &Ctx) -> View {
 pub fn eye(ctx: &Ctx) -> Option<picture::Eye> {
     match &ctx.seen {
         Seen::Window(w) => Some(w.eye),
-        Seen::NoWindow => None,
+        Seen::NoWindow(_) => None,
     }
 }
 

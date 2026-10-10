@@ -23,10 +23,17 @@ pub struct Ctx {
 /// WHAT A PERSON HAS SELECTED, as far as the tools can know.
 #[derive(Clone)]
 pub enum Seen {
-    /// A document of the program's own: nobody is looking at it.
-    NoWindow,
+    /// A document of the program's own: nobody is looking at it, and why no window was reached.
+    NoWindow(Missed),
     /// The open window's document: what is selected in it - possibly nothing - and the eye it is seen through.
     Window(InWindow),
+}
+
+/// WHY A SESSION WORKS ON A DOCUMENT OF ITS OWN, as the program that looked for the window says it: which server it
+/// is, where it looked, what it found. A refusal that needs a window passes it on.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Missed {
+    pub why: String,
 }
 
 /// WHAT THE OPEN WINDOW TELLS THE TOOLS: what is selected, and the eye the person looks through.
@@ -39,7 +46,7 @@ pub struct InWindow {
 impl Ctx {
     /// A new document with one part, as the window starts.
     pub fn blank() -> Self {
-        Ctx { doc: DocEngine::blank(), path: None, seen: Seen::NoWindow, language: crate::person::language() }
+        Ctx { doc: DocEngine::blank(), path: None, seen: Seen::NoWindow(Missed { why: "no window was looked for".into() }), language: crate::person::language() }
     }
 }
 

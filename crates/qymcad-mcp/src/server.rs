@@ -5,10 +5,10 @@ use std::io::{BufRead, Write};
 
 use serde_json::{json, Value};
 
-use crate::engine::{Engine, Window};
+use crate::engine::{Engine, Looked, Window};
 use crate::rpc::{self, Fault, Incoming};
 use qymcad_tools::reading::{self, Unread};
-use qymcad_tools::tool::{self, Ctx};
+use qymcad_tools::tool::{self, Ctx, Refusal};
 
 /// The revisions of the protocol this server speaks, newest first. A client asking for one of them gets it
 /// back; a client asking for anything else gets the newest, and decides itself whether to go on.
@@ -61,13 +61,12 @@ pub fn answer_window(window: &mut Window, line: &str) -> Option<Value> {
 /// The reply to one line, the calls going where `engine` sends them; an engine not decided yet looks for the window
 /// before a call that reaches a document, and settles on its own document once a call has changed it.
 pub fn answer_engine(engine: &mut Engine, line: &str) -> Option<Value> {
-    if reaches_a_document(line) {
-        engine.decide();
-    }
-    let reply = match engine {
-        Engine::Here(ctx) => answer(ctx, line),
-        Engine::Window(window) => answer_window(window, line),
-        Engine::Undecided { own, .. } => answer(own, line),
+    let looked = if reaches_a_document(line) { engine.decide() } else { Looked::Decided };
+    let reply = match (&mut *engine, looked) {
+        (Engine::Undecided { .. }, Looked::Refused(refusal)) => answer_to(Target::Refused(refusal), line),
+        (Engine::Here(ctx), _) => answer(ctx, line),
+        (Engine::Window(window), _) => answer_window(window, line),
+        (Engine::Undecided { own, .. }, _) => answer(own, line),
     };
     engine.settle();
     reply
@@ -84,6 +83,8 @@ fn reaches_a_document(line: &str) -> bool {
 enum Target<'a> {
     Here(&'a mut Ctx),
     Window(&'a mut Window),
+    /// A window listens and could not be reached: every request that reaches a document is refused with this.
+    Refused(Refusal),
 }
 
 fn answer_to(target: Target<'_>, line: &str) -> Option<Value> {
@@ -120,6 +121,7 @@ fn request(target: Target<'_>, id: &Value, method: &str, params: Value) -> Value
                     Ok(answer) => reading::answer_as_read(answer),
                     Err(cut) => Err(Unread::Nothing(format!("{} {}", cut.refusal.message, cut.refusal.hint.unwrap_or_default()))),
                 },
+                Target::Refused(refusal) => Err(Unread::Nothing(format!("{} {}", refusal.message, refusal.hint.unwrap_or_default()))),
             };
             match read {
                 Ok(contents) => rpc::success(id, contents),
@@ -154,6 +156,7 @@ fn call(target: Target<'_>, id: &Value, mut params: Value) -> Value {
             Ok(answer) => rpc::success(id, answer),
             Err(cut) => rpc::success(id, tool::refused_reply(&name, &cut.refusal, cut.after)),
         },
+        Target::Refused(refusal) => rpc::success(id, tool::refused_reply(&name, &refusal, qymcad_tools::tool::After::Untouched)),
     }
 }
 

@@ -26,6 +26,15 @@ pub fn default_path() -> Option<PathBuf> {
     qymcad_paths::data_root().map(|d| d.join(SOCKET))
 }
 
+/// WHERE THE CHANNEL FOR `path` IS, in words a person can look up: the socket's path on macOS and Linux, the pipe's
+/// name on Windows.
+pub fn channel_name(path: &std::path::Path) -> String {
+    #[cfg(windows)]
+    return windows::pipe_name(path);
+    #[cfg(not(windows))]
+    return path.display().to_string();
+}
+
 /// How long a call may wait for the window to take it.
 #[derive(Clone, Copy, Debug)]
 pub struct Wait {

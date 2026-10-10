@@ -242,6 +242,47 @@ fn auto_with_no_window_at_the_first_change_keeps_its_own() {
     assert_eq!(bodies(&window.close()), 0, "the session moved to a window opened after it had decided");
 }
 
+/// A WINDOW THE PROGRAM CANNOT REACH IS SAID, NOT HIDDEN BEHIND A DOCUMENT OF ITS OWN. Reported behaviour: a window
+/// listened, the program did not reach it, and every answer said only that there was no window - the reason was
+/// swallowed, and nobody could tell an old server from a window that would not let it in. Here the window listens on
+/// a socket the program may not open: the call is refused as `window-broken`, nothing happens anywhere, and the
+/// refusal says why.
+#[test]
+fn auto_says_why_a_listening_window_was_not_reached() {
+    use std::os::unix::fs::PermissionsExt;
+    let folder = place("auto-shut");
+    let path = folder.path().join(SOCKET);
+    let window = stand_in(&path, 0);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o000)).expect("the socket shut");
+    let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
+    let reply = box_through(&mut engine);
+    std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600)).expect("the socket opened again");
+    assert_eq!(reply["error"]["code"], "window-broken", "a window that would not let the program in was hidden: {reply}");
+    assert_eq!(reply["rolled_back"], json!(true), "{reply}");
+    assert!(!matches!(engine, Engine::Here(_)), "the session settled on a document of its own after a refused window");
+    assert_eq!(bodies(&window.close()), 0, "the refused call reached the window");
+}
+
+/// WHERE THE PROGRAM LOOKED, AND WHICH PROGRAM IT IS. With no window, what is selected is refused, and the refusal
+/// names the server's release and the channel it looked at: an old server, a window on another machine and a switch
+/// left off then read apart.
+#[test]
+fn no_window_says_which_server_looked_where() {
+    let folder = place("auto-where");
+    let path = folder.path().join(SOCKET);
+    let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
+    let read = answer_engine(&mut engine, &line("tools/call", json!({ "name": "get_selection", "arguments": {} }))).expect("answered")["result"]["structuredContent"].clone();
+    let said = format!("{} {}", read["error"]["message"].as_str().unwrap_or_default(), read["error"]["hint"].as_str().unwrap_or_default());
+    assert_eq!(read["error"]["code"], "no-window", "{read}");
+    assert!(said.contains(&path.display().to_string()), "the refusal does not say where the window was looked for: {said}");
+    assert!(said.contains(&qymcad_mcp::release()), "the refusal does not name the server's release: {said}");
+
+    let mut w = live(&path);
+    let refused = call(&mut w, "box", json!({ "x": 1, "y": 1, "z": 1 }));
+    let said = format!("{} {}", refused["error"]["message"].as_str().unwrap_or_default(), refused["error"]["hint"].as_str().unwrap_or_default());
+    assert!(said.contains(&path.display().to_string()) && said.contains(&qymcad_mcp::release()), "--live with no window does not say which server looked where: {said}");
+}
+
 #[test]
 fn the_command_line_is_read_as_it_is_meant() {
     struct Case {

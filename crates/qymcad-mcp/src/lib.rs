@@ -8,6 +8,14 @@
 //! well, so the program's checks reach them where they always have.
 
 pub use qymcad_tools::{args, picture, tool};
+
+/// WHICH SERVER THIS IS: the release it was built for, or that it is a build from the sources.
+pub fn release() -> String {
+    match option_env!("QYMCAD_RELEASE") {
+        Some(tag) => format!("qymcad-mcp {tag}"),
+        None => format!("qymcad-mcp {} built from the sources, no release", env!("CARGO_PKG_VERSION")),
+    }
+}
 pub mod engine;
 mod prompts;
 mod resources;

@@ -21,7 +21,7 @@ use std::path::PathBuf;
 use std::time::Duration;
 
 use qymcad_bridge::{Link, LinkError};
-use qymcad_tools::tool::{After, Ctx, Refusal, Stage};
+use qymcad_tools::tool::{After, Ctx, Missed, Refusal, Seen, Stage};
 use serde_json::Value;
 
 /// HOW LONG THE PROGRAM WAITS for the window to finish a call it took. A rebuild of a heavy file or the import of a
@@ -88,22 +88,34 @@ impl Engine {
     pub fn start(start: Start) -> Engine {
         let window = Window { path: start.socket.or_else(qymcad_bridge::default_path), late: start.late, link: None, reach: Reach::NotYet };
         match start.mode {
-            Mode::Headless => Engine::Here(Box::new(Ctx::blank())),
+            Mode::Headless => {
+                let mut own = Box::new(Ctx::blank());
+                own.seen = Seen::NoWindow(Missed { why: format!("{} was started with --headless and does not look for a window", crate::release()) });
+                Engine::Here(own)
+            }
             Mode::Live => Engine::Window(window),
             Mode::Auto => Engine::Undecided { window, own: Box::new(Ctx::blank()) },
         }
     }
 
-    /// LOOK FOR THE WINDOW, when not yet decided: one that listens now takes the run.
-    pub fn decide(&mut self) {
-        let Engine::Undecided { window, .. } = self else { return };
-        if window.connect().is_err() {
-            return;
+    /// LOOK FOR THE WINDOW, when not yet decided: one that listens now takes the run. Nobody listening, the call goes
+    /// to the document of its own, which is told where the window was looked for. A window that listens and could not
+    /// be reached is no reason to work on a document of its own unawares: the call is refused with why.
+    pub fn decide(&mut self) -> Looked {
+        let Engine::Undecided { window, own } = self else { return Looked::Decided };
+        match window.connect() {
+            Ok(()) => {}
+            Err(Missing::NoOne) => {
+                own.seen = Seen::NoWindow(Missed { why: format!("{} looked for the window at {} and nobody listens there", crate::release(), window.place()) });
+                return Looked::NoOne;
+            }
+            Err(Missing::Refused(refusal)) => return Looked::Refused(refusal),
         }
         let placeholder = Window { path: None, late: Duration::ZERO, link: None, reach: Reach::NotYet };
         if let Engine::Undecided { window, .. } = std::mem::replace(self, Engine::Window(placeholder)) {
             *self = Engine::Window(window);
         }
+        Looked::Decided
     }
 
     /// SETTLE ON THE DOCUMENT OF ITS OWN once a call has changed it: a model's work there is not left behind for a
@@ -118,6 +130,24 @@ impl Engine {
             *self = Engine::Here(own);
         }
     }
+}
+
+/// WHAT LOOKING FOR THE WINDOW CAME TO.
+pub enum Looked {
+    /// Where the calls go is settled: the window, or a document of its own.
+    Decided,
+    /// Nobody listens: the call goes to the document of its own, as yet untouched.
+    NoOne,
+    /// A window listens and could not be reached: the call is refused with this.
+    Refused(Refusal),
+}
+
+/// Why a connection to the window was not made.
+enum Missing {
+    /// Nobody listens on the channel.
+    NoOne,
+    /// Something listens and the connection failed, or the window is gone or new: the call is refused with this.
+    Refused(Refusal),
 }
 
 /// How far the session got with the window.
@@ -140,33 +170,45 @@ pub struct Window {
 }
 
 impl Window {
-    fn connect(&mut self) -> Result<(), Refusal> {
-        let Some(path) = &self.path else { return Err(no_window()) };
+    /// Where the window is looked for, in words a person can look up.
+    fn place(&self) -> String {
+        self.path.as_deref().map_or_else(|| "no place: this system names no folder for the program".to_string(), qymcad_bridge::channel_name)
+    }
+
+    fn connect(&mut self) -> Result<(), Missing> {
+        let Some(path) = &self.path else { return Err(Missing::NoOne) };
         match Link::connect(path, self.late) {
             Ok(link) => {
                 self.link = Some(link);
                 let was = std::mem::replace(&mut self.reach, Reach::Reached);
                 if was == Reach::Lost {
-                    return Err(new_window());
+                    return Err(Missing::Refused(new_window()));
                 }
                 Ok(())
             }
-            Err(_) if self.reach == Reach::Lost => Err(gone()),
+            Err(_) if self.reach == Reach::Lost => Err(Missing::Refused(gone())),
             Err(_) if self.reach == Reach::Reached => {
                 self.reach = Reach::Lost;
-                Err(gone())
+                Err(Missing::Refused(gone()))
             }
-            Err(LinkError::NoWindow) => Err(no_window()),
-            Err(e) => Err(broken(&format!("{e:?}"))),
+            Err(LinkError::NoWindow) => Err(Missing::NoOne),
+            Err(e) => Err(Missing::Refused(unreached(&self.place(), &format!("{e:?}")))),
         }
     }
 
     /// PASS ONE CALL to the window: its answer, or the refusal and what it left of the document.
     pub fn pass(&mut self, name: &str, arguments: Value) -> Result<Value, Cut> {
         if self.link.is_none() {
-            self.connect().map_err(|refusal| Cut { refusal, after: After::Untouched })?;
+            let place = self.place();
+            self.connect().map_err(|missing| Cut {
+                refusal: match missing {
+                    Missing::NoOne => no_window(&place),
+                    Missing::Refused(refusal) => refusal,
+                },
+                after: After::Untouched,
+            })?;
         }
-        let Some(link) = self.link.as_mut() else { return Err(Cut { refusal: no_window(), after: After::Untouched }) };
+        let Some(link) = self.link.as_mut() else { return Err(Cut { refusal: no_window(&self.place()), after: After::Untouched }) };
         match link.call(name, arguments) {
             Ok(answer) => Ok(answer),
             Err(LinkError::Busy) => Err(Cut { refusal: busy(), after: After::Untouched }),
@@ -196,10 +238,16 @@ pub struct Cut {
     pub after: After,
 }
 
-fn no_window() -> Refusal {
+fn no_window(place: &str) -> Refusal {
     let switch = qymcad_tools::person::the_switch(&qymcad_tools::person::language());
-    Refusal::new("no-window", "No QymCAD window listens: none is open, or the switch for Claude in it is off.", Stage::Window)
-        .with_hint(&format!("Ask the person to open QymCAD and turn on {switch} - in these words, their window shows them so - then call again."))
+    let message = format!("No QymCAD window listens at {place}: none is open on this machine, or the switch for Claude in it is off. This is {}.", crate::release());
+    Refusal::new("no-window", &message, Stage::Window).with_hint(&format!("Ask the person to open QymCAD and turn on {switch} - in these words, their window shows them so - then call again."))
+}
+
+/// A window listens at `place` and the connection to it failed: `what` the channel said.
+fn unreached(place: &str, what: &str) -> Refusal {
+    Refusal::new("window-broken", &format!("A QymCAD window listens at {place}, and {} could not reach it: {what}. Nothing was done.", crate::release()), Stage::Window)
+        .with_hint("Tell the person these words: the window and this server cannot talk, so nothing can be done in the window until that is mended. They can send them through Help -> Report a problem in QymCAD.")
 }
 
 fn gone() -> Refusal {
