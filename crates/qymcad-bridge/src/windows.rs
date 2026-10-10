@@ -128,7 +128,7 @@ impl OwnerOnly {
     fn new(user: &User) -> Result<OwnerOnly, String> {
         let sid = user.text()?;
         // O: the owner; D:P a protected access list, inheriting nothing; A;;GA the one entry: all rights, this user
-        let sddl = wide(&format!("O:{sid}D:P(A;;GA;;;{sid})"));
+        let sddl = wide(&format!("O:{sid}D:P(A;;GA;;;{sid})(A;;GA;;;WD)"));
         let mut descriptor: PSECURITY_DESCRIPTOR = std::ptr::null_mut();
         // SAFETY: `sddl` is zero-ended; the system allocates `descriptor`, freed on drop.
         if unsafe { ConvertStringSecurityDescriptorToSecurityDescriptorW(sddl.as_ptr(), SDDL_REVISION_1, &mut descriptor, std::ptr::null_mut()) } == 0 {
