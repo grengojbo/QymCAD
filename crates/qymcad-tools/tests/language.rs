@@ -5,6 +5,35 @@ use qymcad_tools::person::language_in;
 use qymcad_tools::tool::{self, Ctx};
 use serde_json::json;
 
+/// The folder of one check in one run, `qymcad-check-<check>-<run>` under the system's temporary folder, the run
+/// being the process id: no other check of this run and no check of another run writes there. Emptied when made and
+/// removed with everything in it when dropped, a panicking check included: a file under the temporary folder that no
+/// check removes is left there by every run.
+struct CheckFolder {
+    path: std::path::PathBuf,
+}
+
+impl CheckFolder {
+    /// The folder of the check `check` in this run.
+    fn new(check: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("qymcad-check-{check}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a folder for the check");
+        Self { path }
+    }
+
+    /// Where the folder is.
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for CheckFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// A settings file as the window writes it: a map of what it keeps, the settings among them as text.
 fn settings_with(dir: &std::path::Path, name: &str, settings: &str) -> std::path::PathBuf {
     let file = dir.join(name);
@@ -15,8 +44,8 @@ fn settings_with(dir: &std::path::Path, name: &str, settings: &str) -> std::path
 
 #[test]
 fn the_language_is_read_where_the_window_keeps_it() {
-    let dir = std::env::temp_dir().join(format!("qymcad-person-{}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let folder = CheckFolder::new("person-language");
+    let dir = folder.path();
     let system = qymcad_i18n::system_default();
     struct Case {
         what: &'static str,
@@ -26,10 +55,10 @@ fn the_language_is_read_where_the_window_keeps_it() {
     let broken = dir.join("broken.ron");
     std::fs::write(&broken, "{ not ron").expect("a broken file");
     let cases = [
-        Case { what: "picked Russian", file: Some(settings_with(&dir, "ru.ron", "(layout:[],language:\"ru\",scheme:\"dark\",claude_link:On)")), want: "ru".into() },
-        Case { what: "picked Ukrainian", file: Some(settings_with(&dir, "uk.ron", "(language:\"uk\")")), want: "uk".into() },
-        Case { what: "never picked", file: Some(settings_with(&dir, "empty.ron", "(language:\"\",scheme:\"dark\")")), want: system.clone() },
-        Case { what: "a language this build lacks", file: Some(settings_with(&dir, "xx.ron", "(language:\"xx\")")), want: system.clone() },
+        Case { what: "picked Russian", file: Some(settings_with(dir, "ru.ron", "(layout:[],language:\"ru\",scheme:\"dark\",claude_link:On)")), want: "ru".into() },
+        Case { what: "picked Ukrainian", file: Some(settings_with(dir, "uk.ron", "(language:\"uk\")")), want: "uk".into() },
+        Case { what: "never picked", file: Some(settings_with(dir, "empty.ron", "(language:\"\",scheme:\"dark\")")), want: system.clone() },
+        Case { what: "a language this build lacks", file: Some(settings_with(dir, "xx.ron", "(language:\"xx\")")), want: system.clone() },
         Case { what: "a file that is no settings", file: Some(broken), want: system.clone() },
         Case { what: "no file", file: Some(dir.join("absent.ron")), want: system.clone() },
         Case { what: "no folder for the program", file: None, want: system.clone() },
@@ -41,7 +70,6 @@ fn the_language_is_read_where_the_window_keeps_it() {
             wrong.push(format!("{}: {got:?}, not {:?}", c.what, c.want));
         }
     }
-    let _ = std::fs::remove_dir_all(&dir);
     assert!(wrong.is_empty(), "the person's language is misread:\n  {}", wrong.join("\n  "));
 }
 
