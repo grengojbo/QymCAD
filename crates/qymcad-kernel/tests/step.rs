@@ -1,4 +1,6 @@
 //! The FFI to the kernel: a box tessellates and a real STEP file reads.
+mod check_folder;
+use check_folder::CheckFolder;
 
 use qymcad_core::feature::{LoftBody, LoftWalls};
 use qymcad_kernel::{box_mesh, extrude, import_step};
@@ -74,7 +76,8 @@ fn step_write_roundtrips_via_step_read() {
     let b = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("B");
     let mut shift = ident;
     shift[3] = 30.0; // the translation along X
-    let path = std::env::temp_dir().join("qym_export_test.step");
+    let folder = CheckFolder::new("step-write-roundtrips-via-step-read");
+    let path = folder.path().join("qym_export_test.step");
     let p = path.to_string_lossy();
     write_step(&[(&a, ident), (&b, shift)], &p).expect("the STEP write succeeded");
 

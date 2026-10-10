@@ -1,4 +1,6 @@
 //! An integration test of the DXF import.
+mod check_folder;
+use check_folder::CheckFolder;
 
 use qymcad_io::import_dxf;
 use std::io::Write;
@@ -74,8 +76,8 @@ ENDSEC
 EOF
 ";
 
-fn write_fixture() -> std::path::PathBuf {
-    let path = std::env::temp_dir().join("qymcad_dxf_test.dxf");
+fn write_fixture(folder: &CheckFolder) -> std::path::PathBuf {
+    let path = folder.path().join("qymcad_dxf_test.dxf");
     let mut f = std::fs::File::create(&path).unwrap();
     f.write_all(FIXTURE.as_bytes()).unwrap();
     path
@@ -84,7 +86,8 @@ fn write_fixture() -> std::path::PathBuf {
 #[test]
 fn imports_exact_curves_square_circle_lines() {
     use qymcad_core::geom::ProfEdge;
-    let path = write_fixture();
+    let folder = CheckFolder::new("dxf-exact-curves");
+    let path = write_fixture(&folder);
     let sketch = import_dxf(path.to_str().unwrap()).expect("import ok");
 
     // Exact curves: the polyline square gives four segments and is closed, the circle gives one primitive, and

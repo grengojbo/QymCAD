@@ -5,20 +5,50 @@
 //! answered as one and the link goes on.
 #![cfg(unix)]
 
-use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
 use qymcad_bridge::{Link, LinkError, Listener, Opened, Wait, Wake};
 use serde_json::{json, Value};
 
-/// A socket path of its own for each check and each run, short enough for the system's limit - in the system's
+/// The folder of one check in one run, `qymcad-check-<check>-<run>` under the system's temporary folder, the run
+/// being the process id: no other check of this run and no check of another run writes there. Emptied when made and
+/// removed with everything in it when dropped, a panicking check included: a file under the temporary folder that no
+/// check removes is left there by every run.
+struct CheckFolder {
+    path: std::path::PathBuf,
+}
+
+impl CheckFolder {
+    /// The folder of the check `check` in this run.
+    fn new(check: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("qymcad-check-{check}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a folder for the check");
+        Self { path }
+    }
+
+    /// Where the folder is.
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for CheckFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
+/// The folder of a socket of its own for each check and each run, short enough for the system's limit - in the system's
 /// temporary folder, not under `target/`: a checkout shared into a virtual machine (virtiofs) refuses to hold a socket
 /// at all, measured as "Invalid argument" on every bind.
-fn place(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join("qymcad-bridge").join(format!("{}-{name}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("a folder for the check");
-    dir.join("mcp.sock")
+/// The socket is `SOCKET` in it.
+fn place(name: &str) -> CheckFolder {
+    CheckFolder::new(&format!("bridge-{name}"))
 }
+
+/// The name of the socket in its folder.
+const SOCKET: &str = "mcp.sock";
 
 /// A wake nobody hears: the checks ask for calls in a loop of their own.
 fn quiet() -> Wake {
@@ -63,7 +93,8 @@ fn link(path: &std::path::Path) -> Link {
 
 #[test]
 fn a_call_reaches_the_window_and_its_answer_comes_back() {
-    let path = place("call");
+    let folder = place("call");
+    let path = folder.path().join(SOCKET);
     let window = answering(open(&path, SOON));
     let mut l = link(&path);
     let a = l.call("fillet", json!({ "radius": 2 })).expect("the window answers");
@@ -77,7 +108,8 @@ fn a_call_reaches_the_window_and_its_answer_comes_back() {
 #[test]
 fn the_socket_is_its_owners_alone() {
     use std::os::unix::fs::PermissionsExt;
-    let path = place("mode");
+    let folder = place("mode");
+    let path = folder.path().join(SOCKET);
     let _l = open(&path, SOON);
     let mode = std::fs::metadata(&path).expect("the socket is there").permissions().mode() & 0o777;
     assert_eq!(mode, 0o600, "the socket is open to others: {mode:o}");
@@ -85,7 +117,8 @@ fn the_socket_is_its_owners_alone() {
 
 #[test]
 fn a_second_window_is_refused_and_a_left_file_is_cleared() {
-    let path = place("twice");
+    let folder = place("twice");
+    let path = folder.path().join(SOCKET);
     let first = open(&path, SOON);
     match Listener::open(&path, SOON, quiet()) {
         Err(Opened::Taken) => {}
@@ -102,7 +135,8 @@ fn a_second_window_is_refused_and_a_left_file_is_cleared() {
 
 #[test]
 fn a_window_that_does_not_answer_in_time_is_told_busy() {
-    let path = place("busy");
+    let folder = place("busy");
+    let path = folder.path().join(SOCKET);
     let listener = open(&path, Wait { answer_within: Duration::from_millis(200) });
     let mut l = link(&path);
     let start = Instant::now();
@@ -117,7 +151,8 @@ fn a_window_that_does_not_answer_in_time_is_told_busy() {
 
 #[test]
 fn a_closed_window_is_told_gone() {
-    let path = place("gone");
+    let folder = place("gone");
+    let path = folder.path().join(SOCKET);
     let listener = open(&path, SOON);
     let mut l = link(&path);
     drop(listener);
@@ -135,7 +170,8 @@ fn a_closed_window_is_told_gone() {
 /// gone rather than waiting out its time.
 #[test]
 fn a_window_closing_with_a_call_waiting_is_told_gone() {
-    let path = place("closing");
+    let folder = place("closing");
+    let path = folder.path().join(SOCKET);
     let listener = open(&path, SOON);
     let p2 = path.clone();
     let caller = std::thread::spawn(move || {
@@ -154,7 +190,8 @@ fn a_window_closing_with_a_call_waiting_is_told_gone() {
 
 #[test]
 fn two_clients_at_once_are_both_answered() {
-    let path = place("two");
+    let folder = place("two");
+    let path = folder.path().join(SOCKET);
     let window = answering(open(&path, SOON));
     let p2 = path.clone();
     let other = std::thread::spawn(move || link(&p2).call("box", json!({ "x": 1 })).expect("the second client is answered"));
@@ -168,7 +205,8 @@ fn two_clients_at_once_are_both_answered() {
 #[test]
 fn a_line_that_is_no_call_is_answered_and_the_link_goes_on() {
     use std::io::{BufRead, Write};
-    let path = place("junk");
+    let folder = place("junk");
+    let path = folder.path().join(SOCKET);
     let window = answering(open(&path, SOON));
     let mut s = std::os::unix::net::UnixStream::connect(&path).expect("the socket takes a client");
     s.write_all(b"this is not json\n").expect("a line goes out");
@@ -192,7 +230,8 @@ fn a_line_that_is_no_call_is_answered_and_the_link_goes_on() {
 #[test]
 fn every_call_wakes_the_window() {
     use std::sync::atomic::{AtomicUsize, Ordering};
-    let path = place("wake");
+    let folder = place("wake");
+    let path = folder.path().join(SOCKET);
     let woken = std::sync::Arc::new(AtomicUsize::new(0));
     let seen = woken.clone();
     let listener = match Listener::open(

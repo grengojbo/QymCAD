@@ -4,8 +4,10 @@
 //! late one are each told, with what they left of the document; `--auto` takes the window when one listens and a
 //! document of its own otherwise; and the command line is read as it is meant.
 #![cfg(unix)]
+mod check_folder;
+use check_folder::CheckFolder;
 
-use std::path::{Path, PathBuf};
+use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -16,13 +18,14 @@ use qymcad_mcp::server::{answer_engine, answer_window};
 use qymcad_mcp::tool::Ctx;
 use serde_json::{json, Value};
 
-/// A socket of its own for each check, in the temporary folder (a checkout shared into a virtual machine refuses to
-/// hold a socket).
-fn place(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join("qymcad-relay").join(format!("{}-{name}", std::process::id()));
-    std::fs::create_dir_all(&dir).expect("a folder for the check");
-    dir.join("mcp.sock")
+/// The folder of a socket of its own for each check, in the temporary folder (a checkout shared into a virtual machine
+/// refuses to hold a socket). The socket is `SOCKET` in it.
+fn place(name: &str) -> CheckFolder {
+    CheckFolder::new(&format!("relay-{name}"))
 }
+
+/// The name of the socket in its folder.
+const SOCKET: &str = "mcp.sock";
 
 /// A wake nobody hears: the stand-in window asks for calls in a loop of its own.
 fn quiet() -> Wake {
@@ -94,7 +97,8 @@ fn bodies(ctx: &Ctx) -> usize {
 
 #[test]
 fn a_call_in_live_mode_lands_in_the_window() {
-    let path = place("lands");
+    let folder = place("lands");
+    let path = folder.path().join(SOCKET);
     let window = stand_in(&path, 0);
     let mut w = live(&path);
     let reply = call(&mut w, "box", json!({ "x": 10, "y": 10, "z": 10 }));
@@ -111,7 +115,8 @@ fn a_call_in_live_mode_lands_in_the_window() {
 
 #[test]
 fn with_no_window_a_call_is_refused_until_one_opens() {
-    let path = place("none");
+    let folder = place("none");
+    let path = folder.path().join(SOCKET);
     let mut w = live(&path);
     let reply = call(&mut w, "box", json!({ "x": 10, "y": 10, "z": 10 }));
     assert_eq!(reply["error"]["code"], "no-window", "{reply}");
@@ -131,7 +136,8 @@ fn with_no_window_a_call_is_refused_until_one_opens() {
 /// before changing it; the call after goes through - no restart of Claude.
 #[test]
 fn a_window_opened_again_is_reached_after_a_warning() {
-    let path = place("lost");
+    let folder = place("lost");
+    let path = folder.path().join(SOCKET);
     let first = stand_in(&path, 0);
     let mut w = live(&path);
     assert_eq!(call(&mut w, "box", json!({ "x": 10, "y": 10, "z": 10 }))["ok"], json!(true));
@@ -151,7 +157,8 @@ fn a_window_opened_again_is_reached_after_a_warning() {
 
 #[test]
 fn a_busy_window_is_told_and_nothing_happens() {
-    let path = place("busy");
+    let folder = place("busy");
+    let path = folder.path().join(SOCKET);
     let listener = Listener::open(&path, Wait { answer_within: Duration::from_millis(200) }, quiet()).unwrap_or_else(|e| panic!("{e:?}"));
     let mut w = live(&path);
     let reply = call(&mut w, "box", json!({ "x": 10, "y": 10, "z": 10 }));
@@ -162,7 +169,8 @@ fn a_busy_window_is_told_and_nothing_happens() {
 
 #[test]
 fn a_late_window_is_told_and_the_next_call_reaches_it_again() {
-    let path = place("late");
+    let folder = place("late");
+    let path = folder.path().join(SOCKET);
     let window = stand_in(&path, 1500);
     let mut w = match start(Mode::Live, &path, Duration::from_millis(300)) {
         Engine::Window(w) => w,
@@ -189,7 +197,8 @@ fn box_through(engine: &mut Engine) -> Value {
 /// reaches a document goes to the window open by then.
 #[test]
 fn auto_takes_a_window_opened_after_the_start() {
-    let path = place("auto-late");
+    let folder = place("auto-late");
+    let path = folder.path().join(SOCKET);
     let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
     let hello = answer_engine(&mut engine, &line("initialize", json!({ "protocolVersion": "2025-06-18" }))).expect("answered");
     assert!(hello["result"]["serverInfo"].is_object(), "{hello}");
@@ -206,7 +215,8 @@ fn auto_takes_a_window_opened_after_the_start() {
 /// next call still looks for the window and finds it.
 #[test]
 fn auto_reaches_a_window_switched_on_after_a_reading() {
-    let path = place("auto-read-first");
+    let folder = place("auto-read-first");
+    let path = folder.path().join(SOCKET);
     let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
     let read = answer_engine(&mut engine, &line("tools/call", json!({ "name": "get_selection", "arguments": {} }))).expect("answered")["result"]["structuredContent"].clone();
     assert_eq!(read["error"]["code"], "no-window", "{read}");
@@ -222,7 +232,8 @@ fn auto_reaches_a_window_switched_on_after_a_reading() {
 /// window opened afterwards may hold another document, and the session does not move to it unawares.
 #[test]
 fn auto_with_no_window_at_the_first_change_keeps_its_own() {
-    let path = place("auto-own");
+    let folder = place("auto-own");
+    let path = folder.path().join(SOCKET);
     let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
     assert_eq!(box_through(&mut engine)["ok"], json!(true));
     assert!(matches!(engine, Engine::Here(_)), "--auto with no window did not keep a document of its own");

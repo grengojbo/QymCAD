@@ -1,4 +1,6 @@
 //! Round-trip tests of the project file, a `.qcad` zip bundle.
+mod check_folder;
+use check_folder::CheckFolder;
 
 use qymcad_core::geom::{circle_contour, Mesh, Point3};
 use qymcad_core::model::Project;
@@ -13,7 +15,8 @@ fn sample() -> Project {
 
 #[test]
 fn qcad_bundle_roundtrip() {
-    let path = std::env::temp_dir().join("qym_rt.qcad");
+    let folder = CheckFolder::new("qcad-bundle-roundtrip");
+    let path = folder.path().join("qym_rt.qcad");
     let path = path.to_str().unwrap();
     let orig = sample();
     save_project(&orig, path).expect("save ok");
@@ -32,7 +35,8 @@ fn embedded_source_survives_reload() {
     let raw = b"0\nSECTION\n  2\nENTITIES\n0\nLINE\n".to_vec();
     let sid = p.add_source("rama.dxf", raw.clone());
 
-    let path = std::env::temp_dir().join("qym_src.qcad");
+    let folder = CheckFolder::new("embedded-source-survives-reload");
+    let path = folder.path().join("qym_src.qcad");
     let path = path.to_str().unwrap();
     save_project(&p, path).unwrap();
     let back = load_project(path).unwrap();
@@ -50,7 +54,8 @@ fn op_mesh_ref_survives_reload() {
     let mut p = Project::default();
     let mid = p.add_mesh(Mesh { verts: vec![Point3::new(0.0, 0.0, 0.0), Point3::new(10.0, 0.0, 0.0), Point3::new(0.0, 10.0, 5.0)], tris: vec![[0, 1, 2]] });
 
-    let path = std::env::temp_dir().join("qym_ref.qcad");
+    let folder = CheckFolder::new("op-mesh-ref-survives-reload");
+    let path = folder.path().join("qym_ref.qcad");
     let path = path.to_str().unwrap();
     save_project(&p, path).unwrap();
     let back = load_project(path).unwrap();
@@ -67,7 +72,8 @@ fn brep_faces_survive_reload() {
     // a B-rep face from STEP lives inside the body itself; there is no parallel list any more
     p.bodies[0].faces = vec![MeshFace { triangles: vec![0], normal: [0.0, 0.0, 1.0], centroid: Point3::new(3.3, 3.3, 0.0), area: 50.0, id: 0 }];
 
-    let path = std::env::temp_dir().join("qym_faces.qcad");
+    let folder = CheckFolder::new("brep-faces-survive-reload");
+    let path = folder.path().join("qym_faces.qcad");
     let path = path.to_str().unwrap();
     save_project(&p, path).unwrap();
     let back = load_project(path).unwrap();
@@ -82,7 +88,8 @@ fn brep_faces_survive_reload() {
 /// one, or the time saved becomes a damaged file.
 #[test]
 fn resaving_reuses_stored_sources_bytewise() {
-    let path = std::env::temp_dir().join("qym_resave_sources.qcad");
+    let folder = CheckFolder::new("resaving-reuses-stored-sources-bytewise");
+    let path = folder.path().join("qym_resave_sources.qcad");
     let path = path.to_str().unwrap();
     let _ = std::fs::remove_file(path);
 
@@ -110,7 +117,8 @@ fn resaving_reuses_stored_sources_bytewise() {
 /// raw copy from the previous file.
 #[test]
 fn changed_source_is_rewritten_not_copied() {
-    let path = std::env::temp_dir().join("qym_changed_source.qcad");
+    let folder = CheckFolder::new("changed-source-is-rewritten-not-copied");
+    let path = folder.path().join("qym_changed_source.qcad");
     let path = path.to_str().unwrap();
     let _ = std::fs::remove_file(path);
 
@@ -132,7 +140,8 @@ fn changed_source_is_rewritten_not_copied() {
 
 #[test]
 fn corrupt_and_truncated_bundles_are_honest_errors() {
-    let dir = std::env::temp_dir();
+    let folder = CheckFolder::new("corrupt-and-truncated-bundles-are-honest-errors");
+    let dir = folder.path();
     let mut bad: Vec<String> = Vec::new();
     let mut check = |label: &str, name: &str, bytes: &[u8]| {
         let p = dir.join(name);
@@ -163,7 +172,8 @@ fn corrupt_and_truncated_bundles_are_honest_errors() {
 /// the process.
 #[test]
 fn bundle_missing_mesh_entry_names_what_is_lost() {
-    let dir = std::env::temp_dir();
+    let folder = CheckFolder::new("bundle-missing-mesh-entry-names-what-is-lost");
+    let dir = folder.path();
     let src = dir.join("qym_neg_mesh_src.qcad");
     save_project(&sample(), src.to_str().unwrap()).expect("save");
     let bytes = std::fs::read(&src).unwrap();
@@ -195,7 +205,8 @@ fn bundle_missing_mesh_entry_names_what_is_lost() {
 /// in case anyone optimises the write into going straight to the target path.
 #[test]
 fn failed_save_leaves_previous_file_intact() {
-    let dir = std::env::temp_dir().join("qym_neg_atomic");
+    let folder = CheckFolder::new("failed-save-leaves-previous-file-intact");
+    let dir = folder.path().join("qym_neg_atomic");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("proj.qcad");
     save_project(&sample(), path.to_str().unwrap()).expect("the first save");
@@ -226,7 +237,8 @@ fn failed_save_leaves_previous_file_intact() {
 #[test]
 fn a_reversed_cut_survives_a_save_and_a_load() {
     use qymcad_core::feature::{Extent, FeatureKind};
-    let path = std::env::temp_dir().join("qym_extent_rt.qcad");
+    let folder = CheckFolder::new("a-reversed-cut-survives-a-save-and-a-load");
+    let path = folder.path().join("qym_extent_rt.qcad");
     let path = path.to_str().unwrap();
     let mut p = sample();
     // The node alone is what is being written and read; no geometry is needed to check the shape of the record.

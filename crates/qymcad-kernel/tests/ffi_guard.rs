@@ -4,10 +4,13 @@
 //! the program simply closing. The most likely sources are checked here — a damaged file and plainly impossible
 //! geometry — and an honest refusal is expected rather than a crash. The test is itself the check of
 //! survivability: if the process dies, the harness shows it.
+mod check_folder;
+use check_folder::CheckFolder;
 
 #[test]
 fn broken_step_returns_none_not_abort() {
-    let dir = std::env::temp_dir();
+    let folder = CheckFolder::new("broken-step-returns-none-not-abort");
+    let dir = folder.path();
     // rubbish in place of a STEP file
     let junk = dir.join("qym_ffi_junk.step");
     std::fs::write(&junk, b"\x00\x01\x02 not a step file at all \xff\xfe").unwrap();

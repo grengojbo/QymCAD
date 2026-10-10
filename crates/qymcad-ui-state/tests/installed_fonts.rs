@@ -5,23 +5,52 @@
 //! somewhere else entirely.
 use std::io::Write;
 
+/// The folder of one check in one run, `qymcad-check-<check>-<run>` under the system's temporary folder, the run
+/// being the process id: no other check of this run and no check of another run writes there. Emptied when made and
+/// removed with everything in it when dropped, a panicking check included: a file under the temporary folder that no
+/// check removes is left there by every run.
+struct CheckFolder {
+    path: std::path::PathBuf,
+}
+
+impl CheckFolder {
+    /// The folder of the check `check` in this run.
+    fn new(check: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("qymcad-check-{check}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a folder for the check");
+        Self { path }
+    }
+
+    /// Where the folder is.
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for CheckFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// A directory of our own with a font in it, so the walk is measured on something that is certainly there.
-fn a_directory_with_a_font() -> (std::path::PathBuf, Vec<u8>) {
+fn a_directory_with_a_font(folder: &CheckFolder) -> std::path::PathBuf {
     let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/LiberationSans-Bold.ttf")).expect("the font shipped with the repository");
-    let dir = std::env::temp_dir().join(format!("qym-fonts-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
+    let dir = folder.path().to_path_buf();
     std::fs::create_dir_all(dir.join("deeper")).expect("the directory is made");
     // one font, one file that only looks like one, and one that is not a font at all
     std::fs::write(dir.join("deeper").join("Ours.ttf"), &bytes).expect("the font is written");
     let mut junk = std::fs::File::create(dir.join("notes.txt")).expect("the file is made");
     junk.write_all(b"not a font").expect("written");
     std::fs::write(dir.join("broken.ttf"), b"neither is this").expect("written");
-    (dir, bytes)
+    dir
 }
 
 #[test]
 fn the_walk_finds_a_font_by_its_own_name_and_ignores_what_is_not_one() {
-    let (dir, _) = a_directory_with_a_font();
+    let folder = CheckFolder::new("fonts-walk");
+    let dir = a_directory_with_a_font(&folder);
     let found = qymcad_ui_state::installed_fonts_in(std::slice::from_ref(&dir));
     let _ = std::fs::remove_dir_all(&dir);
 
@@ -72,7 +101,8 @@ fn the_search_finds_by_family_and_by_style() {
 #[test]
 fn one_font_lying_in_two_places_is_shown_once() {
     let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/LiberationSans-Bold.ttf")).expect("the font shipped with the repository");
-    let root = std::env::temp_dir().join(format!("qym-fonts-twice-{}", std::process::id()));
+    let folder = CheckFolder::new("one-font-lying-in-two-places-is-shown-once");
+    let root = folder.path().join(format!("qym-fonts-twice-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     let (a, b) = (root.join("one"), root.join("two"));
     std::fs::create_dir_all(&a).expect("made");
@@ -116,7 +146,8 @@ fn opening_the_list_does_not_freeze_the_window() {
 #[test]
 fn two_files_with_the_same_name_are_told_apart_in_the_list() {
     let bytes = std::fs::read(concat!(env!("CARGO_MANIFEST_DIR"), "/../../assets/fonts/LiberationSans-Bold.ttf")).expect("the font shipped with the repository");
-    let root = std::env::temp_dir().join(format!("qym-fonts-namesake-{}", std::process::id()));
+    let folder = CheckFolder::new("two-files-with-the-same-name-are-told-apart-in-the-list");
+    let root = folder.path().join(format!("qym-fonts-namesake-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).expect("made");
     // the same names inside, different files: one carries a byte of padding, as a second edition would

@@ -168,6 +168,35 @@ mod tests {
     use qymcad_core::feature::{ComponentKind, FeatureKind};
     use qymcad_core::geom::{Contour, Point2};
 
+    /// The folder of one check in one run, `qymcad-check-<check>-<run>` under the system's temporary folder, the run
+    /// being the process id: no other check of this run and no check of another run writes there. Emptied when made and
+    /// removed with everything in it when dropped, a panicking check included: a file under the temporary folder that no
+    /// check removes is left there by every run.
+    struct CheckFolder {
+        path: std::path::PathBuf,
+    }
+
+    impl CheckFolder {
+        /// The folder of the check `check` in this run.
+        fn new(check: &str) -> Self {
+            let path = std::env::temp_dir().join(format!("qymcad-check-{check}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&path);
+            std::fs::create_dir_all(&path).expect("a folder for the check");
+            Self { path }
+        }
+
+        /// Where the folder is.
+        fn path(&self) -> &std::path::Path {
+            &self.path
+        }
+    }
+
+    impl Drop for CheckFolder {
+        fn drop(&mut self) {
+            let _ = std::fs::remove_dir_all(&self.path);
+        }
+    }
+
     // The source: a root assembly plus an active part with a square sketch, an extrusion and a feature
     // dimension.
     fn source_with_part() -> (Project, u64) {
@@ -187,7 +216,8 @@ mod tests {
         let sub = src.subproject_of(part).expect("the extract");
         let manifest = PartManifest { schema_version: 1, name: "Extrusion 20x20".into(), description: "test".into(), tags: vec!["extrusion".into()], author: "someone".into() };
 
-        let path = std::env::temp_dir().join("qym_test_profile_2020.qpart");
+        let folder = CheckFolder::new("qpart-disk-round-trip-then-graft");
+        let path = folder.path().join("qym_test_profile_2020.qpart");
         let path_s = path.to_string_lossy().to_string();
         save_part(&sub, &manifest, &[], None, &path_s).expect("save_part");
 
@@ -220,7 +250,8 @@ mod tests {
         let (src, part) = source_with_part();
         let sub = src.subproject_of(part).unwrap();
         let png: &[u8] = b"\x89PNG\r\n\x1a\n-fake-thumbnail-bytes"; // arbitrary bytes standing in for a preview
-        let path = std::env::temp_dir().join("qym_test_thumb.qpart");
+        let folder = CheckFolder::new("qpart-thumb-round-trips");
+        let path = folder.path().join("qym_test_thumb.qpart");
         let ps = path.to_string_lossy().to_string();
         save_part(&sub, &PartManifest::new("With a preview"), &[], Some(png), &ps).unwrap();
 

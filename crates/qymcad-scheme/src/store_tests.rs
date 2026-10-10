@@ -5,13 +5,39 @@
 //! file, a clash of names) lives here.
 use super::*;
 
+/// The folder of one check in one run, `qymcad-check-<check>-<run>` under the system's temporary folder, the run
+/// being the process id: no other check of this run and no check of another run writes there. Emptied when made and
+/// removed with everything in it when dropped, a panicking check included: a file under the temporary folder that no
+/// check removes is left there by every run.
+struct CheckFolder {
+    path: std::path::PathBuf,
+}
+
+impl CheckFolder {
+    /// The folder of the check `check` in this run.
+    fn new(check: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("qymcad-check-{check}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a folder for the check");
+        Self { path }
+    }
+
+    /// Where the folder is.
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for CheckFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 /// Every test gets a folder of its own: they run in parallel and through a shared folder would get in
 /// each other's way.
-fn temp_dir(tag: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("qym_scheme_{tag}"));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).expect("the folder is created");
-    d
+fn temp_dir(tag: &str) -> CheckFolder {
+    CheckFolder::new(&format!("scheme-{tag}"))
 }
 
 /// THE FILE NAME IS BUILT FROM THE NAME OF THE SCHEME, AND A PERSON TYPES THAT.
@@ -50,7 +76,8 @@ fn a_scheme_survives_the_trip_through_a_file() {
 /// person of all their schemes — it is reported and the rest are read.
 #[test]
 fn one_broken_file_does_not_take_the_others_with_it() {
-    let d = temp_dir("broken");
+    let folder = temp_dir("broken");
+    let d = folder.path().to_path_buf();
     let mut good = dark();
     good.id = "good".into();
     good.name = "Good".into();
@@ -130,7 +157,8 @@ fn the_file_is_named_after_the_title_a_human_typed() {
 /// The non-ASCII title here is deliberate test data as well: the round trip must survive it.
 #[test]
 fn renaming_moves_the_file_instead_of_leaving_a_twin() {
-    let d = temp_dir("rename");
+    let folder = temp_dir("rename");
+    let d = folder.path().to_path_buf();
     let mut p = light();
     p.id = "light-1".into();
     p.name = "Светлая (копия)".into();
@@ -151,7 +179,8 @@ fn renaming_moves_the_file_instead_of_leaving_a_twin() {
 /// from the contents (and after a rename it always diverges), Delete found nothing.
 #[test]
 fn a_scheme_is_found_and_deleted_by_its_id() {
-    let d = temp_dir("byid");
+    let folder = temp_dir("byid");
+    let d = folder.path().to_path_buf();
     let mut p = dark();
     p.id = "dark-7".into();
     p.name = "Night".into();
@@ -172,7 +201,8 @@ fn a_scheme_is_found_and_deleted_by_its_id() {
 /// its own. Silently overwriting another scheme is worse than an ugly file name.
 #[test]
 fn a_clashing_title_never_overwrites_someone_elses_file() {
-    let d = temp_dir("clash");
+    let folder = temp_dir("clash");
+    let d = folder.path().to_path_buf();
     let mut a = dark();
     a.id = "one".into();
     a.name = "Mine".into();

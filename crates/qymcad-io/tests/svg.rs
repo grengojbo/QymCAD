@@ -1,4 +1,6 @@
 //! A test of the SVG import.
+mod check_folder;
+use check_folder::CheckFolder;
 
 use qymcad_io::import_svg;
 use std::io::Write;
@@ -12,7 +14,8 @@ const FIXTURE: &str = r#"<svg xmlns="http://www.w3.org/2000/svg" width="100mm" h
 fn imports_rect_and_circle() {
     use qymcad_core::feature::{BasePlane, SketchPlane};
     use qymcad_core::model::Project;
-    let path = std::env::temp_dir().join("qymcad_test.svg");
+    let folder = CheckFolder::new("imports-rect-and-circle");
+    let path = folder.path().join("qymcad_test.svg");
     std::fs::File::create(&path).unwrap().write_all(FIXTURE.as_bytes()).unwrap();
 
     let sk = import_svg(path.to_str().unwrap()).expect("import ok");
@@ -32,9 +35,10 @@ fn imports_rect_and_circle() {
 
 /// Area of every closed contour the file makes, in mm^2.
 fn areas_of(svg: &str, name: &str) -> Vec<f64> {
+    let folder = CheckFolder::new(&format!("svg-{name}"));
     use qymcad_core::feature::{BasePlane, SketchPlane};
     use qymcad_core::model::Project;
-    let path = std::env::temp_dir().join(name);
+    let path = folder.path().join(name);
     std::fs::File::create(&path).unwrap().write_all(svg.as_bytes()).unwrap();
     let sk = import_svg(path.to_str().unwrap()).expect("import ok");
     let mut p = Project::default();

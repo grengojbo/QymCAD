@@ -1,4 +1,6 @@
 //! A test of the STL import.
+mod check_folder;
+use check_folder::CheckFolder;
 
 use qymcad_io::{import_stl, import_stl_named};
 use std::io::Write;
@@ -52,7 +54,8 @@ endsolid s
 
 #[test]
 fn imports_ascii_stl_square() {
-    let path = std::env::temp_dir().join("qymcad_test_square.stl");
+    let folder = CheckFolder::new("imports-ascii-stl-square");
+    let path = folder.path().join("qymcad_test_square.stl");
     std::fs::File::create(&path).unwrap().write_all(FIXTURE.as_bytes()).unwrap();
 
     let mesh = import_stl(path.to_str().unwrap()).expect("import ok");

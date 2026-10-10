@@ -39,6 +39,35 @@ fn volumes(p: &mut Project, bodies: &[u64]) -> Vec<f64> {
     bodies.iter().map(|b| shapes.get(b).map(|s| s.volume()).unwrap_or(-1.0)).collect()
 }
 
+/// The folder of one check in one run, `qymcad-check-<check>-<run>` under the system's temporary folder, the run
+/// being the process id: no other check of this run and no check of another run writes there. Emptied when made and
+/// removed with everything in it when dropped, a panicking check included: a file under the temporary folder that no
+/// check removes is left there by every run.
+struct CheckFolder {
+    path: std::path::PathBuf,
+}
+
+impl CheckFolder {
+    /// The folder of the check `check` in this run.
+    fn new(check: &str) -> Self {
+        let path = std::env::temp_dir().join(format!("qymcad-check-{check}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&path);
+        std::fs::create_dir_all(&path).expect("a folder for the check");
+        Self { path }
+    }
+
+    /// Where the folder is.
+    fn path(&self) -> &std::path::Path {
+        &self.path
+    }
+}
+
+impl Drop for CheckFolder {
+    fn drop(&mut self) {
+        let _ = std::fs::remove_dir_all(&self.path);
+    }
+}
+
 #[test]
 fn roundtrip_same_volumes() {
     let (mut p, bodies) = build_scene();
@@ -46,7 +75,8 @@ fn roundtrip_same_volumes() {
     // a sanity check that the cut really worked: 8000 for the cube, less the fillet, less π·16·5 for the
     // cylinder
     assert!(v_before[0] > 0.0 && v_before[0] < 8000.0 - PI * 16.0 * 5.0 + 1.0, "the scene assembled: V={:?}", v_before);
-    let dir = std::env::temp_dir().join("qym_matrix_persist");
+    let folder = CheckFolder::new("roundtrip-same-volumes");
+    let dir = folder.path().join("qym_matrix_persist");
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("scene.qcad");
     let _faces: Vec<Vec<qymcad_core::geom::MeshFace>> = p.bodies.iter().map(|b| &b.mesh).map(|_| Vec::new()).collect();

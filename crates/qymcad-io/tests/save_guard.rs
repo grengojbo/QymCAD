@@ -3,13 +3,12 @@
 //! An empty document landed on top of a finished project of 1217 nodes, with nowhere to recover it from: an
 //! atomic swap saves from a truncated write but not from writing the wrong thing. A copy of the previous version
 //! and a refusal to write empty over non-empty are the two things that would have saved that day.
+mod check_folder;
+use check_folder::CheckFolder;
 use qymcad_core::model::Project;
 
-fn tmp(tag: &str) -> String {
-    let d = std::env::temp_dir().join(format!("qym_save_guard_{tag}"));
-    let _ = std::fs::remove_dir_all(&d);
-    std::fs::create_dir_all(&d).unwrap();
-    d.join("p.qcad").to_string_lossy().into_owned()
+fn tmp(folder: &CheckFolder) -> String {
+    folder.path().join("p.qcad").to_string_lossy().into_owned()
 }
 
 /// A project with content: minimal, but not empty.
@@ -25,7 +24,8 @@ fn with_content() -> Project {
 /// Empty does not land on top of non-empty: exactly the case that cost the work.
 #[test]
 fn an_empty_document_never_overwrites_a_project() {
-    let path = tmp("empty_over_full");
+    let folder = CheckFolder::new("save-guard-empty-over-full");
+    let path = tmp(&folder);
     qymcad_io::save_project(&with_content(), &path).expect("a project with content was saved");
     let before = std::fs::metadata(&path).unwrap().len();
 
@@ -45,7 +45,8 @@ fn an_empty_document_never_overwrites_a_project() {
 /// Writing empty into an empty file is allowed: the guard does not get in the way of a new project.
 #[test]
 fn an_empty_document_saves_fine_when_there_is_nothing_to_lose() {
-    let path = tmp("empty_over_nothing");
+    let folder = CheckFolder::new("save-guard-empty-over-nothing");
+    let path = tmp(&folder);
     qymcad_io::save_project_guarded(&Project::default(), &path).expect("a new empty project saves");
     assert!(std::fs::metadata(&path).is_ok(), "the file was created");
 }
@@ -54,7 +55,8 @@ fn an_empty_document_saves_fine_when_there_is_nothing_to_lose() {
 /// empty but merely the wrong one.
 #[test]
 fn the_previous_version_is_kept_next_to_the_file() {
-    let path = tmp("keeps_bak");
+    let folder = CheckFolder::new("save-guard-keeps-bak");
+    let path = tmp(&folder);
     let first = with_content();
     qymcad_io::save_project(&first, &path).expect("the first save");
     let n1 = qymcad_io::content_weight(&qymcad_io::load_project(&path).unwrap());

@@ -11,6 +11,8 @@
 //!
 //! `QYM_STEP` points the measurement at any file; with none given it makes its own from a body of 6 faces
 //! written `QYM_STEP_COPIES` times over (200 by default).
+mod check_folder;
+use check_folder::CheckFolder;
 
 /// The resident size of this process in bytes, or None where the system does not tell.
 fn rss() -> Option<u64> {
@@ -23,6 +25,7 @@ fn rss() -> Option<u64> {
 #[ignore = "a measurement, not a check: prints numbers"]
 fn what_a_live_shape_costs() {
     let copies: usize = std::env::var("QYM_STEP_COPIES").ok().and_then(|s| s.parse().ok()).unwrap_or(200);
+    let folder = CheckFolder::new("what-a-live-shape-costs");
     let path = match std::env::var("QYM_STEP") {
         Ok(p) => p,
         Err(_) => {
@@ -35,7 +38,7 @@ fn what_a_live_shape_costs() {
                 at.push(p);
             }
             let bodies: Vec<(&qymcad_kernel::Shape, [f64; 12])> = at.iter().map(|p| (&cube, *p)).collect();
-            let out = std::env::temp_dir().join("qym_shape_cost.step");
+            let out = folder.path().join("qym_shape_cost.step");
             qymcad_kernel::write_step(&bodies, out.to_str().expect("the path")).expect("the file is written");
             out.to_string_lossy().into_owned()
         }

@@ -5,6 +5,8 @@
 //! reads: a block with a pocket on its face and a rounded rim (a cut that consumes its source, a reference by a
 //! query), a second part with a box, a parameter, and an STL brought in (a body with no exact faces). The window
 //! opens the file the way a person does, File and Open, and its account is held against the server's.
+mod check_folder;
+use check_folder::CheckFolder;
 
 use qymcad_core::feature::{Extent, FaceKey, Purpose, Reach, SketchPlane};
 use qymcad_core::model::{CombineSpan, Id, Project};
@@ -113,7 +115,10 @@ fn a_document_the_server_wrote_opens_in_the_window_the_same() {
     let _ = call(&mut ctx, "save_project", json!({ "path": path }));
     let ours = call(&mut ctx, "get_document", json!({ "detail": "full" }))["document"].clone();
 
-    let mut s = qymcad::Session::start();
+    // the home of the program in the check's own folder, removed with it: the home of a machine of its defaults is
+    // one per process and is left behind
+    let home = CheckFolder::new("opens-in-gui-home");
+    let mut s = qymcad::Session::start_on(qymcad::Machine { home: home.path().to_path_buf(), ..qymcad::Machine::default() });
     qymcad_acceptance::build::open_project(&mut s, &path);
     let theirs = s.document();
     assert_eq!(theirs.path.as_deref(), Some(path.as_str()), "the window did not open the file the server wrote");
