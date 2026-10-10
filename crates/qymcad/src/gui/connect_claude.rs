@@ -53,15 +53,39 @@ pub(crate) fn server_for(exe: &Path, appimage: Option<&str>, os: Os) -> ServerCo
     ServerCommand { command: beside.to_string_lossy().into_owned(), args: Vec::new() }
 }
 
-/// WHERE CLAUDE DESKTOP KEEPS ITS SETTINGS on `os`, read from the environment `env` gives: the folder Claude Desktop
-/// itself uses there. `None` when the environment does not say where home is.
-pub(crate) fn desktop_config(os: Os, env: &dyn Fn(&str) -> Option<String>) -> Option<PathBuf> {
+/// WHERE CLAUDE DESKTOP KEEPS ITS SETTINGS on `os`, read from the environment `env` gives: the files Claude Desktop
+/// may read there, each given the server. Empty when the environment does not say where home is.
+///
+/// ON WINDOWS CLAUDE DESKTOP MAY BE A PACKAGE, and a packaged program reads its settings from a copy of its own,
+/// `%LOCALAPPDATA%\Packages\Claude_<publisher>\LocalCache\Roaming\Claude`, not from `%APPDATA%\Claude`. Reported
+/// behaviour: the button wrote the server into `%APPDATA%\Claude\claude_desktop_config.json`, the packaged Claude Desktop
+/// (`WindowsApps\Claude_..._pzs8sxrjxfjjc`) read its own copy, which had no `mcpServers` at all, and never started the
+/// server. Where the package's folder is, its copy comes first; `%APPDATA%` is written as well, because a package's
+/// folder outlives the package, and a Claude Desktop installed otherwise afterwards reads `%APPDATA%`.
+pub(crate) fn desktop_configs(os: Os, env: &dyn Fn(&str) -> Option<String>) -> Vec<PathBuf> {
     let file = |dir: PathBuf| dir.join("Claude").join("claude_desktop_config.json");
     match os {
-        Os::Mac => env("HOME").map(|h| file(PathBuf::from(h).join("Library").join("Application Support"))),
-        Os::Windows => env("APPDATA").map(|a| file(PathBuf::from(a))),
-        Os::Linux => env("XDG_CONFIG_HOME").filter(|x| !x.is_empty()).map(PathBuf::from).or_else(|| env("HOME").map(|h| PathBuf::from(h).join(".config"))).map(file),
+        Os::Mac => env("HOME").map(|h| file(PathBuf::from(h).join("Library").join("Application Support"))).into_iter().collect(),
+        Os::Windows => {
+            let packaged = env("LOCALAPPDATA").and_then(|l| packaged_roaming(Path::new(&l))).map(file);
+            packaged.into_iter().chain(env("APPDATA").map(|a| file(PathBuf::from(a)))).collect()
+        }
+        Os::Linux => env("XDG_CONFIG_HOME").filter(|x| !x.is_empty()).map(PathBuf::from).or_else(|| env("HOME").map(|h| PathBuf::from(h).join(".config"))).map(file).into_iter().collect(),
     }
+}
+
+/// THE ROAMING FOLDER OF A PACKAGED CLAUDE DESKTOP under `local` (`%LOCALAPPDATA%`): the first package named
+/// `Claude_<publisher>` that holds `LocalCache\Roaming\Claude`, the folder the package reads in place of `%APPDATA%`.
+fn packaged_roaming(local: &Path) -> Option<PathBuf> {
+    let mut packages: Vec<PathBuf> = std::fs::read_dir(local.join("Packages"))
+        .ok()?
+        .flatten()
+        .filter(|e| e.file_name().to_string_lossy().starts_with("Claude_"))
+        .map(|e| e.path().join("LocalCache").join("Roaming"))
+        .filter(|roaming| roaming.join("Claude").is_dir())
+        .collect();
+    packages.sort();
+    packages.into_iter().next()
 }
 
 /// The settings could not be read as settings: what was found instead.
@@ -133,7 +157,7 @@ pub(crate) fn claude_code_command(server: &ServerCommand) -> String {
 /// THIS MACHINE as the window sees it: where Claude Desktop's settings are, and the server of this package - with
 /// whether it is there (a build run from the sources may have no server built beside it).
 pub(crate) struct Machine {
-    pub config: Option<PathBuf>,
+    pub configs: Vec<PathBuf>,
     pub server: ServerCommand,
     pub present: Presence,
 }
@@ -152,7 +176,7 @@ impl Machine {
         let appimage = std::env::var("APPIMAGE").ok();
         let server = server_for(&exe, appimage.as_deref(), os);
         let present = if Path::new(&server.command).exists() { Presence::There } else { Presence::Missing };
-        Machine { config: desktop_config(os, &|k| std::env::var(k).ok()), server, present }
+        Machine { configs: desktop_configs(os, &|k| std::env::var(k).ok()), server, present }
     }
 }
 
@@ -170,6 +194,22 @@ enum Trouble {
     #[default]
     None,
     Some,
+}
+
+/// THE SERVER ADDED TO EVERY FILE CLAUDE DESKTOP MAY READ, and what the window says of it: the first refusal, or
+/// where the first file as it was is kept.
+fn add_to_every(configs: &[PathBuf], server: &ServerCommand) -> Said {
+    let mut kept_first = None;
+    for config in configs {
+        match add_to_desktop(config, server) {
+            Ok(Added { kept }) => kept_first = kept_first.or(kept),
+            Err(why) => return Said { text: crate::i18n::tr1("claude-desktop-refused", "why", &why), trouble: Trouble::Some },
+        }
+    }
+    match kept_first {
+        Some(kept) => Said { text: crate::i18n::tr1("claude-desktop-added-kept", "kept", &crate::crash::without_home(&kept.to_string_lossy())), trouble: Trouble::None },
+        None => Said { text: crate::i18n::tr("claude-desktop-added"), trouble: Trouble::None },
+    }
 }
 
 fn said_id() -> egui::Id {
@@ -198,21 +238,14 @@ pub(crate) fn window(win: &mut Windows, scheme: &qymcad_ui_state::SchemeUi, mach
             ui.add_space(6.0);
             ui.label(egui::RichText::new(tr("claude-desktop")).strong());
             ui.label(tr("claude-desktop-how"));
-            match &machine.config {
-                Some(config) => {
-                    if ui.button(format!("{} {}", ph::PLUS_CIRCLE, tr("claude-desktop-add"))).clicked() {
-                        said = match add_to_desktop(config, &machine.server) {
-                            Ok(Added { kept: Some(kept) }) => {
-                                Said { text: crate::i18n::tr1("claude-desktop-added-kept", "kept", &crate::crash::without_home(&kept.to_string_lossy())), trouble: Trouble::None }
-                            }
-                            Ok(Added { kept: None }) => Said { text: tr("claude-desktop-added"), trouble: Trouble::None },
-                            Err(why) => Said { text: crate::i18n::tr1("claude-desktop-refused", "why", &why), trouble: Trouble::Some },
-                        };
-                    }
-                    ui.label(egui::RichText::new(crate::crash::without_home(&config.to_string_lossy())).monospace().small().weak());
+            if machine.configs.is_empty() {
+                ui.label(tr("claude-desktop-no-home"));
+            } else {
+                if ui.button(format!("{} {}", ph::PLUS_CIRCLE, tr("claude-desktop-add"))).clicked() {
+                    said = add_to_every(&machine.configs, &machine.server);
                 }
-                None => {
-                    ui.label(tr("claude-desktop-no-home"));
+                for config in &machine.configs {
+                    ui.label(egui::RichText::new(crate::crash::without_home(&config.to_string_lossy())).monospace().small().weak());
                 }
             }
             if !said.text.is_empty() {
@@ -285,16 +318,54 @@ mod tests {
             "APPDATA" => Some("C:\\Users\\me\\AppData\\Roaming".to_string()),
             _ => None,
         };
-        let mac = desktop_config(Os::Mac, &env).expect("a home");
+        let one = |os: Os, env: &dyn Fn(&str) -> Option<String>| desktop_configs(os, env).into_iter().next();
+        let mac = one(Os::Mac, &env).expect("a home");
         assert_eq!(mac, PathBuf::from("/Users/me/Library/Application Support/Claude/claude_desktop_config.json"));
-        let win = desktop_config(Os::Windows, &env).expect("an AppData");
+        let win = one(Os::Windows, &env).expect("an AppData");
         assert!(win.ends_with("Claude/claude_desktop_config.json") || win.to_string_lossy().ends_with("Claude\\claude_desktop_config.json"), "{win:?}");
         assert!(win.starts_with("C:\\Users\\me\\AppData\\Roaming"), "{win:?}");
-        let linux = desktop_config(Os::Linux, &env).expect("a home");
+        let linux = one(Os::Linux, &env).expect("a home");
         assert_eq!(linux, PathBuf::from("/Users/me/.config/Claude/claude_desktop_config.json"));
-        let xdg = desktop_config(Os::Linux, &|k: &str| (k == "XDG_CONFIG_HOME").then(|| "/cfg".to_string())).expect("XDG");
+        let xdg = one(Os::Linux, &|k: &str| (k == "XDG_CONFIG_HOME").then(|| "/cfg".to_string())).expect("XDG");
         assert_eq!(xdg, PathBuf::from("/cfg/Claude/claude_desktop_config.json"));
-        assert_eq!(desktop_config(Os::Mac, &|_: &str| None), None);
+        assert!(desktop_configs(Os::Mac, &|_: &str| None).is_empty());
+    }
+
+    /// A PACKAGED CLAUDE DESKTOP ON WINDOWS IS GIVEN THE SERVER IN ITS OWN COPY OF THE SETTINGS. Reported behaviour: the
+    /// server went into `%APPDATA%\Claude`, the packaged Claude Desktop read
+    /// `%LOCALAPPDATA%\Packages\Claude_<publisher>\LocalCache\Roaming\Claude` and never started it. With no such package,
+    /// or a package of another program, `%APPDATA%` alone; with one, its copy first and `%APPDATA%` too - and the button
+    /// gives both the server, keeping the package's own settings.
+    #[test]
+    fn a_packaged_claude_desktop_on_windows_gets_its_own_settings() {
+        let folder = CheckFolder::new("claude-packaged");
+        let local = folder.file("Local");
+        let roaming = folder.file("Roaming");
+        std::fs::create_dir_all(local.join("Packages").join("ClaudeHelper.Other_1").join("LocalCache").join("Roaming").join("Claude")).expect("another package");
+        let env = |k: &str| match k {
+            "LOCALAPPDATA" => Some(local.to_string_lossy().into_owned()),
+            "APPDATA" => Some(roaming.to_string_lossy().into_owned()),
+            _ => None,
+        };
+        let plain = roaming.join("Claude").join("claude_desktop_config.json");
+        assert_eq!(desktop_configs(Os::Windows, &env), vec![plain.clone()], "with no Claude package the settings are not %APPDATA%'s alone");
+
+        let package = local.join("Packages").join("Claude_pzs8sxrjxfjjc").join("LocalCache").join("Roaming").join("Claude");
+        std::fs::create_dir_all(&package).expect("the package's roaming folder");
+        let own = package.join("claude_desktop_config.json");
+        let configs = desktop_configs(Os::Windows, &env);
+        assert_eq!(configs, vec![own.clone(), plain.clone()], "the packaged Claude Desktop is not given its own copy first");
+
+        // the button: the server lands in both, the package's own settings kept
+        std::fs::write(&own, r#"{ "preferences": { "sidebarMode": "chat" } }"#).expect("the package's settings");
+        let said = add_to_every(&configs, &server());
+        assert!(said.trouble == Trouble::None, "the button refused: {}", said.text);
+        for file in [&own, &plain] {
+            let written: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(file).expect("read")).expect("JSON");
+            assert_eq!(written["mcpServers"]["qymcad"]["command"], serde_json::json!(server().command), "{}: {written}", file.display());
+        }
+        let written: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&own).expect("read")).expect("JSON");
+        assert_eq!(written["preferences"]["sidebarMode"], "chat", "the package's own settings were lost: {written}");
     }
 
     /// THE PERSON'S OTHER SETTINGS AND SERVERS STAY: only `mcpServers.qymcad` is set, and set again over an old one.
@@ -382,7 +453,7 @@ mod tests {
 
     /// A machine whose Claude Desktop keeps its settings in the check's own folder.
     fn sandboxed(folder: &CheckFolder, present: Presence) -> Machine {
-        Machine { config: Some(folder.file("Claude").join("claude_desktop_config.json")), server: server(), present }
+        Machine { configs: vec![folder.file("Claude").join("claude_desktop_config.json")], server: server(), present }
     }
 
     struct Frame {
@@ -444,7 +515,7 @@ mod tests {
         let _ = f.run(&machine, raw()); // the first frame lays the window out
         let _ = f.press(&machine, &crate::i18n::tr("claude-desktop-add"));
         let out = f.run(&machine, raw());
-        let config = machine.config.clone().expect("a sandbox");
+        let config = machine.configs[0].clone();
         let written: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&config).unwrap_or_else(|e| panic!("no settings written at {}: {e}", config.display()))).expect("JSON");
         assert_eq!(written["mcpServers"]["qymcad"]["command"], serde_json::json!(server().command), "{written}");
         let texts = painted(&out.shapes);

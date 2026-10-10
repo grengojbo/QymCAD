@@ -251,7 +251,7 @@ pub(in crate::gui) mod tests {
             surface("about", |a, c| crate::gui::panels_windows::about_dialog(&mut a.win, &a.scheme, c)),
             surface("connect to Claude", |a, c| {
                 let machine = crate::gui::connect_claude::Machine {
-                    config: Some(std::path::PathBuf::from("/nowhere/claude_desktop_config.json")),
+                    configs: vec![std::path::PathBuf::from("/nowhere/claude_desktop_config.json")],
                     server: crate::gui::connect_claude::ServerCommand { command: "/nowhere/qymcad-mcp".into(), args: Vec::new() },
                     present: crate::gui::connect_claude::Presence::There,
                 };

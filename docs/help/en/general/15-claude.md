@@ -41,7 +41,12 @@ Starting, opening and saving a document, and undoing, stay yours: Claude asks yo
   Releases page: the server comes inside the package.
 - **The settings could not be read** — the file of Claude Desktop holds something that is not settings, and it is
   left as it is. Open it, mend it or empty it, and press the button again.
-- **Claude does not show qymcad** — quit Claude Desktop completely, not just its window, and open it again.
+- **Claude does not show qymcad** — quit Claude Desktop completely, not just its window, and open it again. On
+  Windows closing the window leaves Claude Desktop running beside the clock: right-click its icon there and choose
+  **Quit**.
+- **On Windows Claude does not show qymcad after the button** — a Claude Desktop installed from the Microsoft Store
+  keeps its settings in a folder of its own. Press **Add to Claude Desktop** again in this version of QymCAD: the path
+  under the button then ends in `Packages\Claude_...\LocalCache\Roaming\Claude\claude_desktop_config.json`.
 - **QymCAD was moved or updated** — press **Add to Claude Desktop** again, or run the command again: the path to the
   server may have changed.
 - **Claude works in a document of its own, not in this window** — Claude had already built something in a document of
