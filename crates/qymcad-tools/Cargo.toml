@@ -14,6 +14,8 @@ qymcad-doc.workspace = true
 qymcad-io.workspace = true
 qymcad-kernel.workspace = true
 qymcad-i18n = { path = "../qymcad-i18n" }
+qymcad-paths = { path = "../qymcad-paths" }
+ron.workspace = true
 # THE PICTURE: the window's own drawing state at rest, its software rasteriser and its palette. egui comes with them
 # for its colour and rectangle types; no window is opened.
 qymcad-ui-state = { path = "../qymcad-ui-state" }

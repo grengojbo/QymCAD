@@ -183,7 +183,7 @@ pub const SAVE_PROJECT: Tool = Tool {
 
 pub const GET_DOCUMENT: Tool = Tool {
     name: "get_document",
-    description: "The account of the document: its parts, its timeline with every feature that stands red and why, its bodies measured (volume mm^3, area mm^2, box mm, faces, edges), its parameters, and the steps undo and redo would take. detail \"full\" adds the bodies taken into another one.",
+    description: "The account of the document: its parts, its timeline with every feature that stands red and why, its bodies measured (volume mm^3, area mm^2, box mm, faces, edges), its parameters, and the steps undo and redo would take. detail \"full\" adds the bodies taken into another one. language: the code of the language the person's QymCAD interface is in - name its menus and settings to the person in that language.",
     schema: || {
         json!({ "type": "object", "properties": {
             "detail": { "type": "string", "enum": ["summary", "full"], "default": "summary" },
@@ -191,6 +191,8 @@ pub const GET_DOCUMENT: Tool = Tool {
     },
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: GetArgs = tool::args(arguments)?;
-        Ok(answer("document", document(ctx, a.detail)))
+        let mut out = answer("document", document(ctx, a.detail));
+        out.insert("language".into(), json!(ctx.language));
+        Ok(out)
     },
 };

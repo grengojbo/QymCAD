@@ -3458,9 +3458,11 @@ dependencies = [
  "qymcad-i18n",
  "qymcad-io",
  "qymcad-kernel",
+ "qymcad-paths",
  "qymcad-render",
  "qymcad-scheme",
  "qymcad-ui-state",
+ "ron",
  "serde",
  "serde_json",
 ]

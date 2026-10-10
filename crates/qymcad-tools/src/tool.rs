@@ -10,12 +10,14 @@ use qymcad_doc::{DocEngine, DocError};
 use serde::de::DeserializeOwned;
 use serde_json::{json, Map, Value};
 
-/// What a tool works on: the one document the server keeps, the file it was opened from or last saved to, and what
-/// a person has selected in a window, when there is one.
+/// What a tool works on: the one document the server keeps, the file it was opened from or last saved to, what a
+/// person has selected in a window, when there is one, and the language of the person's interface.
 pub struct Ctx {
     pub doc: DocEngine,
     pub path: Option<String>,
     pub seen: Seen,
+    /// The code of the language the person's QymCAD interface is in (`en`, `uk`, `ru`).
+    pub language: String,
 }
 
 /// WHAT A PERSON HAS SELECTED, as far as the tools can know.
@@ -37,7 +39,7 @@ pub struct InWindow {
 impl Ctx {
     /// A new document with one part, as the window starts.
     pub fn blank() -> Self {
-        Ctx { doc: DocEngine::blank(), path: None, seen: Seen::NoWindow }
+        Ctx { doc: DocEngine::blank(), path: None, seen: Seen::NoWindow, language: crate::person::language() }
     }
 }
 

@@ -131,7 +131,7 @@ fn gone(what: &str, key: Id) -> Value {
 
 pub const GET_SELECTION: Tool = Tool {
     name: "get_selection",
-    description: "What the person selected in the open QymCAD window - what \"this\" means in their request. Each item: what (face, edge, corner, plane, axis, point, sketch, contour, feature, part, body, joint), its place in world coordinates, and use: the arguments the other tools take for it (a face: {\"body\", \"face\"} for create_sketch, hole, push_face; an edge: {\"body\", \"edges\"} for fillet, chamfer; a plane: {\"plane\": {\"datum\"}}; a feature: edit_feature's key). A face and an edge carry made_by: the feature that created them, with its sizes - to change \"this rounding\", edit_feature that feature; if its size is an expression, write the change into the expression of that feature (\"r - 0.2\"), not into the parameter, which other features may read. Nothing selected: an empty list - ask the person to click what they mean.",
+    description: "What the person selected in the open QymCAD window - what \"this\" means in their request. Each item: what (face, edge, corner, plane, axis, point, sketch, contour, feature, part, body, joint), its place in world coordinates, and use: the arguments the other tools take for it (a face: {\"body\", \"face\"} for create_sketch, hole, push_face; an edge: {\"body\", \"edges\"} for fillet, chamfer; a plane: {\"plane\": {\"datum\"}}; a feature: edit_feature's key). A face and an edge carry made_by: the feature that created them, with its sizes - to change \"this rounding\", edit_feature that feature; if its size is an expression, write the change into the expression of that feature (\"r - 0.2\"), not into the parameter, which other features may read. Nothing selected: an empty list - ask the person to click what they mean. language: the code of the language the person's QymCAD interface is in.",
     schema: || json!({ "type": "object", "properties": {}, "additionalProperties": false }),
     call: |ctx: &mut Ctx, arguments: Value| {
         let _: Empty = tool::args(arguments)?;
@@ -148,6 +148,7 @@ pub const GET_SELECTION: Tool = Tool {
             out.insert("hint".into(), json!("Nothing is selected in the window: ask the person to click what they mean."));
         }
         out.insert("selected".into(), json!(listed));
+        out.insert("language".into(), json!(ctx.language));
         Ok(out)
     },
 };

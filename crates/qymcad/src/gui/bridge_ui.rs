@@ -178,7 +178,7 @@ fn run(pc: &mut PartCtx, tool: &str, arguments: Value) -> Value {
     // THE ANSWER IS ENGLISH, as the program's own answers are; the window's language is the person's, and comes back
     let person = qymcad_i18n::language();
     qymcad_i18n::set_language("en");
-    let mut ctx = Ctx { doc: qymcad_doc::DocEngine::lend(lent), path: None, seen };
+    let mut ctx = Ctx { doc: qymcad_doc::DocEngine::lend(lent), path: None, seen, language: person.clone() };
     let reply = qymcad_tools::channel::answer(&mut ctx, tool, arguments);
     let step: Option<String> = ctx.doc.history().undo_names().last().map(|s| s.to_string());
     qymcad_i18n::set_language(&person);
@@ -551,6 +551,16 @@ pub(crate) mod tests {
         let nothing = served(&mut hand, claude_says(&path, vec![("get_selection", json!({}))]));
         assert_eq!(reply_of(&nothing[0])["selected"], json!([]), "{}", nothing[0]);
         assert!(reply_of(&nothing[0])["hint"].is_string(), "an empty selection gives no hint: {}", nothing[0]);
+        drop(hand);
+
+        // the window says the language the person reads it in; the answer itself stays English
+        app.set.language = "uk".into();
+        crate::gui::apply_language(&app.set);
+        let mut hand = Hand::new(&mut app);
+        let told = served(&mut hand, claude_says(&path, vec![("get_selection", json!({}))]));
+        assert_eq!(reply_of(&told[0])["language"], json!("uk"), "the window did not say its language: {}", told[0]);
+        assert!(reply_of(&told[0])["hint"].as_str().is_some_and(|h| h.starts_with("Nothing is selected")), "the answer left English: {}", told[0]);
+        assert_eq!(qymcad_i18n::language(), "uk", "the call left the window in another language");
         drop(hand);
 
         // the top face of the plate, clicked in its middle

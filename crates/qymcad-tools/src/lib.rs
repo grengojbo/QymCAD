@@ -8,6 +8,7 @@
 pub mod args;
 pub mod channel;
 mod paths;
+pub mod person;
 pub mod picture;
 pub mod reading;
 pub mod tool;
