@@ -9,8 +9,9 @@
 # the fast level took 1627 s, 1493 of them the acceptance probes; a runner has four cores, and the whole run on
 # one would wait well over an hour on every push to a pull request.
 #
-# Linux only. The kernel is the same OCCT 7.9.3 the release builds, compiled from source once and taken from
-# the cache afterwards; the other two systems are built by `release.yml`, by the button.
+# Linux, but for the channel between the window and Claude, which is checked on Windows as well (its named pipe
+# exists there alone). The kernel is the same OCCT 7.9.3 the release builds, compiled from source once and taken
+# from the cache afterwards; the other two systems are built by `release.yml`, by the button.
 name: checks
 
 on:
@@ -105,6 +106,19 @@ jobs:
       - name: Disk left
         if: always()
         run: df -h / && du -sh target || true
+
+  # THE CHANNEL ON WINDOWS. There the window's end and the program's end meet over a named pipe, with an owner and an
+  # access list of its own, and that code does not build on Linux at all. The channel needs no kernel: it builds and
+  # runs its checks in minutes, so it is checked on every pull request rather than only when a release is built.
+  channel-on-windows:
+    runs-on: windows-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v7
+      - name: The channel has nothing to say to clippy
+        run: cargo clippy -p qymcad-bridge --all-targets
+      - name: The channel's own checks, over the named pipe
+        run: cargo test -p qymcad-bridge
 
   acceptance:
     needs: kernel
