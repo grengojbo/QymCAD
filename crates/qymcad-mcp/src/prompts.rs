@@ -78,7 +78,7 @@ fn edit_what_i_selected(given: &Map<String, Value>) -> String {
     let change = arg(given, "change", "the change the person asks for");
     format!(
         "In the open QymCAD window, on what the person has selected: {change}.\n\n\
-         1. Read what is selected with get_selection. Nothing selected: ask the person to click what they mean, and stop.\n\
+         1. Read what is selected with get_selection. Nothing selected: ask the person to click what they mean, and stop. Refused with no-window: pass its hint on - it names the switch the way the person's window shows it - and stop. Name menus and settings to the person in the language get_selection gives as language.\n\
          2. Say back what you see, in their words: \"the rounding of radius 2 on the top edges\", \"the flat top face of the plate\".\n\
          3. A change of size goes to the feature that made the thing (made_by): edit_feature on its key. When the size follows an expression, write the change into that feature's expression (\"r - 0.2\"), not into the parameter - other features may read the parameter. When the feature makes several faces or edges at once (faces_made more than one), tell the person they all change together.\n\
          4. Something new on what is selected takes the item's use: create_sketch on a face or a plane, hole on a face, fillet or chamfer on an edge.\n\
