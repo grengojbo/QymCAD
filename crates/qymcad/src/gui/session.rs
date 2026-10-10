@@ -463,6 +463,11 @@ impl Session {
         let mut quiet_frames = 0;
         while quiet_frames < 2 {
             self.frame(Vec::new());
+            // the program may close its own window while it is waited for - Quit carried out after a write - and
+            // a closed window is at rest: it draws no more frames
+            if self.win.closed {
+                return self;
+            }
             let still = self.still_running();
             quiet_frames = if still.is_empty() { quiet_frames + 1 } else { 0 };
             if !still.is_empty() {

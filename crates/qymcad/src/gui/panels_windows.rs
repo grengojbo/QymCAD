@@ -1672,24 +1672,16 @@ pub(crate) fn nav_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) 
     match choice {
         Some(0) => {
             wc.ask.push(qymcad_ui_state::WinAsk::Save);
-            // THE WRITE IS WAITED FOR WITHOUT FREEZING THE WINDOW.
+            // THE WRITE IS WAITED FOR WITHOUT FREEZING THE WINDOW: the navigation waits its turn, and a waiting
+            // card is drawn for the duration of the write (a blocking `wait_bg()` here drew no frame at all).
             //
-            // There used to be a blocking `wait_bg()` here: no frame was drawn at all while the file went to
-            // disk. To a person that is indistinguishable from a hung program. Now the navigation simply waits
-            // its turn, and a waiting card is drawn for the duration of the write.
-            //
-            // The request to save may never have reached a write (Save As was cancelled) - then there is no
-            // background task and the navigation is cancelled at once, as before. A chooser still open
-            // counts as a write on its way: the name has been asked for and not yet given.
-            if crate::gui::io_jobs::saving_now(&*wc.regen) || wc.file_ask_open {
-                wc.deferred.nav_after_save = true;
-            } else if !qymcad_ui_state::is_dirty(&mut wc.rebuild()) {
-                if let Some(nav) = wc.deferred.nav.take() {
-                    wc.ask.push(qymcad_ui_state::WinAsk::Nav(nav));
-                }
-            } else {
-                wc.deferred.nav = None;
-            }
+            // THE NAVIGATION ALWAYS WAITS, and the frames after this one decide. The request to save is carried
+            // out after this dialogue returns, so at this point no write has started and no chooser is open yet;
+            // asking here whether one had started read "no write ever happened" and dropped the navigation.
+            // Reported behaviour: Quit, "Save" - the file was written and the window stayed open. The waiting
+            // branch above answers every case on the next frames: a write under way, a name still being chosen,
+            // and a request that never reached a write (the navigation is then dropped, as before).
+            wc.deferred.nav_after_save = true;
         }
         Some(1) => {
             if let Some(nav) = wc.deferred.nav.take() {

@@ -92,3 +92,62 @@ probe! {
         }
     }
 }
+
+/// A file of this run for a check that saves, in the folder of temporary files.
+fn saved_here(name: &str) -> String {
+    let path = std::env::temp_dir().join(format!("qymcad-{name}-{}-{:?}.qcad", std::process::id(), std::thread::current().id()));
+    let _ = std::fs::remove_file(&path);
+    path.to_string_lossy().into_owned()
+}
+
+/// File -> Quit over unsaved work, answered "Save", as a person answers it.
+fn quit_and_save(s: &mut Session) {
+    let (file, quit) = (s.word("menu-file"), s.word("file-quit"));
+    s.menu(&[&file, &quit]);
+    let question = s.word("nav-unsaved-title");
+    assert!(s.shows(&question), "Quit over unsaved work asks nothing; on screen: {:?}", s.words());
+    let save = s.word("io-save");
+    let button = s.find(&save, pos2(640.0, 400.0)).unwrap_or_else(|| panic!("the question has no {save:?}; on screen: {:?}", s.words()));
+    s.click(button.center());
+}
+
+probe! {
+    /// SAVE ON QUITTING SAVES AND QUITS. Reported behaviour: File -> Quit, "Save" - the file was written and the window
+    /// stayed open, and Quit had to be chosen a second time.
+    fn save_on_quitting_saves_and_quits() {
+        let mut s = Session::start();
+        qymcad_acceptance::build::into_the_first_part(&mut s);
+        qymcad_acceptance::build::rectangle_on_xy(&mut s);
+        let path = saved_here("quit-and-save");
+        quit_and_save(&mut s);
+        // a document never saved asks where to put it
+        s.answer_file(&path);
+        s.settle();
+        assert!(std::path::Path::new(&path).exists(), "Save on quitting did not write {path}");
+        assert!(s.closed(), "Save on quitting wrote the file and left the window open; on screen: {:?}", s.words());
+    }
+}
+
+probe! {
+    /// SAVE ON QUITTING A DOCUMENT THAT HAS A NAME writes it where it is, without asking where, and quits.
+    fn save_on_quitting_a_named_document_saves_and_quits() {
+        let mut s = Session::start();
+        qymcad_acceptance::build::into_the_first_part(&mut s);
+        qymcad_acceptance::build::rectangle_on_xy(&mut s);
+        let path = saved_here("named-quit-and-save");
+        let (file, save_as) = (s.word("menu-file"), s.word("file-save-as"));
+        s.menu(&[&file, &save_as]);
+        s.answer_file(&path);
+        s.settle();
+        let written = std::fs::metadata(&path).and_then(|m| m.modified()).expect("Save As wrote the file");
+        // one more change after the name was given: a line in the sketch still open
+        qymcad_acceptance::build::line(&mut s, (60.0, 0.0), (80.0, 0.0));
+        assert!(s.title().ends_with('*'), "setup: the line left the document saved: {:?}", s.title());
+        quit_and_save(&mut s);
+        s.settle();
+        assert!(s.chooser().is_none(), "a document with a name asked where to save it");
+        let rewritten = std::fs::metadata(&path).and_then(|m| m.modified()).expect("the file is still there");
+        assert!(rewritten > written, "Save on quitting did not write the document again");
+        assert!(s.closed(), "Save on quitting wrote the file and left the window open; on screen: {:?}", s.words());
+    }
+}
