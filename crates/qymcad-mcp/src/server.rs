@@ -58,17 +58,19 @@ pub fn answer_window(window: &mut Window, line: &str) -> Option<Value> {
     answer_to(Target::Window(window), line)
 }
 
-/// The reply to one line, the calls going where `engine` sends them; a call that reaches a document decides an engine
-/// not decided yet.
+/// The reply to one line, the calls going where `engine` sends them; an engine not decided yet looks for the window
+/// before a call that reaches a document, and settles on its own document once a call has changed it.
 pub fn answer_engine(engine: &mut Engine, line: &str) -> Option<Value> {
     if reaches_a_document(line) {
         engine.decide();
     }
-    match engine {
+    let reply = match engine {
         Engine::Here(ctx) => answer(ctx, line),
         Engine::Window(window) => answer_window(window, line),
-        Engine::Undecided(_) => answer_to(Target::Nowhere, line),
-    }
+        Engine::Undecided { own, .. } => answer(own, line),
+    };
+    engine.settle();
+    reply
 }
 
 /// Whether `line` asks for a document: a call of a tool or the reading of an address. The handshake and the lists do
@@ -82,8 +84,6 @@ fn reaches_a_document(line: &str) -> bool {
 enum Target<'a> {
     Here(&'a mut Ctx),
     Window(&'a mut Window),
-    /// No document yet: only what reaches none is asked of it.
-    Nowhere,
 }
 
 fn answer_to(target: Target<'_>, line: &str) -> Option<Value> {
@@ -120,7 +120,6 @@ fn request(target: Target<'_>, id: &Value, method: &str, params: Value) -> Value
                     Ok(answer) => reading::answer_as_read(answer),
                     Err(cut) => Err(Unread::Nothing(format!("{} {}", cut.refusal.message, cut.refusal.hint.unwrap_or_default()))),
                 },
-                Target::Nowhere => Err(Unread::Nothing("No document is open yet.".into())),
             };
             match read {
                 Ok(contents) => rpc::success(id, contents),
@@ -155,7 +154,6 @@ fn call(target: Target<'_>, id: &Value, mut params: Value) -> Value {
             Ok(answer) => rpc::success(id, answer),
             Err(cut) => rpc::success(id, tool::refused_reply(&name, &cut.refusal, cut.after)),
         },
-        Target::Nowhere => rpc::fault(id, Fault::InvalidRequest, "no document is open yet"),
     }
 }
 

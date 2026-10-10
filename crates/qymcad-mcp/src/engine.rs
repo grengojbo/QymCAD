@@ -2,12 +2,15 @@
 //! person sees.
 //!
 //! The choice is said on the command line: `--headless` keeps a document here, `--live` sends every call to the
-//! window, `--auto` (the default) takes the window when one listens at the first call that reaches a document, and a
-//! document of its own otherwise - and keeps that choice for the run.
+//! window, `--auto` (the default) takes the window when one listens, and works on a document of its own while none
+//! does - until it changes that document, and from then on keeps it for the run.
 //!
-//! THE FIRST CALL DECIDES, NOT THE START. Claude Desktop starts the program when Claude Desktop itself starts, which
-//! is mostly before QymCAD is opened; decided at the start, the session would keep a document of its own for good and
-//! the window would never see a thing.
+//! THE FIRST CHANGE DECIDES, NOT THE START AND NOT THE FIRST CALL. Claude Desktop starts the program when Claude
+//! Desktop itself starts, which is mostly before QymCAD is opened; decided at the start, the session would keep a
+//! document of its own for good. Decided at the first call, a model that first asked what was selected - and was told
+//! there was no window - kept an empty document of its own after the person switched the window on. A reading changes
+//! nothing, so until the own document is changed every call looks for the window again; once it is changed, moving to
+//! a window would drop that work unseen.
 //!
 //! A WINDOW LOST IS NOT REPLACED. Once the window this session reached has closed, every call is refused: a window
 //! opened afterwards may hold another document, and a model working on in it unawares would edit a part it never
@@ -74,8 +77,9 @@ pub enum Engine {
     Here(Box<Ctx>),
     /// The window's document, over the channel.
     Window(Window),
-    /// Not decided yet (`--auto`): the first call that reaches a document decides, by whether a window listens then.
-    Undecided(Window),
+    /// Not decided yet (`--auto`): a call that reaches a document goes to the window when one listens, and to the
+    /// document of its own otherwise, as long as that document is untouched.
+    Undecided { window: Window, own: Box<Ctx> },
 }
 
 impl Engine {
@@ -85,21 +89,33 @@ impl Engine {
         match start.mode {
             Mode::Headless => Engine::Here(Box::new(Ctx::blank())),
             Mode::Live => Engine::Window(window),
-            Mode::Auto => Engine::Undecided(window),
+            Mode::Auto => Engine::Undecided { window, own: Box::new(Ctx::blank()) },
         }
     }
 
-    /// DECIDE, when not yet decided: a window that listens now takes the run, and a document of its own otherwise.
+    /// LOOK FOR THE WINDOW, when not yet decided: one that listens now takes the run.
     pub fn decide(&mut self) {
-        if !matches!(self, Engine::Undecided(_)) {
+        let Engine::Undecided { window, .. } = self else { return };
+        if window.connect().is_err() {
             return;
         }
         let placeholder = Window { path: None, late: Duration::ZERO, link: None, reach: Reach::NotYet };
-        let Engine::Undecided(mut window) = std::mem::replace(self, Engine::Window(placeholder)) else { return };
-        *self = match window.connect() {
-            Ok(()) => Engine::Window(window),
-            Err(_) => Engine::Here(Box::new(Ctx::blank())),
-        };
+        if let Engine::Undecided { window, .. } = std::mem::replace(self, Engine::Window(placeholder)) {
+            *self = Engine::Window(window);
+        }
+    }
+
+    /// SETTLE ON THE DOCUMENT OF ITS OWN once a call has changed it: a model's work there is not left behind for a
+    /// window it never read.
+    pub fn settle(&mut self) {
+        let Engine::Undecided { own, .. } = self else { return };
+        if own.path.is_none() && own.doc.history().undo_names().is_empty() && own.doc.history().redo_names().is_empty() {
+            return;
+        }
+        let placeholder = Box::new(Ctx::blank());
+        if let Engine::Undecided { own, .. } = std::mem::replace(self, Engine::Here(placeholder)) {
+            *self = Engine::Here(own);
+        }
     }
 }
 

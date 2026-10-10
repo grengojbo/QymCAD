@@ -189,10 +189,28 @@ fn auto_takes_a_window_opened_after_the_start() {
     assert_eq!(bodies(&window.close()), 1, "the box did not land in the window");
 }
 
-/// `--auto` WITH NO WINDOW AT THE FIRST CALL keeps a document of its own for the run: a window opened afterwards may
-/// hold another document, and the session does not move to it unawares.
+/// `--auto` WAITS FOR THE WINDOW WHILE ITS OWN DOCUMENT IS UNTOUCHED. Reported behaviour: the program started with the
+/// switch off, the model asked what was selected, was told there was no window, the person switched it on - and every
+/// call after went to the program's own empty document until Claude was restarted. A reading changes nothing, so the
+/// next call still looks for the window and finds it.
 #[test]
-fn auto_with_no_window_at_the_first_call_keeps_its_own() {
+fn auto_reaches_a_window_switched_on_after_a_reading() {
+    let path = place("auto-read-first");
+    let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
+    let read = answer_engine(&mut engine, &line("tools/call", json!({ "name": "get_selection", "arguments": {} }))).expect("answered")["result"]["structuredContent"].clone();
+    assert_eq!(read["error"]["code"], "no-window", "{read}");
+    let doc = answer_engine(&mut engine, &line("tools/call", json!({ "name": "get_document", "arguments": {} }))).expect("answered")["result"]["structuredContent"].clone();
+    assert_eq!(doc["ok"], json!(true), "the own document was not read: {doc}");
+    let window = stand_in(&path, 0);
+    assert_eq!(box_through(&mut engine)["ok"], json!(true));
+    assert!(matches!(engine, Engine::Window(_)), "the window switched on after two readings was not taken");
+    assert_eq!(bodies(&window.close()), 1, "the box did not land in the window");
+}
+
+/// `--auto` WITH NO WINDOW AT THE FIRST CHANGE keeps a document of its own for the run: the model's work is there, a
+/// window opened afterwards may hold another document, and the session does not move to it unawares.
+#[test]
+fn auto_with_no_window_at_the_first_change_keeps_its_own() {
     let path = place("auto-own");
     let mut engine = start(Mode::Auto, &path, Duration::from_secs(30));
     assert_eq!(box_through(&mut engine)["ok"], json!(true));
