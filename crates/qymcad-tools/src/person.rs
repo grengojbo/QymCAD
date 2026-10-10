@@ -34,3 +34,11 @@ pub fn language_in(file: Option<&Path>) -> String {
         qymcad_i18n::system_default()
     }
 }
+
+/// WHERE THE SWITCH FOR CLAUDE IS, worded as the person's window words it: in English
+/// `Settings -> General -> "Claude in this window" -> On`. A model passes a hint on to the person; worded in English, it
+/// names a setting the person's window does not show by that name.
+pub fn the_switch(language: &str) -> String {
+    let say = |key: &str| qymcad_i18n::tr_in(language, key).or_else(|| qymcad_i18n::tr_in("en", key)).unwrap_or_else(|| key.to_string());
+    format!("{} -> {} -> \"{}\" -> {}", say("win-settings"), say("settings-sec-general"), say("settings-claude"), say("settings-claude-on"))
+}

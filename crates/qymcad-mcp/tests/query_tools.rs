@@ -171,3 +171,28 @@ fn the_selection_without_a_window_is_refused() {
     assert_eq!(reply["error"]["code"], "no-window", "{reply}");
     assert_eq!(reply["error"]["stage"], "window", "{reply}");
 }
+
+/// THE WAY TO THE WINDOW IS WORDED AS THE PERSON'S WINDOW WORDS IT. Reported behaviour: the hint named the switch in
+/// English and asked to "restart the QymCAD server", and the model passed both on - to a person whose window shows the
+/// switch in Ukrainian and who has no such action. The hint names the switch from the catalogue, in the person's
+/// language, and no restart of a server.
+#[test]
+fn the_way_to_the_window_is_named_in_the_persons_language() {
+    let mut wrong = Vec::new();
+    for language in ["en", "uk", "ru"] {
+        let mut ctx = block();
+        ctx.language = language.into();
+        let reply = call(&mut ctx, "get_selection", json!({}));
+        let hint = reply["error"]["hint"].as_str().unwrap_or_default().to_string();
+        for key in ["win-settings", "settings-sec-general", "settings-claude", "settings-claude-on"] {
+            let word = qymcad_i18n::tr_in(language, key).unwrap_or_else(|| panic!("{language} lacks {key}"));
+            if !hint.contains(&word) {
+                wrong.push(format!("{language}: the hint does not name {word:?}: {hint}"));
+            }
+        }
+        if hint.contains("server") || hint.contains("Help ->") {
+            wrong.push(format!("{language}: the hint sends the person to a server or to Help: {hint}"));
+        }
+    }
+    assert!(wrong.is_empty(), "the way to the window is misnamed:\n  {}", wrong.join("\n  "));
+}

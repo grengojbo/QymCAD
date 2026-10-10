@@ -197,9 +197,9 @@ pub struct Cut {
 }
 
 fn no_window() -> Refusal {
-    Refusal::new("no-window", "No QymCAD window listens: none is open, or its connection to Claude is switched off.", Stage::Window).with_hint(
-        "Ask the person to open QymCAD and switch the connection to Claude on (Help -> Connect to Claude), then call again; or start the server with --headless to work on a document of its own.",
-    )
+    let switch = qymcad_tools::person::the_switch(&qymcad_tools::person::language());
+    Refusal::new("no-window", "No QymCAD window listens: none is open, or the switch for Claude in it is off.", Stage::Window)
+        .with_hint(&format!("Ask the person to open QymCAD and turn on {switch} - in these words, their window shows them so - then call again."))
 }
 
 fn gone() -> Refusal {

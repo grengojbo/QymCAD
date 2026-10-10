@@ -117,6 +117,9 @@ fn with_no_window_a_call_is_refused_until_one_opens() {
     assert_eq!(reply["error"]["code"], "no-window", "{reply}");
     assert_eq!(reply["error"]["stage"], "window", "{reply}");
     assert_eq!(reply["rolled_back"], json!(true), "nothing happened, and the answer does not say so: {reply}");
+    let switch = qymcad_i18n::tr_in(&qymcad_tools::person::language(), "settings-claude").expect("the switch in the person's language");
+    let hint = reply["error"]["hint"].as_str().unwrap_or_default();
+    assert!(hint.contains(&switch) && !hint.contains("Help ->"), "the hint does not lead to the switch {switch:?}: {hint}");
     let window = stand_in(&path, 0);
     let reply = call(&mut w, "box", json!({ "x": 10, "y": 10, "z": 10 }));
     assert_eq!(reply["ok"], json!(true), "the window that opened later was not reached: {reply}");

@@ -137,8 +137,10 @@ pub const GET_SELECTION: Tool = Tool {
         let _: Empty = tool::args(arguments)?;
         let picked = match &ctx.seen {
             Seen::NoWindow => {
-                return Err(Refusal::new("no-window", "What is selected is known only in the open QymCAD window, and this server works on a document of its own.", Stage::Window)
-                    .with_hint("Ask the person to switch Claude in this window on (Settings -> General) and to restart the QymCAD server; or ask them to name what they mean."));
+                let switch = crate::person::the_switch(&ctx.language);
+                return Err(Refusal::new("no-window", "What is selected is known only in the open QymCAD window, and this session works on a document of its own.", Stage::Window).with_hint(&format!(
+                    "Ask the person to open QymCAD and turn on {switch} - in these words, their window shows them so - then call again. If this session has already changed a document of its own, it stays on it: ask the person to name what they mean, or to restart Claude (Claude Desktop: quit and open again; Claude Code: /mcp, reconnect qymcad)."
+                )));
             }
             Seen::Window(w) => w.picked.clone(),
         };
