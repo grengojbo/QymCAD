@@ -109,7 +109,7 @@ impl App {
             Launch::Feat(n) => self.start_feat_cmd(n),
             Launch::Prim(n) => self.start_prim_cmd(n),
             Launch::SkTool(n) => self.set_sk_tool(n),
-            Launch::Dim(n) => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, &self.project, self.chosen.sel, self.sketch_ses, &mut self.status, n),
+            Launch::Dim(n) => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, &self.project, self.sketch_ses, &mut self.status, n),
             Launch::ClickOp(n) => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, n),
             Launch::Modify(n) => qymcad_ui_state::modify_button(qymcad_ui_state::editing_of!(self), &mut qymcad_ui_state::tools_of!(self), self.sk_pat, &self.tool_prefs, n),
             Launch::Action("joint") => self.start_joint_pick(),

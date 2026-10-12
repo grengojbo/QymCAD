@@ -101,15 +101,7 @@ mod random_session {
                         "sketch tool"
                     }
                     5 => {
-                        qymcad_ui_state::set_dim_tool(
-                            &mut qymcad_ui_state::tools_of!(app),
-                            &mut app.viewing.mode_3d,
-                            &app.project,
-                            app.chosen.sel,
-                            app.sketch_ses,
-                            &mut app.status,
-                            (r.pick(3) + 1) as u8,
-                        );
+                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.sketch_ses, &mut app.status, (r.pick(3) + 1) as u8);
                         "dimension tool"
                     }
                     6 => {

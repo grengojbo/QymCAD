@@ -220,3 +220,15 @@ probe! {
         ]);
     }
 }
+
+probe! {
+    /// THE CHAIN FOUND BY THE SEED 8, shrunk to the steps that matter: the undo takes the new sketch away, and the
+    /// radius dimension taken through the search then waited for a click with no sketch to click in and no bar.
+    fn the_chain_of_the_seed_8() {
+        use qymcad_acceptance::chains::{replay, Scene, Step};
+        replay(Scene::Sketch, &[
+            Step::Undo,
+            Step::Take { tool: "sketch.dim-radius", entry: 1 },
+        ]);
+    }
+}

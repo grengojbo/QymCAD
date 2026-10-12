@@ -14331,18 +14331,21 @@ pub fn set_click_op(t: &mut Tools, mode_3d: &mut bool, op: u8) {
 }
 
 /// Turn the dimension tool on or off (k: 1 = linear, 2 = angular, 3 = radius).
-pub fn set_dim_tool(t: &mut Tools, mode_3d: &mut bool, project: &Project, sel: Sel, sketch_ses: SketchSession, status: &mut String, k: u8) {
+pub fn set_dim_tool(t: &mut Tools, mode_3d: &mut bool, project: &Project, sketch_ses: SketchSession, status: &mut String, k: u8) {
     let cur = t.armed.dim_kind();
     exit_draw_tools(&mut t.reborrow()); // entering a tool means leaving all the others, in one move
     let Tools { armed, annot: _, cmd: _, corner: _, dim: _, drag: _, gsel: _, inline: _, measure: _, pat: _, pending_import: _, picking: _, place: _, sel_sk: _, tool: _ } = t;
+    // A DIMENSION IS PUT DOWN IN AN OPEN SKETCH ONLY. Taken through the search with no sketch open, the tool waited for
+    // a click nothing could answer, and no bar said so: it is not taken, and the status line says what to do first.
+    if k != 0 && cur != k && edit_si(project, &sketch_ses).is_none() {
+        **armed = Armed::None;
+        *status = qymcad_i18n::tr("g-open-sketch-dim");
+        return;
+    }
     **armed = if cur == k { Armed::None } else { Armed::Dimension(k) };
     if armed.dim_kind() != 0 {
         *mode_3d = false;
-        if edit_si(project, &sketch_ses).is_none() && !matches!(sel, Sel::Sketch(_)) {
-            *status = qymcad_i18n::tr("g-open-sketch-dim");
-        } else {
-            *status = qymcad_i18n::tr("g-dim-hint");
-        }
+        *status = qymcad_i18n::tr("g-dim-hint");
     }
 }
 

@@ -2110,7 +2110,7 @@ pub(crate) mod tests {
                         |a: &App| a.project.sketches[si].constraints.iter().filter(|c| matches!(c, Constraint::Distance { .. } | Constraint::Diameter { .. } | Constraint::Angle { .. })).count();
                     let before = dims_now(&app);
                     let dof_before = app.project.sketch_dof(si);
-                    qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, kind);
+                    qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.sketch_ses, &mut app.status, kind);
                     let mut hand = Hand::new(&mut app);
                     for (x, y) in picks {
                         hand.click2d(*x, *y);
@@ -2132,7 +2132,7 @@ pub(crate) mod tests {
                     }
                     check_all(&mut app, &format!("sketch: the {name} dimension"), &mut problems);
                 }
-                qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 0);
+                qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.sketch_ses, &mut app.status, 0);
             }
 
             // A DIMENSION IS A LEVER, NOT A CAPTION. The value is edited and the question is whether THE

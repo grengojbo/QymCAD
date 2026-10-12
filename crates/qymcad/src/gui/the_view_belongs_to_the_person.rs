@@ -39,7 +39,7 @@ mod tests {
         for k in 1u8..=3 {
             let mut app = sketching_with_a_chosen_view();
             let before = view_of(&app);
-            qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, k);
+            qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.sketch_ses, &mut app.status, k);
             let after = view_of(&app);
             if after != before {
                 bad.push(format!("  dimension tool {k}: {before:?} -> {after:?}"));

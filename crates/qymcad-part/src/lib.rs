@@ -6023,13 +6023,13 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     // --- Dimensions ---
                     cat(ui, &qymcad_i18n::tr("tb-group-dim"));
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchDimLinear, &qymcad_i18n::tr("tb-dim-hint"), bc.armed.dim_kind() == 1) {
-                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sel, *bc.sketch_ses, &mut *bc.status, 1);
+                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sketch_ses, &mut *bc.status, 1);
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchDimAngle, &qymcad_i18n::tr("tb-dim-angle-hint"), bc.armed.dim_kind() == 2) {
-                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sel, *bc.sketch_ses, &mut *bc.status, 2);
+                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sketch_ses, &mut *bc.status, 2);
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchDimRadius, &qymcad_i18n::tr("tb-dim-radius-hint"), bc.armed.dim_kind() == 3) {
-                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sel, *bc.sketch_ses, &mut *bc.status, 3);
+                        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sketch_ses, &mut *bc.status, 3);
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchMeasure, &qymcad_i18n::tr("tb-measure-hint"), bc.armed.measuring()) {
                         let on = !bc.armed.measuring();

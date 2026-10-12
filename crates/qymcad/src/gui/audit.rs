@@ -432,9 +432,7 @@ mod live_session {
         // every entry point into a mode — each must give a clean transition
         let entries: Vec<Entry> = vec![
             entry("a drawing tool", |a: &mut App| a.set_sk_tool(2)),
-            entry("a dimension tool", |a: &mut App| {
-                qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.viewing.mode_3d, &a.project, a.chosen.sel, a.sketch_ses, &mut a.status, 1)
-            }),
+            entry("a dimension tool", |a: &mut App| qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(a), &mut a.viewing.mode_3d, &a.project, a.sketch_ses, &mut a.status, 1)),
             entry("the selection mode", |a: &mut App| crate::gui::sketching::sketch_select_mode(&mut a.sketch_ctx())),
             entry("leaving the sketch", |a: &mut App| a.finish_sketch_edit()),
             entry("cancelling everything", |a: &mut App| a.cancel_all_tools()),

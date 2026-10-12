@@ -912,7 +912,7 @@ mod command_flow_tests {
         app.project.add_rect_entity(si, 0.0, 0.0, 20.0, 20.0, qymcad_core::feature::Purpose::Real);
         app.project.regen_sketch(si);
 
-        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 1); // the distance dimension
+        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.sketch_ses, &mut app.status, 1); // the distance dimension
         app.on_escape();
         assert_eq!(app.tools.armed.dim_kind(), 0, "the dimension tool is dropped");
         assert!(app.sketch_ses.editing.is_some(), "the sketch is open");

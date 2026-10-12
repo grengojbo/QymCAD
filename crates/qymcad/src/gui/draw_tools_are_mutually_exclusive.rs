@@ -28,7 +28,7 @@ mod tests {
             DrawTool::Modify => qymcad_ui_state::modify_button(qymcad_ui_state::editing_of!(app), &mut qymcad_ui_state::tools_of!(app), app.sk_pat, &app.tool_prefs, qymcad_ui_state::EditTool::Mirror),
             DrawTool::Move => qymcad_part::start_move_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.status, 1),
             DrawTool::Pattern => qymcad_part::start_pattern(&mut qymcad_ui_state::tools_of!(app), &mut app.status, 1),
-            DrawTool::Dimension => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 1),
+            DrawTool::Dimension => qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.sketch_ses, &mut app.status, 1),
             DrawTool::Command => app.start_feat_cmd(4),
             DrawTool::Measure => qymcad_ui_state::set_measure(&mut qymcad_ui_state::tools_of!(app), true),
             DrawTool::Place => app.start_prim_cmd(1),

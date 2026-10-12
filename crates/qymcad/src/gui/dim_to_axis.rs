@@ -52,7 +52,7 @@ mod tests {
 
     /// Arm the linear dimension tool - the same door the toolbar button uses.
     fn take_the_dimension_tool(app: &mut App) {
-        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.chosen.sel, app.sketch_ses, &mut app.status, 1);
+        qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, &app.project, app.sketch_ses, &mut app.status, 1);
         assert_eq!(app.tools.armed.dim_kind(), 1, "setup: the dimension tool is not in hand");
     }
 
