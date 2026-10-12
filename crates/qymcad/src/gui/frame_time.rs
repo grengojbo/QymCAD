@@ -1,5 +1,6 @@
 //! THE TIME OF A FRAME, ON REQUEST: in the corner of the viewport, how long the processor worked on the last frame,
-//! how many frames a second the window draws, and how much of a frame the 3D view took. Reported behaviour: on Windows
+//! and how much of a frame the 3D view took. No rate of frames: the window repaints on input only, and the gap between
+//! two frames measures the pointer or an idle pause. Reported behaviour: on Windows
 //! the program was "very slow", and nothing told the slow 3D view from a slow window, nor a driver from a setting -
 //! every guess cost a round trip. With the numbers in the corner a person compares "GPU" and "CPU", antialiasing on
 //! and off, by turning the model and reading.
@@ -29,18 +30,15 @@ pub(crate) fn note_view(took: Duration) {
     VIEW.with(|v| v.set(Some(took)));
 }
 
-/// THE LINE IN THE CORNER of `rect` in `colour`, when the setting asks for it: the frame's time, the frames a second,
-/// the view's time. A number not measured yet is a dash, not a zero.
+/// THE LINE IN THE CORNER of `rect` in `colour`, when the setting asks for it: the frame's time and the view's time. A number not measured yet is a dash, not a zero.
 pub(crate) fn paint(painter: &egui::Painter, rect: egui::Rect, shown: FrameTime, colour: egui::Color32) {
     if shown == FrameTime::Hidden {
         return;
     }
     let ms = |s: Option<f32>| s.map_or_else(|| "-".to_string(), |s| qymcad_i18n::num(f64::from(s) * 1000.0, 1));
-    let dt = painter.ctx().input(|i| i.stable_dt);
-    let fps = if dt > 0.0 { qymcad_i18n::num(f64::from(1.0 / dt), 0) } else { "-".to_string() };
     let frame = ms(FRAME.with(Cell::get));
     let view = ms(VIEW.with(Cell::get).map(|d| d.as_secs_f32()));
-    let line = crate::i18n::trn("frame-time", &[("frame", frame.as_str()), ("fps", fps.as_str()), ("view", view.as_str())]);
+    let line = crate::i18n::trn("frame-time", &[("frame", frame.as_str()), ("view", view.as_str())]);
     painter.text(rect.left_bottom() + egui::vec2(8.0, -8.0), egui::Align2::LEFT_BOTTOM, line, egui::FontId::monospace(12.0), colour);
 }
 
@@ -78,5 +76,8 @@ mod tests {
         let line = line.unwrap_or_else(|| panic!("the time of a frame is not in the view with the setting shown: {shown:?}"));
         assert!(line.contains("12.3"), "the processor's time of the frame is not the one the framework gave: {line}");
         assert!(!line.contains("3D - ms"), "the time of the 3D view was not measured: {line}");
+        // the window repaints on input only: the gap between two frames is the pointer's pace or an idle pause, not
+        // the cost of a frame. Reported behaviour: "3 fps" over menus that answered at once, then "380 fps".
+        assert!(!line.contains("fps"), "the line gives a rate of frames, which measures the idle pauses: {line}");
     }
 }

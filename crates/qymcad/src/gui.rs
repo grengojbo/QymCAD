@@ -174,8 +174,8 @@ pub fn launch() -> eframe::Result<()> {
             .with_title(APP_NAME)
             .with_icon(app_icon()),
         // the GPU viewport: egui on wgpu gives access to wgpu_render_state for the bodies' 3D paint callback.
-        // glow stays compiled in as a fallback (the renderer is switched here).
-        renderer: eframe::Renderer::Wgpu,
+        // OpenGL through glow is taken where only it reaches a graphics card (see `window_drawer`).
+        renderer: window_drawer::for_this_start(step),
         // WHERE THE SETTINGS ARE KEPT IS OUR DECISION, not the framework's. Left to itself it derives a
         // folder from the application id and keeps a person's settings apart from their schemes, templates,
         // parts and crash reports - measured on Windows as `AppData\Roaming\qymcad\data` beside
@@ -185,6 +185,7 @@ pub fn launch() -> eframe::Result<()> {
     };
     choose_the_adapter_ourselves(&mut options);
     options.wgpu_options.on_surface_status = crate::crash::journaled_surface_status(options.wgpu_options.on_surface_status.clone());
+    let renderer = options.renderer;
     let started = eframe::run_native(
         APP_ID,
         options,
@@ -207,9 +208,17 @@ pub fn launch() -> eframe::Result<()> {
                 crate::diagnostics::note_gpu(format!("wgpu {:?}, {} ({:?}), driver {} {}", i.backend, i.name, i.device_type, i.driver, i.driver_info));
                 crate::diagnostics::note_drawer(drawer_of(&i));
             } else {
-                // The glow fallback: no adapter to ask, but WHICH PATH is drawing is itself the answer to
-                // "the viewport is slow" and "the viewport is black".
-                crate::diagnostics::note_gpu("glow (the CPU fallback path)".into());
+                // OpenGL through glow: no wgpu adapter to ask; the driver names itself, and WHICH PATH is drawing is
+                // itself the answer to "the viewport is slow" and "the viewport is black".
+                let named = cc.gl.as_ref().map(|gl| {
+                    use eframe::glow::HasContext;
+                    // SAFETY: a string query on the context the framework has just made current for this window.
+                    unsafe { gl.get_parameter_string(eframe::glow::RENDERER) }
+                });
+                crate::diagnostics::note_gpu(format!("glow (OpenGL), renderer {}", named.as_deref().unwrap_or("-")));
+                if let Some(name) = named {
+                    crate::diagnostics::note_drawer(window_drawer::gl_drawer(&name));
+                }
             }
             // DRAWING ON THE PROCESSOR IS SAID OUT LOUD, once, in the status line. Everything works and
             // nothing is broken - but turning a model feels like wading, and a person owed no explanation
@@ -229,6 +238,7 @@ pub fn launch() -> eframe::Result<()> {
     // error - which a windowed build on Windows has nowhere to print to. What a person saw was a window
     // that blinked and closed, and the crash folder was empty.
     if let Err(e) = &started {
+        window_drawer::start_again_on_the_modern_path(renderer);
         let path = crate::crash::note_failed_start(&e.to_string());
         crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
     }
@@ -4108,6 +4118,7 @@ mod array_axis;
 
 /// Drawing the scene and the overlays lives in `gui/render.rs`.
 mod frame_time;
+mod window_drawer;
 mod render;
 
 /// The Part commands (starting them, their parameters, applying them) live in `gui/commands.rs`.

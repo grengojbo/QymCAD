@@ -1015,7 +1015,16 @@ pub(crate) fn drawer_rows(ui: &mut egui::Ui, drawer: Option<&crate::diagnostics:
     let kind = tr("settings-drawer-processor");
     let line = crate::i18n::trn("settings-drawer", &[("name", d.name.as_str()), ("interface", d.interface.as_str()), ("kind", kind.as_str())]);
     ui.colored_label(warning, format!("{} {line}", ph::WARNING));
-    let hint = crate::i18n::trn("settings-drawer-processor-hint", &[("gpu", &tr("settings-engine-gpu")), ("cpu", &tr("settings-engine-cpu")), ("off", &tr("settings-msaa-off"))]);
+    let hint = crate::i18n::trn(
+        "settings-drawer-processor-hint",
+        &[
+            ("gpu", &tr("settings-engine-gpu")),
+            ("window", &tr("settings-window-drawer")),
+            ("opengl", &tr("settings-window-drawer-opengl")),
+            ("cpu", &tr("settings-engine-cpu")),
+            ("off", &tr("settings-msaa-off")),
+        ],
+    );
     ui.label(egui::RichText::new(hint).weak().small());
 }
 
@@ -1408,6 +1417,16 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 // start-up; silently not applying it would be a lie, so it is stated plainly. And on the CPU
                 // raster what is said is not "restart" but that the setting has nothing to do with it.
                 ui.label(egui::RichText::new(if gpu { crate::i18n::tr("settings-msaa-restart") } else { crate::i18n::tr("settings-msaa-needs-gpu") }).weak().small());
+            }
+            // WHAT DRAWS THE WINDOW is taken before the window opens, so the row says it waits for a restart
+            if show("settings-window-drawer") {
+                ui.horizontal_wrapped(|ui| {
+                    ui.label(crate::i18n::tr("settings-window-drawer"));
+                    for d in qymcad_ui_state::WindowDrawer::ALL {
+                        ui.selectable_value(&mut wc.set.window_drawer, d, crate::i18n::tr(d.key()));
+                    }
+                });
+                ui.label(egui::RichText::new(crate::i18n::tr("settings-msaa-restart")).weak().small());
             }
             if show("settings-frame-time") {
                 ui.horizontal(|ui| {

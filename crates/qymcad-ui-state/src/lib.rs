@@ -1668,6 +1668,9 @@ pub struct Settings {
     /// Whether the viewport shows the time of a frame in its corner (see `FrameTime`).
     #[serde(default = "default_frame_time")]
     pub frame_time: FrameTime,
+    /// What draws the window, taken at the start (see `WindowDrawer`).
+    #[serde(default)]
+    pub window_drawer: WindowDrawer,
     /// ASK FOR THE UNITS AND THE SCALE ON EVERY IMPORT. Off, the window comes up only for a file without units and
     /// for a model under 1 mm or over 10 m.
     #[serde(default)]
@@ -1794,6 +1797,7 @@ impl Default for Settings {
             update_last_checked: 0,
             claude_link: default_claude_link(),
             frame_time: default_frame_time(),
+            window_drawer: WindowDrawer::Auto,
             zoom_editing: default_zoom_editing(),
             orbit_about: default_orbit_about(),
             import_ask_always: false,
@@ -6408,6 +6412,28 @@ impl FrameTime {
         match self {
             FrameTime::Hidden => "settings-frame-time-hidden",
             FrameTime::Shown => "settings-frame-time-shown",
+        }
+    }
+}
+
+/// WHAT DRAWS THE WINDOW, decided once at the start: the modern drawing interfaces (Direct3D 12, Vulkan, Metal) or
+/// OpenGL. `Auto` takes OpenGL only where the modern ones reach no graphics card and OpenGL reaches one.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum WindowDrawer {
+    #[default]
+    Auto,
+    Modern,
+    OpenGl,
+}
+
+impl WindowDrawer {
+    pub const ALL: [WindowDrawer; 3] = [WindowDrawer::Auto, WindowDrawer::Modern, WindowDrawer::OpenGl];
+
+    pub fn key(self) -> &'static str {
+        match self {
+            WindowDrawer::Auto => "settings-window-drawer-auto",
+            WindowDrawer::Modern => "settings-window-drawer-modern",
+            WindowDrawer::OpenGl => "settings-window-drawer-opengl",
         }
     }
 }

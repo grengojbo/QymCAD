@@ -81,6 +81,7 @@ mod tests {
             update_last_checked: 1_788_900_000,
             claude_link: qymcad_ui_state::ClaudeLink::On,
             frame_time: qymcad_ui_state::FrameTime::Shown,
+            window_drawer: qymcad_ui_state::WindowDrawer::OpenGl,
             zoom_editing: qymcad_ui_state::ZoomWhileEditing::AsUsual,
             orbit_about: qymcad_ui_state::OrbitAbout::Pointer,
             msaa: 8,
@@ -319,7 +320,14 @@ mod applicability_tests {
         // the words looked for are read in the language the texts were drawn in, not in the one restored
         let has = |texts: &[String], what: &str| texts.iter().any(|t| t.contains(what));
         let mut wrong = Vec::new();
-        for must in ["Microsoft Basic Render Driver", "Direct3D 12", &tr("settings-drawer-processor"), &tr("settings-engine-cpu"), &tr("settings-msaa-off")] {
+        for must in [
+            "Microsoft Basic Render Driver",
+            "Direct3D 12",
+            &tr("settings-drawer-processor"),
+            &tr("settings-window-drawer-opengl"),
+            &tr("settings-engine-cpu"),
+            &tr("settings-msaa-off"),
+        ] {
             if !has(&slow, must) {
                 wrong.push(format!("the processor drawing does not say {must:?}: {slow:?}"));
             }
@@ -353,6 +361,7 @@ mod applicability_tests {
             "settings-ghost-alpha",
             "settings-fov",
             "settings-msaa",
+            "settings-window-drawer",
             "settings-frame-time",
         ];
         let mut prev = 0;

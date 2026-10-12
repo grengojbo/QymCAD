@@ -58,21 +58,28 @@ missing is taken from the factory values.
 
 ## What applies at once and what does not
 
-Almost everything applies at once. The single exception is named in the window itself: **GPU
-antialiasing** takes effect the next time the program starts.
+Almost everything applies at once. Two exceptions are named in the window itself: **GPU antialiasing** and **Draw
+the window with** take effect the next time the program starts.
 
-## When the model turns slowly
+## When the program is slow
 
-At the bottom of the **Viewport** section the line **Draws** names what draws the window: the graphics card, or
-the processor. On a computer whose graphics card has no working driver, Windows hands the drawing to the processor,
-and then **GPU (fast)** is the processor too.
+At the bottom of the **Viewport** section the line **Drawing with** names what draws the window: the graphics card, or
+the processor. On a computer whose graphics card has no working driver for Direct3D 12, Windows hands the drawing to
+the processor: menus and panels answer late, and the larger the window, the slower.
 
-If the line says **the processor**:
+If a warning under it says **the processor**:
 
-1. Install the driver of the graphics card from its maker's site.
-2. Until then choose **CPU (compatibility)** in **Viewport engine** and **Off** in antialiasing, and see which turns
-   the model faster.
-3. If neither helps, send the words of the line through **Help -> Report a problem**: the report carries them.
+1. In **Draw the window with** choose **OpenGL** and restart the program. Many older cards draw through OpenGL when
+   they cannot through Direct3D 12; **Automatic** does this by itself when it finds such a card. The line **Drawing with**
+   then names the card.
+2. Install the driver of the graphics card from its maker's site.
+3. If the 3D view is still slow, choose **CPU (compatibility)** in **Viewport engine** and **Off** in antialiasing,
+   and see which turns the model faster.
+4. If OpenGL makes things worse, choose **Direct3D 12 / Vulkan / Metal** and restart.
+5. If nothing helps, send the words of the line through **Help -> Report a problem**: the report carries them.
+
+**The time of a frame -> In the corner of the view** shows how long the last frame took and how much of it the 3D
+view used: hundreds of milliseconds there mean the drawing is the bottleneck.
 
 ## The panel layout
 
