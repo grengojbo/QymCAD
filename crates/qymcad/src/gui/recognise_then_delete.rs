@@ -36,7 +36,7 @@ mod tests {
                 tris.push([at(j, i + 1), at(j + 1, i + 1), at(j + 1, i)]);
             }
         }
-        qymcad_core::geom::Mesh { verts, tris: tris.into_iter().map(|t: [usize; 3]| t.map(|k| k as u32)).collect() }
+        qymcad_core::geom::Mesh { verts, tris: tris.into_iter().map(|t: [usize; 3]| t.map(|k| k as u32)).collect(), ..Default::default() }
     }
 
     /// The folder of the check `name` in the test run `run` (a process id); the ball is `ball.3mf` in it.

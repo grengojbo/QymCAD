@@ -28,7 +28,7 @@ impl App {
             "sketch.corner-fillet" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, 4),
             "sketch.trim" => qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(self), &mut self.viewing.mode_3d, 1),
             "sketch.mirror" => qymcad_ui_state::modify_button(qymcad_ui_state::editing_of!(self), &mut qymcad_ui_state::tools_of!(self), self.sk_pat, &self.tool_prefs, EditTool::Mirror),
-            "sketch.construction" => self.tools.tool.construction = !self.tools.tool.construction,
+            "sketch.construction" => qymcad_ui_state::construction_toggle(qymcad_ui_state::editing_of!(self), &self.tools.sel_sk, &self.sketch_ses, &mut self.tools.tool.construction),
             _ => {}
         }
     }
@@ -75,95 +75,7 @@ impl App {
                         }
                     }
                 }
-                resp.context_menu(|ui| {
-                    let has_sel = !self.tools.sel_sk.items.is_empty();
-                    let has_ent = self.tools.sel_sk.items.iter().any(|(k, _)| *k == 1);
-                    if ui.add_enabled(has_sel, egui::Button::new(format!("{} {}", ph::TRASH, crate::i18n::tr("props-delete")))).clicked() {
-                        qymcad_ui_state::delete_sketch_sel(&mut self.project, &mut self.regen, &mut self.tools.sel_sk, &mut self.status, si);
-                        ui.close();
-                    }
-                    if ui.add_enabled(has_ent, egui::Button::new(crate::i18n::tr("sk-construction-toggle"))).clicked() {
-                        let eids: Vec<Id> = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
-                        self.project.toggle_construction(si, &eids);
-                        self.project.solve_sketch(si);
-                        qymcad_ui_state::invalidate(&mut self.regen);
-                        ui.close();
-                    }
-                    // an arc length dimension, for the picked arc
-                    let arc_eid = self.tools.sel_sk.items.iter().filter(|(k, _)| *k == 1).find_map(|(_, id)| {
-                        self.project.sketches.get(si).and_then(|s| s.entities.iter().find(|e| e.id == *id)).and_then(|e| matches!(e.kind, qymcad_core::model::EntityKind::Arc { .. }).then_some(*id))
-                    });
-                    if let Some(aid) = arc_eid {
-                        if ui.button(crate::i18n::tr("sk-arc-length-dim")).clicked() {
-                            if let Some(ci) = self.project.ensure_arc_length(si, aid) {
-                                crate::gui::io_jobs::finish_dim(&mut self.project, &mut self.regen, si, ci);
-                                self.tools.place.dim = Some(ci);
-                            }
-                            ui.close();
-                        }
-                    }
-                    // a tangent (edge-to-edge) dimension: two references are picked, at least one of
-                    // them a circle or an arc
-                    let edge_refs: Vec<(Id, i8)> = self
-                        .project
-                        .sketches
-                        .get(si)
-                        .map(|s| {
-                            self.tools
-                                .sel_sk
-                                .items
-                                .iter()
-                                .filter_map(|&(k, id)| {
-                                    if k == 1 {
-                                        s.entities.iter().find(|e| e.id == id).and_then(|e| match e.kind {
-                                            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some((center, -1i8)),
-                                            _ => None,
-                                        })
-                                    } else if k == 0 {
-                                        Some((id, 0i8))
-                                    } else {
-                                        None
-                                    }
-                                })
-                                .collect()
-                        })
-                        .unwrap_or_default();
-                    let can_edge = edge_refs.len() == 2 && edge_refs.iter().any(|(_, m)| *m != 0);
-                    if ui.add_enabled(can_edge, egui::Button::new(crate::i18n::tr("sk-tangent-dim"))).on_hover_text(crate::i18n::tr("sk-gap-hint")).clicked() {
-                        let ((c1, m1), (c2, m2)) = (edge_refs[0], edge_refs[1]);
-                        let d = self.project.measure_edge_distance(si, c1, m1, c2, m2);
-                        let ci = self.project.sketches[si].constraints.len();
-                        self.project.sketches[si].constraints.push(qymcad_core::model::Constraint::EdgeDistance { c1, c2, d, m1, m2, off: 0.0, expr: String::new(), driven: false, at: None });
-                        crate::gui::io_jobs::finish_dim(&mut self.project, &mut self.regen, si, ci);
-                        self.tools.gsel.constraint = Some(ci);
-                        qymcad_ui_state::invalidate(&mut self.regen);
-                        ui.close();
-                    }
-                    ui.separator();
-                    ui.menu_button(crate::i18n::tr("sk-constraint"), |ui| {
-                        for (label, code) in [
-                            (&crate::i18n::tr("sk-coincident"), 0u8),
-                            (&crate::i18n::tr("sk-horizontal"), 1),
-                            (&crate::i18n::tr("sk-vertical"), 2),
-                            (&crate::i18n::tr("sk-parallel"), 3),
-                            (&crate::i18n::tr("sk-perpendicular"), 4),
-                            (&crate::i18n::tr("sk-equal"), 5),
-                            (&crate::i18n::tr("sk-tangency"), 9),
-                            (&crate::i18n::tr("sk-midpoint"), 11),
-                            (&crate::i18n::tr("sk-fix"), 6),
-                        ] {
-                            if ui.button(label).clicked() {
-                                constraint_button(&mut self.sketch_ctx(), code);
-                                ui.close();
-                            }
-                        }
-                    });
-                    ui.separator();
-                    if ui.button(crate::i18n::tr("sk-select-all")).clicked() {
-                        qymcad_ui_state::select_all_sketch(&mut self.tools.annot, &mut self.tools.gsel, &self.project, &mut self.tools.sel_sk, &mut self.status, si);
-                        ui.close();
-                    }
-                });
+                resp.context_menu(|ui| sketch_context_menu(&mut self.sketch_ctx(), ui, si));
             }
         }
         // a double click finishes a chain of lines; otherwise it edits a dimension
@@ -230,30 +142,9 @@ impl App {
         }
         // the cursor with snapping (it refreshes the snap hint for the marker)
         self.cursor = resp.hover_pos().map(|p| snap_world(&mut self.sketch_ctx(), rect, p));
-        // the pre-select highlight: what is under the cursor - only while the sketch is in selection mode
-        self.chosen.hover.sketch = None;
-        if let (Sel::Sketch(si), Some(hp)) = (self.chosen.sel, resp.hover_pos()) {
-            if qymcad_ui_state::edit_si(&self.project, &self.sketch_ses) == Some(si)
-                && self.tools.armed.draw_kind() == 0
-                && self.tools.armed.dim_kind() == 0
-                && !resp.dragged()
-                && self.tools.drag.pt().is_none()
-                && self.tools.drag.mov().is_none()
-            {
-                self.chosen.hover.sketch = sketch_hit(&self.pick_ctx(), rect, hp, si);
-                // the constraint glyph under the cursor is highlighted, without wiping the hover coming
-                // from the list of constraints
-                if self.chosen.hover.sketch.is_none() {
-                    if let Some(gc) = constraint_glyph_at(&mut self.sketch_ctx(), rect, hp, si) {
-                        self.chosen.hover.constraint = Some(gc);
-                    }
-                }
-            }
-        }
-        update_placing_dim(&mut self.sketch_ctx(), rect); // the dimension follows the cursor until it is placed
-        if resp.hover_pos().is_none() {
-            self.snap_hint = None;
-        }
+        let lit = qymcad_sketch::pre_select(&mut self.sketch_ctx(), rect, resp.hover_pos(), resp.dragged());
+        (self.chosen.hover.sketch, self.chosen.hover.constraint) = (lit.sketch, lit.constraint.or(self.chosen.hover.constraint));
+        qymcad_sketch::follow_pointer(&mut self.sketch_ctx(), rect, resp.hover_pos());
         if self.sketch_ses.editing.is_some() {
             qymcad_render::draw_sketch_grid(&self.scheme, &self.set, self.viewing.view, painter, rect);
             // the grid and the axes while a sketch is being edited
@@ -284,44 +175,7 @@ impl App {
                 // profile, like a drawing.
                 let profile_pick = self.tools.armed.commanding() && self.sketch_ses.editing.is_none();
                 if !profile_pick {
-                    // the colour of the points follows how defined they are, as in any CAD: green means
-                    // defined, YELLOW still free (showing what is under-defined), red means trouble.
-                    // Points go RED only on a CONFLICT of dimensions (inconsistent values, a real error).
-                    // Harmless redundancy (consistent reference dimensions) does NOT redden them - that
-                    // would be a false alarm of "a heap of errors" on a perfectly good sketch.
-                    let has_conflict = !sketch_diag(&self.cache, &self.project, si).conflicts.is_empty();
-                    let (_, free) = sketch_status(&mut self.sketch_ctx(), si); // cached: the Jacobian is not computed every frame
-                                                                               // the reference points and the virtual sharps of rectangles are not drawn
-                                                                               // as numbered geometry (see `unseen_points`)
-                    let refset = self.project.sketches[si].unseen_points();
-                    for (pi, p) in self.project.sketches[si].points.iter().enumerate() {
-                        if refset.contains(&p.id) {
-                            continue;
-                        }
-                        let movable = free.get(pi).copied().unwrap_or(true);
-                        let base_col = if has_conflict {
-                            self.scheme.pal.error_mild() // a conflict of dimensions - the points do not satisfy the constraints
-                        } else if movable {
-                            self.scheme.pal.underdefined() // still free
-                        } else {
-                            self.scheme.pal.ok() // defined
-                        };
-                        let sp = sh.at(qymcad_core::geom::Point2::new(p.x, p.y));
-                        let picked = self.tools.dim.pick.contains(&p.id);
-                        let selected = self.tools.sel_sk.items.contains(&(0, p.id));
-                        let hovered = self.chosen.hover.sketch == Some((0, p.id));
-                        let (col, r) = if selected {
-                            (self.scheme.pal.emphasis(), 5.0)
-                        } else if hovered {
-                            (self.scheme.pal.preview(), 5.0) // the pre-select highlight
-                        } else if picked {
-                            (self.scheme.pal.sketch_point(), 4.5)
-                        } else {
-                            (base_col, 3.5)
-                        };
-                        painter.circle_filled(sp, r, col);
-                        painter.text(sp + egui::vec2(5.0, -5.0), egui::Align2::LEFT_BOTTOM, format!("{}", pi + 1), egui::FontId::monospace(10.0), self.scheme.pal.text_faint());
-                    }
+                    qymcad_render::draw_sketch_points(&self.painting(), painter, rect, si, &self.tools.dim.pick);
                     self.draw_sketch_dims(painter, rect, si);
                     self.draw_sketch_constraints(painter, rect, si);
                 }
@@ -472,8 +326,8 @@ impl App {
         qymcad_ui_state::note_editor(&mut self.tools.annot, &mut self.tools.inline, &mut self.project, self.chosen.sel, self.viewing.view, ctx, rect); // editing the text of a note
         let asks = qymcad_ui_state::text_popups(qymcad_ui_state::editing_of!(self), &mut self.font_cache, &mut qymcad_ui_state::text_ctx_of!(self), ctx, rect); // the label editor and the list of fonts
         self.do_bar_asks(asks, ctx);
-        place_input_popup(qymcad_ui_state::editing_of!(self), &mut self.tools.corner, &mut self.tools.place, &mut self.tools.sel_sk, &mut self.tool_prefs, ctx, rect); // typing the sizes right after a shape is built
-        sketch_rotate_popup(&mut self.sketch_ctx(), ctx, rect); // the rotation angle at the centre
+        place_input_popup(qymcad_ui_state::editing_of!(self), qymcad_ui_state::popup_tools!(self), qymcad_ui_state::popup_looks!(self), ctx, rect); // typing the sizes right after a shape is built
+        sketch_tool_keys(&mut self.sketch_ctx(), ctx, rect); // the angle of a turn, Enter of Extend
     }
 }
 

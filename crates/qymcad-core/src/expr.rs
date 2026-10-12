@@ -8,7 +8,11 @@ use std::collections::HashMap;
 
 use crate::errors::ExprError;
 
-/// Evaluate the expression `src`, substituting parameters from `vars`. Names are case-insensitive.
+/// Evaluate the expression `src`, substituting parameters from `vars`.
+///
+/// A parameter name is matched exactly: `H` and `h` are two parameters. The names of the functions and constants
+/// are not, `SIN(30)` and `PI` read as `sin(30)` and `pi`; a parameter named `E` or `Pi` is still found under its own
+/// name, since the constant gives way to it in any case but its own.
 pub fn eval(src: &str, vars: &HashMap<String, f64>) -> Result<f64, ExprError> {
     let toks = tokenize(src)?;
     let mut p = Parser { toks: &toks, pos: 0, vars };
@@ -94,7 +98,7 @@ fn tokenize(s: &str) -> Result<Vec<Tok>, ExprError> {
                     i += 1;
                 }
                 let txt: String = cs[start..i].iter().collect();
-                out.push(Tok::Ident(txt.to_lowercase()));
+                out.push(Tok::Ident(txt));
             }
             _ => return Err(ExprError::UnknownChar(c.to_string())),
         }
@@ -216,12 +220,12 @@ impl<'a> Parser<'a> {
                     if !matches!(self.bump(), Some(Tok::RParen)) {
                         return Err(ExprError::ExpectedParenAfterArgs);
                     }
-                    call_fn(&name, &args)
+                    call_fn(&name.to_lowercase(), &args)
                 } else {
                     // Without parentheses this is a name, not a function. `UnknownFn` used to be returned
                     // here, so a bare `w` in a formula answered "unknown function: w" — advice about the wrong
                     // thing, since a parameter was meant.
-                    constant(&name).or_else(|| self.vars.get(&name).copied()).ok_or_else(|| ExprError::UnknownName(name.clone()))
+                    constant(&name).or_else(|| self.vars.get(&name).copied()).or_else(|| constant(&name.to_lowercase())).ok_or_else(|| ExprError::UnknownName(name.clone()))
                 }
             }
             // The end of input is not a token. `format!("{other:?}")` on `None` produced "Unexpected token
@@ -297,6 +301,9 @@ fn call_fn(name: &str, args: &[f64]) -> Result<f64, ExprError> {
     }
 }
 
+/// Whether the parameter `name` is mentioned in an expression as an identifier of its own rather than as part
+/// of another name — `L` must not be found inside `Length`. Needed for targeted rebuilds: editing a parameter
+/// marks dirty only the features that actually reference it.
 /// A number as a string, written the way a person writes it: at most four decimals, no trailing zeros and no
 /// dot at the end.
 ///
@@ -318,46 +325,33 @@ pub fn fmt_num(v: f64) -> String {
     }
 }
 
-/// Whether the parameter `name` is mentioned in an expression as an identifier of its own rather than as part
-/// of another name — `L` must not be found inside `Length`. Needed for targeted rebuilds: editing a parameter
-/// marks dirty only the features that actually reference it.
-///
-/// The case is ignored, as [`eval`] ignores it: `H` in an expression is the parameter `h`.
 pub fn mentions(expr: &str, name: &str) -> bool {
     !occurrences(expr, name).is_empty()
 }
 
-/// The places where `name` stands in an expression as a name rather than as part of another word, as byte
-/// ranges. Both [`mentions`] and [`rename_ident`] grow from here: the boundary rule has to be single, or what gets
-/// renamed is not what was found.
-///
-/// A name is a whole run of identifier characters, compared without case: [`eval`] lower-cases every identifier,
-/// so `H`, `h` and `Width`, `width` are one parameter each. The rebuild asks by the lower-cased key of
-/// `Project::param_map`, and a case-sensitive search finds no `h` in `H`. A range is the run as written: a
-/// lower-cased letter may be of another byte length than the original one.
-fn occurrences(expr: &str, name: &str) -> Vec<(usize, usize)> {
+/// The places where `name` stands in an expression as a name rather than as part of another word. Both
+/// [`mentions`] and [`rename_ident`] grow from here: the boundary rule has to be single, or what gets renamed
+/// is not what was found.
+fn occurrences(expr: &str, name: &str) -> Vec<usize> {
     let mut out = Vec::new();
     if name.is_empty() {
         return out;
     }
-    let want = name.to_lowercase();
     let bytes = expr.as_bytes();
-    // Every byte of a multi-byte letter is >= 0x80, so a run never ends in the middle of a letter.
     let ident = |c: u8| c.is_ascii_alphanumeric() || c == b'_' || c >= 0x80;
-    let mut i = 0;
-    while i < bytes.len() {
-        if !ident(bytes[i]) {
-            i += 1;
-            continue;
+    let mut from = 0;
+    while let Some(pos) = expr[from..].find(name) {
+        let i = from + pos;
+        let j = i + name.len();
+        let left_ok = i == 0 || !ident(bytes[i - 1]);
+        let right_ok = j >= bytes.len() || !ident(bytes[j]);
+        if left_ok && right_ok {
+            out.push(i);
         }
-        let mut j = i;
-        while j < bytes.len() && ident(bytes[j]) {
-            j += 1;
-        }
-        if expr[i..j].to_lowercase() == want {
-            out.push((i, j));
-        }
-        i = j;
+        // The step advances by a whole character rather than by a byte. `from = i + 1` in the middle of a
+        // multi-byte letter crashes the parse; the same fault lived in the earlier `mentions` and surfaced only
+        // when the first match was rejected by the boundary check.
+        from = i + expr[i..].chars().next().map_or(1, char::len_utf8);
     }
     out
 }
@@ -367,7 +361,6 @@ fn occurrences(expr: &str, name: &str) -> Vec<(usize, usize)> {
 /// Renaming a parameter has to reach the formulas: otherwise renaming `w` to `shirina` leaves expressions such
 /// as `w*2+5` across the project, pointing at a name that no longer exists, and the model breaks silently. The
 /// boundaries are those of [`mentions`]: a `w` inside `wall`, `pow` or `w2` is not a name and is left alone.
-/// A `W` is the name `w`, as [`eval`] reads it, and is replaced too.
 pub fn rename_ident(expr: &str, old: &str, new: &str) -> String {
     let at = occurrences(expr, old);
     if at.is_empty() {
@@ -375,10 +368,10 @@ pub fn rename_ident(expr: &str, old: &str, new: &str) -> String {
     }
     let mut out = String::with_capacity(expr.len() + at.len() * new.len());
     let mut cut = 0;
-    for (i, j) in at {
+    for i in at {
         out.push_str(&expr[cut..i]);
         out.push_str(new);
-        cut = j;
+        cut = i + old.len();
     }
     out.push_str(&expr[cut..]);
     out
@@ -407,6 +400,27 @@ mod tests {
         assert!((ev("sin(90)") - 1.0).abs() < 1e-9); // degrees
         assert!((ev("max(3, 7)") - 7.0).abs() < 1e-9);
         assert!((ev("2 * pi") - std::f64::consts::TAU).abs() < 1e-9);
+        assert!((ev("SQRT(16) + Max(1, 2)") - 6.0).abs() < 1e-9, "a function is read in any case");
+        assert!((ev("2 * PI") - std::f64::consts::TAU).abs() < 1e-9, "a constant is read in any case");
+    }
+
+    /// A parameter named like a constant in another case is found under its own name: `E` is the parameter,
+    /// `e` the constant.
+    #[test]
+    fn a_parameter_is_not_shadowed_by_a_constant_in_another_case() {
+        let mut v = HashMap::new();
+        v.insert("E".to_string(), 5.0);
+        assert!((eval("E", &v).unwrap() - 5.0).abs() < 1e-9);
+        assert!((eval("e", &v).unwrap() - std::f64::consts::E).abs() < 1e-9);
+    }
+
+    /// Names that differ only in case are two parameters.
+    #[test]
+    fn a_name_is_matched_in_its_own_case() {
+        let mut v = HashMap::new();
+        v.insert("H".to_string(), 40.0);
+        v.insert("h".to_string(), 20.0);
+        assert!((eval("H - h", &v).unwrap() - 20.0).abs() < 1e-9);
     }
 
     #[test]
@@ -416,7 +430,7 @@ mod tests {
         v.insert("h".to_string(), 20.0);
         assert!((eval("w / 2", &v).unwrap() - 25.0).abs() < 1e-9);
         assert!((eval("w + h", &v).unwrap() - 70.0).abs() < 1e-9);
-        assert!((eval("W*2", &v).unwrap() - 100.0).abs() < 1e-9); // case-insensitive
+        assert!(eval("W*2", &v).is_err(), "W is not the parameter w");
     }
 
     #[test]

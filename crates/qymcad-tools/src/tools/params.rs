@@ -24,9 +24,9 @@ struct DeleteArgs {
 #[serde(deny_unknown_fields)]
 struct Nothing {}
 
-/// The place of the parameter called `name`, whatever its case: `W` and `w` are one name in a formula.
+/// The place of the parameter called `name`, matched as written: `W` and `w` are two names in a formula.
 fn index_of(ctx: &Ctx, name: &str) -> Option<usize> {
-    ctx.doc.project().parameters.iter().position(|p| p.name.eq_ignore_ascii_case(name))
+    ctx.doc.project().parameters.iter().position(|p| p.name == name)
 }
 
 fn parameter(ctx: &Ctx, i: usize) -> Value {
@@ -40,7 +40,7 @@ fn fit_name(ctx: &Ctx, name: &str) -> Result<(), Refusal> {
     if qymcad_core::drivers::check_ident(name).is_err() {
         return Err(Refusal::new("unfit-name", &format!("The name \"{name}\" cannot be used in a formula: letters, digits and _ only, not starting with a digit."), Stage::Validate));
     }
-    let holder = ctx.doc.project().drivers_shown(&qymcad_i18n::name).into_iter().find(|d| d.name.eq_ignore_ascii_case(name.trim()));
+    let holder = ctx.doc.project().drivers_shown(&qymcad_i18n::name).into_iter().find(|d| d.name == name.trim());
     match holder {
         Some(owner) => Err(Refusal::new("taken-name", &format!("The name \"{name}\" belongs to a dimension in {}.", owner.path), Stage::Validate).with_hint("Choose another name.")),
         None => Ok(()),
@@ -67,7 +67,7 @@ pub const SET_PARAMETER: Tool = Tool {
         // read without its own name, since `h = h * 2` has no value - the evaluation runs it round to a fixed point and
         // lands on 5120 for a 10
         let mut names = ctx.doc.project().param_map();
-        names.remove(&name.to_lowercase());
+        names.remove(&name);
         if let Err(e) = qymcad_core::expr::eval(&a.expr, &names) {
             let words = qymcad_i18n::error_words::error_text(&qymcad_core::errors::CoreError::Expr(e.clone()));
             return Err(Refusal::new(e.key(), &words, Stage::Validate).with_hint("Read list_parameters for the names there are."));

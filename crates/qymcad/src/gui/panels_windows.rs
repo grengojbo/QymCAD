@@ -47,7 +47,7 @@ pub(crate) fn crash_notice(crash_report: &mut Vec<std::path::PathBuf>, ctx: &egu
     let Some(path) = crash_report.first().cloned() else { return };
     let mut open = true;
     let mut dismiss = false;
-    egui::Window::new(format!("{} {}", ph::WARNING, crate::i18n::tr("crash-title")))
+    egui::Window::new(format!("{} {}", ph::WARNING, crate::i18n::tr("crash-title"))).id(egui::Id::new("win_crash"))
         // OVER EVERY WINDOW, the start screen too: it stood on the same layer and took the click meant for "Close"
         .order(egui::Order::Foreground)
         .open(&mut open)
@@ -94,6 +94,7 @@ pub(crate) fn updates_dialog(win: &mut super::Windows, scheme: &super::SchemeUi,
     let outcome = crate::gui::update_ui::outcome();
     let mut open = true;
     egui::Window::new(format!("{} {}", ph::ARROW_CIRCLE_UP, crate::i18n::tr("help-check-updates")))
+        .id(egui::Id::new("win_check_updates"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -167,6 +168,7 @@ pub(crate) fn about_dialog(win: &mut super::Windows, scheme: &super::SchemeUi, c
     }
     let mut open = true;
     egui::Window::new(format!("{} {}", ph::INFO, crate::i18n::tr("win-about")))
+        .id(egui::Id::new("win_about"))
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
@@ -421,10 +423,15 @@ pub(crate) fn editor(c: &mut SchemeCtx, ask: &mut SchemeAsk, ui: &mut egui::Ui, 
                         // THROUGH `set` BY NAME: a typo in a key is rejected rather than writing a colour into
                         // the wrong place - the same device as in a user scheme's file.
                         if c.scheme.pal.set(key, rgb) {
+                            crate::gui::sync_visuals(c.scheme, ctx);
                             repaint_after_scheme_edit(c.cache);
                         }
                     }
-                    ui.label(label);
+                    if section == "icons" {
+                        ui.label(format!("{label} (--{})", key.replace('_', "-")));
+                    } else {
+                        ui.label(label);
+                    }
                     ui.end_row();
                 }
             });
@@ -442,92 +449,95 @@ pub(crate) fn parts_library_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui:
     let mut open = wc.win.is(WinKind::PartsLibrary);
     let mut to_insert: Option<crate::parts_library::PartSource> = None;
     let mut rescan = false;
-    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("win-parts-library"))).open(&mut open).default_width(640.0).default_height(440.0).show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            if ui.button(format!("{} {}", ph::ARROWS_CLOCKWISE, crate::i18n::tr("win-refresh"))).on_hover_text(crate::i18n::tr("pl-rescan")).clicked() {
-                rescan = true;
-            }
-            ui.separator();
-            ui.label(ph::MAGNIFYING_GLASS.to_string());
-            ui.add(egui::TextEdit::singleline(&mut wc.parts.search).hint_text(crate::i18n::tr("pl-search")).desired_width(200.0));
-            if !wc.parts.search.is_empty() && ui.small_button(ph::X).clicked() {
-                wc.parts.search.clear();
-            }
-        });
-        ui.separator();
-        let query = wc.parts.search.trim().to_lowercase();
-        egui::Panel::left("parts_lib_tree").resizable(true).default_size(230.0).show(ui, |ui| {
-            egui::ScrollArea::vertical().id_salt("parts_lib_tree_scroll").show(ui, |ui| {
-                let mut path = Vec::new();
-                crate::gui::parts_tree_node(ui, &tree.embedded, true, &mut path, &mut wc.parts.sel);
-                crate::gui::parts_tree_node(ui, &tree.user, false, &mut path, &mut wc.parts.sel);
-            });
-        });
-        egui::CentralPanel::default().show(ui, |ui| {
-            // The set on the right: while searching, every match in the catalogue; otherwise the direct products of the chosen category.
-            let mut entries: Vec<&crate::parts_library::PartEntry> = Vec::new();
-            if query.is_empty() {
-                match &wc.parts.sel {
-                    Some((true, p)) => {
-                        if let Some(n) = crate::gui::cat_at(&tree.embedded, p) {
-                            entries.extend(n.parts.iter());
-                        }
-                    }
-                    Some((false, p)) => {
-                        if let Some(n) = crate::gui::cat_at(&tree.user, p) {
-                            entries.extend(n.parts.iter());
-                        }
-                    }
-                    None => {
-                        ui.weak(crate::i18n::tr("pl-pick-category"));
-                    }
+    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("win-parts-library"))).id(egui::Id::new("win_parts_library")).open(&mut open).default_width(640.0).default_height(440.0).show(
+        ctx,
+        |ui| {
+            ui.horizontal(|ui| {
+                if ui.button(format!("{} {}", ph::ARROWS_CLOCKWISE, crate::i18n::tr("win-refresh"))).on_hover_text(crate::i18n::tr("pl-rescan")).clicked() {
+                    rescan = true;
                 }
-            } else {
-                crate::gui::collect_matching(&tree.embedded, &query, &mut entries);
-                crate::gui::collect_matching(&tree.user, &query, &mut entries);
-                ui.weak(crate::i18n::tr1("pl-found-n", "n", &entries.len().to_string()));
-                ui.add_space(2.0);
-            }
-            if (query.is_empty() && wc.parts.sel.is_some() || !query.is_empty()) && entries.is_empty() {
-                ui.weak(crate::i18n::tr("pl-empty"));
-            }
-            // the thumbnails (lazily loaded and cached) are prepared IN ADVANCE, so that no &mut self is held inside the drawing loop
-            let thumbs: Vec<Option<egui::TextureHandle>> = entries.iter().map(|e| crate::gui::parts_thumb_texture(&mut *wc.parts, ui.ctx(), &e.source)).collect();
-            egui::ScrollArea::vertical().id_salt("parts_lib_grid").show(ui, |ui| {
-                for (e, thumb) in entries.iter().zip(thumbs.iter()) {
-                    ui.group(|ui| {
-                        ui.horizontal(|ui| {
-                            // a preview thumbnail of the body (or a placeholder icon when the product has no thumb.png)
-                            match thumb {
-                                Some(t) => {
-                                    ui.add(egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), egui::vec2(52.0, 52.0))).corner_radius(3.0));
-                                }
-                                None => {
-                                    ui.add_sized([52.0, 52.0], egui::Label::new(egui::RichText::new(ph::CUBE).size(24.0).weak()));
-                                }
+                ui.separator();
+                ui.label(ph::MAGNIFYING_GLASS.to_string());
+                ui.add(egui::TextEdit::singleline(&mut wc.parts.search).hint_text(crate::i18n::tr("pl-search")).desired_width(200.0));
+                if !wc.parts.search.is_empty() && ui.small_button(ph::X).clicked() {
+                    wc.parts.search.clear();
+                }
+            });
+            ui.separator();
+            let query = wc.parts.search.trim().to_lowercase();
+            egui::Panel::left("parts_lib_tree").resizable(true).default_size(230.0).show(ui, |ui| {
+                egui::ScrollArea::vertical().id_salt("parts_lib_tree_scroll").show(ui, |ui| {
+                    let mut path = Vec::new();
+                    crate::gui::parts_tree_node(ui, &tree.embedded, true, &mut path, &mut wc.parts.sel);
+                    crate::gui::parts_tree_node(ui, &tree.user, false, &mut path, &mut wc.parts.sel);
+                });
+            });
+            egui::CentralPanel::default().show(ui, |ui| {
+                // The set on the right: while searching, every match in the catalogue; otherwise the direct products of the chosen category.
+                let mut entries: Vec<&crate::parts_library::PartEntry> = Vec::new();
+                if query.is_empty() {
+                    match &wc.parts.sel {
+                        Some((true, p)) => {
+                            if let Some(n) = crate::gui::cat_at(&tree.embedded, p) {
+                                entries.extend(n.parts.iter());
                             }
-                            ui.vertical(|ui| {
-                                ui.label(egui::RichText::new(&e.name).strong());
-                                if let Some(m) = &e.manifest {
-                                    if !m.description.is_empty() {
-                                        ui.label(egui::RichText::new(&m.description).weak().small());
+                        }
+                        Some((false, p)) => {
+                            if let Some(n) = crate::gui::cat_at(&tree.user, p) {
+                                entries.extend(n.parts.iter());
+                            }
+                        }
+                        None => {
+                            ui.weak(crate::i18n::tr("pl-pick-category"));
+                        }
+                    }
+                } else {
+                    crate::gui::collect_matching(&tree.embedded, &query, &mut entries);
+                    crate::gui::collect_matching(&tree.user, &query, &mut entries);
+                    ui.weak(crate::i18n::tr1("pl-found-n", "n", &entries.len().to_string()));
+                    ui.add_space(2.0);
+                }
+                if (query.is_empty() && wc.parts.sel.is_some() || !query.is_empty()) && entries.is_empty() {
+                    ui.weak(crate::i18n::tr("pl-empty"));
+                }
+                // the thumbnails (lazily loaded and cached) are prepared IN ADVANCE, so that no &mut self is held inside the drawing loop
+                let thumbs: Vec<Option<egui::TextureHandle>> = entries.iter().map(|e| crate::gui::parts_thumb_texture(&mut *wc.parts, ui.ctx(), &e.source)).collect();
+                egui::ScrollArea::vertical().id_salt("parts_lib_grid").show(ui, |ui| {
+                    for (e, thumb) in entries.iter().zip(thumbs.iter()) {
+                        ui.group(|ui| {
+                            ui.horizontal(|ui| {
+                                // a preview thumbnail of the body (or a placeholder icon when the product has no thumb.png)
+                                match thumb {
+                                    Some(t) => {
+                                        ui.add(egui::Image::from_texture(egui::load::SizedTexture::new(t.id(), egui::vec2(52.0, 52.0))).corner_radius(3.0));
                                     }
-                                    if !m.tags.is_empty() {
-                                        ui.label(egui::RichText::new(m.tags.join(" · ")).weak().small());
+                                    None => {
+                                        ui.add_sized([52.0, 52.0], egui::Label::new(egui::RichText::new(ph::CUBE).size(24.0).weak()));
                                     }
                                 }
-                            });
-                            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                                if ui.button(format!("{} {}", ph::ARROW_SQUARE_IN, crate::i18n::tr("win-insert"))).clicked() {
-                                    to_insert = Some(e.source.clone());
-                                }
+                                ui.vertical(|ui| {
+                                    ui.label(egui::RichText::new(&e.name).strong());
+                                    if let Some(m) = &e.manifest {
+                                        if !m.description.is_empty() {
+                                            ui.label(egui::RichText::new(&m.description).weak().small());
+                                        }
+                                        if !m.tags.is_empty() {
+                                            ui.label(egui::RichText::new(m.tags.join(" · ")).weak().small());
+                                        }
+                                    }
+                                });
+                                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                                    if ui.button(format!("{} {}", ph::ARROW_SQUARE_IN, crate::i18n::tr("win-insert"))).clicked() {
+                                        to_insert = Some(e.source.clone());
+                                    }
+                                });
                             });
                         });
-                    });
-                }
+                    }
+                });
             });
-        });
-    });
+        },
+    );
     // The tree is put back (or rebuilt when Refresh was pressed).
     if rescan {
         wc.parts.tree = Some(crate::parts_library::load_library_tree());
@@ -605,7 +615,7 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                 // THE NAME. It is edited in A BUFFER and goes into the document on Enter - it used to be written
                 // into the model on every letter, and every formula referring to it broke on the very first one.
                 let own = names[i].clone();
-                let taken = |nm: &str| !nm.eq_ignore_ascii_case(&own) && wc.project.name_owner(nm).is_some();
+                let taken = |nm: &str| nm != own && wc.project.name_owner(nm).is_some();
                 let ok = |nm: &str| qymcad_core::drivers::check_ident(nm).is_ok() && !taken(nm);
                 let id = egui::Id::new(("par_name", i));
                 let r = super::expr_field::name_field(ui, &*wc.project, id, &names[i], w_name, "w", &ok);
@@ -619,7 +629,7 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                 let nm = r.text.trim().to_string();
                 if !nm.is_empty() && !ok(&nm) {
                     refusal = Some(match wc.project.name_owner(&nm) {
-                        Some(o) if !nm.eq_ignore_ascii_case(&own) => {
+                        Some(o) if nm != own => {
                             // A GLOBAL PARAMETER HAS NO PATH, and giving it a "where this dimension sits" would be
                             // a lie: it is not a dimension and it sits nowhere.
                             let where_ = if o.path.is_empty() { crate::i18n::tr("par-owner-project") } else { o.path.clone() };
@@ -671,7 +681,7 @@ pub(crate) fn params_rows_ui(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui
                 .iter()
                 .enumerate()
                 .map(|(k, n)| {
-                    let dup = wc.project.named_dims.iter().filter(|m| m.name.eq_ignore_ascii_case(&n.name)).count() > 1;
+                    let dup = wc.project.named_dims.iter().filter(|m| m.name == n.name).count() > 1;
                     (k, n.name.clone(), wc.project.driver_path(&n.target), wc.project.named_dim_value(n), dup)
                 })
                 .filter(|(_, nm, path, _, _)| hit(nm, path))
@@ -833,7 +843,7 @@ pub(crate) fn params_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Contex
     let mut open = true;
     let mut dirty = false;
     let mut remove: Option<usize> = None;
-    egui::Window::new(format!("{} {}", ph::FUNCTION, crate::i18n::tr("win-params"))).open(&mut open).resizable(true).default_width(360.0).show(ctx, |ui| {
+    egui::Window::new(format!("{} {}", ph::FUNCTION, crate::i18n::tr("win-params"))).id(egui::Id::new("win_params")).open(&mut open).resizable(true).default_width(360.0).show(ctx, |ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("par-hint")).weak().small());
         ui.separator();
         // THE FIELD WIDTHS ARE ELASTIC. They used to be a hard 90 and 120 points: the window stretched and the
@@ -886,6 +896,9 @@ fn fresh_row(wc: &qymcad_ui_state::WinCtx, i: usize) -> bool {
 /// parameter window draws itself, and a test must pull the same handle rather than a similar one of its own.
 pub(crate) fn apply_param_edit(wc: &mut qymcad_ui_state::WinCtx) {
     qymcad_doc::params::settle(wc.project);
+    // THE SKETCHES SOLVED BY THE NEW VALUES ARE PART OF THE EDIT that changed them: solved after its step closed, they
+    // were a step of their own ("Edit"), and a change of two parameters took four presses of Ctrl+Z to undo
+    qymcad_ui_state::fold_into_last_step(wc.edits, wc.project);
     wc.ask.push(qymcad_ui_state::WinAsk::RegenerateAll); // the bodies rebuild associatively from the new parameters
 }
 
@@ -900,11 +913,12 @@ pub(crate) fn apply_param_edit(wc: &mut qymcad_ui_state::WinCtx) {
 /// switched nothing: inches were left to a separate piece of work later. An interface pretending to do what it
 /// cannot is worse than a missing item.
 pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
+    crate::gui::icon_themes::draw_icon_manager_window(ctx, wc);
     if !wc.win.is(WinKind::Settings) {
         return;
     }
     let mut open = wc.win.is(WinKind::Settings);
-    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).open(&mut open).default_width(620.0).default_height(460.0).show(ctx, |ui| {
+    egui::Window::new(format!("{} {}", ph::GEAR, crate::i18n::tr("win-settings"))).id(egui::Id::new("win_settings")).open(&mut open).default_width(620.0).default_height(460.0).show(ctx, |ui| {
         let mut q = std::mem::take(&mut wc.scheme.search);
         // the field's width does NOT come from the window's width - otherwise the window swells as text is typed (see the tree)
         ui.horizontal(|ui| {
@@ -991,38 +1005,18 @@ pub(crate) fn settings_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Cont
 ///
 /// Every row goes through `row`, and its key must appear in its section's `row_keys`: a guard checks that in
 /// both directions, which makes "present in the window but not searchable" inexpressible.
-/// WHO DRAWS, under the viewport's engine: the adapter by name, its drawing interface and whether it is a card or the
-/// processor, with the other adapters the system offered folded below. Reported behaviour: on Windows the program was
-/// "very slow" with "GPU (fast)" chosen, and nothing in the window said that the GPU there was Microsoft's software
-/// adapter - the processor; the one sentence saying so passed through the status line at the start.
-pub(crate) fn drawer_rows(ui: &mut egui::Ui, drawer: Option<&crate::diagnostics::Drawer>, offered: &[String], warning: egui::Color32) {
-    use crate::diagnostics::DrawerKind;
+/// DRAWING ON THE PROCESSOR, said as a warning under the rows of the graphics, with what to try. Reported behaviour: on
+/// Windows the program was "very slow" with "GPU (fast)" chosen, and nothing in the window said that the GPU there was
+/// Microsoft's software adapter - the processor; the one sentence saying so passed through the status line at the
+/// start. A card says nothing here: the row above names it.
+pub(crate) fn drawer_rows(ui: &mut egui::Ui, drawer: Option<&crate::diagnostics::Drawer>, warning: egui::Color32) {
     let tr = crate::i18n::tr;
-    let Some(d) = drawer else {
-        ui.label(egui::RichText::new(tr("settings-drawer-unknown")).weak().small());
-        return;
-    };
-    let kind = match d.kind {
-        DrawerKind::Card => tr("settings-drawer-card"),
-        DrawerKind::Virtual => tr("settings-drawer-virtual"),
-        DrawerKind::Processor => tr("settings-drawer-processor"),
-        DrawerKind::Other => tr("settings-drawer-other"),
-    };
+    let Some(d) = drawer.filter(|d| d.kind == crate::diagnostics::DrawerKind::Processor) else { return };
+    let kind = tr("settings-drawer-processor");
     let line = crate::i18n::trn("settings-drawer", &[("name", d.name.as_str()), ("interface", d.interface.as_str()), ("kind", kind.as_str())]);
-    if d.kind == DrawerKind::Processor {
-        ui.colored_label(warning, format!("{} {line}", ph::WARNING));
-        let hint = crate::i18n::trn("settings-drawer-processor-hint", &[("gpu", &tr("settings-engine-gpu")), ("cpu", &tr("settings-engine-cpu")), ("off", &tr("settings-msaa-off"))]);
-        ui.label(egui::RichText::new(hint).weak().small());
-    } else {
-        ui.label(egui::RichText::new(line).small());
-    }
-    if offered.len() > 1 {
-        egui::CollapsingHeader::new(egui::RichText::new(tr("settings-drawer-offered")).small()).id_salt("qym-drawer-offered").show(ui, |ui| {
-            for a in offered {
-                ui.label(egui::RichText::new(a).monospace().small().weak());
-            }
-        });
-    }
+    ui.colored_label(warning, format!("{} {line}", ph::WARNING));
+    let hint = crate::i18n::trn("settings-drawer-processor-hint", &[("gpu", &tr("settings-engine-gpu")), ("cpu", &tr("settings-engine-cpu")), ("off", &tr("settings-msaa-off"))]);
+    ui.label(egui::RichText::new(hint).weak().small());
 }
 
 pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut egui::Ui, ctx: &egui::Context, sec: super::settings_sections::SettingsSection, query: &str) {
@@ -1227,6 +1221,10 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                 ui.label(crate::i18n::tr("settings-scheme"));
                 scheme_section(wc, ui, ctx);
             }
+            if show("settings-icon-themes") {
+                ui.separator();
+                crate::gui::icon_themes::icon_theme_section(wc, ui, ctx);
+            }
         }
         Sec::Viewport => {
             // THE ORDER GOES FROM THE MAIN THING TO THE PARTICULAR, not however it happened to accumulate.
@@ -1419,9 +1417,10 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                     }
                 });
             }
-            // WHO DRAWS, last: read when the viewport is slow, not set like the rows above
-            if show("settings-engine") {
-                drawer_rows(ui, crate::diagnostics::drawer().as_ref(), &crate::diagnostics::adapters(), wc.scheme.pal.warning());
+            if show("settings-graphics-adapter") {
+                super::graphics_settings::rows(ui);
+                // DRAWING ON THE PROCESSOR is said as a warning, with what to try: the row above names the adapter
+                drawer_rows(ui, crate::diagnostics::drawer().as_ref(), wc.scheme.pal.warning());
             }
         }
         Sec::Sketch => {
@@ -1439,6 +1438,9 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
             }
             if show("settings-auto-constrain") {
                 ui.checkbox(&mut wc.set.auto_constrain, crate::i18n::tr("settings-auto-constrain")).on_hover_text(crate::i18n::tr("settings-auto-constrain-hint"));
+            }
+            if show("settings-point-numbers") {
+                ui.checkbox(&mut wc.set.show_point_numbers, crate::i18n::tr("settings-point-numbers")).on_hover_text(crate::i18n::tr("settings-point-numbers-hint"));
             }
             if show("settings-dim-name") {
                 ui.checkbox(&mut wc.set.dim_show_name, crate::i18n::tr("settings-dim-name")).on_hover_text(crate::i18n::tr("settings-dim-name-hint"));
@@ -1540,24 +1542,29 @@ pub(crate) fn save_template_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui:
     }
     let mut done = false;
     let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("file-save-as-template"))).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
-        ui.label(crate::i18n::tr("tpl-name"));
-        let r = ui.text_edit_singleline(&mut wc.win.tpl_name);
-        r.request_focus();
-        if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
-            done = true;
-        }
-        ui.label(egui::RichText::new(crate::i18n::tr("tpl-hint")).weak().small());
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.add_enabled(!wc.win.tpl_name.trim().is_empty(), egui::Button::new(crate::i18n::tr("confirm-yes"))).clicked() {
+    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("file-save-as-template")))
+        .id(egui::Id::new("win_save_as_template"))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label(crate::i18n::tr("tpl-name"));
+            let r = ui.text_edit_singleline(&mut wc.win.tpl_name);
+            r.request_focus();
+            if r.lost_focus() && ui.input(|i| i.key_pressed(egui::Key::Enter)) {
                 done = true;
             }
-            if ui.button(crate::i18n::tr("confirm-no")).clicked() {
-                cancel = true;
-            }
+            ui.label(egui::RichText::new(crate::i18n::tr("tpl-hint")).weak().small());
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui.add_enabled(!wc.win.tpl_name.trim().is_empty(), egui::Button::new(crate::i18n::tr("confirm-yes"))).clicked() {
+                    done = true;
+                }
+                if ui.button(crate::i18n::tr("confirm-no")).clicked() {
+                    cancel = true;
+                }
+            });
         });
-    });
     if done && !wc.win.tpl_name.trim().is_empty() {
         let name = wc.win.tpl_name.trim().to_string();
         crate::gui::save_as_template(&*wc.project, &mut *wc.status, &name);
@@ -1572,7 +1579,7 @@ pub(crate) fn doc_props_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
         return;
     }
     let mut open = wc.win.is(WinKind::DocProps);
-    egui::Window::new(format!("{} {}", ph::FILE_TEXT, crate::i18n::tr("doc-props-title"))).open(&mut open).resizable(true).default_width(420.0).show(ctx, |ui| {
+    egui::Window::new(format!("{} {}", ph::FILE_TEXT, crate::i18n::tr("doc-props-title"))).id(egui::Id::new("win_doc_props")).open(&mut open).resizable(true).default_width(420.0).show(ctx, |ui| {
         egui::Grid::new("doc_props").num_columns(2).spacing([8.0, 6.0]).show(ui, |ui| {
             ui.label(crate::i18n::tr("doc-props-name"));
             ui.text_edit_singleline(&mut wc.project.meta.title);
@@ -1693,6 +1700,7 @@ pub(crate) fn nav_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) 
         ui.painter().rect_filled(all, 0.0, backdrop);
     });
     egui::Window::new(format!("{}  {}", ph::WARNING, crate::i18n::tr("win-unsaved")))
+        .id(egui::Id::new("win_unsaved"))
         .order(egui::Order::Tooltip)
         .collapsible(false)
         .resizable(false)
@@ -1743,9 +1751,12 @@ pub(crate) fn nav_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) 
 pub(crate) fn mesh_quality_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
     let Some((format, target)) = *wc.mesh_export else { return };
     let mut choice: Option<Option<f64>> = None; // None = close; Some(Some(defl)) = export; Some(None) = cancel
-    egui::Window::new(crate::i18n::tr1("mesh-title", "format", crate::gui::mesh_entry(format).name())).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| {
+    egui::Window::new(crate::i18n::tr1("mesh-title", "format", crate::gui::mesh_entry(format).name()))
+        .id(egui::Id::new("win_mesh_quality"))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
             ui.label(crate::i18n::tr("stl-detail"));
             ui.add_space(4.0);
             for detail in qymcad_doc::export::MeshDetail::ALL {
@@ -1763,8 +1774,7 @@ pub(crate) fn mesh_quality_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::
             if ui.button(crate::i18n::tr("nav-cancel")).clicked() {
                 choice = Some(None);
             }
-        },
-    );
+        });
     match choice {
         Some(Some(defl)) => {
             *wc.mesh_export = None;
@@ -1782,38 +1792,43 @@ pub(crate) fn confirm_delete_popup(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui:
     let cascade = crate::gui::delete_cascade_names(&*wc.project, sel);
     let mut do_del = ctx.input(|i| i.key_pressed(egui::Key::Enter)); // Yes is the default
     let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
-    egui::Window::new(format!("{} {}", ph::TRASH, crate::i18n::tr("win-delete-q"))).collapsible(false).resizable(false).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(ctx, |ui| {
-        ui.label(crate::i18n::tr1("confirm-delete-what", "what", &what));
-        // WHAT STANDS ON IT, BY NAME, and a tick that decides its fate: by default it stays in the timeline,
-        // red with the reason, for the person to repair; ticked, it goes too. A general line saying "along with
-        // its dependants" is true but does not answer "what am I about to lose"; a list does, and it comes
-        // from the same core query as the lineage in the properties card.
-        if cascade.is_empty() {
-            ui.label(egui::RichText::new(crate::i18n::tr("confirm-cascade")).weak().small());
-        } else {
-            ui.checkbox(&mut wc.deferred.delete_dependents, crate::i18n::tr("confirm-with-dependents"));
-            if !wc.deferred.delete_dependents {
-                ui.label(egui::RichText::new(crate::i18n::tr("confirm-dependents-stay")).weak().small());
+    egui::Window::new(format!("{} {}", ph::TRASH, crate::i18n::tr("win-delete-q")))
+        .id(egui::Id::new("win_delete_question"))
+        .collapsible(false)
+        .resizable(false)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
+            ui.label(crate::i18n::tr1("confirm-delete-what", "what", &what));
+            // WHAT STANDS ON IT, BY NAME, and a tick that decides its fate: by default it stays in the timeline,
+            // red with the reason, for the person to repair; ticked, it goes too. A general line saying "along with
+            // its dependants" is true but does not answer "what am I about to lose"; a list does, and it comes
+            // from the same core query as the lineage in the properties card.
+            if cascade.is_empty() {
+                ui.label(egui::RichText::new(crate::i18n::tr("confirm-cascade")).weak().small());
+            } else {
+                ui.checkbox(&mut wc.deferred.delete_dependents, crate::i18n::tr("confirm-with-dependents"));
+                if !wc.deferred.delete_dependents {
+                    ui.label(egui::RichText::new(crate::i18n::tr("confirm-dependents-stay")).weak().small());
+                }
+                ui.label(egui::RichText::new(crate::i18n::tr1("confirm-cascade-n", "n", &cascade.len().to_string())).weak().small());
+                for n in cascade.iter().take(8) {
+                    ui.label(egui::RichText::new(format!("  · {n}")).weak().small());
+                }
+                if cascade.len() > 8 {
+                    ui.label(egui::RichText::new(crate::i18n::tr1("confirm-cascade-more", "n", &(cascade.len() - 8).to_string())).weak().small());
+                }
             }
-            ui.label(egui::RichText::new(crate::i18n::tr1("confirm-cascade-n", "n", &cascade.len().to_string())).weak().small());
-            for n in cascade.iter().take(8) {
-                ui.label(egui::RichText::new(format!("  · {n}")).weak().small());
-            }
-            if cascade.len() > 8 {
-                ui.label(egui::RichText::new(crate::i18n::tr1("confirm-cascade-more", "n", &(cascade.len() - 8).to_string())).weak().small());
-            }
-        }
-        ui.add_space(6.0);
-        ui.horizontal(|ui| {
-            if ui.add(egui::Button::new(crate::i18n::tr("confirm-yes")).min_size(egui::vec2(64.0, 0.0))).clicked() {
-                do_del = true;
-            }
-            if ui.add(egui::Button::new(crate::i18n::tr("confirm-no")).min_size(egui::vec2(64.0, 0.0))).clicked() {
-                cancel = true;
-            }
-            ui.label(egui::RichText::new(crate::i18n::tr("confirm-keys")).weak().small());
+            ui.add_space(6.0);
+            ui.horizontal(|ui| {
+                if ui.add(egui::Button::new(crate::i18n::tr("confirm-yes")).min_size(egui::vec2(64.0, 0.0))).clicked() {
+                    do_del = true;
+                }
+                if ui.add(egui::Button::new(crate::i18n::tr("confirm-no")).min_size(egui::vec2(64.0, 0.0))).clicked() {
+                    cancel = true;
+                }
+                ui.label(egui::RichText::new(crate::i18n::tr("confirm-keys")).weak().small());
+            });
         });
-    });
     if do_del {
         wc.deferred.delete = None;
         wc.ask.push(qymcad_ui_state::WinAsk::Delete(sel, std::mem::take(&mut wc.deferred.delete_dependents)));

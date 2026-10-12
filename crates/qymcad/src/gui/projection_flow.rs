@@ -126,9 +126,10 @@ mod tests {
         assert!(movable.is_empty(), "the driven points must drop out of the move, and it holds {movable:?}");
     }
 
-    /// DELETING a driven entity removes the projection WHOLE — no half-alive record is left.
+    /// DELETING one side of a projected face outline removes that side and its record, and the other sides stay
+    /// projected, each tied to its own edge - as a projected curve is in every CAD.
     #[test]
-    fn deleting_projected_geometry_removes_the_whole_projection() {
+    fn deleting_a_projected_side_leaves_the_other_sides_projected() {
         let mut app = App::default();
         let (si, _body) = part_with_sketch_on_face(&mut app);
         qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 6);
@@ -140,8 +141,10 @@ mod tests {
         app.tools.sel_sk.items = vec![(1u8, one)];
         qymcad_ui_state::delete_sketch_sel(&mut app.project, &mut app.regen, &mut app.tools.sel_sk, &mut app.status, si);
 
-        assert!(app.project.sketches[si].projections.is_empty(), "the projection must go whole");
-        assert!(app.project.sketches[si].projected_entities().is_empty(), "no driven entities are left");
+        let s = &app.project.sketches[si];
+        let driven = s.projected_entities();
+        assert!(!s.entities.iter().any(|e| e.id == one) && !driven.contains(&one), "the side deleted is still in the sketch or projected");
+        assert!(driven.len() == 3 && s.projections.len() == 3, "the other sides of the outline must stay projected, one record each: {} curves in {} records", driven.len(), s.projections.len());
     }
 
     /// Driven geometry IS VISIBLY driven — otherwise it is not clear why it does not drag.
@@ -162,12 +165,12 @@ mod tests {
         assert!(dense(crate::gui::sketch_source::SKETCH).contains(&dense("draw_projection_overlay(")), "the layer must be called from the sketch frame");
         // EVERY function of that name. Once the layer was lifted out of `App` a one-line wrapper stayed
         // behind under the same name, and it is the one `find` hits first: reading only there says the
-        // lost-source branch is gone when it has merely moved next door.
-        let lost = src.match_indices("fn draw_projection_overlay").any(|(a, _)| {
+        // construction branch is gone when it has merely moved next door.
+        let construction = src.match_indices("fn draw_projection_overlay").any(|(a, _)| {
             let rest = &src[a..];
             let end = ["\n    pub(super) fn ", "\n    pub(crate) fn ", "\n    fn ", "\npub(crate) fn ", "\nfn "].iter().filter_map(|m| rest.find(m)).min().unwrap_or(rest.len());
-            rest[..end].contains("proj.lost")
+            rest[..end].contains("sketch_driven_construction")
         });
-        assert!(lost, "a lost source must be visible separately");
+        assert!(construction, "a projected curve made construction must be visible separately");
     }
 }

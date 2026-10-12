@@ -90,32 +90,26 @@ pub fn live_picks(project: &qymcad_core::model::Project, body: Id, r: &qymcad_co
     picked.into_iter().filter(|d| live.contains(d)).collect()
 }
 
-/// WHAT A REOPENED ROUNDING OR CHAMFER HAS TAKEN: the edges to light, and the description they came from, if any.
-pub struct Taken {
-    pub edges: std::collections::HashSet<u32>,
-    pub described: Option<qymcad_core::refs::Query>,
-}
-
-/// THE EDGES OF A REFERENCE AS A COMMAND REOPENS THEM. A pick hands back its picks; a description ("where the front
-/// meets the left", "every edge of this face") hands back the edges it finds now, and itself, so Enter keeps it.
-/// Reported behaviour: a plate's four vertical edges rounded by a description, reopened from the tree - the picks of a
-/// description are none, none is "every edge", and Enter wrote that over the description: every edge of the plate
-/// rounded, the row reading "all of them".
-pub fn reopen_edges(project: &Project, body: Id, r: &qymcad_core::refs::Ref) -> Taken {
+/// THE EDGES OF A REOPENED FILLET, CHAMFER OR PATCH, picked again the way they were recorded.
+///
+/// A list is a list of edges and goes through [`live_picks`]. A description ("every edge of this face") holds the
+/// number of a FACE: taken as an edge it was dropped as unknown - the pick came out empty, which the kernel reads as
+/// every edge - or, with no edges known yet, handed on as an edge that does not exist. So the description goes back
+/// into the selection, and its edges, resolved on the live body, are what is highlighted. Reported behaviour: a
+/// fillet of the top face of a cylinder reopened with no edge highlighted and both rims in the preview.
+///
+/// The edges of a body just opened are taken from its live B-rep first, for either kind: the corners of a variable
+/// radius are named by them too, and without them a reopened fillet lost the field of its corner and Enter wrote an
+/// empty table back.
+fn restore_edge_picks(pc: &mut qymcad_ui_state::PartCtx, src: Id, r: &qymcad_core::refs::Ref) {
+    qymcad_ui_state::ensure_model_edges(&mut pc.rebuild(), src);
     if r.query.is_pick_list() {
-        return Taken { edges: live_picks(project, body, r, false), described: None };
+        pc.gsel.described = None;
+        pc.gsel.edges = live_picks(&*pc.project, src, r, false);
+        return;
     }
-    let found = project.resolve_edge_refs(body, r, "ref-what-fillet-edge").unwrap_or_default();
-    Taken { edges: found.into_iter().collect(), described: Some(r.query.clone()) }
-}
-
-/// THE REFERENCE A ROUNDING OR CHAMFER IS WRITTEN WITH on Enter: the description still held, with the count the
-/// feature asked for, or the edges picked.
-pub fn edges_ref(described: &Option<qymcad_core::refs::Query>, picks: &[u32], was: &qymcad_core::refs::Ref) -> qymcad_core::refs::Ref {
-    match described {
-        Some(q) => qymcad_core::refs::Ref { query: q.clone(), expect: was.expect, hint: was.hint },
-        None => qymcad_core::refs::Ref::picks(picks),
-    }
+    pc.gsel.edges = pc.project.resolve_edge_refs(src, r, "ref-what-fillet-edge").map(|v| v.into_iter().collect()).unwrap_or_default();
+    pc.gsel.described = Some(r.query.clone());
 }
 
 /// The raw text of a command field (an expression or a number), by key.
@@ -937,14 +931,14 @@ pub fn apply_edge_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) -> Option<Id> 
     // IT IS RECORDED THE WAY IT WAS PICKED. If there is a description ("every edge of this face", "every
     // edge parallel to this one"), the description goes in: it survives an edit that adds elements.
     // Otherwise the list of picked ids goes in.
-    let described: Option<qymcad_core::refs::Ref> = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many);
+    let described = pc.gsel.described_ref();
     let last = if cmd == 4 {
         let r = qymcad_ui_state::cmd_val(pc.cmd, "radius");
         // THE "VERTEX -> RADIUS" TABLE. It works with a description and with a list alike: the radius is
         // set at a point rather than along an edge, so it needs no direction of an edge.
         let at = fillet_vertex_table(pc.cmd);
         if !at.is_empty() {
-            let q = described.clone().unwrap_or_else(|| qymcad_core::refs::Ref::picks(&edges));
+            let q = pc.gsel.recorded(&edges);
             pc.project.add_fillet_at_vertices(body, r, q, at)
         } else if let Some(q) = described {
             pc.project.add_fillet_ref(body, r, q)
@@ -1042,7 +1036,7 @@ pub fn apply_offset_surface_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id>
         return None;
     }
     let picks: Vec<u32> = pc.gsel.faces.iter().copied().collect();
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     let body = pc.project.add_offset_surface(src, q, qymcad_ui_state::cmd_val(pc.cmd, "dist"));
     store_cmd_exprs(pc.cmd, pc.project, body);
     Some(body)
@@ -1058,7 +1052,7 @@ pub fn apply_face_copy_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let picks: Vec<u32> = pc.gsel.faces.iter().copied().collect();
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     Some(pc.project.add_face_copy(src, q))
 }
 
@@ -1099,7 +1093,7 @@ pub fn apply_patch_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
         return None;
     }
     let picks: Vec<u32> = pc.gsel.edges.iter().copied().collect();
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     Some(pc.project.add_patch(src, q, pc.opts.patch_tangent))
 }
 
@@ -1662,7 +1656,7 @@ pub fn apply_surface_replace_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id
             return None;
         }
     }
-    let q = pc.gsel.described.clone().map(qymcad_core::refs::Ref::many).unwrap_or_else(|| qymcad_core::refs::Ref::picks(&picks));
+    let q = pc.gsel.recorded(&picks);
     Some(pc.project.add_surface_replace(src, q, surface))
 }
 
@@ -2615,7 +2609,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
         None => (Vec::new(), Vec::new()),
     };
     let edges: Vec<u32> = pc.gsel.edges.iter().copied().collect();
-    let described = pc.gsel.described.clone(); // a rounding or chamfer reopened from a description keeps it
+    let picked_edges = pc.gsel.recorded(&edges);
     let faces_set: Vec<u32> = pc.gsel.faces.iter().copied().collect(); // the shell: a multiple selection by id
     let shell_side = pc.opts.shell_side; // the shell: which way the wall goes
     let draft_neutral = pc.draft.neutral; // the draft: the neutral face, 0 means unset
@@ -2783,12 +2777,12 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
             }
             FeatureKind::Fillet { radius, edges: e, at_vertices, .. } => {
                 *radius = r;
-                *e = edges_ref(&described, &edges, e); // a description is kept; a hand-picked set is a query of ids
+                *e = picked_edges.clone();
                 *at_vertices = vtable; // the "vertex -> radius" table
             }
             FeatureKind::Chamfer { dist: d, edges: e, mode, d2, flip, ref_face, .. } => {
                 *d = dist;
-                *e = edges_ref(&described, &edges, e); // a description is kept; a hand-picked set is a query of ids
+                *e = if ch_mode != qymcad_core::feature::ChamferMode::Symmetric && !edges.is_empty() { qymcad_core::refs::Ref::picks(&edges) } else { picked_edges.clone() };
                 *mode = ch_mode; // the mode: symmetric, two distances, or a leg plus an angle
                 *d2 = ch_d2;
                 *flip = ch_flip;
@@ -2839,7 +2833,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
             }
             FeatureKind::Patch { edges: e, tangent, .. } => {
                 if !edges.is_empty() {
-                    *e = qymcad_core::refs::Ref::picks(&edges); // a hand-picked boundary is a query built from ids
+                    *e = picked_edges.clone();
                 }
                 *tangent = patch_tangent;
             }
@@ -3134,6 +3128,7 @@ pub fn begin_contour_pick(pc: &mut qymcad_ui_state::PartCtx, slot: qymcad_ui_sta
     };
     *pc.picking = qymcad_ui_state::Picking::Contour(slot);
     pc.cmd.sketch = Some(si);
+    *pc.sel = qymcad_ui_state::Sel::Sketch(si); // the picker shows the selected sketch, as `enter_contour_reselect` says
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore); // the view is borrowed while the contour is picked and restored on the way out
     *pc.mode_3d = false;
     pc.view.initialized = false;
@@ -3147,9 +3142,12 @@ pub fn begin_contour_pick(pc: &mut qymcad_ui_state::PartCtx, slot: qymcad_ui_sta
 }
 
 pub fn enter_contour_reselect(pc: &mut qymcad_ui_state::PartCtx) {
-    if !matches!(pc.armed.cmd_kind(), 1 | 3) || pc.cmd.sketch.is_none() {
+    let Some(si) = pc.cmd.sketch.filter(|_| matches!(pc.armed.cmd_kind(), 1 | 3)) else {
         return;
-    }
+    };
+    // THE PICKER SHOWS THE SELECTED SKETCH: its regions, the ones taken lit. Reopened for editing, a feature has its
+    // node selected - the row of the tree stays on it - and the picker opened over it showed no region at all.
+    *pc.sel = qymcad_ui_state::Sel::Sketch(si);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore); // the view is borrowed while contours are picked and restored on the way out
     *pc.mode_3d = false; // back to the flat half-sketcher: a click on a contour changes the set of profiles
     pc.view.initialized = false;
@@ -3407,10 +3405,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 4, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc); // pull up the edges of the body (this clears the selection), then restore it
-            qymcad_ui_state::ensure_model_edges(&mut pc.rebuild(), src); // an opened file holds no edges until a rebuild
-            let taken = reopen_edges(&*pc.project, src, edges);
-            pc.gsel.edges = taken.edges;
-            pc.gsel.described = taken.described;
+            restore_edge_picks(pc, src, edges);
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-radius", "radius", radius, 0.05, 1000.0)];
             // THE TABLE OF VERTICES - one field per vertex, each at its own place. The reference is
             // resolved against the live body: the name of a vertex is derived from its edges and survives
@@ -3429,10 +3424,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 5, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc);
-            qymcad_ui_state::ensure_model_edges(&mut pc.rebuild(), src); // an opened file holds no edges until a rebuild
-            let taken = reopen_edges(&*pc.project, src, edges);
-            pc.gsel.edges = taken.edges;
-            pc.gsel.described = taken.described;
+            restore_edge_picks(pc, src, edges);
             pc.chamfer.mode = mode; // restore the mode, the side and the second parameter
             pc.chamfer.flip = flip;
             pc.chamfer.ref_face = ref_face; // restore the hand-picked reference face
@@ -3505,7 +3497,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.open(pc.armed, 32, was_3d);
             qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, src);
             refresh_edges(pc);
-            pc.gsel.edges = live_picks(&*pc.project, src, edges, false);
+            restore_edge_picks(pc, src, edges);
             pc.opts.patch_tangent = tangent;
             pc.cmd.params = vec![];
         }
@@ -4178,10 +4170,10 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
     // EDITING a fillet or a chamfer: the edges always belong to the feature's SOURCE BODY (a selection fix
     // put `sel` back on the node being edited, and `qymcad_ui_state::selected_body` then returned the OUTPUT body, so the edge
     // selection was cleared and the highlight vanished). The source of the feature being edited is aimed at
-    // explicitly.
+    // explicitly. A patch the same: its output is a sheet of its own, and a reopened patch highlighted no edge.
     let edit_src = pc.cmd.edit.and_then(|fid| {
         pc.project.timeline.iter().find(|n| n.id == fid).and_then(|n| match n.kind {
-            qymcad_core::feature::FeatureKind::Fillet { src, .. } | qymcad_core::feature::FeatureKind::Chamfer { src, .. } => Some(src),
+            qymcad_core::feature::FeatureKind::Fillet { src, .. } | qymcad_core::feature::FeatureKind::Chamfer { src, .. } | qymcad_core::feature::FeatureKind::Patch { src, .. } => Some(src),
             _ => None,
         })
     });
@@ -5817,13 +5809,13 @@ pub fn create_panel_common(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) 
     use qymcad_core::feature::{BasePlane, SketchPlane};
     let _ = (BasePlane::XY, SketchPlane::default);
     // Datums are COMMANDS: an options bar, fields at the geometry, click-picked references, a preview, Enter and Esc
-    if qymcad_ui_state::icon_tool(ui, ph::SELECTION_ALL, &qymcad_i18n::tr("g-datum-plane-hint"), bc.armed.cmd_kind() == 20) {
+    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::DatumPlane, &qymcad_i18n::tr("g-datum-plane-hint"), bc.armed.cmd_kind() == 20) {
         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 20, qymcad_ui_state::BarAsk::FeatCmd(20)));
     }
-    if qymcad_ui_state::icon_tool(ui, ph::DOT, &qymcad_i18n::tr("g-datum-point-hint"), bc.armed.cmd_kind() == 21) {
+    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::DatumPoint, &qymcad_i18n::tr("g-datum-point-hint"), bc.armed.cmd_kind() == 21) {
         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 21, qymcad_ui_state::BarAsk::FeatCmd(21)));
     }
-    if qymcad_ui_state::icon_tool(ui, ph::LINE_SEGMENT, &qymcad_i18n::tr("g-datum-axis-hint"), bc.armed.cmd_kind() == 22) {
+    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::DatumAxis, &qymcad_i18n::tr("g-datum-axis-hint"), bc.armed.cmd_kind() == 22) {
         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 22, qymcad_ui_state::BarAsk::FeatCmd(22)));
     }
 }
@@ -5831,7 +5823,7 @@ pub fn create_panel_common(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) 
 /// The one doorway into the properties panel.
 /// The Sketch button — ONLY in the Part workbench (in an assembly a sketch is inert, see `create_panel_common`).
 pub fn create_panel_sketch_button(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
-    if qymcad_ui_state::icon_tool(ui, ph::PENCIL_SIMPLE, &qymcad_i18n::tr("g-sketch-pick-hint"), bc.picking.is_sketch_plane()) {
+    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchPickPlane, &qymcad_i18n::tr("g-sketch-pick-hint"), bc.picking.is_sketch_plane()) {
         bc.ask.push(qymcad_ui_state::BarAsk::ToggleSketchPick);
     }
 }
@@ -5931,117 +5923,115 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     // "Finish" lives in the breadcrumbs (one place for it); here there are only sketch tools
                     // --- Creation ---
                     cat(ui, &qymcad_i18n::tr("tb-group-create"));
-                    if qymcad_ui_state::icon_tool(ui, ph::CURSOR, &qymcad_i18n::tr("tb-select-hint"), qymcad_ui_state::in_select_mode(bc.armed)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchSelect, &qymcad_i18n::tr("tb-select-hint"), qymcad_ui_state::in_select_mode(bc.armed)) {
                         bc.ask.push(qymcad_ui_state::BarAsk::SketchSelectMode);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::DOT, &qymcad_i18n::tr("tb-point-hint"), bc.armed.draw_kind() == 5) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchPoint, &qymcad_i18n::tr("tb-point-hint"), bc.armed.draw_kind() == 5) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 5, qymcad_ui_state::BarAsk::SketchTool(5)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::LINE_SEGMENT, &qymcad_i18n::tr("tb-line-hint"), bc.armed.draw_kind() == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchLine, &qymcad_i18n::tr("tb-line-hint"), bc.armed.draw_kind() == 1) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 1, qymcad_ui_state::BarAsk::SketchTool(1)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::RECTANGLE, &qymcad_i18n::tr("tb-rect-hint"), bc.armed.draw_kind() == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchRect, &qymcad_i18n::tr("tb-rect-hint"), bc.armed.draw_kind() == 2) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 2, qymcad_ui_state::BarAsk::SketchTool(2)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::CIRCLE, &qymcad_i18n::tr("tb-circle-hint"), bc.armed.draw_kind() == 3) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchCircle, &qymcad_i18n::tr("tb-circle-hint"), bc.armed.draw_kind() == 3) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 3, qymcad_ui_state::BarAsk::SketchTool(3)));
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Circle3, &qymcad_i18n::tr("tb-circle-3pt"), bc.armed.draw_kind() == 10) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchCircle3Pt, &qymcad_i18n::tr("tb-circle-3pt"), bc.armed.draw_kind() == 10) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 10, qymcad_ui_state::BarAsk::SketchTool(10)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::PATH, &qymcad_i18n::tr("tb-arc-hint"), bc.armed.draw_kind() == 4) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchArc, &qymcad_i18n::tr("tb-arc-hint"), bc.armed.draw_kind() == 4) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 4, qymcad_ui_state::BarAsk::SketchTool(4)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::HEXAGON, &qymcad_i18n::tr("tb-polygon-hint"), bc.armed.draw_kind() == 6) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchPolygon, &qymcad_i18n::tr("tb-polygon-hint"), bc.armed.draw_kind() == 6) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 6, qymcad_ui_state::BarAsk::SketchTool(6)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::PILL, &qymcad_i18n::tr("tb-slot-hint"), bc.armed.draw_kind() == 7) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchSlot, &qymcad_i18n::tr("tb-slot-hint"), bc.armed.draw_kind() == 7) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 7, qymcad_ui_state::BarAsk::SketchTool(7)));
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Ellipse, &qymcad_i18n::tr("tb-ellipse-hint"), bc.armed.draw_kind() == 8) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchEllipse, &qymcad_i18n::tr("tb-ellipse-hint"), bc.armed.draw_kind() == 8) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 8, qymcad_ui_state::BarAsk::SketchTool(8)));
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Spline, &qymcad_i18n::tr("tb-spline-hint"), bc.armed.draw_kind() == 9) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchSpline, &qymcad_i18n::tr("tb-spline-hint"), bc.armed.draw_kind() == 9) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 9, qymcad_ui_state::BarAsk::SketchTool(9)));
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Text, &qymcad_i18n::tr("tb-text-hint"), bc.armed.draw_kind() == 11) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchText, &qymcad_i18n::tr("tb-text-hint"), bc.armed.draw_kind() == 11) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.draw_kind() == 11, qymcad_ui_state::BarAsk::SketchTool(11)));
                     }
                     // --- The line kind ---
                     cat(ui, &qymcad_i18n::tr("tb-type"));
                     // WHAT IS SELECTED IS TURNED, as the construction toggle of the professional systems does; with nothing selected
                     // the button switches what is drawn next
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Construction, &qymcad_i18n::tr("tb-construction-hint"), bc.tool.construction)
-                        && !qymcad_ui_state::construction_selected(qymcad_ui_state::editing_in!(bc), &*bc.sel_sk, &*bc.sketch_ses)
-                    {
-                        bc.tool.construction = !bc.tool.construction;
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchConstruction, &qymcad_i18n::tr("tb-construction-hint"), bc.tool.construction) {
+                        qymcad_ui_state::construction_toggle(qymcad_ui_state::editing_in!(bc), &*bc.sel_sk, &*bc.sketch_ses, &mut bc.tool.construction);
                     }
                     // --- Editing and replication (over the selected entities) ---
                     cat(ui, &qymcad_i18n::tr("tb-group-edit"));
-                    if qymcad_ui_state::icon_tool(ui, ph::TRASH, &qymcad_i18n::tr("tb-delete-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Delete)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchDelete, &qymcad_i18n::tr("tb-delete-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Delete)) {
                         qymcad_ui_state::modify_button(qymcad_ui_state::editing_in!(bc), &mut qymcad_ui_state::tools_in!(bc), *bc.sk_pat, &*bc.tool_prefs, qymcad_ui_state::EditTool::Delete);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Mirror, &qymcad_i18n::tr("tb-mirror-sketch-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchMirror, &qymcad_i18n::tr("tb-mirror-sketch-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror)) {
                         qymcad_ui_state::modify_button(qymcad_ui_state::editing_in!(bc), &mut qymcad_ui_state::tools_in!(bc), *bc.sk_pat, &*bc.tool_prefs, qymcad_ui_state::EditTool::Mirror);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::ArrayLin, &qymcad_i18n::tr("tb-lin-array-hint"), bc.armed.pat_op() == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchArrayLinear, &qymcad_i18n::tr("tb-lin-array-hint"), bc.armed.pat_op() == 1) {
                         start_pattern(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, 1);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::ArrayCirc, &qymcad_i18n::tr("tb-circ-array-hint"), bc.armed.pat_op() == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchArrayCircular, &qymcad_i18n::tr("tb-circ-array-hint"), bc.armed.pat_op() == 2) {
                         start_pattern(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, 2);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::PROJECTOR_SCREEN, &qymcad_i18n::tr("tb-project-body-hint"), bc.armed.click_op() == 6) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchProject, &qymcad_i18n::tr("tb-project-body-hint"), bc.armed.click_op() == 6) {
                         qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 6);
                         *bc.status = qymcad_i18n::tr("tb-project-hint");
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Fillet, &qymcad_i18n::tr("tb-fillet-sketch-hint"), bc.armed.click_op() == 4) {
-                        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 4);
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchFillet, &qymcad_i18n::tr("tb-fillet-sketch-hint"), bc.armed.click_op() == 4) {
+                        qymcad_ui_state::start_corner_tool(bc, 4);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Chamfer, &qymcad_i18n::tr("tb-chamfer-sketch-hint"), bc.armed.click_op() == 5) {
-                        qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 5);
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchChamfer, &qymcad_i18n::tr("tb-chamfer-sketch-hint"), bc.armed.click_op() == 5) {
+                        qymcad_ui_state::start_corner_tool(bc, 5);
                     }
                     // "FILLET ALL" IS A TOOL IN HAND like its neighbours: pressed, it puts down what is held and takes what is
                     // selected or waits for a shape; pressed again, it is put down
                     let fillet_all_held = bc.picking.fillet_all() || bc.corner.at.is_some_and(|(_, pid, _)| pid == 0);
-                    if qymcad_ui_state::icon_tool(ui, ph::BOUNDING_BOX, &qymcad_i18n::tr("tb-fillet-all-hint"), fillet_all_held) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchFilletAll, &qymcad_i18n::tr("tb-fillet-all-hint"), fillet_all_held) {
                         qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(bc));
                         if !fillet_all_held {
-                            qymcad_ui_state::fillet_all_corners(&mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status, &*bc.tool_prefs);
+                            qymcad_ui_state::fillet_all_corners(&*bc.project, &mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status, &*bc.tool_prefs);
                         }
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Offset, &qymcad_i18n::tr("tb-offset-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchOffset, &qymcad_i18n::tr("tb-offset-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset)) {
                         qymcad_ui_state::modify_button(qymcad_ui_state::editing_in!(bc), &mut qymcad_ui_state::tools_in!(bc), *bc.sk_pat, &*bc.tool_prefs, qymcad_ui_state::EditTool::Offset);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::ARROWS_OUT_CARDINAL, &qymcad_i18n::tr("tb-move-hint"), bc.armed.move_op() == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchMove, &qymcad_i18n::tr("tb-move-hint"), bc.armed.move_op() == 1) {
                         start_move_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, 1);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::COPY, &qymcad_i18n::tr("tb-copy-hint"), bc.armed.move_op() == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchCopy, &qymcad_i18n::tr("tb-copy-hint"), bc.armed.move_op() == 2) {
                         start_move_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, 2);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::ARROWS_CLOCKWISE, &qymcad_i18n::tr("tb-rotate-hint"), bc.armed.move_op() == 3) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchRotate, &qymcad_i18n::tr("tb-rotate-hint"), bc.armed.move_op() == 3) {
                         start_move_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.status, 3);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Trim, &qymcad_i18n::tr("tb-trim-hint"), bc.armed.click_op() == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchTrim, &qymcad_i18n::tr("tb-trim-hint"), bc.armed.click_op() == 1) {
                         qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 1);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Extend, &qymcad_i18n::tr("tb-extend-hint"), bc.armed.click_op() == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchExtend, &qymcad_i18n::tr("tb-extend-hint"), bc.armed.click_op() == 2) {
                         qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 2);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::Break, &qymcad_i18n::tr("tb-break-hint"), bc.armed.click_op() == 3) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchBreak, &qymcad_i18n::tr("tb-break-hint"), bc.armed.click_op() == 3) {
                         qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, 3);
                     }
                     // --- Dimensions ---
                     cat(ui, &qymcad_i18n::tr("tb-group-dim"));
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::DimLin, &qymcad_i18n::tr("tb-dim-hint"), bc.armed.dim_kind() == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchDimLinear, &qymcad_i18n::tr("tb-dim-hint"), bc.armed.dim_kind() == 1) {
                         qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sel, *bc.sketch_ses, &mut *bc.status, 1);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::DimAng, &qymcad_i18n::tr("tb-dim-angle-hint"), bc.armed.dim_kind() == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchDimAngle, &qymcad_i18n::tr("tb-dim-angle-hint"), bc.armed.dim_kind() == 2) {
                         qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sel, *bc.sketch_ses, &mut *bc.status, 2);
                     }
-                    if qymcad_render::sym_button(ui, qymcad_ui_state::Gly::DimRad, &qymcad_i18n::tr("tb-dim-radius-hint"), bc.armed.dim_kind() == 3) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchDimRadius, &qymcad_i18n::tr("tb-dim-radius-hint"), bc.armed.dim_kind() == 3) {
                         qymcad_ui_state::set_dim_tool(&mut qymcad_ui_state::tools_in!(bc), &mut *bc.mode_3d, &*bc.project, *bc.sel, *bc.sketch_ses, &mut *bc.status, 3);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::RULER, &qymcad_i18n::tr("tb-measure-hint"), bc.armed.measuring()) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchMeasure, &qymcad_i18n::tr("tb-measure-hint"), bc.armed.measuring()) {
                         let on = !bc.armed.measuring();
                         // THROUGH THE DOOR, in the order every other tool uses. Setting the flag here and asking
                         // for "back to selection" afterwards turned the tool on and then straight off again.
@@ -6055,24 +6045,41 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     }
                     // --- Constraints ---
                     cat(ui, &qymcad_i18n::tr("tb-group-constraints"));
-                    let cons: [(qymcad_ui_state::Gly, u8, &str); 12] = [
-                        (qymcad_ui_state::Gly::Coincident, 0, &qymcad_i18n::tr("con-coincident-hint")),
-                        (qymcad_ui_state::Gly::Horiz, 1, &qymcad_i18n::tr("con-horizontal-hint")),
-                        (qymcad_ui_state::Gly::Vert, 2, &qymcad_i18n::tr("con-vertical-hint")),
-                        (qymcad_ui_state::Gly::Parallel, 3, &qymcad_i18n::tr("con-parallel-hint")),
-                        (qymcad_ui_state::Gly::Perp, 4, &qymcad_i18n::tr("con-perpendicular-hint")),
-                        (qymcad_ui_state::Gly::Equal, 5, &qymcad_i18n::tr("con-equal")),
-                        (qymcad_ui_state::Gly::Collinear, 7, &qymcad_i18n::tr("con-collinear-hint")),
-                        (qymcad_ui_state::Gly::Concentric, 8, &qymcad_i18n::tr("con-concentric-hint")),
-                        (qymcad_ui_state::Gly::Tangent, 9, &qymcad_i18n::tr("con-tangent-hint")),
-                        (qymcad_ui_state::Gly::Symmetric, 10, &qymcad_i18n::tr("con-symmetric-hint")),
-                        (qymcad_ui_state::Gly::Midpoint, 11, &qymcad_i18n::tr("con-midpoint-hint")),
-                        (qymcad_ui_state::Gly::Fix, 6, &qymcad_i18n::tr("con-fix")),
-                    ];
-                    for (g, code, tip) in cons {
-                        if qymcad_render::sym_button(ui, g, tip, bc.sel_sk.constraint == Some(code)) {
-                            bc.ask.push(qymcad_ui_state::BarAsk::Constraint(code));
-                        }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintCoincident, &qymcad_i18n::tr("con-coincident-hint"), bc.sel_sk.constraint == Some(0)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(0));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintHorizontal, &qymcad_i18n::tr("con-horizontal-hint"), bc.sel_sk.constraint == Some(1)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(1));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintVertical, &qymcad_i18n::tr("con-vertical-hint"), bc.sel_sk.constraint == Some(2)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(2));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintParallel, &qymcad_i18n::tr("con-parallel-hint"), bc.sel_sk.constraint == Some(3)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(3));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintPerpendicular, &qymcad_i18n::tr("con-perpendicular-hint"), bc.sel_sk.constraint == Some(4)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(4));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintEqual, &qymcad_i18n::tr("con-equal"), bc.sel_sk.constraint == Some(5)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(5));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintCollinear, &qymcad_i18n::tr("con-collinear-hint"), bc.sel_sk.constraint == Some(7)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(7));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintConcentric, &qymcad_i18n::tr("con-concentric-hint"), bc.sel_sk.constraint == Some(8)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(8));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintTangent, &qymcad_i18n::tr("con-tangent-hint"), bc.sel_sk.constraint == Some(9)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(9));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintSymmetric, &qymcad_i18n::tr("con-symmetric-hint"), bc.sel_sk.constraint == Some(10)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(10));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintMidpoint, &qymcad_i18n::tr("con-midpoint-hint"), bc.sel_sk.constraint == Some(11)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(11));
+                    }
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::ConstraintLock, &qymcad_i18n::tr("con-fix"), bc.sel_sk.constraint == Some(6)) {
+                        bc.ask.push(qymcad_ui_state::BarAsk::Constraint(6));
                     }
                 }
                 qymcad_ui_state::Workbench::Part => {
@@ -6086,109 +6093,109 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     create_panel_common(bc, ui);
                     // --- From a sketch ---
                     cat(ui, &qymcad_i18n::tr("tb-group-sketch3d"));
-                    if qymcad_ui_state::icon_tool(ui, ph::CUBE, &qymcad_i18n::tr("tb-extrude-hint"), tool_is_taken(bc, 1)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartExtrude, &qymcad_i18n::tr("tb-extrude-hint"), tool_is_taken(bc, 1)) {
                         bc.feat.op = 0;
                         bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 1), qymcad_ui_state::BarAsk::FeatCmd(1)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::ARROWS_CLOCKWISE, &qymcad_i18n::tr("tb-revolve-hint"), tool_is_taken(bc, 3)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartRevolve, &qymcad_i18n::tr("tb-revolve-hint"), tool_is_taken(bc, 3)) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 3), qymcad_ui_state::BarAsk::FeatCmd(3)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::PATH, &qymcad_i18n::tr("tb-sweep-hint"), tool_is_taken(bc, 8)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSweep, &qymcad_i18n::tr("tb-sweep-hint"), tool_is_taken(bc, 8)) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 8), qymcad_ui_state::BarAsk::FeatCmd(8)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::STACK, &qymcad_i18n::tr("tb-loft-hint"), tool_is_taken(bc, 9)) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartLoft, &qymcad_i18n::tr("tb-loft-hint"), tool_is_taken(bc, 9)) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(tool_is_taken(bc, 9), qymcad_ui_state::BarAsk::FeatCmd(9)));
                     }
                     // --- The 3D primitives (a command: sizes at the geometry + a preview + Enter/Esc) ---
                     cat(ui, &qymcad_i18n::tr("tb-group-prim"));
-                    if qymcad_ui_state::icon_tool(ui, ph::CUBE_TRANSPARENT, &qymcad_i18n::tr("tb-box-hint"), bc.armed.cmd_kind() == 10) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartBox, &qymcad_i18n::tr("tb-box-hint"), bc.armed.cmd_kind() == 10) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 10, qymcad_ui_state::BarAsk::PrimCmd(10)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::CYLINDER, &qymcad_i18n::tr("tb-cylinder-hint"), bc.armed.cmd_kind() == 11) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartCylinder, &qymcad_i18n::tr("tb-cylinder-hint"), bc.armed.cmd_kind() == 11) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 11, qymcad_ui_state::BarAsk::PrimCmd(11)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::SPHERE, &qymcad_i18n::tr("tb-sphere-hint"), bc.armed.cmd_kind() == 12) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSphere, &qymcad_i18n::tr("tb-sphere-hint"), bc.armed.cmd_kind() == 12) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 12, qymcad_ui_state::BarAsk::PrimCmd(12)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::TRAFFIC_CONE, &qymcad_i18n::tr("tb-cone-hint"), bc.armed.cmd_kind() == 13) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartCone, &qymcad_i18n::tr("tb-cone-hint"), bc.armed.cmd_kind() == 13) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 13, qymcad_ui_state::BarAsk::PrimCmd(13)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::CIRCLE_NOTCH, &qymcad_i18n::tr("tb-torus-hint"), bc.armed.cmd_kind() == 14) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartTorus, &qymcad_i18n::tr("tb-torus-hint"), bc.armed.cmd_kind() == 14) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 14, qymcad_ui_state::BarAsk::PrimCmd(14)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::HEXAGON, &qymcad_i18n::tr("tb-prism-hint"), bc.armed.cmd_kind() == 15) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartPrism, &qymcad_i18n::tr("tb-prism-hint"), bc.armed.cmd_kind() == 15) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 15, qymcad_ui_state::BarAsk::PrimCmd(15)));
                     }
                     // --- Operations on a body ---
                     cat(ui, &qymcad_i18n::tr("tb-body"));
-                    if qymcad_ui_state::icon_tool(ui, ph::CIRCLE_HALF, &qymcad_i18n::tr("tb-fillet-body-hint"), bc.armed.cmd_kind() == 4) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartFillet, &qymcad_i18n::tr("tb-fillet-body-hint"), bc.armed.cmd_kind() == 4) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 4, qymcad_ui_state::BarAsk::FeatCmd(4)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::TRIANGLE, &qymcad_i18n::tr("tb-chamfer-body-hint"), bc.armed.cmd_kind() == 5) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartChamfer, &qymcad_i18n::tr("tb-chamfer-body-hint"), bc.armed.cmd_kind() == 5) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 5, qymcad_ui_state::BarAsk::FeatCmd(5)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::BOUNDING_BOX, &qymcad_i18n::tr("tb-shell-hint"), bc.armed.cmd_kind() == 6) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartShell, &qymcad_i18n::tr("tb-shell-hint"), bc.armed.cmd_kind() == 6) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 6, qymcad_ui_state::BarAsk::FeatCmd(6)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::SQUARE_HALF, &qymcad_i18n::tr("tb-section-hint-bar"), bc.section.pick || bc.section.plane.is_some()) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSection, &qymcad_i18n::tr("tb-section-hint-bar"), bc.section.pick || bc.section.plane.is_some()) {
                         bc.ask.push(qymcad_ui_state::BarAsk::ToggleSection);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::CIRCLE, &qymcad_i18n::tr("tb-hole-hint"), bc.armed.cmd_kind() == 7) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartHole, &qymcad_i18n::tr("tb-hole-hint"), bc.armed.cmd_kind() == 7) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 7, qymcad_ui_state::BarAsk::FeatCmd(7)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::ANGLE, &qymcad_i18n::tr("tb-draft-hint"), bc.armed.cmd_kind() == 23) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartDraft, &qymcad_i18n::tr("tb-draft-hint"), bc.armed.cmd_kind() == 23) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 23, qymcad_ui_state::BarAsk::FeatCmd(23)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::ARROWS_OUT_LINE_VERTICAL, &qymcad_i18n::tr("tb-push-face-hint"), bc.armed.cmd_kind() == 25) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartPushFace, &qymcad_i18n::tr("tb-push-face-hint"), bc.armed.cmd_kind() == 25) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 25, qymcad_ui_state::BarAsk::FeatCmd(25)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::ERASER, &qymcad_i18n::tr("tb-remove-face-hint"), bc.armed.cmd_kind() == 26) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartRemoveFace, &qymcad_i18n::tr("tb-remove-face-hint"), bc.armed.cmd_kind() == 26) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 26, qymcad_ui_state::BarAsk::FeatCmd(26)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::STACK_SIMPLE, &qymcad_i18n::tr("tb-thicken-hint"), bc.armed.cmd_kind() == 28) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartThicken, &qymcad_i18n::tr("tb-thicken-hint"), bc.armed.cmd_kind() == 28) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 28, qymcad_ui_state::BarAsk::FeatCmd(28)));
                     }
                     // the bridge from the parametric side into the design layer: a face becomes a surface
-                    if qymcad_ui_state::icon_tool(ui, ph::COPY_SIMPLE, &qymcad_i18n::tr("tb-face-copy-hint"), bc.armed.cmd_kind() == 30) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartFaceCopy, &qymcad_i18n::tr("tb-face-copy-hint"), bc.armed.cmd_kind() == 30) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 30, qymcad_ui_state::BarAsk::FeatCmd(30)));
                     }
                     // a face taken out as a sheet moved along its normal - the offset surface of the professional systems
-                    if qymcad_ui_state::icon_tool(ui, ph::SELECTION_FOREGROUND, &qymcad_i18n::tr("tb-offset-surface-hint"), bc.armed.cmd_kind() == 36) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartOffsetSurface, &qymcad_i18n::tr("tb-offset-surface-hint"), bc.armed.cmd_kind() == 36) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 36, qymcad_ui_state::BarAsk::FeatCmd(36)));
                     }
                     // the far end of that bridge: a surface goes back into the body
-                    if qymcad_ui_state::icon_tool(ui, ph::SWAP, &qymcad_i18n::tr("tb-surface-replace-hint"), bc.armed.cmd_kind() == 31) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSurfaceReplace, &qymcad_i18n::tr("tb-surface-replace-hint"), bc.armed.cmd_kind() == 31) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 31, qymcad_ui_state::BarAsk::FeatCmd(31)));
                     }
                     // the first shape the body did not have: a surface built from the edges
-                    if qymcad_ui_state::icon_tool(ui, ph::BANDAIDS, &qymcad_i18n::tr("tb-patch-hint"), bc.armed.cmd_kind() == 32) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartPatch, &qymcad_i18n::tr("tb-patch-hint"), bc.armed.cmd_kind() == 32) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 32, qymcad_ui_state::BarAsk::FeatCmd(32)));
                     }
                     // pieces of surface become one, and a shell that closes becomes a body
-                    if qymcad_ui_state::icon_tool(ui, ph::INTERSECT_SQUARE, &qymcad_i18n::tr("tb-stitch-hint"), bc.armed.cmd_kind() == 33) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartStitch, &qymcad_i18n::tr("tb-stitch-hint"), bc.armed.cmd_kind() == 33) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 33, qymcad_ui_state::BarAsk::FeatCmd(33)));
                     }
                     // trim a surface with the neighbouring geometry
-                    if qymcad_ui_state::icon_tool(ui, ph::SCISSORS, &qymcad_i18n::tr("tb-trim-surface-hint"), bc.armed.cmd_kind() == 34) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartTrimSurface, &qymcad_i18n::tr("tb-trim-surface-hint"), bc.armed.cmd_kind() == 34) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 34, qymcad_ui_state::BarAsk::FeatCmd(34)));
                     }
                     // an imported mesh becomes a body a person can work on
-                    if qymcad_ui_state::icon_tool(ui, ph::MAGIC_WAND, &qymcad_i18n::tr("tb-recognise-hint"), bc.armed.cmd_kind() == 35) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartRecognise, &qymcad_i18n::tr("tb-recognise-hint"), bc.armed.cmd_kind() == 35) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 35, qymcad_ui_state::BarAsk::FeatCmd(35)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::SQUARE_SPLIT_HORIZONTAL, &qymcad_i18n::tr("tb-split-body-hint"), bc.armed.cmd_kind() == 27) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSplitBody, &qymcad_i18n::tr("tb-split-body-hint"), bc.armed.cmd_kind() == 27) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 27, qymcad_ui_state::BarAsk::FeatCmd(27)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::RULER, &qymcad_i18n::tr("tb-measure3d-hint"), bc.m3.on) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartMeasure, &qymcad_i18n::tr("tb-measure3d-hint"), bc.m3.on) {
                         bc.ask.push(qymcad_ui_state::BarAsk::ToggleMeasure3d);
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::GRID_FOUR, &qymcad_i18n::tr("tb-split-face-hint"), bc.armed.cmd_kind() == 29) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSplitFace, &qymcad_i18n::tr("tb-split-face-hint"), bc.armed.cmd_kind() == 29) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 29, qymcad_ui_state::BarAsk::FeatCmd(29)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::SPIRAL, &qymcad_i18n::tr("tb-thread-hint"), bc.armed.cmd_kind() == 24) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartThread, &qymcad_i18n::tr("tb-thread-hint"), bc.armed.cmd_kind() == 24) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 24, qymcad_ui_state::BarAsk::FeatCmd(24)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::INTERSECT, &qymcad_i18n::tr("tb-bool-bodies-hint"), bc.boolean.pick.is_some()) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartBooleanBodies, &qymcad_i18n::tr("tb-bool-bodies-hint"), bc.boolean.pick.is_some()) {
                         if bc.boolean.pick.is_some() {
                             // pressed again with the tool in hand: put down, as every tool button does
                             bc.ask.push(qymcad_ui_state::BarAsk::CancelAllTools(qymcad_ui_state::Then::Nothing));
@@ -6203,13 +6210,13 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     // patterns (an assembly tool), these are BODY patterns. What that looked like was
                     // duplicates - and it was worse than duplicates, because two buttons that looked alike did
                     // different things. The component ones moved into the Assembly, where they belong.
-                    if qymcad_ui_state::icon_tool(ui, ph::FLIP_HORIZONTAL, &qymcad_i18n::tr("tb-mirror-body-hint"), bc.armed.cmd_kind() == 16) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartMirror, &qymcad_i18n::tr("tb-mirror-body-hint"), bc.armed.cmd_kind() == 16) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 16, qymcad_ui_state::BarAsk::FeatCmd(16)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::DOTS_THREE_OUTLINE, &qymcad_i18n::tr("tb-lin-array-body-hint"), bc.armed.cmd_kind() == 17) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartArrayLinear, &qymcad_i18n::tr("tb-lin-array-body-hint"), bc.armed.cmd_kind() == 17) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 17, qymcad_ui_state::BarAsk::FeatCmd(17)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::CIRCLES_THREE, &qymcad_i18n::tr("tb-circ-array-body-hint"), bc.armed.cmd_kind() == 18) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartArrayCircular, &qymcad_i18n::tr("tb-circ-array-body-hint"), bc.armed.cmd_kind() == 18) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 18, qymcad_ui_state::BarAsk::FeatCmd(18)));
                     }
                 }
@@ -6221,30 +6228,30 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     cat(ui, &qymcad_i18n::tr("tb-group-create"));
                     create_panel_common(bc, ui); // the datums; a sketch is inert in an assembly, so it was removed
                                                  // A NEW PART OR SUBASSEMBLY IS ONE STEP OF UNDO of its own name
-                    if qymcad_ui_state::icon_tool(ui, ph::CUBE, &qymcad_i18n::tr("tb-new-part-hint"), false) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyNewPart, &qymcad_i18n::tr("tb-new-part-hint"), false) {
                         qymcad_ui_state::begin_edit(bc.edits, bc.project, qymcad_i18n::tr("hotkey-assembly-n"));
                         let id = bc.project.add_part(bc.project.free_part_name());
                         qymcad_ui_state::close_edit(bc.edits, bc.project);
                         bc.ask.push(qymcad_ui_state::BarAsk::EnterComponent(id));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::STACK, &qymcad_i18n::tr("tb-new-subassembly-hint"), false) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyNewSubassembly, &qymcad_i18n::tr("tb-new-subassembly-hint"), false) {
                         qymcad_ui_state::begin_edit(bc.edits, bc.project, qymcad_i18n::tr("hotkey-assembly-u"));
                         let id = bc.project.add_assembly(qymcad_i18n::tr1("node-assembly-n", "n", &bc.project.components.len().to_string()));
                         qymcad_ui_state::close_edit(bc.edits, bc.project);
                         bc.ask.push(qymcad_ui_state::BarAsk::EnterComponent(id));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::FILE, &qymcad_i18n::tr("tb-insert-component-hint"), false) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyInsertComponent, &qymcad_i18n::tr("tb-insert-component-hint"), false) {
                         bc.ask.push(qymcad_ui_state::BarAsk::Import(qymcad_ui_state::Want::Part));
                     }
                     // COMPONENT PATTERNS ARE AN ASSEMBLY TOOL. They used to sit in the PART workbench, where
                     // there are no components, and there they duplicated the look of the body patterns.
-                    if qymcad_ui_state::icon_tool(ui, ph::DOTS_THREE_OUTLINE, &qymcad_i18n::tr("tb-comp-lin-array-hint"), bc.carr.mode == 1) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArrayLinear, &qymcad_i18n::tr("tb-comp-lin-array-hint"), bc.carr.mode == 1) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.carr.mode == 1, qymcad_ui_state::BarAsk::CompArray(1)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::CIRCLES_THREE, &qymcad_i18n::tr("tb-comp-circ-array-hint"), bc.carr.mode == 2) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyArrayCircular, &qymcad_i18n::tr("tb-comp-circ-array-hint"), bc.carr.mode == 2) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.carr.mode == 2, qymcad_ui_state::BarAsk::CompArray(2)));
                     }
-                    if qymcad_ui_state::icon_tool(ui, ph::FLIP_HORIZONTAL, &qymcad_i18n::tr("tb-mirror-part-hint"), bc.mirror.in_hand()) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyMirror, &qymcad_i18n::tr("tb-mirror-part-hint"), bc.mirror.in_hand()) {
                         // both a PART and a SUBASSEMBLY are accepted (the whole subtree is mirrored); with the tool in
                         // hand the press goes to the door as it is, which puts it down
                         let src = bc.mirror.part.or_else(|| match *bc.sel {
@@ -6260,7 +6267,7 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     // and the copy could not release the other tools from here, so it pushed the request and
                     // armed the section straight after. The request runs AFTER the frame and clears exactly
                     // that: switching the section ON through this button did nothing at all.
-                    if qymcad_ui_state::icon_tool(ui, ph::SQUARE_HALF, &qymcad_i18n::tr("tb-section-hint"), bc.section.pick || bc.section.plane.is_some()) {
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblySection, &qymcad_i18n::tr("tb-section-hint"), bc.section.pick || bc.section.plane.is_some()) {
                         bc.ask.push(qymcad_ui_state::BarAsk::ToggleSection);
                     }
                     // --- The mates: buttons per mate kind, as in the sketcher. Clicking a kind starts the
@@ -6272,27 +6279,27 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                         // per kind, while the kind was changed by a combo box in that same bar anyway: the
                         // choice was made twice and took up the whole category.
                         let tip = qymcad_i18n::tr1("jt-joint-tip", "kind", &qymcad_i18n::tr(bc.joint.new_kind.label()));
-                        if qymcad_ui_state::icon_tool(ui, ph::MAGNET, &tip, bc.joint.pick_faces) {
+                        if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyJoint, &tip, bc.joint.pick_faces) {
                             bc.ask.push(qymcad_ui_state::take_or_drop(bc.joint.pick_faces, qymcad_ui_state::BarAsk::JointPick));
                         }
                         // the Ground tool: a click on a part fixes or releases it.
-                        if qymcad_ui_state::icon_tool(ui, ph::ANCHOR, &qymcad_i18n::tr("tb-ground-hint"), bc.joint.ground_pick) {
+                        if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyGround, &qymcad_i18n::tr("tb-ground-hint"), bc.joint.ground_pick) {
                             bc.ask.push(qymcad_ui_state::BarAsk::GroundPick);
                         }
                         // Group: fasten a set of parts to one another without pairwise joints.
-                        if qymcad_ui_state::icon_tool(ui, ph::SELECTION_ALL, &qymcad_i18n::tr("j-group-tip"), bc.joint.group_pick.is_some()) {
+                        if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyGroup, &qymcad_i18n::tr("j-group-tip"), bc.joint.group_pick.is_some()) {
                             bc.ask.push(qymcad_ui_state::BarAsk::GroupPick);
                         }
                         // Width: place a part midway between two walls.
-                        if qymcad_ui_state::icon_tool(ui, ph::ARROWS_OUT_LINE_HORIZONTAL, &qymcad_i18n::tr("j-width-tip"), bc.joint.width_pick.is_some()) {
+                        if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyWidth, &qymcad_i18n::tr("j-width-tip"), bc.joint.width_pick.is_some()) {
                             bc.ask.push(qymcad_ui_state::BarAsk::WidthPick);
                         }
                         // Tangent: lay a cylinder onto a plane.
-                        if qymcad_ui_state::icon_tool(ui, ph::CIRCLE_HALF_TILT, &qymcad_i18n::tr("j-tangent-tip"), bc.joint.tangent_pick.is_some()) {
+                        if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyTangent, &qymcad_i18n::tr("j-tangent-tip"), bc.joint.tangent_pick.is_some()) {
                             bc.ask.push(qymcad_ui_state::BarAsk::TangentPick);
                         }
                         // Relation: tie the degrees of freedom of two mates together.
-                        if qymcad_ui_state::icon_tool(ui, ph::GEAR_SIX, &qymcad_i18n::tr("j-relation-tip"), bc.joint.relation_pick.is_some()) {
+                        if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::AssemblyRelation, &qymcad_i18n::tr("j-relation-tip"), bc.joint.relation_pick.is_some()) {
                             bc.ask.push(qymcad_ui_state::BarAsk::RelationPick);
                         }
                     }
@@ -6382,14 +6389,13 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
     }
     // another tool taken puts the copy down: one thing in hand at a time
     if !matches!(*bc.armed, qymcad_ui_state::Armed::None) {
-        (bc.clip.geom_pending, bc.clip.geom_place) = (None, None);
+        bc.clip.drop_geom();
     }
     let waiting = match (bc.clip.geom_pending.as_ref(), bc.clip.geom_place) {
         (Some((_, true)), _) => Some(("menu-cut", "g-cut-base-point")),
         (Some((_, false)), _) => Some(("tool-copy", "g-copy-base-point")),
-        (None, Some(true)) => Some(("tool-copy", "g-insert-click")),
-        (None, Some(false)) => Some(("win-insert", "g-insert-click")),
-        (None, None) => None,
+        (None, true) => Some(("win-insert", "g-insert-click")),
+        (None, false) => None,
     };
     if let Some((name, ask)) = waiting {
         let mut cancel = false;
@@ -6406,7 +6412,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
         // a point is clicked, not typed: Enter before it has nothing to do
         qymcad_ui_state::enter_not_ready(&ui.ctx().clone(), bc.status, &qymcad_i18n::tr(ask));
         if cancel {
-            (bc.clip.geom_pending, bc.clip.geom_place) = (None, None);
+            bc.clip.drop_geom();
             *bc.status = qymcad_i18n::tr(if name == "win-insert" { "in-insert-cancelled" } else { "in-copy-cancelled" });
         }
         return;
@@ -6469,6 +6475,10 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
         // ONLY the parameters of the active tool or operation
         if bc.armed.draw_kind() != 0 {
             ui.checkbox(&mut bc.tool.construction, qymcad_i18n::tr("opt-construction-short")).on_hover_text(qymcad_i18n::tr("opt-construction-hint"));
+            let mut free = bc.tool.ties == qymcad_ui_state::Ties::Free;
+            if ui.checkbox(&mut free, qymcad_i18n::tr("opt-no-ties-short")).on_hover_text(qymcad_i18n::tr("opt-no-ties-hint")).changed() {
+                bc.tool.ties = if free { qymcad_ui_state::Ties::Free } else { qymcad_ui_state::Ties::Laid };
+            }
             if bc.armed.draw_kind() == 11 {
                 ui.separator();
                 ui.label(qymcad_i18n::tr("tool-text"));
@@ -6572,7 +6582,9 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 let corner_hi = bc
                     .corner
                     .at
-                    .and_then(|(si, pid, ch)| (pid != 0).then(|| qymcad_ui_state::corner_limit_in(&*bc.project, si, pid, ch, bc.tool_prefs.fillet_by)).flatten())
+                    .and_then(|(si, pid, ch)| {
+                        (pid != 0).then(|| qymcad_ui_state::corner_limit_in(&*bc.project, si, pid, qymcad_ui_state::corner_tool(ch, bc.tool_prefs), bc.tool_prefs.fillet_by)).flatten()
+                    })
                     .map_or(10000.0, |l| l * (1.0 - 1e-9));
                 bc.tool_prefs.fillet = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
@@ -6594,8 +6606,13 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     bc.tool.proj_face = true;
                 }
             }
+            if bc.armed.click_op() == 2 {
+                ui.checkbox(&mut bc.tool_prefs.extend_both, qymcad_i18n::tr("opt-extend-both")).on_hover_text(qymcad_i18n::tr("opt-extend-both-hint"));
+            }
             let h = match bc.armed.click_op() {
                 1 => &qymcad_i18n::tr("opt-trim-hint"),
+                // the line held, the tool says what it waits for next
+                2 if bc.tool.extend.is_some() => &qymcad_i18n::tr("opt-extend-to-hint"),
                 2 => &qymcad_i18n::tr("opt-extend-hint"),
                 3 => &qymcad_i18n::tr("opt-break-hint"),
                 4 => &qymcad_i18n::tr("opt-fillet-hint"),
@@ -6615,19 +6632,21 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                 qymcad_ui_state::NumFormat { lo: 2.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
             ) as u32;
             if bc.armed.pat_op() == 1 {
+                ui.label(qymcad_i18n::tr("opt-step-x"));
                 bc.sk_pat.dx = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                     ui,
                     "skpat_dx",
                     bc.sk_pat.dx,
-                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                 );
+                ui.label(qymcad_i18n::tr("opt-step-y"));
                 bc.sk_pat.dy = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                     ui,
                     "skpat_dy",
                     bc.sk_pat.dy,
-                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                    qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                 );
                 ui.separator();
                 ui.label(qymcad_i18n::tr("opt-rows"));
@@ -6639,22 +6658,25 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     qymcad_ui_state::NumFormat { lo: 1.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
                 ) as u32;
                 if bc.sk_pat.count2 > 1 {
+                    ui.label(qymcad_i18n::tr("opt-row-step-x"));
                     bc.sk_pat.dx2 = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dx2",
                         bc.sk_pat.dx2,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
+                    ui.label(qymcad_i18n::tr("opt-row-step-y"));
                     bc.sk_pat.dy2 = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dy2",
                         bc.sk_pat.dy2,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
                 }
             } else {
+                ui.label(qymcad_i18n::tr("cmd-angle"));
                 bc.sk_pat.angle = qymcad_ui_state::num_or_expr(
                     &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                     ui,
@@ -6699,6 +6721,10 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     }
                 }
                 Some(qymcad_ui_state::EditTool::Offset) => {
+                    // the box at the copy types the distance: the bar shows it rather than its own old text over it
+                    if bc.sel_sk.offset.at.is_some() && !ui.memory(|m| m.has_focus(qymcad_ui_state::bar_field_id("sk_offset"))) {
+                        bc.bar_exprs.remove("sk_offset");
+                    }
                     ui.label(qymcad_i18n::tr("opt-distance"));
                     bc.tool_prefs.offset = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
@@ -6717,19 +6743,21 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                         bc.sk_pat.count as f64,
                         qymcad_ui_state::NumFormat { lo: 2.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
                     ) as u32;
+                    ui.label(qymcad_i18n::tr("opt-step-x"));
                     bc.sk_pat.dx = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dx",
                         bc.sk_pat.dx,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
+                    ui.label(qymcad_i18n::tr("opt-step-y"));
                     bc.sk_pat.dy = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,
                         "skpat_dy",
                         bc.sk_pat.dy,
-                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: "", nonzero: false },
+                        qymcad_ui_state::NumFormat { lo: -100000.0, hi: 100000.0, integer: false, suffix: &qymcad_i18n::tr("unit-mm-suffix"), nonzero: false },
                     );
                 }
                 Some(qymcad_ui_state::EditTool::CircularPattern) => {
@@ -6741,6 +6769,7 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                         bc.sk_pat.count as f64,
                         qymcad_ui_state::NumFormat { lo: 2.0, hi: 200.0, integer: true, suffix: "", nonzero: false },
                     ) as u32;
+                    ui.label(qymcad_i18n::tr("cmd-angle"));
                     bc.sk_pat.angle = qymcad_ui_state::num_or_expr(
                         &mut qymcad_ui_state::ExprBarCtx { bar_exprs: &mut *bc.bar_exprs, project: &*bc.project, scheme: &*bc.scheme },
                         ui,

@@ -6,8 +6,8 @@
 use std::process::ExitCode;
 
 pub use gui::session::{
-    pos2, vec2, Chooser, Datum, Document, FaceKinds, Feature, Gizmo, Inspection, JointInfo, Key, Kept, Kind, Machine, Modifiers, Parameter, Part, Picture, PointerButton, Pos2, Rect, Session,
-    SketchInfo, SketchPick, Solid, Vec2, Widget,
+    pos2, vec2, Badge, Chooser, Datum, Document, FaceKinds, Feature, Gizmo, Inspection, JointInfo, Key, Kept, Kind, Machine, Modifiers, Parameter, Part, Picture, PointerButton, Pos2, Rect, Session,
+    SketchInfo, SketchPick, SnapGlyph, Solid, Vec2, Widget,
 };
 
 /// START THE PROGRAM: open the window and run it until it closes; a start that fails is told to the person.
@@ -39,6 +39,9 @@ mod packaging_macos;
 // The Linux packaging script, read rather than run: what it must carry is decided by the dependency tree.
 #[cfg(test)]
 mod packaging_linux;
+// Every crate's manifest: the licence of the tree, stated so that `cargo metadata` gives it rather than null.
+#[cfg(test)]
+mod packaging_licence;
 // The AUR package description: three versions that must agree, and a checksum that must be real.
 #[cfg(test)]
 mod packaging_aur;
@@ -65,6 +68,7 @@ mod site_books;
 mod app_identity;
 mod build_info;
 mod crash;
+mod safe_graphics;
 mod diagnostics;
 /// THE DICTIONARY LIVES IN ITS OWN CRATE NOW. Re-exported under the old name because 2159 places say
 /// `crate::i18n::tr`, and rewriting every one of them would change no meaning at all.
@@ -81,3 +85,4 @@ mod viewport_gpu;
 mod start_notice;
 mod system;
 mod wide_signature_ratchet;
+mod window_identity_guard;

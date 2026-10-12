@@ -68,41 +68,44 @@ fn only_features_mentioning_the_parameter_get_dirty() {
     assert!(!dirty.contains(&b), "the feature whose expression uses W*2 is left alone: {dirty:?}");
 }
 
-/// A name is found whatever its case, as `eval` reads it. The rebuild compares `param_map`, whose keys are
-/// lower-cased, and asks for the dependents of `h`. Reported behaviour: a parameter `H` used as `H` in an extrude
-/// height left the extrude at its old height when `H` changed; a lower-case name worked.
+/// `H` and `h` are two parameters: editing `H` raises the feature written over `H` and leaves the one over `h`.
+///
+/// Reported behaviour: a parameter H changed from 20 to 40 under an extrusion of height H, the properties said 40,
+/// the body stayed 20 high; with the name h the body was rebuilt. The rebuild asked by the key of `param_map`,
+/// which was lower-cased, and `h` is not mentioned in a formula written `H`.
 #[test]
-fn a_parameter_is_found_whatever_its_case() {
+fn a_parameter_in_capitals_raises_what_is_written_over_it() {
     let mut p = Project::default();
     p.new_document();
-    p.parameters.push(Param { name: "H".into(), expr: "10".into(), value: 10.0 });
-    p.parameters.push(Param { name: "Width".into(), expr: "20".into(), value: 20.0 });
+    p.parameters.push(Param { name: "H".into(), expr: "20".into(), value: 20.0 });
+    p.parameters.push(Param { name: "h".into(), expr: "30".into(), value: 30.0 });
     let (s1, _) = line_sketch(&mut p, "Sketch 1");
-    let a = p.add_extrude_multi(s1, Vec::new(), 10.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());
+    let a = p.add_extrude_multi(s1, Vec::new(), 20.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());
     let (s2, _) = line_sketch(&mut p, "Sketch 2");
-    let b = p.add_extrude_multi(s2, Vec::new(), 20.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());
+    let b = p.add_extrude_multi(s2, Vec::new(), 30.0, qymcad_core::feature::Reach::Forward, 0.0, Vec::new());
     p.set_feat_dim(a, "height", "H".into());
-    p.set_feat_dim(b, "height", "Width*2".into());
-    let clean = |p: &mut Project| {
-        for n in p.timeline.iter_mut() {
-            n.dirty = false;
-        }
-    };
-    let dirty = |p: &Project| -> Vec<u64> { p.timeline.iter().filter(|n| n.dirty).map(|n| n.id).collect() };
+    p.set_feat_dim(b, "height", "h".into());
+    assert_eq!(p.param_map().get("H"), Some(&20.0), "the parameter H is not in the scope under its own name");
+    assert_eq!(p.param_map().get("h"), Some(&30.0), "the parameter h is not in the scope under its own name");
+    for n in p.timeline.iter_mut() {
+        n.dirty = false;
+    }
 
-    clean(&mut p);
-    p.mark_param_dependents_dirty_for("h");
-    assert!(dirty(&p).contains(&a), "the feature whose expression is H is not marked by h: {:?}", dirty(&p));
-    assert!(!dirty(&p).contains(&b), "the feature whose expression is Width*2 is marked by h: {:?}", dirty(&p));
+    for key in p.param_map().into_keys().filter(|k| k == "H") {
+        p.mark_param_dependents_dirty_for(&key);
+    }
+    let dirty: Vec<u64> = p.timeline.iter().filter(|n| n.dirty).map(|n| n.id).collect();
+    assert!(dirty.contains(&a), "the feature whose expression uses H is not marked: {dirty:?}");
+    assert!(!dirty.contains(&b), "the feature whose expression uses h is marked by an edit of H: {dirty:?}");
+}
 
-    clean(&mut p);
-    p.mark_param_dependents_dirty_for("width");
-    assert!(dirty(&p).contains(&b), "the feature whose expression is Width*2 is not marked by width: {:?}", dirty(&p));
-    assert!(!dirty(&p).contains(&a), "the feature whose expression is H is marked by width: {:?}", dirty(&p));
-
-    // the boundary of a name holds in any case: `h` is not found inside `Height`
-    assert!(!qymcad_core::expr::mentions("Height/2", "h"), "h is not part of Height");
-    assert!(qymcad_core::expr::mentions("2*WIDTH", "width"));
+/// A name is mentioned only in its own case: `h` is not `H`.
+#[test]
+fn a_parameter_name_is_matched_in_its_own_case() {
+    use qymcad_core::expr::mentions;
+    assert!(mentions("H*2", "H"));
+    assert!(!mentions("H*2", "h"));
+    assert!(!mentions("h*2", "H"));
 }
 
 /// The name of a parameter must not be found inside another name: `L` is not mentioned in `Length`.

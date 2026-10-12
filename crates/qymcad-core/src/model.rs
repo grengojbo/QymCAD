@@ -353,6 +353,19 @@ pub struct Project {
     /// their bodies are neither built nor shown. `None` builds everything. Saved with the project.
     #[serde(default)]
     pub rollback: Option<usize>,
+    /// THE REBUILDS OF SKETCHES HELD BACK while a tool lays many elements (`Project::batch`). Not a fact of the
+    /// document.
+    #[serde(skip)]
+    pub held_rebuilds: HeldRebuilds,
+}
+
+/// The sketches whose rebuild is held back, and how deep the batches go.
+#[derive(Clone, Debug, Default)]
+pub struct HeldRebuilds {
+    depth: u32,
+    sketches: std::collections::BTreeSet<usize>,
+    /// the sketches whose solve is held back too (`Project::solve_sketch_held`)
+    solves: std::collections::BTreeSet<usize>,
 }
 
 /// Definition of a datum point. `at` is derived whenever the definition is not `Manual`.
@@ -601,35 +614,181 @@ pub struct Sketch {
     /// origin). Invariant to body placement: u*X + v*Y travels with the frame (see `sketch_frame`).
     #[serde(default)]
     pub origin_uv: Option<Point2>,
+    /// THE PARTS THE LAST SOLVE DID NOT REACH: its time ran out before them (`solver::Budget`), and they stand as
+    /// they stood until the next solve. Not a fact of the drawing - it is not written to a file.
+    #[serde(skip)]
+    pub left_unsolved: usize,
+    /// WHAT A DRAG UNDER WAY KEEPS from one frame to the next (`drag::DragSession`). Not a fact of the drawing.
+    #[serde(skip)]
+    pub(crate) drag_session: Option<Box<drag::DragSession>>,
+    /// WHAT ITS LOOPS WERE MADE FROM (`round::Laid`): a rebuild makes again only the loops round what changed since.
+    /// Not a fact of the drawing.
+    #[serde(skip)]
+    pub(crate) laid: Option<Box<round::Laid>>,
+    /// WHAT ITS CHECKS REMEMBER OF EACH PART (`solver::PartMemo`): a change counts again the parts it touched. Not a
+    /// fact of the drawing.
+    #[serde(skip)]
+    pub(crate) checked: CheckMemo,
+    /// THE PLACES OF THE POINTS AND OF THE ENTITIES BY ID (`Sketch::point`, `Sketch::entity`). Not a fact of the drawing.
+    #[serde(skip)]
+    pub(crate) point_at: IdPlaces,
+    #[serde(skip)]
+    pub(crate) entity_at: IdPlaces,
+}
+
+/// THE PLACE OF EACH ID IN A LIST, a table that checks itself: a place found is taken only where the list still holds
+/// that id there; an id not found puts in the tail the list has grown by, and failing that makes the table again. Asked through `Sketch::point` and
+/// `Sketch::entity`, it is right however the lists were changed; looked along the lists, a tool laying an element at
+/// every corner of 2 000 rectangles looked through them some ten times a corner - 7 s in a release build. Copied, a
+/// sketch makes its own anew.
+#[derive(Default)]
+pub(crate) struct IdPlaces(std::sync::Mutex<std::collections::HashMap<Id, usize>>);
+
+/// THE MEMORY OF THE CHECKS OF A SKETCH, asked through `&Project` (`sketch_checks`, `sketch_conflicts`). Copied, a
+/// sketch starts its own empty; printed, it shows nothing - as `IdPlaces`.
+#[derive(Default)]
+pub(crate) struct CheckMemo(std::sync::Mutex<crate::solver::PartMemo>);
+
+impl Clone for CheckMemo {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl std::fmt::Debug for CheckMemo {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("CheckMemo")
+    }
+}
+
+impl CheckMemo {
+    pub(crate) fn with<R>(&self, work: impl FnOnce(&mut crate::solver::PartMemo) -> R) -> R {
+        let mut memo = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        work(&mut memo)
+    }
+}
+
+/// Printed without its places: a table filled as ids are asked for is no fact of the sketch, and a sketch compared by
+/// its print before and after an operation that changed nothing read as changed where only the table had filled.
+impl std::fmt::Debug for IdPlaces {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("IdPlaces")
+    }
+}
+
+impl Clone for IdPlaces {
+    fn clone(&self) -> Self {
+        Self::default()
+    }
+}
+
+impl IdPlaces {
+    fn find<T>(&self, list: &[T], id: Id, id_of: impl Fn(&T) -> Id) -> Option<usize> {
+        let mut places = self.0.lock().unwrap_or_else(|e| e.into_inner());
+        if let Some(&i) = places.get(&id) {
+            if list.get(i).is_some_and(|x| id_of(x) == id) {
+                return Some(i);
+            }
+        }
+        // most changes add to the end of a list: the new tail is put in first, the whole list only if that is not it
+        let known = places.len();
+        if known < list.len() {
+            for (i, x) in list.iter().enumerate().skip(known) {
+                places.insert(id_of(x), i);
+            }
+            if let Some(&i) = places.get(&id) {
+                if list.get(i).is_some_and(|x| id_of(x) == id) {
+                    return Some(i);
+                }
+            }
+        }
+        *places = list.iter().enumerate().map(|(i, x)| (id_of(x), i)).collect();
+        places.get(&id).copied()
+    }
 }
 
 impl Sketch {
+    /// The point of id `id` (`IdPlaces`).
+    pub fn point(&self, id: Id) -> Option<&SketchPoint> {
+        self.point_at.find(&self.points, id, |p| p.id).map(|i| &self.points[i])
+    }
+
+    /// The entity of id `id` (`IdPlaces`).
+    pub fn entity(&self, id: Id) -> Option<&SketchEntity> {
+        self.entity_at.find(&self.entities, id, |e| e.id).map(|i| &self.entities[i])
+    }
+
     /// System points of the sketch: the origin and the endpoints of the X and Y axes. They cannot be
     /// dragged, deleted or counted as free.
     ///
     /// One source of truth on purpose: spelled out by hand in six places the set drifts apart, some copies
     /// forgetting the origin and others the axes.
-    /// THE CORNERS OF A RECTANGLE LEFT AS VIRTUAL SHARPS: a corner rounded or cut away stays a point of the rectangle -
-    /// its centre stands on the middle of the corners, its turn is told by them - but no line of it ends there any
-    /// more. Such a point is the rectangle's own, not geometry: it is not drawn and not picked. Shown, a rectangle
-    /// rounded all round carried four points out in the air beyond its arcs.
-    pub fn virtual_sharps(&self) -> std::collections::HashSet<Id> {
-        let ends: std::collections::HashSet<Id> = self
+    /// THE CONSTRAINTS A CUT CORNER HOLDS ITSELF BY, by their index: the virtual sharp standing on the extension of each
+    /// side (`PointOnLine` of a point no geometry ends at), the legs of a symmetric chamfer kept equal on it (`Equal` from
+    /// the sharp to the two ends of the cut line), and the arc of a fillet touching the lines it ends on (`Tangent` of a
+    /// line to the arc that ends at one of its points). They are the corner's own, as the turn of a rectangle is the
+    /// rectangle's: shown, a chamfer of 3 carried two "=" and a point-on-line badge out in the air beside its cut, and a
+    /// fillet a tangency badge on each line. A dimension a person measured to the sharp is not among them.
+    pub fn corner_holders(&self) -> std::collections::HashSet<usize> {
+        // no constraint of a kind a corner holds itself by, no holder - before the points of every entity are gathered:
+        // 6 ms on 70 000 segments, and the list of constraints asks every frame
+        if !self.constraints.iter().any(|c| matches!(c, Constraint::PointOnLine { .. } | Constraint::Equal { .. } | Constraint::Tangent { .. })) {
+            return Default::default();
+        }
+        let drawn: std::collections::HashSet<Id> = self
             .entities
             .iter()
-            .filter(|e| !e.construction)
             .flat_map(|e| match e.kind {
-                EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => vec![a, b],
-                _ => Vec::new(),
+                EntityKind::Line { a, b } => vec![a, b],
+                EntityKind::Arc { center, a, b, .. } => vec![center, a, b],
+                EntityKind::Circle { center, .. } => vec![center],
+                EntityKind::Ellipse { c, ma, mi } => vec![c, ma, mi],
             })
             .collect();
-        self.rects.iter().flat_map(|r| r.corners).filter(|c| !ends.contains(c)).collect()
+        let cut = |x: Id, y: Id| self.entities.iter().any(|e| matches!(e.kind, EntityKind::Line { a, b } if (a == x && b == y) || (a == y && b == x)));
+        let at = |id: Id| self.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+        // whether `p` lies on the line through `a` and `b` beyond its ends, by more than a millionth of its length
+        let past_the_ends = |p: Id, a: Id, b: Id| match (at(p), at(a), at(b)) {
+            (Some(p), Some(a), Some(b)) => {
+                let (dx, dy) = (b.0 - a.0, b.1 - a.1);
+                let t = ((p.0 - a.0) * dx + (p.1 - a.1) * dy) / (dx * dx + dy * dy).max(1e-18);
+                !(-1e-6..=1.0 + 1e-6).contains(&t)
+            }
+            _ => false,
+        };
+        self.constraints
+            .iter()
+            .enumerate()
+            .filter(|(_, c)| match **c {
+                // the sharp stands past the end of a side cut back from it; a point put on a line or on an axis - the centre
+                // of a rectangle, a point of its own - stands on it, and its badge says it is held there
+                Constraint::PointOnLine { p, a, b } => !drawn.contains(&p) && !self.system_ids().contains(&p) && cut(a, b) && past_the_ends(p, a, b),
+                Constraint::Equal { a, b, c, d } => a == c && !drawn.contains(&a) && cut(b, d),
+                Constraint::Tangent { a, b, c, .. } => {
+                    self.entities.iter().any(|e| matches!(e.kind, EntityKind::Arc { center, a: x, b: y, .. } if center == c && [x, y].iter().any(|q| *q == a || *q == b)))
+                }
+                _ => false,
+            })
+            .map(|(i, _)| i)
+            .collect()
     }
 
-    /// The points not drawn among the sketch's own: the frame of reference (drawn by the axis marker) and the virtual
-    /// sharps of rectangles.
+    /// WHETHER THE CIRCLE OR ARC ABOUT `centre` CARRIES A SIZE OF ITS OWN: a radius or a diameter, the length of the arc,
+    /// or the chord between its two ends. Where it does, no passive radius is labelled beside it: a fillet sized by its
+    /// chord or its arc length showed an R it does not hold by as well.
+    pub fn rim_sized(&self, centre: Id) -> bool {
+        let chord = |x: Id, y: Id| self.entities.iter().any(|e| matches!(e.kind, EntityKind::Arc { center, a, b, .. } if center == centre && ((a == x && b == y) || (a == y && b == x))));
+        self.constraints.iter().any(|c| match *c {
+            Constraint::Diameter { c, .. } | Constraint::ArcLength { c, .. } => c == centre,
+            Constraint::Distance { a, b, .. } => chord(a, b),
+            _ => false,
+        })
+    }
+
+    /// The points not drawn among the sketch's own: the frame of reference, drawn by the axis marker. The virtual sharp of
+    /// a cut corner is drawn, and picked, like any point.
     pub fn unseen_points(&self) -> std::collections::HashSet<Id> {
-        self.system_ids().into_iter().chain(self.virtual_sharps()).collect()
+        self.system_ids().into_iter().collect()
     }
 
     pub fn system_ids(&self) -> Vec<Id> {
@@ -715,6 +874,59 @@ impl Sketch {
                 _ => None,
             })
             .collect()
+    }
+
+    /// WHAT GOES WITH THE POINT `centre` WHEN IT IS DRAGGED, as a circle goes with its centre: the corners of a rectangle
+    /// it is the centre of, the two ends of an arc it is the centre of, every point of a slot it is the centre of an end
+    /// of (a slot's two arcs are held to one radius, `EqualRadius`), and the axis ends of an ellipse. Left behind, the
+    /// drag pulled the centre alone: an arc and a slot were refused the drag, and an ellipse turned and changed shape.
+    /// The centre of a fillet - an arc touching its lines (`Tangent`) with no partner of one radius - carries nothing:
+    /// the lines it touches hold it. Empty for any other point.
+    pub fn carried_with(&self, centre: Id) -> Vec<Id> {
+        let rect: Vec<Id> = self.rects.iter().filter(|r| r.centre == centre).flat_map(|r| r.corners).collect();
+        if !rect.is_empty() {
+            return rect;
+        }
+        if let Some((ma, mi)) = self.entities.iter().find_map(|e| match e.kind {
+            EntityKind::Ellipse { c, ma, mi } if c == centre => Some((ma, mi)),
+            _ => None,
+        }) {
+            return vec![ma, mi];
+        }
+        let Some(arc) = self.entities.iter().find(|e| matches!(e.kind, EntityKind::Arc { center, .. } if center == centre)) else { return Vec::new() };
+        let touches = self.constraints.iter().any(|c| matches!(*c, Constraint::Tangent { c, .. } if c == centre));
+        let partner = self.constraints.iter().find_map(|c| match *c {
+            Constraint::EqualRadius { c1, c2 } if c1 == centre => Some(c2),
+            Constraint::EqualRadius { c1, c2 } if c2 == centre => Some(c1),
+            _ => None,
+        });
+        match (touches, partner) {
+            // a slot: every point of the shape the arc is part of, the centres of its arcs with them
+            (_, Some(_)) => {
+                let mut shape = vec![arc.id];
+                let mut k = 0;
+                while k < shape.len() {
+                    let here = self.entities.iter().find(|e| e.id == shape[k]).map_or(Vec::new(), entity_points);
+                    for e in &self.entities {
+                        if !shape.contains(&e.id) && entity_points(e).iter().any(|p| here.contains(p)) {
+                            shape.push(e.id);
+                        }
+                    }
+                    k += 1;
+                }
+                let mut out: Vec<Id> = shape.iter().flat_map(|id| self.entities.iter().find(|e| e.id == *id).map_or(Vec::new(), entity_points)).filter(|p| *p != centre).collect();
+                out.sort_unstable();
+                out.dedup();
+                out
+            }
+            // a fillet: held by the lines it touches
+            (true, None) => Vec::new(),
+            // an arc of its own: its two ends
+            (false, None) => match arc.kind {
+                EntityKind::Arc { a, b, .. } => vec![a, b],
+                _ => Vec::new(),
+            },
+        }
     }
 
     /// EVERYTHING AN EDITING TOOL MUST LEAVE WHERE IT IS: the frame, the driven projections, and whatever
@@ -917,10 +1129,11 @@ pub struct SketchProjection {
     /// Derived entities (driven).
     #[serde(default)]
     pub entities: Vec<Id>,
-    /// The source is gone (the edge or face was not found after a rebuild). The geometry stays at its last
-    /// good state but is marked broken: it must not vanish silently, because constraints reference it.
+    /// THE EDGE OF THE BODY EACH OF `entities` CAME FROM, by its persistent id, in the same order: a rebuild matches the
+    /// curves by their edge, so the ids - and the dimensions and the ties on them - stay with the edge whatever order the
+    /// kernel gives the edges in.
     #[serde(default)]
-    pub lost: bool,
+    pub edges: Vec<u32>,
 }
 
 /// A sketch spline: a smooth Catmull-Rom curve through control points.
@@ -1907,10 +2120,13 @@ pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleT
 mod tess;
 mod timeline;
 mod sketch;
-pub use sketch::{ChamferLegs, FilletBy, FilletSize, TextSpec};
+mod drag;
+mod round;
+pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, ExtendAsk, ExtendSides, ExtendStop, ExtendStops, EndKept, FilletBy, FilletSize, LineExtension, LinesCrossing, TextSpec};
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
+mod hash_ser;
 
 impl Project {
     /// Hand out a new stable id.
@@ -1953,6 +2169,12 @@ impl Project {
         );
     }
 
+    /// MIRROR THE ENTITIES (as a copy) ABOUT THE POINT (px, py): each point goes to the far side of it, the same distance
+    /// off - a half turn about it, so an arc keeps its way round.
+    pub fn mirror_about_point(&mut self, si: usize, eids: &[Id], px: f64, py: f64) {
+        self.dup_entities(si, eids, |x, y| (2.0 * px - x, 2.0 * py - y), false);
+    }
+
     /// Duplicate the selected entities with an offset of (dx, dy) and return the ids of the copies. Used by
     /// the interactive copy command, which reads as base point then target.
     pub fn copy_entities(&mut self, si: usize, eids: &[Id], dx: f64, dy: f64) -> Vec<Id> {
@@ -1963,8 +2185,9 @@ impl Project {
     pub fn array_linear(&mut self, si: usize, eids: &[Id], dx: f64, dy: f64, count: u32) {
         for k in 1..count.max(1) {
             let (ox, oy) = (dx * k as f64, dy * k as f64);
-            self.dup_entities(si, eids, |x, y| (x + ox, y + oy), false);
+            self.dup_entities_unbuilt(si, eids, |x, y| (x + ox, y + oy), false);
         }
+        self.regen_sketch(si); // the loops once, for every copy
     }
 
     /// Circular array: `count` copies around (cx, cy) spanning `total_deg` in total.
@@ -1975,7 +2198,7 @@ impl Project {
         for k in 1..count {
             let ang = (step * k as f64).to_radians();
             let (s_, c_) = (ang.sin(), ang.cos());
-            self.dup_entities(
+            self.dup_entities_unbuilt(
                 si,
                 eids,
                 move |x, y| {
@@ -1985,6 +2208,7 @@ impl Project {
                 false,
             );
         }
+        self.regen_sketch(si); // the loops once, for every copy
     }
 
     /// Create the pattern instances without recording the pattern. Returns the ids of the new entities.
@@ -1999,7 +2223,7 @@ impl Project {
                             continue;
                         }
                         let (ox, oy) = (dx * i as f64 + dx2 * j as f64, dy * i as f64 + dy2 * j as f64);
-                        out.extend(self.dup_entities(si, source, |x, y| (x + ox, y + oy), false));
+                        out.extend(self.dup_entities_unbuilt(si, source, |x, y| (x + ox, y + oy), false));
                     }
                 }
             }
@@ -2009,7 +2233,7 @@ impl Project {
                 for k in 1..count {
                     let ang = (step * k as f64).to_radians();
                     let (s_, c_) = (ang.sin(), ang.cos());
-                    out.extend(self.dup_entities(
+                    out.extend(self.dup_entities_unbuilt(
                         si,
                         source,
                         move |x, y| {
@@ -2027,18 +2251,24 @@ impl Project {
     /// Fillet the corner at vertex `pid`, when exactly two edges meet there. The inner side is chosen by
     /// the bisector of the chords. Used both by click-on-corner and by the chain command. Returns whether
     /// it succeeded.
-    /// THE LARGEST FILLET RADIUS OR CHAMFER LEG A CORNER OF TWO LINES TAKES: the point of touching lies r / tan(theta / 2)
-    /// from the corner (theta the angle between the lines), and a leg lies along the line - neither may reach the far
-    /// end of the shorter line. `None` for a corner not made of two lines. The field of the tool refuses a value past it
+    /// THE LARGEST VALUE A CORNER OF TWO LINES TAKES for `tool`: a fillet's point of touching lies r / tan(theta / 2) from
+    /// the corner (theta the angle between the lines), a chamfer's leg along the line, and the cut of a symmetric chamfer
+    /// is 2 sin(theta / 2) times its leg - none may reach the far end of the shorter line. `None` for a corner not made of two lines. The field of the tool refuses a value past it
     /// in words, where the corner used to take it and do nothing, or cut it down without a word.
-    pub fn corner_limit(&self, si: usize, pid: Id, chamfer: bool) -> Option<f64> {
-        let edges = self.vertex_edges(si, pid);
-        if edges.len() != 2 {
-            return None;
-        }
+    pub fn corner_limit(&self, si: usize, pid: Id, tool: CornerTool) -> Option<f64> {
+        // Where more than two edges meet, there is a corner for every pair, and the field must refuse a value that
+        // is too big for AT LEAST ONE of them: the tightest corner is the one that bounds it.
+        self.vertex_pairs(si, pid).iter().filter_map(|pair| self.corner_limit_of_pair(si, pid, *pair, tool)).fold(None, |m: Option<f64>, v| Some(m.map_or(v, |m| m.min(v))))
+    }
+    /// The bound of the one corner the point `(x, y)` stands in, where more than two edges meet at `pid`.
+    pub fn corner_limit_near(&self, si: usize, pid: Id, tool: CornerTool, x: f64, y: f64) -> Option<f64> {
+        self.vertex_pair(si, pid, Some((x, y))).and_then(|pair| self.corner_limit_of_pair(si, pid, pair, tool))
+    }
+    /// The bound of one named pair of edges at `pid`.
+    pub fn corner_limit_of_pair(&self, si: usize, pid: Id, (e1, e2): (Id, Id), tool: CornerTool) -> Option<f64> {
         let (pcx, pcy) = self.point_xy(si, pid)?;
         let mut dirs = Vec::new();
-        for e in edges {
+        for e in [e1, e2] {
             let (a, b) = self.line_ends(si, e)?;
             let other = if a == pid { b } else { a };
             let (ox, oy) = self.point_xy(si, other)?;
@@ -2048,19 +2278,23 @@ impl Project {
             }
             dirs.push(((ox - pcx) / l, (oy - pcy) / l, l));
         }
-        let shorter = dirs[0].2.min(dirs[1].2);
-        if chamfer {
-            return Some(shorter);
+        if dirs.len() != 2 {
+            return None;
         }
+        let shorter = dirs[0].2.min(dirs[1].2);
         let theta = (dirs[0].0 * dirs[1].0 + dirs[0].1 * dirs[1].1).clamp(-1.0, 1.0).acos();
-        Some(shorter * (theta / 2.0).tan())
+        Some(match tool {
+            CornerTool::Fillet => shorter * (theta / 2.0).tan(),
+            CornerTool::Chamfer(crate::feature::ChamferMode::Symmetric) => shorter * 2.0 * (theta / 2.0).sin(),
+            CornerTool::Chamfer(_) => shorter,
+        })
     }
 
-    /// THE LARGEST RADIUS "FILLET ALL" TAKES on the corners of a set of lines (every line of the sketch with `None`): a
-    /// line between two corners being rounded spends both touching points on itself, r / tan(a / 2) + r / tan(b / 2) of
-    /// its length, and a line with one corner rounded spends one. `None` when there is no corner of two lines to round.
-    /// A rectangle 40 x 30 takes up to 15, half its short side, where one corner alone takes 30.
-    pub fn all_corners_limit(&self, si: usize, only: Option<&std::collections::HashSet<Id>>) -> Option<f64> {
+    /// THE LARGEST VALUE `tool` TAKES on the corners of a set of lines at once (every line of the sketch with `None`): a
+    /// line between two corners being cut spends both on itself - for a fillet r / tan(a / 2) + r / tan(b / 2) of its
+    /// length - and a line with one corner cut spends one. `None` when there is no corner of two lines to cut. A
+    /// rectangle 40 x 30 takes a radius up to 15, half its short side, where one corner alone takes 30.
+    pub fn all_corners_limit(&self, si: usize, only: Option<&std::collections::HashSet<Id>>, tool: CornerTool) -> Option<f64> {
         let s = self.sketches.get(si)?;
         let lines: Vec<(Id, Id, Id)> = s
             .entities
@@ -2071,14 +2305,15 @@ impl Project {
                 _ => None,
             })
             .collect();
-        // the cotangent of half the angle at every corner of two lines, the corners being the points two lines of the set meet at
+        // what one unit of the value spends along each line at every corner of two lines - the cotangent of half the angle for
+        // a fillet - the corners being the points two lines of the set meet at
         let mut cot: std::collections::HashMap<Id, f64> = std::collections::HashMap::new();
         for &(_, a, b) in &lines {
             for p in [a, b] {
                 if cot.contains_key(&p) || lines.iter().filter(|(_, x, y)| *x == p || *y == p).count() != 2 || self.vertex_edges(si, p).len() != 2 {
                     continue;
                 }
-                if let Some(l) = self.corner_limit(si, p, false) {
+                if let Some(l) = self.corner_limit(si, p, tool) {
                     let (pcx, pcy) = self.point_xy(si, p)?;
                     let ends: Vec<f64> = self
                         .vertex_edges(si, p)
@@ -2088,7 +2323,7 @@ impl Project {
                         .map(|(ox, oy)| (ox - pcx).hypot(oy - pcy))
                         .collect();
                     let shorter = ends.iter().copied().fold(f64::INFINITY, f64::min);
-                    cot.insert(p, shorter / l); // corner_limit = shorter * tan(theta / 2)
+                    cot.insert(p, shorter / l); // corner_limit = shorter / (what one unit spends)
                 }
             }
         }
@@ -2115,9 +2350,14 @@ impl Project {
         if edges.len() != 2 {
             return None;
         }
+        self.corner_sweep_of_pair(si, pid, (edges[0], edges[1]))
+    }
+
+    /// The same for the corner the two named edges make at `pid`, where more than two edges may meet.
+    pub fn corner_sweep_of_pair(&self, si: usize, pid: Id, (e1, e2): (Id, Id)) -> Option<f64> {
         let (pcx, pcy) = self.point_xy(si, pid)?;
         let mut dirs = Vec::new();
-        for e in edges {
+        for e in [e1, e2] {
             let (a, b) = self.edge_end_ids(si, e)?;
             let (ox, oy) = self.point_xy(si, if a == pid { b } else { a })?;
             let l = (ox - pcx).hypot(oy - pcy);
@@ -2139,7 +2379,7 @@ impl Project {
             FilletBy::Radius => size.value,
             _ => {
                 let Some(r) = self.corner_sweep(si, pid).and_then(|sweep| size.radius_on(sweep)) else { return false };
-                if self.corner_limit(si, pid, false).is_some_and(|l| r >= l * (1.0 - 1e-9)) {
+                if self.corner_limit(si, pid, CornerTool::Fillet).is_some_and(|l| r >= l * (1.0 - 1e-9)) {
                     return false;
                 }
                 r
@@ -2154,6 +2394,44 @@ impl Project {
         true
     }
 
+    /// CUT EVERY CORNER OF A SET WITH ONE ANSWER, OR NONE OF THEM: a fillet of the size on every corner - a chord or an
+    /// arc length makes its own radius on each and is kept as it was given - or a chamfer of the legs, its first line
+    /// the one nearer `toward`. A corner the cut does not fit leaves the sketch as it was and answers 0: cut on the
+    /// corners that took it and left whole on the one that did not, the set was a half-made drawing nobody asked for.
+    /// Answers how many corners were cut.
+    pub fn cut_corner_set(&mut self, si: usize, corners: &[CornerAt], cut: CornerCut, toward: Option<crate::geom::Point2>) -> usize {
+        // every corner laid, the sketch rebuilt once (`batch`)
+        self.batch(|p| p.cut_corner_set_unbuilt(si, corners, cut, toward))
+    }
+
+    fn cut_corner_set_unbuilt(&mut self, si: usize, corners: &[CornerAt], cut: CornerCut, toward: Option<crate::geom::Point2>) -> usize {
+        let Some(before) = self.sketches.get(si).cloned() else { return 0 };
+        for corner in corners {
+            let done = match cut {
+                CornerCut::Chamfer(legs) => self.chamfer_lines_of_pair(si, corner.pair, legs, toward),
+                CornerCut::Fillet(size) if size.by == FilletBy::Radius => self.fillet_at_pair(si, corner.pair, size.value),
+                CornerCut::Fillet(size) => self.fillet_pair_by(si, *corner, size),
+            };
+            if !done {
+                self.sketches[si] = before;
+                self.regen_sketch(si);
+                return 0;
+            }
+        }
+        corners.len()
+    }
+
+    /// A FILLET OF THE CORNER OF A SET BY ITS CHORD OR ITS ARC LENGTH: the radius the size makes on this corner, as the
+    /// preview of the corner draws it, and the size kept as it was given.
+    fn fillet_pair_by(&mut self, si: usize, corner: CornerAt, size: FilletSize) -> bool {
+        let Some((_, r)) = self.corner_blend(si, corner.point, corner.pair, CornerCut::Fillet(size)).and_then(|b| b.arc) else { return false };
+        if !self.fillet_at_pair(si, corner.pair, r) {
+            return false;
+        }
+        self.give_fillet_its_size(si, size);
+        true
+    }
+
     /// THE LAST FILLET LAID KEEPS ITS SIZE AS IT WAS GIVEN: its radius dimension is put in place of a distance between
     /// the two points of touching (a chord) or of an arc length dimension, and the sketch is solved.
     pub(super) fn give_fillet_its_size(&mut self, si: usize, size: FilletSize) {
@@ -2161,23 +2439,37 @@ impl Project {
         let Some(last) = s.entities.iter().filter(|e| matches!(e.kind, EntityKind::Arc { .. })).max_by_key(|e| e.id).copied() else { return };
         let EntityKind::Arc { center: centre, a, b, ccw } = last.kind else { return };
         let Some(ci) = self.fillet_radius_constraint(si, last.id) else { return };
+        let end = |id: Id| self.point_xy(si, id).map(|(x, y)| sketch::DimEnd { id, at: crate::geom::Point2::new(x, y) });
+        let (Some(end_a), Some(end_b), Some((cx, cy))) = (end(a), end(b), self.point_xy(si, centre)) else { return };
+        // THE CHORD STANDS OUTSIDE THE SHAPE, on the side of the arc away from its centre: written as the arc ran, it
+        // stood inside the shape on one corner out of two
+        let [ca, cb] = sketch::ends_facing([end_a, end_b], sketch::Side::AwayFrom(crate::geom::Point2::new(cx, cy)));
         self.sketches[si].constraints[ci] = match size.by {
-            FilletBy::Chord => Constraint::Distance { a, b, d: size.value, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
+            FilletBy::Chord => Constraint::Distance { a: ca, b: cb, d: size.value, off: 0.0, expr: String::new(), driven: false, axis: 0, at: None },
             _ => Constraint::ArcLength { c: centre, a, b, ccw, len: size.value, off: 0.0, expr: String::new(), driven: false },
         };
         self.solve_sketch(si);
     }
 
     fn fillet_round(&mut self, si: usize, pid: Id, r: f64) -> bool {
-        let edges = self.vertex_edges(si, pid);
-        if edges.len() != 2 {
-            return false;
-        }
-        let (e1, e2) = (edges[0], edges[1]);
-        let Some((pcx, pcy)) = self.point_xy(si, pid) else { return false };
+        let Some(pair) = self.vertex_pair(si, pid, None) else { return false };
+        self.fillet_at_pair(si, pair, r)
+    }
+
+    /// Fillet the corner at `pid` that the point `(x, y)` stands in, where more than two edges meet there.
+    pub fn fillet_at_vertex_near(&mut self, si: usize, pid: Id, r: f64, x: f64, y: f64) -> bool {
+        let Some(pair) = self.vertex_pair(si, pid, Some((x, y))) else { return false };
+        self.fillet_at_pair(si, pair, r)
+    }
+
+    /// Fillet the corner the two named edges make at a shared vertex. The arc goes on the side of their bisector,
+    /// which is what the fillet at a vertex has always done.
+    pub fn fillet_at_pair(&mut self, si: usize, (e1, e2): (Id, Id), r: f64) -> bool {
+        let Some(shared) = self.corner_of_pair(si, e1, e2) else { return false };
+        let Some((pcx, pcy)) = self.point_xy(si, shared) else { return false };
         let dir = |me: &Self, eid: Id| -> Option<(f64, f64)> {
             let (a, b) = me.edge_end_ids(si, eid)?;
-            let other = if a == pid { b } else { a };
+            let other = if a == shared { b } else { a };
             let (ox, oy) = me.point_xy(si, other)?;
             let (dx, dy) = (ox - pcx, oy - pcy);
             let l = (dx * dx + dy * dy).sqrt();
@@ -2198,16 +2490,17 @@ impl Project {
     }
 
     /// Solve the sketch constraints (moving the points) and re-tessellate the contour.
-    /// Map of global parameter names (lower-cased) to values, used to evaluate feature and command
-    /// dimension expressions through [`crate::expr::eval`], the same way sketch dimensions are evaluated.
+    /// Map of global parameter names to values, used to evaluate feature and command dimension expressions
+    /// through [`crate::expr::eval`], the same way sketch dimensions are evaluated. A name is a key as written: `H`
+    /// and `h` are two parameters.
     pub fn param_map(&self) -> std::collections::HashMap<String, f64> {
-        let mut m: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.to_lowercase(), p.value)).collect();
+        let mut m: std::collections::HashMap<String, f64> = self.parameters.iter().filter(|p| !p.name.is_empty()).map(|p| (p.name.clone(), p.value)).collect();
         // Named driving dimensions (the skeleton sketch of an assembly): a name resolves to a dimension
         // value, which parts then consume through expressions.
         for nd in &self.named_dims {
             if !nd.name.is_empty() {
                 if let Some(v) = self.named_dim_value(nd) {
-                    m.insert(nd.name.to_lowercase(), v);
+                    m.insert(nd.name.clone(), v);
                 }
             }
         }
@@ -2258,7 +2551,7 @@ impl Project {
         if nm.is_empty() {
             return false;
         }
-        self.parameters.iter().any(|p| p.name.eq_ignore_ascii_case(nm)) || self.named_dims.iter().any(|n| n.name.eq_ignore_ascii_case(nm) && n.target != *target)
+        self.parameters.iter().any(|p| p.name == nm) || self.named_dims.iter().any(|n| n.name == nm && n.target != *target)
     }
 
     /// The same for a sketch dimension, addressed by entities the way the popup addresses it.
@@ -2391,6 +2684,13 @@ impl Project {
         self.feat_dims.get(&id).and_then(|m| m.get(key)).map(|s| s.as_str())
     }
 
+    /// Value of dimension `key` of feature `id` as the rebuild takes it: the expression evaluated against `vars`
+    /// when there is one, otherwise `stored`, the number kept in the node. The number in the node is what was typed
+    /// last and does not follow a parameter; whatever shows a size of a built feature reads it through here.
+    pub fn feat_dim_value(&self, id: Id, key: &str, stored: f64, vars: &std::collections::HashMap<String, f64>) -> f64 {
+        eval_dim(self.feat_dims.get(&id), key, stored, vars)
+    }
+
     /// Mark as dirty the features whose expressions reference parameter `name`, and their consumers.
     ///
     /// Marking every feature that has any expression means rebuilding a project with a hundred dimensions
@@ -2434,7 +2734,7 @@ impl Project {
         let mut vars = self.param_map();
         for p in &self.parameters {
             if !p.name.is_empty() {
-                vars.insert(p.name.to_lowercase(), p.value); // seed with the previous value
+                vars.insert(p.name.clone(), p.value); // seed with the previous value
             }
         }
         // A PARAMETER IN A CYCLE TAKES NO PART IN THE FIXED POINT. Seeded with its previous value, `h = h * 2`
@@ -2449,7 +2749,7 @@ impl Project {
                     continue;
                 }
                 if let Ok(v) = eval(&p.expr, &vars) {
-                    let key = p.name.to_lowercase();
+                    let key = p.name.clone();
                     if vars.get(&key).is_none_or(|o| (o - v).abs() > 1e-12) {
                         changed = true;
                     }
@@ -2513,7 +2813,7 @@ impl Project {
     }
 
     /// Evaluate an arbitrary expression in the context of the project parameters, for validating a
-    /// dimension field in the interface. Parameter names are case-insensitive.
+    /// dimension field in the interface. A parameter name is matched as written.
     pub fn eval_expr(&self, src: &str) -> Result<f64, crate::errors::ExprError> {
         // Going through `param_map` exposes both the global parameters and the named driving dimensions of
         // a skeleton sketch.
@@ -2561,7 +2861,14 @@ impl Project {
     /// follows the pointer and constrained geometry resists.
     pub fn solve_sketch_drag(&mut self, si: usize, drag: Option<(Id, f64, f64)>) -> f64 {
         self.eval_parameters(); // Parametric dimensions become values before the solve.
-        self.solve_sketch_inner(si, drag, 120)
+        self.solve_sketch_inner(si, drag, crate::solver::Budget::FULL, sketch::Rebuild::Whole)
+    }
+
+    /// Solve a sketch within `budget`: what is left when its time is out stands as it stood and is counted in
+    /// `Sketch::left_unsolved`.
+    pub fn solve_sketch_within(&mut self, si: usize, budget: crate::solver::Budget) -> f64 {
+        self.eval_parameters();
+        self.solve_sketch_inner(si, None, budget, sketch::Rebuild::Whole)
     }
 
     /// Fast path for a drag frame: no `eval_parameters` (parameters are static during a drag, and the
@@ -2572,7 +2879,17 @@ impl Project {
     /// iterations with a numeric Jacobian) and a regenerate over every sketch, which lagged visibly on any
     /// sizeable sketch.
     pub fn solve_sketch_drag_fast(&mut self, si: usize, drag: Option<(Id, f64, f64)>) -> f64 {
-        self.solve_sketch_inner(si, drag, 40)
+        // a point dragged: through what the drag keeps from frame to frame, where the sketch takes it
+        if let Some(r) = drag.and_then(|d| self.drag_frame(si, d)) {
+            return r;
+        }
+        self.solve_sketch_drag_frame_alone(si, drag)
+    }
+
+    /// A FRAME OF A DRAG made without what the drag keeps from frame to frame: the part solved and the loops rebuilt as
+    /// the frame finds them. The reference of the frames made through it (`solve_sketch_drag_fast`).
+    pub fn solve_sketch_drag_frame_alone(&mut self, si: usize, drag: Option<(Id, f64, f64)>) -> f64 {
+        self.solve_sketch_inner(si, drag, crate::solver::Budget::FRAME, sketch::Rebuild::Moved)
     }
 
     /// Add a regular polygon as a parametric group of entities: a construction circumscribed circle plus n
@@ -2930,20 +3247,20 @@ impl Project {
     /// length the role of an area, so descriptive queries ("along the axis", "the longest") work on edges
     /// without any separate code.
     pub fn edge_pool(&self, body: Id) -> Vec<crate::refs::Candidate> {
-        self.regen_edges
-            .get(&body)
-            .map(|es| {
-                es.iter()
-                    .map(|e| crate::refs::Candidate {
-                        desc: e.id,
-                        centroid: e.mid,
-                        normal: e.dir,
-                        area: ((e.b[0] - e.a[0]).powi(2) + (e.b[1] - e.a[1]).powi(2) + (e.b[2] - e.a[2]).powi(2)).sqrt(),
-                        edge: Some(crate::refs::EdgeGeom { a: e.a, b: e.b, center: e.center, axis: e.axis, radius: e.radius }),
-                    })
-                    .collect()
+        self.regen_edges.get(&body).map(|es| Self::edge_candidates(es)).unwrap_or_default()
+    }
+
+    /// A list of edges as resolution sees it, wherever the list came from.
+    fn edge_candidates(es: &[crate::geom::MeshEdge]) -> Vec<crate::refs::Candidate> {
+        es.iter()
+            .map(|e| crate::refs::Candidate {
+                desc: e.id,
+                centroid: e.mid,
+                normal: e.dir,
+                area: ((e.b[0] - e.a[0]).powi(2) + (e.b[1] - e.a[1]).powi(2) + (e.b[2] - e.a[2]).powi(2)).sqrt(),
+                edge: Some(crate::refs::EdgeGeom { a: e.a, b: e.b, center: e.center, axis: e.axis, radius: e.radius }),
             })
-            .unwrap_or_default()
+            .collect()
     }
 
     /// Every vertex of a body as resolution sees it: a point plus a name derived from its edges.
@@ -3013,6 +3330,15 @@ impl Project {
     /// is always phrased through faces ("every edge of this face", "the seam between these two sets").
     pub fn resolve_edge_refs(&self, body: Id, r: &crate::refs::Ref, what: &str) -> Result<Vec<u32>, crate::refs::RefError> {
         r.resolve(what, &self.edge_pool(body), &self.names, &self.face_pool(body))
+    }
+
+    /// The same against an explicit list of the body's edges, as the kernel holds them now.
+    ///
+    /// `regen_edges` is filled by the post pass of a rebuild and is not written into a bundle: in the middle of
+    /// a pass it holds the previous state of the body, and right after a file is opened it holds nothing. A
+    /// query resolved against it there found no edges at all, while the faces it is phrased through were known.
+    pub fn resolve_edge_refs_in(&self, body: Id, edges: &[crate::geom::MeshEdge], r: &crate::refs::Ref, what: &str) -> Result<Vec<u32>, crate::refs::RefError> {
+        r.resolve(what, &Self::edge_candidates(edges), &self.names, &self.face_pool(body))
     }
 
     /// Resolve a reference to a single face into a descriptor, a centre and a normal, or into a named
@@ -4176,8 +4502,8 @@ impl Project {
     /// joints or external references would not make the project dirty, and closing the window would not ask
     /// about unsaved work.
     ///
-    /// This is manual hashing without a single allocation: structure (components, timeline, datums, joints,
-    /// parameters) plus a cheap fingerprint of the sketches (points, counts, dimension values). Derived
+    /// This is hashing with no text made: what has no placement in it is fed whole through its serialization
+    /// (`hash_ser`), the placement and a few fields the program writes are hashed by hand (see `key_of`). Derived
     /// data is excluded (`regen_faces`, `regen_edges`, `regen_errors`, mesh geometry), and so are the source
     /// bytes — they never change, so id, name and size suffice.
     pub fn state_key(&self) -> u64 {
@@ -4204,10 +4530,69 @@ impl Project {
     }
 
     /// Shared computation of both keys; they must not diverge, so there is exactly one implementation.
-    /// `placement` selects whether the placement is included (where components stand and what the mates were
-    /// told to hold).
+    /// `placement` selects whether what changes the document and builds nothing is included: where components stand,
+    /// what the mates were told to hold, where a label sits, and the document's properties, colours and notes. (The
+    /// mesh quality builds: the bodies are meshed to it.)
+    ///
+    /// Reported behaviour (issue #101): the title, author and comment and a part's colour were left out, so changing
+    /// only them left the document looking saved, and closing it lost the change. Found with them: a circle's radius,
+    /// a sketch's notes, a connector's place, the contents of a mate and more. What has no placement in it is now fed
+    /// to the hasher whole, through its own serialization (`hash_ser`), so a field added to it later is in the key
+    /// without anyone remembering.
     fn key_of(&self, placement: bool) -> u64 {
         use std::hash::{Hash, Hasher};
+        use hash_ser::feed;
+        // EVERY FIELD OF THE DOCUMENT IS DECIDED HERE, in the key or out of it, and a field added to `Project` does
+        // not compile until it is: the key and the file must not drift apart again.
+        let Project {
+            units: _,
+            meta: _,
+            geom_quality: _,
+            next_id: _,
+            imported_bodies: _,
+            part_colors: _,
+            face_colors: _,
+            tri_colors: _,
+            planes: _,
+            sketches: _,
+            timeline: _,
+            components: _,
+            root: _,
+            active_component: _,
+            datum_points: _,
+            datum_axes: _,
+            connectors: _,
+            joints: _,
+            mate_constraints: _,
+            relations: _,
+            external_refs: _,
+            named_dims: _,
+            sources: _,
+            parameters: _,
+            feat_dims: _,
+            bodies: _,
+            rollback: _,
+            // OUT: written by the program, not by an edit - the rebuild interns the names, recomputes the contours,
+            // records the bodies a deletion killed, snapshots referenced faces and edges; the solver lists the
+            // violated mates. Counting them would make opening a document and touching nothing ask to save.
+            names: _,
+            contours: _,
+            dead_bodies: _,
+            edge_refs: _,
+            face_refs: _,
+            mates_violated: _,
+            // OUT: what the last rebuild made and found - its faces and edges, its errors and warnings (the last two
+            // are saved, as node_errors and node_warnings, and come from the rebuild all the same) - and the drag and
+            // solve state of the session, which is not saved at all
+            regen_faces: _,
+            regen_edges: _,
+            regen_errors: _,
+            regen_warnings: _,
+            mates_conflict: _,
+            drag_pull: _,
+            snap_rebinds: _,
+            held_rebuilds: _, // OUT: the rebuilds a tool holds back while it lays many elements, not written
+        } = self;
         let mut h = std::collections::hash_map::DefaultHasher::new();
         let bits = |v: f64, h: &mut std::collections::hash_map::DefaultHasher| v.to_bits().hash(h);
         self.next_id.hash(&mut h);
@@ -4215,8 +4600,34 @@ impl Project {
         self.active_component.hash(&mut h);
         self.rollback.hash(&mut h);
         (self.units as u8).hash(&mut h);
+        // the mesh quality: the bodies are meshed to it, so a change of it is rebuilt
+        feed(&self.geom_quality, &mut h);
+        // the document's title, author and comment and the colours of parts, faces and triangles change what is saved
+        // and nothing that is built
+        if placement {
+            // when the document was started and which build wrote it the program stamps, on the first save after the
+            // saved key is taken and on the copy written to the file; the rest is the author's
+            let DocMeta { title, author, version, comment, created: _, saved_by: _ } = &self.meta;
+            (title, author, version, comment).hash(&mut h);
+            feed(&self.part_colors, &mut h);
+            feed(&self.face_colors, &mut h);
+            feed(&self.tri_colors, &mut h);
+        }
+        // THE GEOMETRY THE FILE KEEPS, by its size - what a body's mesh holds, not its points. The bodies are written by
+        // the program and stay out of what is rebuilt, but the file stores them: a rebuild that brought new meshes
+        // changes what would be saved. Reported behaviour: Rebuild everything mended the roundings of an old document
+        // (its meshes came with the surface's normals), the document was not marked changed, nothing asked to save it,
+        // and opened again its roundings were broken as before. Sizes only: opening a document and touching nothing
+        // rebuilds nothing, and counting is free where hashing millions of points on every frame is not.
+        if placement {
+            for b in &self.bodies {
+                (b.id, b.mesh.verts.len(), b.mesh.tris.len(), b.mesh.norms.len()).hash(&mut h);
+            }
+        }
         // Components: name, kind, parent, visibility, grounding and placement.
         for c in &self.components {
+            // every field decided, as for the document above
+            let crate::feature::Component { id: _, name: _, kind: _, parent: _, visible: _, grounded: _, transform: _ } = c;
             (c.id, &c.name, c.kind as u8, c.parent, c.visible, c.grounded).hash(&mut h);
             if placement {
                 for v in c.transform {
@@ -4233,11 +4644,14 @@ impl Project {
         //
         // The parameters are taken by serialising the recipe, which is complete by construction. A hand-
         // written field list across forty feature kinds would be cheaper per tick and more dangerous in
-        // substance — a forgotten field means a lost edit, which is worse than one extra question. The cost
-        // is measured: 1.25 ms over a thousand nodes, that is, hundredths of a millisecond on a real part.
+        // substance — a forgotten field means a lost edit, which is worse than one extra question. The recipe
+        // is fed to the hasher as it serializes, with no text made: on 1,000 parts the whole key took 0.96-1.21 ms
+        // with the recipes written out as RON text and 0.69-0.72 ms fed (release build, fastest of ten).
         for n in &self.timeline {
-            (n.id, &n.name, n.parent, n.suppressed, n.kind.body()).hash(&mut h);
-            ron::ser::to_string(&n.kind).unwrap_or_default().hash(&mut h);
+            // `dirty` is the scheduler's mark, not the author's
+            let crate::feature::FeatureNode { id, name, kind, parent, suppressed, dirty: _ } = n;
+            (id, name, parent, suppressed, kind.body()).hash(&mut h);
+            feed(kind, &mut h);
         }
         let mut dims: Vec<(&Id, &std::collections::HashMap<String, String>)> = self.feat_dims.iter().collect();
         dims.sort_by_key(|(k, _)| **k);
@@ -4250,68 +4664,149 @@ impl Project {
         // Sketches: points, counts and dimension values, so an edited number is visible before the solve
         // runs.
         for s in &self.sketches {
-            (s.id, &s.name, s.entities.len(), s.constraints.len(), s.splines.len()).hash(&mut h);
-            std::mem::discriminant(&s.plane).hash(&mut h);
-            if let crate::feature::SketchPlane::Datum(p) = s.plane {
-                p.hash(&mut h);
+            let Sketch {
+                id,
+                name,
+                contour_ids: _, // OUT: recomputed with the contours
+                source,
+                points,
+                entities,
+                closed,
+                constraints,
+                splines,
+                notes,
+                texts,
+                patterns,
+                rects,
+                projections,
+                plane,
+                origin,
+                axis_pts,
+                frame,
+                origin_uv,
+                // OUT: what the solver, a drag and the rebuild of loops keep between calls, none of it written
+                left_unsolved: _,
+                drag_session: _,
+                laid: _,
+                checked: _,
+                point_at: _,
+                entity_at: _,
+            } = s;
+            (id, name, source, closed, origin, axis_pts, frame).hash(&mut h);
+            // the plane whole, save the persistent id of the face a sketch stands on: the rebuild writes that one
+            // when it rebinds the sketch to a face renamed by a change upstream (`rebind_lost_face_refs`); the face
+            // as it was picked - its index, centroid and normal - is the author's
+            std::mem::discriminant(plane).hash(&mut h);
+            match plane {
+                crate::feature::SketchPlane::Face(body, key) => {
+                    (body, key.index).hash(&mut h);
+                    for v in key.centroid.iter().chain(key.normal.iter()) {
+                        bits(*v, &mut h);
+                    }
+                }
+                other => feed(other, &mut h),
             }
-            if let crate::feature::SketchPlane::Face(b, _) = s.plane {
-                b.hash(&mut h);
-            }
-            for p in &s.points {
+            feed(origin_uv, &mut h);
+            for p in points {
                 p.id.hash(&mut h);
                 bits(p.x, &mut h);
                 bits(p.y, &mut h);
             }
-            // a line turned into construction leaves the profile; unseen here, the turn was no step and undo lost it
-            for e in &s.entities {
-                (e.id, e.construction).hash(&mut h);
-            }
-            for c in &s.constraints {
+            // the lines, arcs and circles whole - a circle's radius, a line turned into construction - and what is
+            // drawn over them
+            feed(entities, &mut h);
+            feed(splines, &mut h);
+            feed(patterns, &mut h);
+            feed(rects, &mut h);
+            // how many constraints there are, and the numbers of the dimensions, so an edited number is visible before
+            // the solve runs
+            constraints.len().hash(&mut h);
+            for c in constraints {
                 if let Some(d) = c.dim_value() {
                     bits(d, &mut h);
                 }
-                // A LABEL MOVED IS AN EDIT OF THE DOCUMENT - it goes into the file - but not of what is built: counted
-                // with the placement, so dragging a label asks to save and rebuilds nothing
-                if placement {
-                    for v in c.label_place().unwrap_or([0.0; 3]) {
-                        bits(v, &mut h);
-                    }
-                }
             }
-            // labels: a placed or retyped label is a change of the document like any line
-            for t in &s.texts {
-                (t.id, &t.text, t.construction).hash(&mut h);
-                for v in [t.x, t.y, t.height, t.angle] {
-                    bits(v, &mut h);
+            // A LABEL MOVED IS AN EDIT OF THE DOCUMENT - it goes into the file - but not of what is built: the
+            // constraints whole, labels included, are counted with the placement, so dragging a label asks to save
+            // and rebuilds nothing. A note is the same: written beside the drawing, building nothing.
+            if placement {
+                feed(constraints, &mut h);
+                feed(notes, &mut h);
+            }
+            // labels: a placed or retyped label is a change of the document like any line. Its glyphs are made from
+            // the text and the font, and are not counted.
+            for t in texts {
+                let SketchText { id, x, y, height, angle, text, construction, font, glyphs: _ } = t;
+                (id, text, construction).hash(&mut h);
+                for v in [x, y, height, angle] {
+                    bits(*v, &mut h);
                 }
+                feed(font, &mut h);
+            }
+            // a projection: what it projects; the points and lines it made, and whether its source was lost, the
+            // rebuild writes
+            for pr in projections {
+                let SketchProjection { id, body, src, points: _, entities: _, edges: _ } = pr; // OUT: the edge of each curve, written by the rebuild with them
+                (id, body).hash(&mut h);
+                feed(src, &mut h);
             }
         }
         // Datums and planes.
         for p in &self.planes {
-            (p.id, &p.name).hash(&mut h);
-            for v in p.origin.iter().chain(p.normal.iter()) {
+            let WorkPlane { id, name, origin, normal, rot_deg, def } = p;
+            (id, name).hash(&mut h);
+            for v in origin.iter().chain(normal.iter()) {
                 bits(*v, &mut h);
             }
-            bits(p.rot_deg, &mut h);
+            bits(*rot_deg, &mut h);
+            // how the plane is defined - on a face, through points, at an offset - not only where it stands now
+            feed(def, &mut h);
         }
         for d in &self.datum_points {
-            (d.id, &d.name).hash(&mut h);
-            for v in d.at {
-                bits(v, &mut h);
-            }
-        }
-        for a in &self.datum_axes {
-            (a.id, &a.name).hash(&mut h);
-            for v in a.origin().iter().chain(a.dir().iter()) {
+            let DatumPoint { id, name, at, def } = d;
+            (id, name).hash(&mut h);
+            for v in at {
                 bits(*v, &mut h);
             }
+            feed(def, &mut h);
         }
-        // Assembly: connectors, joints, external references.
+        // an axis by its definition only: where it stands is a cache the rebuild fills (`set_resolved`), empty in a
+        // document just opened, so counting it made an untouched document with an axis on an edge ask to save. A
+        // hand-placed axis holds its coordinates in the definition.
+        for a in &self.datum_axes {
+            let DatumAxis { id, name, def, origin_cache: _, dir_cache: _ } = a;
+            (id, name).hash(&mut h);
+            feed(def, &mut h);
+        }
+        // Assembly: connectors, joints, external references. Where a connector sits on its part and which way it
+        // faces, and what a mate constraint holds, move components and build nothing: counted with the placement.
         for c in &self.connectors {
             (c.id, c.owner).hash(&mut h);
         }
+        if placement {
+            feed(&self.connectors, &mut h);
+            feed(&self.mate_constraints, &mut h);
+        }
         for j in &self.joints {
+            // every field decided; the mating side is left out, see below
+            let crate::feature::Joint {
+                id: _,
+                name: _,
+                a: _,
+                b: _,
+                kind: _,
+                angle: _,
+                offset: _,
+                offset2: _,
+                drive: _,
+                limit_min: _,
+                limit_max: _,
+                global: _,
+                as_built: _,
+                flip: _,
+                roll_flip: _,
+                flip_decided: _,
+            } = j;
             (j.id, &j.name, j.a, j.b, j.kind as u8).hash(&mut h);
             // The offset and angle of a mate are placement too: they move a component and touch no body.
             // They belong in the "is there unsaved work" key and not in the "does it need rebuilding" one.
@@ -4351,6 +4846,7 @@ impl Project {
         }
         // relations between mates move components and touch no body: their numbers are placement, like a mate's angle
         for r in &self.relations {
+            let crate::feature::MateRelation { id: _, name: _, kind: _, a: _, slot_a: _, b: _, slot_b: _, value: _, phase: _, reversed: _ } = r;
             (r.id, &r.name, r.kind as u8, r.a, r.slot_a, r.b, r.slot_b).hash(&mut h);
             if placement {
                 bits(r.value, &mut h);
@@ -4359,13 +4855,17 @@ impl Project {
             }
         }
         for r in &self.external_refs {
+            let crate::feature::ExternalRef { id: _, from_component: _, to_geometry: _ } = r;
             (r.id, r.from_component, r.source_body()).hash(&mut h);
         }
-        // Parameters and named dimensions (text, and cheap to hash).
+        // Parameters and named dimensions (text, and cheap to hash). A parameter's value is computed from its
+        // expression.
         for p in &self.parameters {
-            (&p.name, &p.expr).hash(&mut h);
+            let Param { name, expr, value: _ } = p;
+            (name, expr).hash(&mut h);
         }
         for d in &self.named_dims {
+            let NamedDim { name: _, target: _ } = d;
             d.name.hash(&mut h);
             match &d.target {
                 DimTarget::Sketch { sketch, refs } => (0u8, sketch, refs).hash(&mut h),
@@ -4375,7 +4875,8 @@ impl Project {
         // Bodies and meshes: membership and names only. The geometry is derived from the timeline and was
         // already accounted for by the nodes.
         for b in &self.bodies {
-            (b.id, &b.name, b.visible).hash(&mut h);
+            let Body { id, name, visible, mesh: _, faces: _, sheet: _ } = b;
+            (id, name, visible).hash(&mut h);
         }
         let mut imported: Vec<Id> = self.imported_bodies.iter().copied().collect();
         imported.sort_unstable();
@@ -4383,7 +4884,8 @@ impl Project {
         // Import sources: id, name and size, but not the bytes — tens of megabytes of data that never
         // change.
         for s in &self.sources {
-            (s.id, &s.name, &s.ext, s.data.len()).hash(&mut h);
+            let SourceFile { id, name, ext, data } = s;
+            (id, name, ext, data.len()).hash(&mut h);
         }
         h.finish()
     }

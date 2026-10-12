@@ -73,7 +73,7 @@ pub fn restore_snapshot(project: &mut Project, shapes: &mut HashMap<Id, Shape>, 
     // expression as well as the value for that reason; the values are counted again from the expressions first, as
     // the snapshot may hold an expression its value never caught up with.
     let _ = restored.eval_parameters();
-    let said = |p: &Project| p.parameters.iter().map(|q| (q.name.to_lowercase(), (q.expr.clone(), q.value.to_bits()))).collect::<HashMap<_, _>>();
+    let said = |p: &Project| p.parameters.iter().map(|q| (q.name.clone(), (q.expr.clone(), q.value.to_bits()))).collect::<HashMap<_, _>>();
     let (was, now) = (said(project), said(&restored));
     let moved: Vec<String> = was.keys().chain(now.keys()).filter(|k| was.get(*k) != now.get(*k)).cloned().collect();
     shelve_source_data(shelf.sources, project, &mut restored);

@@ -10,7 +10,7 @@ Sketch → part → assembly. One program, one project file, no cloud and no sub
 
 [github.com/grengojbo/QymCAD](https://github.com/grengojbo/QymCAD)
 
-**English** | [Русский](README.ru.md) | [Українська](README.uk.md)
+**English** | [Русский](README.ru.md) | [Українська](README.uk.md) | [Қазақша](README.kk.md)
 
 <img src="docs/screenshots/01-assembly.png" width="900" alt="A CNC machine assembled in QymCAD: components, joints and their degrees of freedom">
 
@@ -30,7 +30,7 @@ The geometry is exact and solid (B-rep), computed by the [OpenCASCADE](https://d
 kernel — the same one FreeCAD runs on. Hence precise surfaces instead of meshes, correct fillets and
 exchange through STEP with other CAD systems.
 
-The interface is available in English, Ukrainian and Russian.
+The interface is available in English, Kazakh, Ukrainian and Russian.
 
 ## About this fork
 
@@ -82,7 +82,7 @@ A development build. The program works and is fit for real parts, but it is upda
   maintained. The module returns for the stable alpha.
 - **The macOS build carries no Apple signature.** macOS marks a downloaded application as quarantined
   and refuses to open it, saying it is damaged - it is not. The mark is cleared once, with one command,
-  written out step by step in the notes inside the archive. Apple Silicon only; there is no Intel build.
+  written out step by step in the notes inside the archive.
 
 ## Features
 
@@ -120,7 +120,8 @@ chmod +x qymcad-*.AppImage
 ./qymcad-*.AppImage
 ```
 
-**macOS 12+ (Apple Silicon)** — `qymcad-*-macos-arm64.zip`. Unpack it and read `README.txt` lying beside
+**macOS 12+** — `qymcad-*-macos-arm64.zip` for Apple Silicon (M1 and later), `qymcad-*-macos-x86_64.zip`
+for Intel. Unpack it and read `README.txt` lying beside
 the application: the build carries no Apple signature, so the quarantine mark has to be cleared once,
 before the first launch. It takes one command and is written out step by step.
 

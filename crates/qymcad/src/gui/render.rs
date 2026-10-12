@@ -90,8 +90,19 @@ pub(crate) fn draw_3d_gpu(pn: &qymcad_ui_state::Painting, painter: &egui::Painte
     // THE GEOMETRY IS REBUILT RARELY, THE LOOK EVERY FRAME. Moving the pointer over the model, stepping into
     // a subassembly, changing a colour - none of that touches a vertex now; it rewrites a table of two numbers
     // per body. That is what used to send the whole scene to the card again.
-    let (pieces, looks) = if pn.cache.gpu_scene_key.get() != key {
+    //
+    // A PASS THAT IS DISCARDED TAKES ITS CALLBACK WITH IT. egui runs a frame again when a widget asks it to
+    // (`request_discard`) and keeps the shapes of the last pass only, so the scene handed over in an earlier pass of
+    // this frame never reached the card. Reported behaviour: a cube without walls, edges drawn and faces not, until
+    // drawing was switched to the processor and back - which only cleared the key.
+    let ctx = painter.ctx();
+    let this_pass = ctx.cumulative_pass_nr();
+    let first_of_frame = this_pass.saturating_sub(ctx.current_pass_index() as u64);
+    let sent_in = pn.cache.gpu_scene_pass.get();
+    let lost = sent_in >= first_of_frame && sent_in < this_pass;
+    let (pieces, looks) = if pn.cache.gpu_scene_key.get() != key || lost {
         pn.cache.gpu_scene_key.set(key);
+        pn.cache.gpu_scene_pass.set(this_pass);
         let scene = render_scene::gpu_scene(pn);
         (Some(scene.pieces), scene.looks)
     } else {
@@ -206,7 +217,10 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     if forced_cids.is_some() || !contours_switched_off(pn.set, pn.workbench) {
         let selected: &[Id] = &[];
         let obj_sel = if let Sel::Contour(c) = pn.sel { Some(c) } else { None };
-        let sketch_sel = if let Sel::Sketch(s) = pn.sel { pn.project.sketches.get(s).map(|sk| sk.contour_ids.clone()) } else { None };
+        // the loops of the sketch selected and of the one under the cursor, as sets: looked along the list for each loop
+        // drawn, a sketch of 26 335 loops took 4.3 s a frame once it was selected
+        let sketch_sel: Option<std::collections::HashSet<Id>> = if let Sel::Sketch(s) = pn.sel { pn.project.sketches.get(s).map(|sk| sk.contour_ids.iter().copied().collect()) } else { None };
+        let sketch_lit: Option<std::collections::HashSet<Id>> = pn.hover.sketch_3d.and_then(|hi| pn.project.sketches.get(hi)).map(|sk| sk.contour_ids.iter().copied().collect());
         // hidden sketches (the checkbox is off) are not drawn - the same computation as in the sketcher - and neither
         // are the sketches of a part whose own tick is off, as its bodies are not
         let mut hidden_cids = hidden_contour_ids(pn.project, pn.sketch_hidden);
@@ -245,7 +259,7 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             let in_sketch = sketch_sel.as_ref().is_some_and(|ids| cid.is_some_and(|id| ids.contains(&id)));
             // THE SKETCH UNDER THE CURSOR while a tool waits for one - lit the way a face or an edge is lit
             // under the tools that ask for those, so that pointing at it looks like pointing at anything else.
-            let hovered = pn.hover.sketch_3d.and_then(|hi| pn.project.sketches.get(hi)).is_some_and(|sk| cid.is_some_and(|id| sk.contour_ids.contains(&id)));
+            let hovered = sketch_lit.as_ref().is_some_and(|ids| cid.is_some_and(|id| ids.contains(&id)));
             let (w, col) = if hovered {
                 (2.5, pn.scheme.pal.highlight())
             } else if obj_sel == Some(ci) || in_sketch {

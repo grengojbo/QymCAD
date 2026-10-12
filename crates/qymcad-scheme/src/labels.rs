@@ -19,7 +19,7 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
             ],
         ),
         ("grid", vec!["grid", "grid_minor", "axis_x", "axis_y", "axis_z", "grid_axis_x", "grid_axis_y", "grid_axis_z", "sketch_axis_x", "sketch_axis_y", "sketch_axis_idle"]),
-        ("sketch", vec!["sketch_line", "sketch_construction", "sketch_driven", "sketch_face_edge", "sketch_edge_3d"]),
+        ("sketch", vec!["sketch_line", "sketch_construction", "sketch_driven", "sketch_driven_construction", "sketch_face_edge", "sketch_edge_3d"]),
         ("dims", vec!["dimension", "dimension_driven", "dim_helper", "dim_helper_ring"]),
         (
             "select",
@@ -32,7 +32,7 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
         ("body", vec!["body_face", "body_ghost", "body_clash", "edge_idle", "ghost_target"]),
         ("faces", vec!["add", "remove", "modify", "reference", "offset_in"]),
         ("planes", vec!["plane_face", "plane_fill", "plane_idle", "plane_normal", "datum_point", "datum_axis"]),
-        ("preview", vec!["preview", "preview_prim", "preview_array", "preview_axis", "preview_datum", "measure", "cut_line", "gizmo_label"]),
+        ("preview", vec!["preview", "preview_prim", "preview_array", "preview_axis", "preview_datum", "preview_corner_new", "preview_corner_fixed", "measure", "cut_line", "gizmo_label"]),
         ("constraints", vec!["constraint_ok", "constraint_selected", "constraint_hover"]),
         ("assembly", vec!["joint_idle", "joint_hover", "joint_pick_a", "joint_pick_b", "grounded"]),
         ("contours", vec!["contour_idle", "contour_hover", "contour_profile"]),
@@ -50,5 +50,24 @@ pub fn groups() -> Vec<(&'static str, Vec<&'static str>)> {
             ],
         ),
         ("cam", vec!["cam_plunge", "cam_rapid", "cam_table", "cam_table_grid", "cam_stock", "cam_stock_idle", "cam_op1", "cam_op2", "cam_op3", "cam_op4", "cam_op5", "cam_op6"]),
+        (
+            "icons",
+            vec![
+                "icon_stroke",
+                "icon_neutral",
+                "icon_accent",
+                "icon_dimmed",
+                "icon_sketch_primary",
+                "icon_sketch_secondary",
+                "icon_constraint_primary",
+                "icon_constraint_secondary",
+                "icon_part_primary",
+                "icon_part_secondary",
+                "icon_assembly_primary",
+                "icon_assembly_secondary",
+                "icon_datum_primary",
+                "icon_datum_secondary",
+            ],
+        ),
     ]
 }

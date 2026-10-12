@@ -119,8 +119,8 @@ probe! {
         extrude_to(&mut s, "20");
         assert!(!copy.exists(), "the autosave copy was written by the edit itself, with an hour's period not up");
         autosave_every(&mut s, "1");
-        s.pause(Duration::from_millis(2500));
-        assert!(copy.exists(), "2.5 s passed with a 1 s autosave and unsaved work, and {} was not written", copy.display());
+        let what = format!("the autosave of 1 s to write {} beside unsaved work", copy.display());
+        s.wait_for(&what, Duration::from_secs(30), |_| copy.exists());
     }
 }
 

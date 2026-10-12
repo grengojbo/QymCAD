@@ -160,6 +160,10 @@ pub fn launch() -> eframe::Result<()> {
     // AND THE CRASH STOPS DISAPPEARING. Installed before anything can panic: an autosave can fire in the very
     // first seconds of a session.
     crate::crash::install();
+    // THE JOURNAL OF THIS RUN, and a report of the one before when it stopped without closing
+    let previous = crate::crash::begin_journal();
+    // A START AFTER A START THAT DIED DRAWING TAKES A STEP DOWN (`safe_graphics`)
+    let step = crate::safe_graphics::take(previous.journal.as_deref());
 
     let mut options = eframe::NativeOptions {
         viewport: egui::ViewportBuilder::default()
@@ -180,6 +184,7 @@ pub fn launch() -> eframe::Result<()> {
         ..Default::default()
     };
     choose_the_adapter_ourselves(&mut options);
+    options.wgpu_options.on_surface_status = crate::crash::journaled_surface_status(options.wgpu_options.on_surface_status.clone());
     let started = eframe::run_native(
         APP_ID,
         options,
@@ -193,8 +198,9 @@ pub fn launch() -> eframe::Result<()> {
             if let Some(rs) = &cc.wgpu_render_state {
                 // ANTIALIASING COMES BEFORE THE PIPELINES ARE CREATED: they bake the sample count into themselves,
                 // so the setting takes effect on a restart (which is what the window says).
-                crate::viewport_gpu::set_msaa(app.set.msaa);
+                crate::viewport_gpu::set_msaa(crate::safe_graphics::samples(app.set.msaa));
                 app.gpu_ok = crate::viewport_gpu::install(rs);
+                crate::crash::watch_the_device(&rs.device);
                 // WHICH ADAPTER IS DRAWING - half the complaints about a viewport are answered by this line
                 // and by nothing else, and it cannot be guessed from a screenshot.
                 let i = rs.adapter.get_info();
@@ -211,6 +217,10 @@ pub fn launch() -> eframe::Result<()> {
             if let Some(name) = crate::diagnostics::drawing_on_the_processor() {
                 app.status = crate::i18n::tr1("gpu-on-the-processor", "name", &name);
             }
+            // A STEP DOWN IS SAID, with why: otherwise the person sees a rougher picture and no reason for it
+            if let Some(key) = crate::safe_graphics::said(step) {
+                app.status = crate::i18n::tr(key);
+            }
             Ok(Box::new(app))
         }),
     );
@@ -222,6 +232,9 @@ pub fn launch() -> eframe::Result<()> {
         let path = crate::crash::note_failed_start(&e.to_string());
         crate::diagnostics::note_start_failure(&e.to_string(), path.as_deref());
     }
+    qymcad_ui_state::icons::stop_all_watcher_threads();
+    icon_themes::discovery::stop_all_discovery_workers();
+    crate::crash::end_journal();
     started
 }
 
@@ -249,8 +262,14 @@ fn choose_the_adapter_ourselves(options: &mut eframe::NativeOptions) {
     setup.native_adapter_selector = Some(std::sync::Arc::new(|adapters: &[wgpu::Adapter], surface: Option<&wgpu::Surface<'_>>| {
         let seen: Vec<String> = adapters.iter().map(describe_adapter).collect();
         crate::diagnostics::note_adapters(&seen);
-        // a card that cannot draw into THIS window is no use, whatever else it can do
-        let best = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).max_by_key(|a| rank_adapter(a));
+        // THE ADAPTERS THAT CAN DRAW INTO THIS WINDOW, best first, and the first of them that really draws: a card can
+        // open, take every command and draw a transparent picture (`viewport_gpu::draws`)
+        let mut fit: Vec<&wgpu::Adapter> = adapters.iter().filter(|a| surface.is_none_or(|s| a.is_surface_supported(s))).collect();
+        let wanted = crate::safe_graphics::wanted_adapter();
+        fit.sort_by_key(|a| std::cmp::Reverse(rank_adapter(a, wanted.as_deref())));
+        let choice = crate::safe_graphics::first_that_draws(fit.len(), |i, samples| self_test(fit[i], samples));
+        crate::safe_graphics::take_choice(choice);
+        let best = fit.get(choice.index).copied();
         match best {
             Some(a) => {
                 let info = a.get_info();
@@ -297,6 +316,14 @@ pub(crate) fn drawer_of(info: &eframe::wgpu::AdapterInfo) -> crate::diagnostics:
     crate::diagnostics::Drawer { name: info.name.clone(), interface, kind }
 }
 
+/// THE SELF-TEST OF ONE ADAPTER with `samples` a pixel, its answer written into the journal.
+fn self_test(adapter: &eframe::wgpu::Adapter, samples: u32) -> bool {
+    let began = std::time::Instant::now();
+    let drew = pollster::block_on(adapter.request_device(&eframe::wgpu::DeviceDescriptor::default())).is_ok_and(|(device, queue)| crate::viewport_gpu::draws(&device, &queue, samples));
+    crate::crash::journal(&format!("self-test: {} with {samples} sample(s): {} in {} ms", describe_adapter(adapter), if drew { "drew" } else { "drew nothing" }, began.elapsed().as_millis()));
+    drew
+}
+
 /// One adapter in one line, for the report.
 fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
     let i = a.get_info();
@@ -304,11 +331,12 @@ fn describe_adapter(a: &eframe::wgpu::Adapter) -> String {
 }
 
 /// HOW GOOD AN ADAPTER IS, highest first. A real card beats a shared one, a shared one beats a virtual one,
-/// and everything beats the processor - which is taken only when nothing else answers.
-fn rank_adapter(a: &eframe::wgpu::Adapter) -> u8 {
-    let info = a.get_info();
-    let host = if cfg!(windows) { Host::Windows } else { Host::Other };
-    rank_backend_and_type(host, info.backend, info.device_type)
+/// and everything beats the processor - which is taken only when nothing else answers; the step of a start after a
+/// start that died moves the backend and, at the last, the processor (`safe_graphics::rank`).
+fn rank_adapter(a: &eframe::wgpu::Adapter, wanted: Option<&str>) -> u16 {
+    let i = a.get_info();
+    let offered = crate::safe_graphics::Offered { kind: i.device_type, backend: i.backend, wanted: wanted == Some(describe_adapter(a).as_str()) };
+    crate::safe_graphics::rank(crate::safe_graphics::step(), offered, crate::safe_graphics::avoided().as_deref())
 }
 
 /// The operating system an adapter is ranked on; the order differs between them.
@@ -414,6 +442,8 @@ pub(crate) struct OnDisk {
     pub(crate) project_path: Option<String>,
     /// The last DXF a drawing was imported from - the next import opens there.
     pub(crate) dxf_path: Option<String>,
+    /// The folder the last export was written to - the next export opens there.
+    pub(crate) export_folder: Option<export_folder::ExportFolder>,
     /// Reading and writing: the background jobs and what they came back with.
     pub(crate) io: DocIo,
     /// What has changed since the last save, and when the last autosave was.
@@ -439,6 +469,7 @@ impl Default for OnDisk {
         OnDisk {
             project_path: None,
             dxf_path: None,
+            export_folder: None,
             io: DocIo::default(),
             edits: Edits::default(),
             file_ask: None,
@@ -591,6 +622,8 @@ pub(crate) fn install_fonts(ctx: &egui::Context) {
     fonts.families.insert(egui::FontFamily::Name(BOLD_FONT.into()), vec![BOLD_FONT.to_string()]);
     mac_key_symbols(&mut fonts);
     ctx.set_fonts(fonts);
+    // SVG and image loaders for custom icon themes.
+    egui_extras::install_image_loaders(ctx);
     // THE HINT SIZE, set here because this is the one place that already decides how text is drawn - and
     // because a size set in two places drifts.
     //
@@ -1365,8 +1398,7 @@ impl App {
         if edit_si(&self.project, &self.sketch_ses).is_none() {
             self.create_sketch_on(qymcad_core::feature::SketchPlane::default());
         }
-        exit_draw_tools(&mut qymcad_ui_state::tools_of!(self)); // entering a tool means leaving all the others, in one move
-        self.tools.tool.select(&mut self.tools.armed, t); // changing the tool clears whatever the previous one had collected
+        qymcad_ui_state::take_drawing_tool(&mut qymcad_ui_state::tools_of!(self), t);
         self.viewing.mode_3d = false;
         self.status = match self.tools.armed.draw_kind() {
             1 => crate::i18n::tr("g-line-hint"),
@@ -1537,8 +1569,7 @@ impl App {
             // nothing to finish it. Copying acts on what is SELECTED, so what is being BUILT has no part in
             // it.
             exit_draw_tools(&mut qymcad_ui_state::tools_of!(self));
-            self.side.clip.geom_place = None;
-            self.side.clip.geom_pending = Some((eids, cut));
+            self.side.clip.arm_copy(eids, cut);
             self.status = if cut { crate::i18n::tr("g-cut-base-point") } else { crate::i18n::tr("g-copy-base-point") };
             return;
         }
@@ -2317,8 +2348,7 @@ impl App {
         qymcad_part::section_cancel(&mut self.side.section, &mut self.regen); // a section still being placed goes; one applied stays
         self.params.mirror.drop_part(); // an unfinished pick of the part to mirror, and its plane
         self.tools.pending_import.clear(); // the whole unfinished import (the curves plus the points)
-        self.side.clip.geom_pending = None; // an unfinished copy or paste of geometry
-        self.side.clip.geom_place = None;
+        self.side.clip.drop_geom(); // an unfinished copy or paste of geometry
         self.side.m3.clear(); // the 3D measuring tool is a tool too, exclusive with the rest
         self.side.carr = CompArrayCmd::default(); // an unfinished component pattern
     }
@@ -2594,10 +2624,23 @@ fn section_drag_delta_offset(off0: f64, p0: Pos2, s0: Pos2, s1: Pos2, cur: Pos2)
     Some(off0 + dt)
 }
 
-/// "hh:mm" for the autosave line. UTC on purpose: it says "just now", it is not a wall clock.
+/// "hh:mm" for the autosave line, on the wall clock of the person at the screen.
+///
+/// Reported behaviour: at 14:28 in UTC+3 the line read "Auto-saved (11:27)" - the hour of UTC. The zone comes
+/// from chrono's `Local`, which reads the zone database itself; the local offset of `time` gives no answer on
+/// Linux once a second thread runs, and the window always runs several.
 fn clock_hh_mm() -> String {
-    let t = time::OffsetDateTime::from_unix_timestamp(unix_secs() as i64).unwrap_or(time::OffsetDateTime::UNIX_EPOCH);
-    format!("{:02}:{:02}", t.hour(), t.minute())
+    hh_mm_in(unix_secs(), &chrono::Local)
+}
+
+/// "hh:mm" of an instant in a given zone - the part a test can pin, since the current time and the zone of
+/// the machine running the test are not known in advance.
+pub(crate) fn hh_mm_in<Z: chrono::TimeZone>(secs: u64, zone: &Z) -> String
+where
+    Z::Offset: std::fmt::Display,
+{
+    let at = chrono::DateTime::from_timestamp(secs as i64, 0).unwrap_or_default();
+    at.with_timezone(zone).format("%H:%M").to_string()
 }
 
 pub(super) fn tree_drop_intent(rect: egui::Rect, pointer_y: f32) -> TreeDrop {
@@ -2976,6 +3019,8 @@ pub(super) fn sync_visuals(scheme: &SchemeUi, ctx: &egui::Context) {
                                                  // was a hidden one: because of it "adopt the settings" worked even without its own call to the
                                                  // scale, and the guard stayed silent about that. The scale is applied by those whose business it
                                                  // is: `adopt_settings` and the slider in the window.
+    let stack = qymcad_ui_state::icons::get_active_icon_stack(ctx);
+    qymcad_ui_state::icons::set_active_icon_stack(ctx, stack, &scheme.pal);
 }
 
 /// APPLY THE INTERFACE SCALE TO `egui`.
@@ -3067,6 +3112,45 @@ pub(super) fn open_exact(regen: &mut Rebuilding, path: String, format: qymcad_ke
         let _ = tx.send(res);
     });
     regen.busy = Some(Busy { started: std::time::Instant::now(), label: crate::i18n::tr1("io-exact-importing", "format", name), rx, kind: BgKind::ImportShapes, pulse: None, quiet: false });
+}
+
+/// AN SVG IS READ ON A WORKER THREAD, as the meshes and the exact formats are: the window does not wait on a large
+/// drawing, and a panic in the reading ends that thread with a message instead of the program. A stack overflow is not
+/// a panic - it ends the process from any thread - and what stops it is `qymcad_io::SVG_MAX_DEPTH`, which refuses a
+/// drawing nested past 1024 before the parse. The thread gets the 8 MB stack the main thread has, so a legal drawing
+/// keeps the margin it had there: the XML parser recurses once per level, and a 2 MB thread ran out at 3,466 nested
+/// groups, the main thread at 13,866.
+pub(super) fn open_svg(regen: &mut Rebuilding, path: String) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    let p = path.clone();
+    std::thread::Builder::new()
+        .stack_size(8 << 20)
+        .spawn(move || {
+            let res = match qymcad_io::import_svg(&p) {
+                Ok(d) => JobResult::DrawingRead { note: not_read_note(&d.skipped), path: p, curves: d.curves },
+                Err(e) => JobResult::Failed(crate::i18n::tr1("pk-svg-error", "error", &crate::i18n::name(&e))),
+            };
+            let _ = tx.send(res);
+        })
+        .expect("a thread for the SVG import");
+    regen.busy = Some(Busy {
+        started: std::time::Instant::now(),
+        label: crate::i18n::tr1("io-exact-importing", "format", qymcad_io::Format::Svg.name()),
+        rx,
+        kind: BgKind::ImportShapes,
+        pulse: None,
+        quiet: false,
+    });
+}
+
+/// What a drawing read in the background held and was not read, in the words the import door uses for one read in
+/// place ("· Not read: TEXT 1"), or nothing.
+fn not_read_note(skipped: &[(String, usize)]) -> String {
+    if skipped.is_empty() {
+        return String::new();
+    }
+    let list = skipped.iter().map(|(kind, n)| format!("{kind} {n}")).collect::<Vec<_>>().join(", ");
+    format!("· {}", crate::i18n::tr1("import-not-read", "list", &list))
 }
 
 /// Load the logo lazily (a 256x256 PNG embedded in the binary) into a texture for the splash screen.
@@ -3559,7 +3643,7 @@ pub(crate) fn sketch_entry_status(project: &Project, s: &qymcad_core::model::Ske
             return crate::i18n::tr1("g-sketch-on-foreign-face", "name", &src);
         }
     }
-    crate::i18n::tr1("g-editing-sketch", "name", &s.name)
+    crate::i18n::tr1("g-editing-sketch", "name", &crate::i18n::name(&s.name))
 }
 
 /// Resolve the PLACEMENT plane (a shared step for a new sketch AND for an import).
@@ -3675,6 +3759,7 @@ pub(crate) fn adopt_settings(regen: &mut Rebuilding, scheme: &mut SchemeUi, set:
     apply_theme(scheme, set, ctx);
     apply_language(set);
     apply_ui_scale(set, ctx);
+    icon_themes::apply_icon_themes(set, ctx, &scheme.pal);
     invalidate(regen); // the colours and the scale are part of the picture caches' keys
 }
 
@@ -3764,6 +3849,10 @@ mod scheme_use_tests;
 mod audit;
 mod behaviour_sweep;
 mod described_picks;
+/// A fillet, a chamfer or a patch picked by a face reopens with that face: `gui/a_face_pick_reopens_with_its_face.rs`.
+mod a_face_pick_reopens_with_its_face;
+/// A fillet with a radius at a corner reopens with that corner: `gui/a_variable_fillet_reopens_with_its_corners.rs`.
+mod a_variable_fillet_reopens_with_its_corners;
 mod expand_selection;
 mod sketch_sweep;
 mod input;
@@ -3778,6 +3867,46 @@ mod a_shape_is_finished_by_hand;
 mod a_sketch_chamfer_takes_two_values;
 mod a_sketch_fillet_by_chord_or_arc;
 mod a_rectangle_is_dragged_from_its_anchor;
+mod a_construction_line_is_no_side_of_a_corner;
+mod the_corner_box_stands_clear_of_the_corner;
+mod a_rounded_rectangle_turns_whole;
+mod a_cut_corner_draws_clean;
+mod no_ties_shows_no_tie;
+mod the_corner_of_a_crossing_follows_the_pointer;
+mod the_offset_takes_its_chain_either_way;
+mod the_mirror_picks_as_every_tool;
+mod the_dimensions_of_a_cut_corner_stand_outside;
+mod a_corner_set_takes_its_size_whole;
+mod the_box_of_fillet_all_stands_at_the_clicked_side;
+mod every_field_of_a_pattern_bar_has_a_caption;
+mod the_x_key_turns_the_selection;
+mod a_shape_goes_with_its_centre;
+mod diagnostics_wait_for_the_release;
+mod the_sketch_says_what_it_did_not_solve_in_time;
+mod a_big_drawing_stays_live;
+mod a_pattern_across_a_pattern_is_laid_by_hand;
+mod the_sketch_of_the_report_takes_a_line;
+mod a_big_sketch_selected_keeps_the_3d_frame;
+mod a_dimension_past_its_field_is_left_as_it_stands;
+mod the_point_numbers_wait_for_their_setting;
+mod graphics_settings;
+mod a_drawing_tool_drops_the_selection;
+mod a_circle_and_an_arc_take_a_size_only_when_typed;
+mod a_rectangle_with_its_centre_fixed_is_worked_by_hand;
+mod a_copy_goes_to_the_clipboard;
+mod extend_is_worked_by_hand;
+mod a_projection_is_sketch_geometry;
+mod a_point_put_on_a_line_is_tied_to_it;
+mod a_projection_follows_the_parameters;
+mod an_arc_by_its_centre_ends_on_itself;
+mod a_shift_box_leaves_the_sheet_still;
+mod a_dimension_being_placed_follows_the_pointer;
+mod the_dimensions_turn_with_their_rectangle;
+mod an_automatic_parallel_stays_in_its_shape;
+mod the_chain_being_drawn_marks_its_own_corners;
+mod a_side_deleted_leaves_the_rectangle_lines_held;
+mod the_middle_of_a_line_is_picked;
+mod a_line_made_level_turns_about_its_middle;
 mod a_drag_takes_what_was_pressed;
 mod text_font;
 mod font_row_look;
@@ -3826,6 +3955,7 @@ mod a_relation_is_made_by_hand;
 mod a_joint_can_hold_what_it_finds;
 mod a_mechanism_can_be_watched_moving;
 mod the_mate_window_stands_still_while_it_runs;
+mod a_window_keeps_its_place_across_languages;
 mod the_angle_field_keeps_its_width;
 mod a_connector_stands_on_its_own;
 mod the_gizmo_pulls_where_it_points;
@@ -3858,6 +3988,8 @@ mod dragging_a_joint_does_not_flicker_the_rebuild_modal;
 mod a_chain_of_parts_follows_the_hand;
 mod a_global_mate_is_dragged_by_its_part;
 mod preparing_the_brep_never_loops;
+mod a_failed_rebuild_keeps_the_brep;
+mod an_export_that_panics_keeps_the_brep;
 mod dragging_a_part_pulls_the_whole_chain;
 mod a_part_is_dragged_by_real_mouse;
 mod a_moved_part_does_not_rebuild_its_block;
@@ -3953,6 +4085,9 @@ mod param_error_readable;
 mod ghost_highlight;
 mod look_at_a_document;
 mod gpu_shot;
+mod the_region_picker_keeps_its_command;
+mod a_scene_lost_in_a_discarded_pass_is_sent_again;
+mod smooth_shading_look;
 mod card_matches_raster;
 mod drag_cost_look;
 mod release_build;
@@ -3998,6 +4133,7 @@ mod viewport_3d;
 mod panels_props;
 mod panels_tree;
 mod panels_windows;
+pub(crate) mod icon_themes;
 
 /// The single expression field and its list of drivers. One for the whole project, so that a dimension's
 /// field, a feature's field and a table cell all behave the same way.
@@ -4020,6 +4156,8 @@ mod io_jobs;
 
 /// Asking for a file without stopping the frames lives in `gui/file_ask.rs`.
 mod file_ask;
+/// Where an export chooser opens lives in `gui/export_folder.rs`.
+mod export_folder;
 /// Whole frames without a screen, for the hand of the checks and for a session, live in `gui/window.rs`.
 mod window;
 mod key_leak;

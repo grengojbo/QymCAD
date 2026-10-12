@@ -1,9 +1,8 @@
-//! A PARAMETER IN CAPITALS DRIVES ITS FEATURE: a name is the same name whatever its case, in the rebuild as in
-//! the evaluation.
+//! A PARAMETER IN CAPITALS DRIVES ITS FEATURE: a name is matched as written, in the rebuild as in the evaluation.
 //!
 //! Reported behaviour: a parameter `H` = 10 used as `H` in an extrude height; `H` became 15 in the parameter table
 //! and the extrude stayed 10 tall. A lower-case name worked. The table marks dependents by comparing `param_map`
-//! (lower-cased keys) with the values of the last rebuild and asks for the dependents of each changed name.
+//! with the values of the last rebuild and asks for the dependents of each changed name.
 use qymcad_core::geom::Point2;
 use qymcad_core::model::{Param, Project};
 use std::collections::HashMap;
@@ -30,7 +29,7 @@ fn an_extrude_of_height_h_follows_h() {
     }
     let now = p.param_map();
     let changed: Vec<String> = now.iter().filter(|(k, v)| seen.get(*k).is_none_or(|old| (*old - **v).abs() > 1e-12)).map(|(k, _)| k.clone()).collect();
-    assert_eq!(changed, vec!["h".to_string()], "the comparison sees the lower-cased name");
+    assert_eq!(changed, vec!["H".to_string()], "the comparison sees the name as written");
     for name in &changed {
         p.mark_param_dependents_dirty_for(name);
     }

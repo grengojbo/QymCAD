@@ -51,6 +51,7 @@ mod tests {
             show_interference: !d.show_interference,
             snap: super::super::Snapping { on: !d.snap.on, grid: 7.5, rot_deg: 30.0 },
             auto_constrain: !d.auto_constrain,
+            show_point_numbers: !d.show_point_numbers,
             dim_show_name: !d.dim_show_name,
             dim_show_formula: !d.dim_show_formula,
             dim_font: 20.0,                                     // the factory value is 13
@@ -62,6 +63,10 @@ mod tests {
             pick_precision: 2,
             import_ask_always: !d.import_ask_always,
             import_units: [("STL".to_string(), "m".to_string())].into_iter().collect(), // the factory value is empty
+            active_icon_packs: vec!["custom-theme".into()],
+            inactive_icon_packs: vec!["old-theme".into()],
+            icon_dev_watch: true,
+            watched_icon_packs: vec!["custom-theme".into()],
         }
     }
 
@@ -83,6 +88,7 @@ mod tests {
         assert_eq!(a.snap.grid, b.snap.grid, "the grid step");
         assert_eq!(a.snap.rot_deg, b.snap.rot_deg, "the rotation step");
         assert_eq!(a.auto_constrain, b.auto_constrain, "the automatic constraints");
+        assert_eq!(a.show_point_numbers, b.show_point_numbers, "the numbers of the points");
         assert_eq!(
             (a.dim_show_name, a.dim_show_formula, a.dim_font, a.dim_text),
             (b.dim_show_name, b.dim_show_formula, b.dim_font, b.dim_text),
@@ -96,6 +102,10 @@ mod tests {
         assert_eq!(a.zoom_at, b.zoom_at, "where the view zooms from");
         assert_eq!(a.zoom_editing, b.zoom_editing, "where the view zooms from while a command is open");
         assert_eq!(a.orbit_about, b.orbit_about, "what the view turns about");
+        assert_eq!(a.active_icon_packs, b.active_icon_packs, "active icon packs");
+        assert_eq!(a.inactive_icon_packs, b.inactive_icon_packs, "inactive icon packs");
+        assert_eq!(a.icon_dev_watch, b.icon_dev_watch, "icon dev watch mode");
+        assert_eq!(a.watched_icon_packs, b.watched_icon_packs, "watched icon packs");
     }
 
     /// THE MAIN THING: EVERY setting survives the save-and-load round trip.

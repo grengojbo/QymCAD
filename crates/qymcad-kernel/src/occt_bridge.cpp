@@ -6,6 +6,7 @@
 // Split out of one 5 077-line file with 69 entry points, where finding a function meant scrolling.
 // What the parts share lives in `occt_common.hpp`.
 #include "occt_common.hpp"
+#include <BRepLib_ToolTriangulatedShape.hxx>
 
 // -- WHY THE KERNEL REFUSED ------------------------------------------------------------------------
 //
@@ -56,6 +57,24 @@ static void add_face(const TopoDS_Face& face, QymBody& b, uint32_t fid) {
         b.verts.push_back(static_cast<float>(p.X()));
         b.verts.push_back(static_cast<float>(p.Y()));
         b.verts.push_back(static_cast<float>(p.Z()));
+    }
+    // THE NORMAL OF THE SURFACE AT EVERY VERTEX, from its point (u, v) on it - not an average of the triangles around the
+    // vertex. Reported behaviour: blotches along every rounding, a line along a sphere, a step in the shadow where a
+    // rounding meets the face it is tangent to; measured on a sphere of R20, the averaged normal stood up to 6.4 deg off
+    // the sphere's own and two sides of its seam 12.75 deg apart. OCCT turns the normal with the orientation of the face
+    // and takes another way at a pole, where the surface has none of its own.
+    try {
+        BRepLib_ToolTriangulatedShape::ComputeNormals(face, t);
+    } catch (...) {
+        // no normals: the face is shaded by its triangles, as before
+    }
+    for (int i = 1; i <= nb; ++i) {
+        gp_Dir n = t->HasNormals() ? gp_Dir(t->Normal(i)) : gp_Dir(0, 0, 1);
+        n.Transform(trsf);
+        const bool known = t->HasNormals();
+        b.norms.push_back(known ? static_cast<float>(n.X()) : 0.0f);
+        b.norms.push_back(known ? static_cast<float>(n.Y()) : 0.0f);
+        b.norms.push_back(known ? static_cast<float>(n.Z()) : 0.0f);
     }
     const bool rev = (face.Orientation() == TopAbs_REVERSED);
     const int nt = t->NbTriangles();
@@ -226,20 +245,19 @@ int next_local(const TopTools_DataMapOfShapeInteger& m) {
 // body: "face 1" of the base and "face 1" of the tool are different faces, and carrying both would glue
 // them into one name. So from the second operand only what the recipe named is taken, and the rest gets a
 // fresh number.
-void carry_ids(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& aid, TopTools_DataMapOfShapeInteger& out, int& next, bool named_only, TopTools_DataMapOfShapeInteger* splits_of, TopTools_DataMapOfShapeInteger* splits_idx, const std::map<int,int>* gen_names) {
-    // THE NAMES ALREADY TAKEN IN THE RESULT. A name is an address: two elements of one body sharing an id
-    // are indistinguishable, and a reference to one of them means both. Only the Modified loop used to
-    // watch for this (within a single source), and a duplicate passed freely through Generated.
+// THE RECORD OF THE NAMES ALREADY TAKEN in one result: `taken` every value bound in it, `owner` the first element bound
+// under each. See `carry_ids` for why both are needed.
+struct TakenNames {
     std::unordered_set<int> taken;
-    // WHOSE NUMBER IT IS. One number, one face: two faces under one name make a reference ambiguous, and
-    // it leads to both places at once. Knowing that a number is taken is not enough — one has to know BY
-    // WHOM: an image may take the number of ITS OWN source (that one has left the result), but not of
-    // somebody else's.
     std::map<int, TopoDS_Shape> owner;
-    for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(out); it.More(); it.Next()) {
-        taken.insert(it.Value());
-        if (!owner.count(it.Value())) owner[it.Value()] = it.Key();
-    }
+};
+
+// `carry_ids` with the record kept by the caller, so a caller making several calls into one `out` builds it once
+// instead of each call walking the whole of `out` again (each `out.Bind` below updates the record beside it). See
+// `qym_shape_fuse_many`, where that walk made the union of a pattern grow with the square of its copies.
+static void carry_ids_with(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& aid, TopTools_DataMapOfShapeInteger& out, int& next, bool named_only, TopTools_DataMapOfShapeInteger* splits_of, TopTools_DataMapOfShapeInteger* splits_idx, const std::map<int,int>* gen_names, TakenNames& record) {
+    auto& taken = record.taken;
+    auto& owner = record.owner;
     for (TopExp_Explorer ex(a, ty); ex.More(); ex.Next()) {
         const TopoDS_Shape& f = ex.Current();
         if (!aid.IsBound(f)) continue;
@@ -311,6 +329,22 @@ void carry_ids(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a, TopAbs_Sha
             if (!owner.count(use)) owner[use] = it.Value();
         }
     }
+}
+
+void carry_ids(BRepBuilderAPI_MakeShape& algo, const TopoDS_Shape& a, TopAbs_ShapeEnum ty, const TopTools_DataMapOfShapeInteger& aid, TopTools_DataMapOfShapeInteger& out, int& next, bool named_only, TopTools_DataMapOfShapeInteger* splits_of, TopTools_DataMapOfShapeInteger* splits_idx, const std::map<int,int>* gen_names) {
+    // THE NAMES ALREADY TAKEN IN THE RESULT. A name is an address: two elements of one body sharing an id
+    // are indistinguishable, and a reference to one of them means both. Only the Modified loop used to
+    // watch for this (within a single source), and a duplicate passed freely through Generated.
+    // WHOSE NUMBER IT IS. One number, one face: two faces under one name make a reference ambiguous, and
+    // it leads to both places at once. Knowing that a number is taken is not enough - one has to know BY
+    // WHOM: an image may take the number of ITS OWN source (that one has left the result), but not of
+    // somebody else's.
+    TakenNames record;
+    for (TopTools_DataMapIteratorOfDataMapOfShapeInteger it(out); it.More(); it.Next()) {
+        record.taken.insert(it.Value());
+        if (!record.owner.count(it.Value())) record.owner[it.Value()] = it.Key();
+    }
+    carry_ids_with(algo, a, ty, aid, out, next, named_only, splits_of, splits_idx, gen_names, record);
 }
 
 // Everything left unnamed after the transfer (the operation's new geometry) gets a POSITIONAL number.
@@ -2356,6 +2390,11 @@ extern "C" size_t qym_body_face_count(const QymDoc* d, size_t i) { return (d && 
 extern "C" void qym_body_copy_verts(const QymDoc* d, size_t i, float* out) {
     if (d && i < d->bodies.size() && !d->bodies[i].verts.empty()) std::memcpy(out, d->bodies[i].verts.data(), d->bodies[i].verts.size() * sizeof(float));
 }
+// The surface's normal at every vertex, three floats each, parallel to `qym_body_copy_verts`; (0, 0, 0) where the face
+// had none.
+extern "C" void qym_body_copy_normals(const QymDoc* d, size_t i, float* out) {
+    if (d && i < d->bodies.size() && d->bodies[i].norms.size() == d->bodies[i].verts.size() && !d->bodies[i].norms.empty()) std::memcpy(out, d->bodies[i].norms.data(), d->bodies[i].norms.size() * sizeof(float));
+}
 extern "C" void qym_body_copy_tris(const QymDoc* d, size_t i, uint32_t* out) {
     if (d && i < d->bodies.size() && !d->bodies[i].tris.empty()) std::memcpy(out, d->bodies[i].tris.data(), d->bodies[i].tris.size() * sizeof(uint32_t));
 }
@@ -3175,11 +3214,20 @@ extern "C" QymShape* qym_shape_fuse_many(const QymShape* const* parts, int n) {
         // The counter is kept by THE FIRST argument, exactly as in a pairwise boolean.
         int nf = next_local(parts[0]->fids);
         int ne = next_local(parts[0]->eids);
-        carry_ids(algo, parts[0]->shape, TopAbs_FACE, parts[0]->fids, q->fids, nf, false, &q->fsplit_of, &q->fsplit_idx);
-        carry_ids(algo, parts[0]->shape, TopAbs_EDGE, parts[0]->eids, q->eids, ne);
+        // ONE RECORD OF THE NAMES TAKEN FOR THE WHOLE UNION, faces and edges apart, kept up to date as each argument is
+        // carried in. `carry_ids` rebuilt it from all of the result at every call - twice per argument - so the names
+        // of a pattern took time growing with the square of its copies: measured on a grid of 5 mm boxes, 1,000 copies
+        // rebuilt in 16.0-16.9 s and 2,000 in 50.8-59.6 s, against 3.4-3.5 s and 6.7-6.8 s with the record kept here
+        // (back to back, a loaded machine). The names do not change: the record holds what each call rebuilt. It could
+        // differ only in which of two elements bound under one number counts as its owner, and the owner is asked only
+        // of a source not yet in the result - a pattern's copies are fresh shapes, and a source already bound is
+        // passed over before the question.
+        TakenNames faces, edges;
+        carry_ids_with(algo, parts[0]->shape, TopAbs_FACE, parts[0]->fids, q->fids, nf, false, &q->fsplit_of, &q->fsplit_idx, nullptr, faces);
+        carry_ids_with(algo, parts[0]->shape, TopAbs_EDGE, parts[0]->eids, q->eids, ne, false, nullptr, nullptr, nullptr, edges);
         for (int i = 1; i < n; ++i) {
-            carry_ids(algo, parts[i]->shape, TopAbs_FACE, parts[i]->fids, q->fids, nf, true, &q->fsplit_of, &q->fsplit_idx);
-            carry_ids(algo, parts[i]->shape, TopAbs_EDGE, parts[i]->eids, q->eids, ne, true);
+            carry_ids_with(algo, parts[i]->shape, TopAbs_FACE, parts[i]->fids, q->fids, nf, true, &q->fsplit_of, &q->fsplit_idx, nullptr, faces);
+            carry_ids_with(algo, parts[i]->shape, TopAbs_EDGE, parts[i]->eids, q->eids, ne, true, nullptr, nullptr, nullptr, edges);
         }
         fill_unnamed(res, TopAbs_FACE, q->fids, nf);
         fill_unnamed(res, TopAbs_EDGE, q->eids, ne);

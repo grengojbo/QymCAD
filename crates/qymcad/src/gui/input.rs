@@ -127,10 +127,6 @@ impl App {
                 }
             }
         }
-        // X switches the selected entities into or out of construction geometry
-        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| !i.modifiers.any() && i.key_pressed(egui::Key::X)) {
-            qymcad_ui_state::construction_selected(qymcad_ui_state::editing_of!(self), &self.tools.sel_sk, &self.sketch_ses);
-        }
         // Ctrl+C / Ctrl+X / Ctrl+V — the clipboard.
         // While editing a sketch with entities selected: copying and pasting GEOMETRY.
         // Otherwise (a node of the tree is selected): copying and pasting SKETCHES, PARTS and
@@ -261,16 +257,8 @@ impl App {
             self.tools.picking.set_plane_face(None);
             self.status = crate::i18n::tr("in-plane-face-cancelled");
         } else if self.tools.sel_sk.constraint.is_some() || self.tools.sel_sk.modify.is_some() {
-            self.tools.sel_sk.constraint = None;
-            self.tools.sel_sk.modify = None;
-            // AND THE EDIT MODE ITSELF. Only THE EXPECTED PICK was extinguished while `tool.modify`
-            // stayed: the cancellation worked, yet the tool bar went on saying "Mirror" and the button in
-            // the panel stayed pressed. Switched off yet looking switched on is the worst kind of
-            // cancellation: one is sure the tool is active and cannot understand why a click does
-            // nothing.
-            self.tools.armed = qymcad_ui_state::Armed::None;
-        } else if self.tools.armed.click_op() != 0 {
-            self.tools.armed = qymcad_ui_state::Armed::None;
+            qymcad_ui_state::escape_waiting_tool(&mut qymcad_ui_state::tools_of!(self), &mut self.status);
+        } else if qymcad_ui_state::tools_of!(self).leave_click_tool(&mut self.status) {
         } else if self.tools.armed.pat_op() != 0 {
             self.tools.armed = qymcad_ui_state::Armed::None;
             self.tools.pat.edit = None;
@@ -280,8 +268,8 @@ impl App {
             self.tools.armed = qymcad_ui_state::Armed::None;
             self.tools.tool.move_base = None;
             self.status = crate::i18n::tr("in-move-cancelled");
-        } else if self.side.clip.geom_place.is_some() {
-            self.side.clip.geom_place = None;
+        } else if self.side.clip.geom_place {
+            self.side.clip.geom_place = false;
             self.status = crate::i18n::tr("in-insert-cancelled");
         } else if self.side.clip.geom_pending.is_some() {
             self.side.clip.geom_pending = None;

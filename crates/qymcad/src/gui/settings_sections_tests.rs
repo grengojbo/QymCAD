@@ -97,6 +97,7 @@ mod tests {
             show_interference: true,
             snap: super::super::Snapping { on: false, grid: 7.5, rot_deg: 30.0 },
             auto_constrain: false,
+            show_point_numbers: true,
             dim_show_name: true,
             dim_show_formula: true,
             dim_font: 20.0,
@@ -108,6 +109,10 @@ mod tests {
             pick_precision: 2,
             import_ask_always: true,
             import_units: [("STL".to_string(), "m".to_string())].into_iter().collect(),
+            active_icon_packs: vec!["custom-theme".into()],
+            inactive_icon_packs: vec!["old-theme".into()],
+            icon_dev_watch: true,
+            watched_icon_packs: vec!["custom-theme".into()],
         }
     }
 
@@ -154,6 +159,7 @@ mod tests {
         assert_eq!((v.viewcube_size, v.gpu_viewport, v.projection, v.shading), (d.viewcube_size, d.gpu_viewport, d.projection, d.shading));
         let sk = after(Sec::Sketch);
         assert_eq!((sk.snap.on, sk.snap.grid, sk.snap.rot_deg, sk.auto_constrain), (d.snap.on, d.snap.grid, d.snap.rot_deg, d.auto_constrain));
+        assert_eq!(sk.show_point_numbers, d.show_point_numbers, "the sketch section must reset the numbers of the points");
         assert_eq!(
             (sk.dim_show_name, sk.dim_show_formula, sk.dim_font, sk.dim_text),
             (d.dim_show_name, d.dim_show_formula, d.dim_font, d.dim_text),
@@ -289,69 +295,43 @@ mod applicability_tests {
         assert!(!persp.iter().any(|t| t.contains(&why)), "under perspective the setting works and the window still makes excuses");
     }
 
-    /// WHO DRAWS IS SAID IN THE VIEWPORT'S SETTINGS. Reported behaviour: on Windows the program was "very slow" with
-    /// "GPU (fast)" chosen, and nothing in the window said that the GPU there was Microsoft's software adapter - the
-    /// processor. With the processor drawing, the line names it and says what to do, with the words of the rows it
-    /// points to; with a card, the line names the card and holds no advice; before the window has taken an adapter, it
-    /// says so. The Viewport section shows the line.
+    /// DRAWING ON THE PROCESSOR IS SAID IN THE VIEWPORT'S SETTINGS. Reported behaviour: on Windows the program was "very
+    /// slow" with "GPU (fast)" chosen, and nothing in the window said that the GPU there was Microsoft's software
+    /// adapter, that is the processor. With the processor drawing, the warning names it and says what to do, with the
+    /// words of the rows it points to; with a card, or before the window has taken an adapter, it says nothing: the row
+    /// of the graphics names the adapter.
     #[test]
     fn the_viewport_settings_say_who_draws() {
         use crate::diagnostics::{Drawer, DrawerKind};
         let prev = crate::i18n::language();
         crate::i18n::set_language("uk");
         let tr = crate::i18n::tr;
-        let draw = |drawer: Option<Drawer>, offered: Vec<String>| {
+        let draw = |drawer: Option<Drawer>| {
             let mut app = App::default();
             super::super::screen_keys::tests::frame_text(&mut app, move |_, c| {
-                egui::CentralPanel::default().show(c, |ui| crate::gui::panels_windows::drawer_rows(ui, drawer.as_ref(), &offered, egui::Color32::RED));
+                egui::CentralPanel::default().show(c, |ui| crate::gui::panels_windows::drawer_rows(ui, drawer.as_ref(), egui::Color32::RED));
             })
         };
-        let warp = Drawer { name: "Microsoft Basic Render Driver".into(), interface: "Direct3D 12".into(), kind: DrawerKind::Processor };
-        let offered = vec!["Dx12/Cpu Microsoft Basic Render Driver".to_string(), "Gl/IntegratedGpu Intel(R) HD Graphics 2500".to_string()];
-        let slow = draw(Some(warp), offered);
-        let card = draw(Some(Drawer { name: "Apple M2".into(), interface: "Metal".into(), kind: DrawerKind::Card }), Vec::new());
-        let unknown = draw(None, Vec::new());
-
-        // the line stands last in the section, below the fold of a test frame: the search for the engine's row finds it
-        let mut app = App::default();
-        app.win.open(WinKind::Settings);
-        app.scheme.section = super::super::settings_sections::SettingsSection::Viewport;
-        app.scheme.search = tr("settings-engine").trim_end_matches(':').to_string();
-        let section = super::super::screen_keys::tests::frame_text(&mut app, |a, c| {
-            let mut asks = Vec::new();
-            crate::gui::panels_windows::settings_window(&mut a.win_ctx(&mut asks), c);
-            a.do_win_asks(asks, c);
-        });
+        let slow = draw(Some(Drawer { name: "Microsoft Basic Render Driver".into(), interface: "Direct3D 12".into(), kind: DrawerKind::Processor }));
+        let card = draw(Some(Drawer { name: "Apple M2".into(), interface: "Metal".into(), kind: DrawerKind::Card }));
+        let unknown = draw(None);
 
         // the words looked for are read in the language the texts were drawn in, not in the one restored
         let has = |texts: &[String], what: &str| texts.iter().any(|t| t.contains(what));
         let mut wrong = Vec::new();
-        for must in [
-            "Microsoft Basic Render Driver",
-            "Direct3D 12",
-            &tr("settings-drawer-processor"),
-            &tr("settings-engine-cpu"),
-            &tr("settings-msaa-off"),
-            &tr("settings-drawer-offered"),
-        ] {
+        for must in ["Microsoft Basic Render Driver", "Direct3D 12", &tr("settings-drawer-processor"), &tr("settings-engine-cpu"), &tr("settings-msaa-off")] {
             if !has(&slow, must) {
                 wrong.push(format!("the processor drawing does not say {must:?}: {slow:?}"));
             }
         }
-        if !has(&card, "Apple M2") || !has(&card, &tr("settings-drawer-card")) {
-            wrong.push(format!("the card drawing is not named: {card:?}"));
+        if has(&card, "Apple M2") || has(&card, &tr("settings-engine-cpu")) {
+            wrong.push(format!("a card drawing is warned about: {card:?}"));
         }
-        if has(&card, &tr("settings-engine-cpu")) || has(&card, &tr("settings-drawer-offered")) {
-            wrong.push(format!("a card drawing is given advice or a list of one: {card:?}"));
-        }
-        if !has(&unknown, &tr("settings-drawer-unknown")) {
-            wrong.push(format!("no adapter yet and the line does not say so: {unknown:?}"));
-        }
-        if !has(&section, &tr("settings-drawer-unknown")) {
-            wrong.push(format!("the Viewport section does not say who draws: {section:?}"));
+        if has(&unknown, &tr("settings-engine-cpu")) {
+            wrong.push(format!("no adapter yet and a warning is given: {unknown:?}"));
         }
         crate::i18n::set_language(&prev);
-        assert!(wrong.is_empty(), "who draws is not said:\n  {}", wrong.join("\n  "));
+        assert!(wrong.is_empty(), "drawing on the processor is not said:\n  {}", wrong.join("\n  "));
     }
 
     /// AND THE ORDER OF THE ROWS RUNS FROM THE IMPORTANT TO THE RARE.

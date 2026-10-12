@@ -156,6 +156,78 @@ pub(super) fn entity_bulge_loops(pts: &[SketchPoint], ents: &[SketchEntity]) -> 
     out
 }
 
+/// THE OPEN CHAINS OF LINES AND ARCS AMONG `ents`, each as a bulge polyline from one free end to the other - its last
+/// vertex the far end, with no bulge. A chain is walked from an end no other of the curves meets; a closed loop has
+/// none and is left to `entity_bulge_loops`.
+pub(super) fn entity_bulge_chains(pts: &[SketchPoint], ents: &[SketchEntity]) -> Vec<Vec<crate::offset::BVert>> {
+    use std::f64::consts::TAU;
+    let pt = |id: Id| pts.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
+    let segs: Vec<(usize, Id, Id)> = ents
+        .iter()
+        .enumerate()
+        .filter(|(_, e)| !e.construction)
+        .filter_map(|(i, e)| match e.kind {
+            EntityKind::Line { a, b } | EntityKind::Arc { a, b, .. } => Some((i, a, b)),
+            _ => None,
+        })
+        .collect();
+    let mut adj: std::collections::HashMap<Id, Vec<usize>> = std::collections::HashMap::new();
+    for (k, &(_, a, b)) in segs.iter().enumerate() {
+        adj.entry(a).or_default().push(k);
+        adj.entry(b).or_default().push(k);
+    }
+    // the free ends, in the order the curves were drawn: a chain starts where its first curve does
+    let mut ends: Vec<Id> = Vec::new();
+    for &(_, a, b) in &segs {
+        for p in [a, b] {
+            if adj.get(&p).is_some_and(|v| v.len() == 1) && !ends.contains(&p) {
+                ends.push(p);
+            }
+        }
+    }
+    let mut used = vec![false; segs.len()];
+    let mut out: Vec<Vec<crate::offset::BVert>> = Vec::new();
+    for start in ends {
+        let Some(&first) = adj.get(&start).and_then(|v| v.first()) else { continue };
+        if used[first] {
+            continue;
+        }
+        let mut verts: Vec<crate::offset::BVert> = Vec::new();
+        let (mut cur_pt, mut cur_k) = (start, first);
+        loop {
+            used[cur_k] = true;
+            let (ei, a, b) = segs[cur_k];
+            let to = if cur_pt == a { b } else { a };
+            let Some((fx, fy)) = pt(cur_pt) else { break };
+            let bulge = match ents[ei].kind {
+                EntityKind::Arc { center, a: aa, ccw, .. } => match (pt(center), pt(cur_pt), pt(to)) {
+                    (Some((cx, cy)), Some((sx, sy)), Some((ex, ey))) => {
+                        let (sa_, ea_) = ((sy - cy).atan2(sx - cx), (ey - cy).atan2(ex - cx));
+                        let dir_ccw = if cur_pt == aa { ccw } else { !ccw };
+                        let sweep = if dir_ccw { (ea_ - sa_).rem_euclid(TAU) } else { -((sa_ - ea_).rem_euclid(TAU)) };
+                        (sweep / 4.0).tan()
+                    }
+                    _ => 0.0,
+                },
+                _ => 0.0,
+            };
+            verts.push(crate::offset::BVert { x: fx, y: fy, bulge });
+            cur_pt = to;
+            match adj.get(&cur_pt).and_then(|v| v.iter().copied().find(|&k| !used[k])) {
+                Some(nk) => cur_k = nk,
+                None => break,
+            }
+        }
+        if let Some((x, y)) = pt(cur_pt) {
+            verts.push(crate::offset::BVert { x, y, bulge: 0.0 });
+        }
+        if verts.len() >= 2 {
+            out.push(verts);
+        }
+    }
+    out
+}
+
 /// A closed contour for an ellipse, from its centre and the endpoints of its semi-axes. The major semi-axis is
 /// c→ma and the minor one is perpendicular to it with length |c−mi|. The tessellation adapts to the larger
 /// semi-axis.
@@ -179,7 +251,8 @@ pub(super) fn ellipse_contour(pc: Point2, pma: Point2, pmi: Point2) -> Contour {
 }
 
 pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<Contour> {
-    let pt = |id: Id| points.iter().find(|p| p.id == id).map(|p| crate::geom::Point2::new(p.x, p.y));
+    let at: std::collections::HashMap<Id, Point2> = points.iter().map(|p| (p.id, crate::geom::Point2::new(p.x, p.y))).collect();
+    let pt = |id: Id| at.get(&id).copied();
     let mut out: Vec<Contour> = Vec::new();
     // circles are closed contours of their own
     for e in entities {
@@ -220,7 +293,9 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
     const WELD_TOL2: f64 = 1e-3 * 1e-3;
     let mut rep: std::collections::HashMap<Id, Id> = std::collections::HashMap::new();
     {
-        let mut anchors: Vec<(Id, Point2)> = Vec::new(); // (representative, position)
+        // the anchors welded by a grid as wide as the tolerance (`Welded`), each node standing for the first id at it
+        let mut anchors = Welded::new(1e-3);
+        let mut representative: Vec<Id> = Vec::new();
         let mut ids: Vec<Id> = segs.iter().flat_map(|&(_, a, b)| [a, b]).collect();
         ids.sort_unstable();
         ids.dedup();
@@ -229,15 +304,11 @@ pub(super) fn tessellate_sketch_multi(points: &[SketchPoint], entities: &[Sketch
                 rep.insert(id, id);
                 continue;
             };
-            match anchors.iter().find(|(_, ap)| (ap.x - p.x).powi(2) + (ap.y - p.y).powi(2) < WELD_TOL2) {
-                Some(&(r, _)) => {
-                    rep.insert(id, r);
-                }
-                None => {
-                    anchors.push((id, p));
-                    rep.insert(id, id);
-                }
+            let node = anchors.weld((p.x, p.y), |a, p| (a.0 - p.0).powi(2) + (a.1 - p.1).powi(2) < WELD_TOL2);
+            if node == representative.len() {
+                representative.push(id);
             }
+            rep.insert(id, representative[node]);
         }
     }
     let cl = |id: Id| rep.get(&id).copied().unwrap_or(id);
@@ -420,21 +491,118 @@ pub(super) fn arr_intersect(x: ArrCurve, y: ArrCurve) -> Vec<(f64, f64)> {
     }
 }
 
-/// The planar arrangement of a sketch: every entity — lines, arcs and circles — is intersected with every
+/// POINTS WELDED INTO NODES: a point is one with the first node, by the order the nodes came, that `near` says it is
+/// near, as a look through all the nodes in that order finds it. The nodes are looked up in the point's own and the
+/// neighbouring cells of a grid `reach` wide, so `near` must say no past `reach`: 10 000 lines are 40 000 points,
+/// and a look through all nodes for each of them was 8e8 comparisons.
+pub(super) struct Welded {
+    reach: f64,
+    at: Vec<(f64, f64)>,
+    cells: std::collections::HashMap<(i64, i64), Vec<usize>>,
+}
+
+/// Points of an arrangement closer than this are one node, mm.
+const WELD: f64 = 1e-4;
+
+impl Welded {
+    pub(super) fn new(reach: f64) -> Self {
+        Welded { reach, at: Vec::new(), cells: std::collections::HashMap::new() }
+    }
+
+    fn cell(&self, p: (f64, f64)) -> (i64, i64) {
+        ((p.0 / self.reach).floor() as i64, (p.1 / self.reach).floor() as i64)
+    }
+
+    pub(super) fn weld(&mut self, p: (f64, f64), near: impl Fn((f64, f64), (f64, f64)) -> bool) -> usize {
+        let (cx, cy) = self.cell(p);
+        let found = (cx - 1..=cx + 1).flat_map(|x| (cy - 1..=cy + 1).map(move |y| (x, y))).filter_map(|c| self.cells.get(&c)).flatten().copied().filter(|&k| near(self.at[k], p)).min();
+        if let Some(k) = found {
+            return k;
+        }
+        self.at.push(p);
+        self.cells.entry((cx, cy)).or_default().push(self.at.len() - 1);
+        self.at.len() - 1
+    }
+}
+
+/// Two points of an arrangement are one node closer than `WELD`.
+fn within_weld(q: (f64, f64), p: (f64, f64)) -> bool {
+    (q.0 - p.0).hypot(q.1 - p.1) < WELD
+}
+
+/// The box of a curve, widened past what an intersection may stand off it (a tangency within 1e-3 mm counts, see
+/// `seg_circle_t`) and by a millionth of the curve, as a collinear overlap is judged.
+fn curve_box(c: ArrCurve) -> [f64; 4] {
+    let [x0, y0, x1, y1] = match c {
+        ArrCurve::Line { a, b } => [a.0.min(b.0), a.1.min(b.1), a.0.max(b.0), a.1.max(b.1)],
+        ArrCurve::Circle { c, r } | ArrCurve::Arc { c, r, .. } => [c.0 - r, c.1 - r, c.0 + r, c.1 + r],
+    };
+    let m = 1e-2 + 1e-6 * (x1 - x0).max(y1 - y0);
+    [x0 - m, y0 - m, x1 + m, y1 + m]
+}
+
+/// Two boxes by their places, `first < second`.
+#[derive(Clone, Copy, PartialEq, Eq, PartialOrd, Ord)]
+pub(super) struct BoxPair {
+    pub first: usize,
+    pub second: usize,
+}
+
+/// THE PAIRS OF CURVES WHOSE BOXES MEET, see `meeting_boxes`.
+fn meeting_pairs(curves: &[ArrCurve]) -> Vec<BoxPair> {
+    meeting_boxes(&curves.iter().map(|&c| curve_box(c)).collect::<Vec<_>>())
+}
+
+/// THE PAIRS OF BOXES THAT MEET, each box `[x0, y0, x1, y1]`, in the order of `first` then `second` - the order a pass
+/// of every box with every other takes them. Swept along x: a box meets only those whose x-span it enters before
+/// they end, so boxes laid apart cost the sort, not every pair.
+pub(super) fn meeting_boxes(boxes: &[[f64; 4]]) -> Vec<BoxPair> {
+    let mut by_x: Vec<usize> = (0..boxes.len()).collect();
+    by_x.sort_by(|&a, &b| boxes[a][0].total_cmp(&boxes[b][0]));
+    let mut open: Vec<usize> = Vec::new();
+    let mut pairs = Vec::new();
+    for &i in &by_x {
+        open.retain(|&k| boxes[k][2] >= boxes[i][0]);
+        for &k in &open {
+            if boxes[k][1] <= boxes[i][3] && boxes[i][1] <= boxes[k][3] {
+                pairs.push(BoxPair { first: k.min(i), second: k.max(i) });
+            }
+        }
+        open.push(i);
+    }
+    pairs.sort_unstable();
+    pairs
+}
+
+/// The planar arrangement of a sketch: every entity — lines, arcs, circles and splines — is intersected with every
 /// other, the curves are cut at the intersection points, and the minimal faces, that is the closed regions, are
 /// assembled. This is what turns the strip between two circles, cut by a line, into a selectable closed region.
-/// Returns the faces as contours, carrying exact `ProfEdge` edges for the B-rep. Narrow in scope: lines, arcs
-/// and circles, but not ellipses.
-pub(super) fn arrangement_regions(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<Contour> {
-    arrangement_regions_prov(points, entities).into_iter().map(|(c, _)| c).collect()
+/// Returns the faces as contours, carrying exact `ProfEdge` edges for the B-rep; a spline as the segments of its
+/// tessellation. Ellipses are not cut: each is a region of its own.
+pub(super) fn arrangement_regions(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Vec<Contour> {
+    arrangement_regions_prov(points, entities, splines).into_iter().map(|(c, _)| c).collect()
 }
 
 /// As `arrangement_regions`, but each region carries its provenance: the sorted set of entity ids its boundary
 /// is stitched from. This is what keeps the identity of a contour stable across edits, so that loops which
 /// swapped places do not take over each other's ids.
-pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[SketchEntity]) -> Vec<(Contour, Vec<Id>)> {
+pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Vec<(Contour, Vec<Id>)> {
+    arrangement_faces(points, entities, splines).inner
+}
+
+/// THE FACES OF AN ARRANGEMENT AND THE WALKS AROUND ITS PIECES: the regions of `arrangement_regions_prov`, and the walks
+/// left out of them - the outside of each piece of the drawing, clockwise, and the walk along a piece that bounds no
+/// area, out along it and back. The loops round a change (`round`) look at those: a moved curve on the outside of a
+/// piece seen in its window may close a region past it.
+pub(super) struct Faces {
+    pub inner: Vec<(Contour, Vec<Id>)>,
+    pub outer: Vec<Contour>,
+}
+
+pub(super) fn arrangement_faces(points: &[SketchPoint], entities: &[SketchEntity], splines: &[Spline]) -> Faces {
     use std::f64::consts::{PI, TAU};
-    let pt = |id: Id| points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
+    let at: std::collections::HashMap<Id, (f64, f64)> = points.iter().map(|p| (p.id, (p.x, p.y))).collect();
+    let pt = |id: Id| at.get(&id).copied();
     let mut curves: Vec<ArrCurve> = Vec::new();
     let mut curve_eid: Vec<Id> = Vec::new(); // provenance of a curve, its entity id, parallel to `curves`
     let mut out_ellipse: Vec<(Contour, Vec<Id>)> = Vec::new(); // ellipses are regions of their own, outside the arrangement graph
@@ -474,30 +642,42 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
             }
         }
     }
+    // A SPLINE ENTERS AS THE SEGMENTS OF ITS TESSELLATION, so it is cut by the lines and arcs and by itself, and a region
+    // closed partly by it, or by it crossing itself, is a face like any other. The kernel takes a spline as that same
+    // polyline (`ProfEdge` has no spline), so the face loses nothing the whole loop had. A spline has no id of its own:
+    // its pieces carry the id of its first node, an id no entity has, which keeps the provenance of its regions
+    // stable while the curve is edited.
+    for sp in splines.iter().filter(|sp| !sp.construction) {
+        let cps: Vec<Point2> = sp.points.iter().filter_map(|id| pt(*id)).map(|(x, y)| Point2::new(x, y)).collect();
+        let Some(&first) = sp.points.first().filter(|_| cps.len() >= 2) else { continue };
+        let line = tessellate_spline_hermite(&cps, &sp.tangents, sp.closed);
+        let n = line.points.len();
+        let spans = if sp.closed { n } else { n.saturating_sub(1) };
+        for k in 0..spans {
+            let (a, b) = (line.points[k], line.points[(k + 1) % n]);
+            if a.dist(b) > 1e-9 {
+                curves.push(ArrCurve::Line { a: (a.x, a.y), b: (b.x, b.y) });
+                curve_eid.push(first);
+            }
+        }
+    }
     let nc = curves.len();
     let mut out: Vec<(Contour, Vec<Id>)> = std::mem::take(&mut out_ellipse);
+    let mut outer: Vec<Contour> = Vec::new();
     if nc == 0 {
-        return out;
+        return Faces { inner: out, outer };
     }
+    // Only the curves whose boxes meet are intersected (`meeting_pairs`), in the order of the pairs of every curve with
+    // every other, so the cuts come in the order they always did. All pairs of 10 000 lines are 5e7 intersections.
     let mut cuts: Vec<Vec<(f64, f64)>> = vec![Vec::new(); nc];
-    for i in 0..nc {
-        for j in (i + 1)..nc {
-            for p in arr_intersect(curves[i], curves[j]) {
-                cuts[i].push(p);
-                cuts[j].push(p);
-            }
+    for BoxPair { first, second } in meeting_pairs(&curves) {
+        for p in arr_intersect(curves[first], curves[second]) {
+            cuts[first].push(p);
+            cuts[second].push(p);
         }
     }
-    let mut nodes: Vec<(f64, f64)> = Vec::new();
-    fn weld(nodes: &mut Vec<(f64, f64)>, p: (f64, f64)) -> usize {
-        for (k, q) in nodes.iter().enumerate() {
-            if (q.0 - p.0).hypot(q.1 - p.1) < 1e-4 {
-                return k;
-            }
-        }
-        nodes.push(p);
-        nodes.len() - 1
-    }
+    let mut nodes = Welded::new(WELD);
+    let weld = |nodes: &mut Welded, p: (f64, f64)| nodes.weld(p, within_weld);
     // a directed edge of the arrangement: a line or an arc, where cx, cy, r and ccw describe the direction
     // from `from` to `to`
     struct DE {
@@ -603,8 +783,9 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
             }
         }
     }
+    let nodes = nodes.at;
     if edges.is_empty() {
-        return out;
+        return Faces { inner: out, outer };
     }
     if std::env::var("QYM_ARR_DEBUG").is_ok() {
         eprintln!("[arr] curves={nc} nodes={} edges={}", nodes.len(), edges.len());
@@ -671,9 +852,33 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
             // Taking the minimum s with the twin excluded put the choice on the wrong edge at tangencies, where
             // a line and an arc share a tangent and s is near zero, and the arrangement lost faces — the
             // dumbbell case dropped to no regions at all.
+            //
+            // A TANGENCY IS A TIE WITHIN WHAT WELDING MOVES AN ANGLE BY: a node stands up to `WELD` off the true point,
+            // which turns the tangent of an arc by up to WELD / r and a line by WELD / its length. Two edges whose
+            // first-order angles differ by less than that leave as one tangent, and the curvature decides. Measured:
+            // a sketch solved after an edit left the end of a fillet of R10 4.7e-6 mm off, the tangent of the arc
+            // 4.7e-7 rad off the line touching it there - past the second-order term of 1e-8 - and the walk took
+            // the line for the way back along the arc: the face of the rounded rectangle was lost, and its lines
+            // were no longer drawn.
             const CURV_DELTA: f64 = 1e-7;
-            let s_eff = |oe: usize| -> f64 {
-                let s = (back - tang(&edges[oe], true)).rem_euclid(TAU);
+            let slack = |e: &DE| -> f64 {
+                let span = if e.line { (nodes[e.to].0 - nodes[e.from].0).hypot(nodes[e.to].1 - nodes[e.from].1) } else { e.r };
+                WELD / span.max(WELD)
+            };
+            let raw = |oe: usize| -> f64 { (back - tang(&edges[oe], true)).rem_euclid(TAU) };
+            let st_raw = raw(twin);
+            let mut taken: Vec<(f64, f64)> = vec![(st_raw, slack(&edges[twin]))]; // (first-order angle, its slack)
+            let mut s_eff = |oe: usize| -> f64 {
+                let mut s = raw(oe);
+                let own = slack(&edges[oe]);
+                if let Some(&(t, _)) = taken.iter().find(|(t, sl)| {
+                    let d = (s - t).rem_euclid(TAU);
+                    d.min(TAU - d) <= own + sl
+                }) {
+                    s = t;
+                } else {
+                    taken.push((s, own));
+                }
                 (s - curv(&edges[oe]) * CURV_DELTA).rem_euclid(TAU)
             };
             let st = s_eff(twin);
@@ -762,9 +967,11 @@ pub(super) fn arrangement_regions_prov(points: &[SketchPoint], entities: &[Sketc
             // repeats
             let prov: std::collections::BTreeSet<Id> = face.iter().map(|&ei| curve_eid[edges[ei].ci]).collect();
             out.push((cont, prov.into_iter().collect())); // an interior face, counter-clockwise; the outer one and degenerate results were dropped
+        } else {
+            outer.push(cont);
         }
     }
-    out
+    Faces { inner: out, outer }
 }
 
 /// A smooth Catmull-Rom curve through the control points, as a contour.
@@ -848,5 +1055,176 @@ pub(super) fn tessellate_spline_hermite(pts: &[Point2], tangents: &[Option<[f64;
         Contour::closed(out)
     } else {
         Contour::open(out)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    /// A LINE TOUCHING A FILLET AT ITS END, the ends of the fillet off by what a solve leaves: three rectangles drawn side by
+    /// side, the top right corner of the left one rounded 10, the sketch solved after an edit - the ends of the arc
+    /// 4.7e-6 and 5.7e-6 mm off its circle - and a line drawn along the top from the end of the arc to the corner. The
+    /// rounded rectangle stays a face, and the chip between the arc, the line and the side is one too. Reported behaviour:
+    /// the lines of the left rectangle vanished from the sheet and its points stayed.
+    #[test]
+    fn a_line_touching_a_fillet_off_by_a_solve_keeps_the_face_of_the_rectangle() {
+        use crate::model::{EntityKind, SketchEntity, SketchPoint};
+        let pts: Vec<SketchPoint> = [
+            (5, 0.0, 0.0),
+            (6, -125.0, 24.99999999357503),
+            (7, -75.0, 24.99999999357503),
+            (8, -75.0, 125.0),
+            (9, -125.0, 125.0),
+            (14, -100.0, 74.99999999678752),
+            (16, 0.0, 0.0),
+            (18, -39.999999999999275, 24.99999999357503),
+            (19, -40.0, 125.0),
+            (24, -57.5, 74.99999999678752),
+            (27, -40.0, 160.0),
+            (28, -75.0, 160.0),
+            (33, -57.5, 142.5),
+            (36, -75.0, 135.0),
+            (37, -65.0, 125.0),
+            (38, -65.0, 135.0),
+            (40, -75.0, 150.0),
+            (41, -65.0, 160.0),
+            (42, -65.0, 150.0),
+            (44, -50.0, 125.0),
+            (45, -40.0, 135.0),
+            (46, -50.0, 135.0),
+            (48, -50.0, 160.0),
+            (49, -40.0, 150.0),
+            (50, -50.0, 150.0),
+            (52, -85.00000474124738, 125.0),
+            (53, -75.0, 115.0000056834509),
+            (54, -85.0, 115.0),
+            (56, -125.0, 114.99999986304107),
+            (57, -114.99999989346223, 125.0),
+            (58, -115.0, 115.0),
+        ]
+        .iter()
+        .map(|&(id, x, y)| SketchPoint { id, x, y })
+        .collect();
+        let l = |id, a, b| SketchEntity { id, kind: EntityKind::Line { a, b }, construction: false };
+        let arc = |id, center, a, b, ccw| SketchEntity { id, kind: EntityKind::Arc { center, a, b, ccw }, construction: false };
+        let all: Vec<SketchEntity> = vec![
+            l(10, 6, 7),
+            l(11, 7, 53),
+            l(12, 52, 57),
+            l(13, 56, 6),
+            l(20, 7, 18),
+            l(21, 18, 19),
+            l(22, 44, 37),
+            l(23, 8, 7),
+            l(29, 8, 19),
+            l(30, 45, 49),
+            l(31, 48, 41),
+            l(32, 40, 36),
+            arc(39, 38, 36, 37, true),
+            arc(43, 42, 40, 41, false),
+            arc(47, 46, 44, 45, true),
+            arc(51, 50, 48, 49, false),
+            arc(55, 54, 52, 53, false),
+            arc(59, 58, 56, 57, false),
+            l(138, 52, 8),
+        ];
+        let before: Vec<SketchEntity> = all.iter().filter(|e| e.id != 138).cloned().collect();
+        let faces = |ents: &[SketchEntity]| -> Vec<Vec<u64>> {
+            super::arrangement_regions_prov(&pts, ents, &[])
+                .into_iter()
+                .map(|r| {
+                    let mut ids = r.1;
+                    ids.sort_unstable();
+                    ids.dedup();
+                    ids
+                })
+                .collect()
+        };
+        let rounded = vec![10, 11, 12, 13, 55, 59];
+        assert!(faces(&before).contains(&rounded), "GUARD: the rounded rectangle is a face before the line: {:?}", faces(&before));
+        let after = faces(&all);
+        assert!(after.contains(&rounded) && after.contains(&vec![23, 55, 138]), "the line along the top, touching the fillet at its end, lost the faces: {after:?}");
+    }
+
+    use super::{arr_intersect, meeting_pairs, within_weld, ArrCurve, BoxPair, Welded, WELD};
+
+    /// A fixed pseudo-random sequence in 0..1.
+    struct Seq(u64);
+
+    impl Seq {
+        fn next(&mut self) -> f64 {
+            self.0 = self.0.wrapping_mul(6_364_136_223_846_793_005).wrapping_add(1_442_695_040_888_963_407);
+            (self.0 >> 11) as f64 / (1u64 << 53) as f64
+        }
+    }
+
+    /// Curves crowded into a 100 mm square: lines, circles and arcs, lines laid over each other, and lines tangent to a
+    /// circle within the 1e-3 mm a tangency is judged by.
+    fn crowd(n: usize) -> Vec<ArrCurve> {
+        let mut s = Seq(7);
+        let mut out = Vec::new();
+        for k in 0..n {
+            let (x, y) = (s.next() * 100.0, s.next() * 100.0);
+            let curve = match k % 5 {
+                0 => ArrCurve::Line { a: (x, y), b: (x + s.next() * 30.0 - 15.0, y + s.next() * 30.0 - 15.0) },
+                1 => ArrCurve::Circle { c: (x, y), r: 1.0 + s.next() * 10.0 },
+                2 => {
+                    let (r, a0) = (1.0 + s.next() * 10.0, s.next() * 6.0);
+                    let a1 = a0 + 0.5 + s.next() * 4.0;
+                    ArrCurve::Arc { c: (x, y), r, a0, a1, ccw: true, pa: (x + r * a0.cos(), y + r * a0.sin()), pb: (x + r * a1.cos(), y + r * a1.sin()) }
+                }
+                // a line over the line before it, shifted along itself
+                3 => match out.last() {
+                    Some(&ArrCurve::Line { a, b }) => ArrCurve::Line { a: ((a.0 + b.0) / 2.0, (a.1 + b.1) / 2.0), b: (b.0 + (b.0 - a.0), b.1 + (b.1 - a.1)) },
+                    _ => ArrCurve::Line { a: (x, y), b: (x + 5.0, y) },
+                },
+                // a line tangent to a circle of radius 4 at (x, y), standing off it by up to 9e-4 mm
+                _ => {
+                    out.push(ArrCurve::Circle { c: (x, y), r: 4.0 });
+                    let off = 4.0 + (s.next() - 0.5) * 1.8e-3;
+                    ArrCurve::Line { a: (x - 6.0, y + off), b: (x + 6.0, y + off) }
+                }
+            };
+            out.push(curve);
+        }
+        out
+    }
+
+    #[test]
+    fn every_pair_of_curves_that_meet_is_among_the_pairs_whose_boxes_meet() {
+        let curves = crowd(600);
+        let pairs = meeting_pairs(&curves);
+        assert!(pairs.windows(2).all(|w| w[0] < w[1]), "the pairs come in the order of a pass of every curve with every other");
+        let mut missed = Vec::new();
+        let mut meeting = 0;
+        for first in 0..curves.len() {
+            for second in first + 1..curves.len() {
+                if !arr_intersect(curves[first], curves[second]).is_empty() {
+                    meeting += 1;
+                    if pairs.binary_search(&BoxPair { first, second }).is_err() {
+                        missed.push(format!("{first} x {second}"));
+                    }
+                }
+            }
+        }
+        assert!(meeting > 500, "the crowd meets too little to say anything: {meeting} pairs");
+        assert!(missed.is_empty(), "pairs that meet but were not looked at: {missed:?}");
+    }
+
+    #[test]
+    fn a_point_is_welded_to_the_node_a_look_through_all_of_them_finds() {
+        let mut s = Seq(11);
+        let mut welded = Welded::new(WELD);
+        let mut all: Vec<(f64, f64)> = Vec::new();
+        for _ in 0..5_000 {
+            // points strewn over a square 3e-3 mm wide, 30 welds across: many within the weld of one another, many not,
+            // and as many across the edges of the cells as inside them
+            let p = (s.next() * 3e-3, s.next() * 3e-3);
+            let by_look = all.iter().position(|q| (q.0 - p.0).hypot(q.1 - p.1) < WELD).unwrap_or_else(|| {
+                all.push(p);
+                all.len() - 1
+            });
+            assert_eq!(welded.weld(p, within_weld), by_look, "the point {p:?}");
+        }
+        assert!(all.len() > 100 && all.len() < 4_000, "the lattice welds some points and not others: {} nodes", all.len());
     }
 }

@@ -224,9 +224,13 @@ pub(crate) fn window(win: &mut Windows, scheme: &qymcad_ui_state::SchemeUi, mach
     let tr = crate::i18n::tr;
     let mut open = true;
     let mut said: Said = ctx.data(|d| d.get_temp(said_id())).unwrap_or_default();
-    egui::Window::new(format!("{} {}", ph::PLUGS_CONNECTED, tr("claude-title"))).open(&mut open).collapsible(false).default_width(560.0).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| {
+    egui::Window::new(format!("{} {}", ph::PLUGS_CONNECTED, tr("claude-title")))
+        .id(egui::Id::new("win_claude"))
+        .open(&mut open)
+        .collapsible(false)
+        .default_width(560.0)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
             ui.label(tr("claude-intro"));
             ui.add_space(6.0);
             if machine.present == Presence::Missing {
@@ -279,8 +283,7 @@ pub(crate) fn window(win: &mut Windows, scheme: &qymcad_ui_state::SchemeUi, mach
             if ui.button(format!("{} {}", ph::GEAR, tr("claude-window-open"))).clicked() {
                 win.open(WinKind::Settings);
             }
-        },
-    );
+        });
     ctx.data_mut(|d| d.insert_temp(said_id(), said));
     if !open {
         win.close(WinKind::Claude);

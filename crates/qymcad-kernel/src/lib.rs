@@ -39,6 +39,7 @@ extern "C" {
     fn qym_body_tri_count(d: *const QymDoc, i: usize) -> usize;
     fn qym_body_face_count(d: *const QymDoc, i: usize) -> usize;
     fn qym_body_copy_verts(d: *const QymDoc, i: usize, out: *mut f32);
+    fn qym_body_copy_normals(d: *const QymDoc, i: usize, out: *mut f32);
     fn qym_body_copy_tris(d: *const QymDoc, i: usize, out: *mut u32);
     fn qym_body_copy_face_starts(d: *const QymDoc, i: usize, out: *mut u32);
     fn qym_body_copy_face_counts(d: *const QymDoc, i: usize, out: *mut u32);
@@ -205,6 +206,7 @@ extern "C" {
     fn qym_shape_solid_at(s: *const QymShape, index: i32) -> *mut QymShape;
     fn qym_shape_face_kinds(s: *const QymShape, out: *mut i32) -> i32;
     fn qym_shape_shell_count(s: *const QymShape) -> i32;
+    fn qym_shapes_share(a: *const QymShape, b: *const QymShape) -> i32;
     fn qym_shape_heal(s: *const QymShape) -> *mut QymShape;
     fn qym_shape_kind(s: *const QymShape) -> i32;
     fn qym_shape_copy_faces(s: *const QymShape, idx: *const u32, names: *const u32, n: usize) -> *mut QymShape;
@@ -628,10 +630,12 @@ pub fn refusal_for_report() -> Option<String> {
     KEPT.lock().ok().and_then(|k| k.clone())
 }
 
-// A shape owns its kernel handle as a sole raw pointer. Moving that ownership to another thread is safe: a
-// STEP import or export runs on a worker thread so the interface can show progress, and the object is never
-// shared between threads at once, only moved. There is no concurrency over one shape, so `Send` is enough and
-// `Sync` is not claimed.
+// A shape owns its kernel handle as a sole raw pointer, so moving that ownership to another thread moves the
+// pointer. It is sound only while no shape left behind, or sent to another thread, shares a face or an edge with
+// it: two shapes that share a sub-shape (the pieces of a split share the cut face) would otherwise be meshed or
+// healed on two threads at once, which rewrites that sub-shape and crashes. The batch rebuild holds to that
+// condition by keeping bodies that share geometry on one thread (`Kernel::shares`, model/regen.rs). `Sync` is not
+// claimed: there is never concurrent access to one shape.
 unsafe impl Send for Shape {}
 
 /// WHICH WAY A HELIX WINDS: the ordinary right hand, or the left one.
@@ -1033,6 +1037,12 @@ impl Shape {
     /// body is assembled from copies, by a pattern or a mirror, and the kernel cannot offset such a thing.
     pub fn shell_count(&self) -> u32 {
         unsafe { qym_shape_shell_count(self.ptr) as u32 }
+    }
+    /// Whether this shape and `other` share a face or an edge - the same kernel sub-shape, not merely an equal one.
+    /// Two bodies that share one must not be meshed or healed on two threads at once, so the rebuild keeps them on
+    /// one thread (see `qymcad_core`'s `Kernel::shares` and the batch dispatch in `model/regen.rs`).
+    pub fn shares_geometry(&self, other: &Shape) -> bool {
+        unsafe { qym_shapes_share(self.ptr, other.ptr) != 0 }
     }
     /// How many bodies the shape has, zero for a sheet. More than one means the operation broke the part into
     /// pieces.
@@ -1704,9 +1714,17 @@ impl Shape {
             return None;
         }
         let (mut verts, mut tris, mut faces) = (Vec::new(), Vec::new(), Vec::new());
+        let mut norms: Vec<u32> = Vec::new();
         for Built { mesh: m, faces: fs } in bodies {
             let voff = verts.len() as u32;
             let toff = tris.len() as u32;
+            // THE SURFACE'S NORMALS GO WITH THEIR VERTICES; a solid that came without them leaves zeros in its place,
+            // so the ones after it stay beside their own vertices
+            if m.norms.len() == m.verts.len() {
+                norms.extend(m.norms);
+            } else {
+                norms.resize(norms.len() + m.verts.len(), 0);
+            }
             verts.extend(m.verts);
             tris.extend(m.tris.into_iter().map(|t| [t[0] + voff, t[1] + voff, t[2] + voff]));
             for mut f in fs {
@@ -1714,7 +1732,7 @@ impl Shape {
                 faces.push(f);
             }
         }
-        Some(Built { mesh: qymcad_core::geom::Mesh { verts, tris }, faces })
+        Some(Built { mesh: qymcad_core::geom::Mesh { verts, tris, norms }, faces })
     }
 }
 
@@ -1762,6 +1780,7 @@ pub fn set_parallel(on: bool, threads: i32) {
         std::thread::available_parallelism().map(|n| n.get()).unwrap_or(2).saturating_sub(1).max(1)
     };
     WORKERS.store(want, std::sync::atomic::Ordering::Relaxed);
+    qymcad_core::solver::set_threads(want); // the solve of a sketch takes the same number
     unsafe {
         qym_set_threads(threads);
         qym_set_parallel(if on { 1 } else { 0 });
@@ -2263,7 +2282,13 @@ unsafe fn doc_to_bodies(d: *mut QymDoc) -> Vec<Built> {
         }
         let verts = vbuf.as_chunks::<3>().0.iter().map(|c| Point3::new(c[0] as f64, c[1] as f64, c[2] as f64)).collect();
         let tris = tbuf.as_chunks::<3>().0.iter().map(|c| [c[0], c[1], c[2]]).collect();
-        let mesh = Mesh { verts, tris };
+        // THE SURFACE'S NORMALS, parallel to the vertices: the smooth light is shaded by them (`Mesh::norms`)
+        let mut nbuf = vec![0f32; vc * 3];
+        if vc > 0 {
+            qym_body_copy_normals(d, i, nbuf.as_mut_ptr());
+        }
+        let norms = nbuf.as_chunks::<3>().0.iter().map(|c| qymcad_core::geom::pack_direction([c[0] as f64, c[1] as f64, c[2] as f64])).collect();
+        let mesh = Mesh { verts, tris, norms };
 
         // faces from the B-rep: each is a contiguous range of triangles plus a persistent id
         let mut starts = vec![0u32; fc];
@@ -2398,7 +2423,7 @@ pub fn box_mesh(dx: f64, dy: f64, dz: f64, deflection: f64) -> Mesh {
         let d = qym_occt_box_doc(dx, dy, dz, defl);
         let mut bodies = doc_to_bodies(d);
         if bodies.is_empty() {
-            return Mesh { verts: Vec::new(), tris: Vec::new() };
+            return Mesh { verts: Vec::new(), tris: Vec::new(), ..Default::default() };
         }
         bodies.remove(0).mesh
     }

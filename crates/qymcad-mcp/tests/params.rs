@@ -45,12 +45,18 @@ fn volume(reply: &Value) -> f64 {
 #[test]
 fn a_changed_parameter_rebuilds_what_reads_it() {
     let mut ctx = block_of_height_h();
-    let taller = call(&mut ctx, "set_parameter", json!({ "name": "H", "expr": "4 * 5" }));
+    let taller = call(&mut ctx, "set_parameter", json!({ "name": "h", "expr": "4 * 5" }));
     assert_eq!(taller["ok"], json!(true), "{taller}");
-    assert_eq!(taller["parameter"]["name"], "h", "the name was taken as a new parameter, not as h in another case: {taller}");
+    assert_eq!(taller["parameter"]["name"], "h", "{taller}");
     assert_eq!(taller["parameter"]["value"], json!(20.0), "{taller}");
     assert!((volume(&taller) - 24000.0).abs() < 1e-6, "h = 20 gives a block of {} mm^3", volume(&taller));
     assert_eq!(taller["red"], json!([]), "{taller}");
+
+    // a name is matched as written: `H` is a parameter of its own, and the block reading `h` stays as it is
+    let other = call(&mut ctx, "set_parameter", json!({ "name": "H", "expr": "99" }));
+    assert_eq!(other["parameter"]["name"], "H", "{other}");
+    assert!((volume(&other) - 24000.0).abs() < 1e-6, "H = 99 changed the block reading h: {} mm^3", volume(&other));
+    let _ = call(&mut ctx, "undo", json!({}));
 
     let back = call(&mut ctx, "undo", json!({}));
     assert_eq!(back["undone"]["step"], "par-edit-step", "{back}");

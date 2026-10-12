@@ -1019,20 +1019,21 @@ impl Project {
                             parcels.push(Parcel { node: nid, body: out, job });
                         }
                     }
-                    // A body wanted by two parcels keeps both of them here: the shape cannot be in two threads
-                    // at once, and copying it would cost what the work costs.
-                    let mut wanted: std::collections::HashMap<Id, usize> = std::collections::HashMap::new();
-                    for parcel in &parcels {
-                        for b in parcel.job.inputs() {
-                            *wanted.entry(*b).or_insert(0) += 1;
-                        }
-                    }
+                    // TWO PARCELS THAT CANNOT GO TO SEPARATE THREADS stay here, computed in order on the shared
+                    // kernel; the rest travel. Two of them clash when they want the same body (the shape cannot be
+                    // in two threads at once) OR when the bodies they want SHARE a sub-shape - a face or an edge the
+                    // split (or a boolean) left in both. Meshing or healing that shared sub-shape on two threads at
+                    // once rewrites it twice over and the process dies, so such parcels are kept together. Bodies
+                    // that share nothing still travel, so the parallelism is kept where it is safe.
+                    let entangled: Vec<bool> = (0..parcels.len())
+                        .map(|i| parcels.iter().enumerate().any(|(k, other)| k != i && parcels[i].job.inputs().iter().any(|a| other.job.inputs().iter().any(|b| a == b || kernel.shares(*a, *b)))))
+                        .collect();
                     let (mut alone, mut here): (Vec<_>, Vec<_>) = (Vec::new(), Vec::new());
-                    for parcel in parcels {
-                        if parcel.job.inputs().iter().all(|b| wanted.get(b).copied().unwrap_or(0) <= 1) {
-                            alone.push(parcel);
-                        } else {
+                    for (i, parcel) in parcels.into_iter().enumerate() {
+                        if entangled[i] {
                             here.push(parcel);
+                        } else {
+                            alone.push(parcel);
                         }
                     }
                     // the parcels that travel: each with the bodies it needs, taken out of the shared kernel
@@ -1168,13 +1169,10 @@ impl Project {
                     // because a projection depends on another body and "the sketch itself did not change" says
                     // nothing about whether that body did.
                     if let Some(si) = self.sketch_index(sketch) {
-                        if !self.sketches[si].projections.is_empty() {
-                            let before = self.sketch_projection_key(si);
-                            self.resolve_sketch_projections(si, kernel);
-                            if self.sketch_projection_key(si) != before {
-                                self.regen_sketch(si);
-                                dirty.insert(sketch); // The projection moved, so the consumers of the contour follow.
-                            }
+                        // SOLVED, NOT ONLY REBUILT, and along the way: what is tied to the projection - an end snapped to
+                        // its corner, a dimension from it - follows it to where the body put it, on its own side
+                        if !self.sketches[si].projections.is_empty() && self.follow_sketch_projections(si, kernel) {
+                            dirty.insert(sketch); // The projection moved, so the consumers of the contour follow.
                         }
                     }
                     if needs {
@@ -1356,15 +1354,14 @@ impl Project {
         //
         // The distinction is made by the query rather than by the result: when descriptors were
         // named and no live edges were found, the reference is lost and that is reported.
-        let asked_count = edges.query.picked_descs().len();
-        // A DESCRIPTION ASKS FOR EDGES as much as a pick does: "between the top and the front" that matches nothing is
-        // lost, not "every edge". Measured: a query matching no edge of a block rounded all twelve, 26 faces, green.
+        let asked_count = asked_edge_count(edges);
         let asked_edges = asked_count > 0 || !edges.query.is_pick_list();
+        let lost_error = edges_lost(edges, asked_count);
         // A PART OF THE PICKED EDGES GONE - a cut above took one away - the rest are done and the node says, in yellow,
         // how many were left: it is neither a failure of the whole nor to be kept quiet. Reported behaviour: a rounding
         // of four edges stood green with three after a cut above took the fourth.
         self.regen_warnings.remove(&p.node);
-        let partly_lost = if edges.query.is_pick_list() && asked_edges { self.edge_refs_lost(p.node, src, &edges.query.picked_descs(), p.emap, p.kernel) } else { 0 };
+        let partly_lost = if asked_count > 0 { self.edge_refs_lost(p.node, src, &edges.query.picked_descs(), p.emap, p.kernel) } else { 0 };
         let edges = &self.live_fillet_edges(p.node, src, edges, p.emap, p.kernel);
         let lost_edges = asked_edges && edges.is_empty();
         if partly_lost > 0 && !edges.is_empty() {
@@ -1389,7 +1386,7 @@ impl Project {
         let job = if on_sheet {
             crate::feature::KernelJob::refused(crate::errors::CoreError::NeedsSolidNotSheet)
         } else if lost_edges {
-            crate::feature::KernelJob::refused(crate::errors::CoreError::EdgesNotFound { asked: asked_count })
+            crate::feature::KernelJob::refused(lost_error)
         } else if !verts.is_empty() && !edges.is_empty() {
             crate::feature::KernelJob::new(vec![src], move |k| k.fillet_at_vertices(body, src, radius, &edges, &verts))
         } else {
@@ -1414,15 +1411,14 @@ impl Project {
         let d2 = p.dim("d2", d2);
         // As for a fillet: an empty list means the whole part, and a lost reference must not
         // masquerade as that.
-        let asked_count = edges.query.picked_descs().len();
-        // A DESCRIPTION ASKS FOR EDGES as much as a pick does: "between the top and the front" that matches nothing is
-        // lost, not "every edge". Measured: a query matching no edge of a block rounded all twelve, 26 faces, green.
+        let asked_count = asked_edge_count(edges);
         let asked_edges = asked_count > 0 || !edges.query.is_pick_list();
+        let lost_error = edges_lost(edges, asked_count);
         // A PART OF THE PICKED EDGES GONE - a cut above took one away - the rest are done and the node says, in yellow,
         // how many were left: it is neither a failure of the whole nor to be kept quiet. Reported behaviour: a rounding
         // of four edges stood green with three after a cut above took the fourth.
         self.regen_warnings.remove(&p.node);
-        let partly_lost = if edges.query.is_pick_list() && asked_edges { self.edge_refs_lost(p.node, src, &edges.query.picked_descs(), p.emap, p.kernel) } else { 0 };
+        let partly_lost = if asked_count > 0 { self.edge_refs_lost(p.node, src, &edges.query.picked_descs(), p.emap, p.kernel) } else { 0 };
         let edges = &self.live_fillet_edges(p.node, src, edges, p.emap, p.kernel);
         let lost_edges = asked_edges && edges.is_empty();
         if partly_lost > 0 && !edges.is_empty() {
@@ -1432,7 +1428,7 @@ impl Project {
         // selection; otherwise the chamfer is symmetric.
         let edges: Vec<u32> = edges.to_vec();
         let job = if lost_edges {
-            crate::feature::KernelJob::refused(crate::errors::CoreError::EdgesNotFound { asked: asked_count })
+            crate::feature::KernelJob::refused(lost_error)
         } else if mode != crate::feature::ChamferMode::Symmetric && !edges.is_empty() {
             crate::feature::KernelJob::new(vec![src], move |k| k.chamfer_ex(body, src, dist, ChamferShape { mode, d2, flip, ref_face }, &edges))
         } else {
@@ -1486,7 +1482,7 @@ impl Project {
         let edges = edges.clone();
         let live = self.live_fillet_edges(p.node, src, &edges, p.emap, p.kernel);
         if live.is_empty() {
-            return crate::feature::KernelJob::refused(crate::errors::CoreError::EdgesNotFound { asked: edges.query.picked_descs().len() });
+            return crate::feature::KernelJob::refused(edges_lost(&edges, asked_edge_count(&edges)));
         }
         let name = self.intern_name(p.node, crate::names::Role::Patch, 0);
         crate::feature::KernelJob::new(vec![src], move |k| k.patch(body, src, &live, tangent, name))
@@ -2644,25 +2640,22 @@ impl Project {
         // Asking "are there recorded descriptors" is wrong: `Adjacent(Id(face))` has them, but they are face
         // numbers. Translating them onwards as edges hands the kernel a non-existent edge, and the kernel
         // segfaults, killing the program on "shell, then fillet its face".
+        //
+        // A description is resolved against the edges the kernel holds now, not against `regen_edges`: that is
+        // filled by the post pass and is not in a bundle. Reported behaviour: a fillet of the top face of a
+        // cylinder opened from a file found no edges and was refused, while the same steps on a cylinder built
+        // in the session worked.
+        let cur = kernel.edges(src);
         let live = if r.query.is_pick_list() {
             self.live_edge_refs(node_id, src, &r.query.picked_descs(), emap, kernel)
-        } else {
-            // A DESCRIPTION READS THE MODEL'S EDGES, and a document opened from its file has none until a rebuild: the
-            // file keeps meshes and faces, not edges. The source is not rebuilt when only the rounding is, so its edges
-            // are taken from the live body here, as a pick takes them. Reported behaviour: a plate's vertical edges
-            // rounded by a description, the file opened and the rounding reopened - "none of the 0 named edges is
-            // left", red, until anything rebuilt the plate.
-            if let std::collections::hash_map::Entry::Vacant(slot) = self.regen_edges.entry(src) {
-                let edges = kernel.edges(src);
-                if !edges.is_empty() {
-                    slot.insert(edges);
-                }
-            }
+        } else if cur.is_empty() {
             self.resolve_edge_refs(src, r, "ref-what-fillet-edge").unwrap_or_default()
+        } else {
+            self.resolve_edge_refs_in(src, &cur, r, "ref-what-fillet-edge").unwrap_or_default()
         };
         // And no foreign number reaches the kernel. The kernel does not refuse a non-existent edge, it
         // crashes, so the check belongs on this side. Cheap insurance against a whole class of failures.
-        let known: std::collections::HashSet<u32> = kernel.edges(src).into_iter().map(|e| e.id).collect();
+        let known: std::collections::HashSet<u32> = cur.into_iter().map(|e| e.id).collect();
         if known.is_empty() {
             return live;
         }
@@ -3143,4 +3136,25 @@ fn within_simplification(mesh: &crate::geom::Mesh, tol: f64, simplify: f64) -> f
     let size = ((b.max.x - b.min.x).powi(2) + (b.max.y - b.min.y).powi(2) + (b.max.z - b.min.z).powi(2)).sqrt();
     // the recognition holds a corner within a hundred-thousandth of the mesh's size times this factor
     tol.max(simplify / (size * 1e-5).max(1e-12))
+}
+
+/// How many edges a reference names: the length of a plain pick list, and none for a description, whose numbers
+/// name the faces or the seed it is phrased through rather than edges.
+fn asked_edge_count(edges: &crate::refs::Ref) -> usize {
+    if edges.query.is_pick_list() {
+        edges.query.picked_descs().len()
+    } else {
+        0
+    }
+}
+
+/// The refusal for an edge reference that found nothing: the `asked` named edges lost for a pick list, a description
+/// that finds nothing otherwise. Reported behaviour: "every edge of the top face" was refused as "Not one of the 1
+/// named edges is left", the face number counted as an edge.
+fn edges_lost(edges: &crate::refs::Ref, asked: usize) -> crate::errors::CoreError {
+    if edges.query.is_pick_list() {
+        crate::errors::CoreError::EdgesNotFound { asked }
+    } else {
+        crate::errors::CoreError::DescribedEdgesNotFound
+    }
 }

@@ -9,6 +9,14 @@ use qymcad::{Key, Modifiers, PointerButton, Session};
 use qymcad_acceptance::contract::fixtures::Fixture;
 use qymcad_acceptance::probe;
 
+/// THE DIAMETER OF THE CIRCLE through `rim` LAID BY HAND: a circle drawn with no size typed carries none, and a double
+/// click on it opens the field of its diameter; `value` typed and Enter lay it.
+fn diameter_laid(s: &mut Session, rim: (f64, f64), value: &str) {
+    let at = s.on_sketch(rim.0, rim.1);
+    s.double_click(at);
+    s.type_text(value).key(Key::Enter);
+}
+
 /// The middle of the canvas, the place to look for the words drawn on the sheet.
 const SHEET: qymcad::Pos2 = qymcad::pos2(640.0, 400.0);
 
@@ -68,10 +76,13 @@ probe! {
         menu_item(&mut s, 7.07, 7.07, None, "sk-arc-length-dim");
         let kinds = s.document().sketches[0].constraint_kinds.clone();
         assert!(kinds.iter().any(|k| k == "ArcLength"), "the arc has no dimension of its length: {kinds:?}");
-        // a quarter of a circle of radius 10 is 15.708 long, and that is what the dimension shows
-        assert!(s.find("L15.7", SHEET).is_some(), "the length of the arc is not written on the sheet; on screen: {:?}", s.words());
-        type_into_dimension(&mut s, "L15.7", "20");
-        assert!(s.find("L20.0", SHEET).is_some(), "the arc did not take the length that was typed; on screen: {:?}", s.words());
+        // a quarter of a circle of radius 10 is 15.708 long, and that is what the dimension shows: the number, with the
+        // arc mark drawn over it (where it stands is checked on its geometry, `arc_length_dim_geom`)
+        assert!(s.find("15.7", SHEET).is_some(), "the length of the arc is not written on the sheet; on screen: {:?}", s.words());
+        // the arc holds by its length now: no radius is labelled beside it as if it held by that
+        assert!(s.find("R10.0", SHEET).is_none(), "a radius the arc does not hold by is still labelled beside it; on screen: {:?}", s.words());
+        type_into_dimension(&mut s, "15.7", "20");
+        assert!(s.find("20.0", SHEET).is_some(), "the arc did not take the length that was typed; on screen: {:?}", s.words());
     }
 }
 
@@ -80,6 +91,8 @@ probe! {
     /// other: two circles of radius 5 with a gap of 40 between their edges are 50 across.
     fn the_gap_between_two_round_edges_is_dimensioned() {
         let mut s = Fixture::TwoCirclesInSketch.start();
+        diameter_laid(&mut s, (5.0, 0.0), "10");
+        diameter_laid(&mut s, (35.0, 0.0), "10");
         pick(&mut s, 5.0, 0.0, false);
         pick(&mut s, 35.0, 0.0, true);
         menu_item(&mut s, 35.0, 0.0, None, "sk-tangent-dim");
@@ -271,6 +284,7 @@ probe! {
         let mut s = Fixture::CircleInSketch.start();
         let arrow = s.word("tb-select-hint");
         s.press_hint(&arrow);
+        diameter_laid(&mut s, (10.0, 0.0), "20");
         let centre = s.on_sketch(0.0, 0.0);
         let rim = s.on_sketch(10.0, 0.0);
         let r = rim.x - centre.x;

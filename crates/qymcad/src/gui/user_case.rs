@@ -791,6 +791,40 @@ pub(crate) mod tests {
         let si2 = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
         let mut hand = Hand::new(&mut app);
         hand.sk_tool(3).click2d(30.0, 12.0).click2d(36.0, 12.0); // a circle of diameter 12
+                                                                 // A CONSTRUCTION LINE IS TIED AS ANY LINE: up from the centre of the circle with "Constr." ticked on the bar - it
+                                                                 // starts on the centre and stands upright, held so by a constraint
+        let laid = app.project.sketches[si2].constraints.len();
+        let mut hand = Hand::new(&mut app);
+        hand.key(egui::Key::Escape).sk_tool(1);
+        let ticked = hand.press_word(&crate::i18n::tr("opt-construction-short"), egui::pos2(0.0, 0.0));
+        hand.click2d(30.0, 12.0).click2d(30.0, 22.0).key(egui::Key::Escape).key(egui::Key::Escape);
+        if hand.app.tools.tool.construction {
+            hand.sk_tool(1);
+            hand.press_word(&crate::i18n::tr("opt-construction-short"), egui::pos2(0.0, 0.0));
+            hand.key(egui::Key::Escape);
+        }
+        {
+            let s = &app.project.sketches[si2];
+            let centre = s.entities.iter().find_map(|e| match e.kind {
+                qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
+                _ => None,
+            });
+            let up = s.entities.iter().rev().find_map(|e| match e.kind {
+                qymcad_core::model::EntityKind::Line { a, .. } if e.construction => Some(a),
+                _ => None,
+            });
+            let on_centre = up
+                .zip(centre)
+                .is_some_and(|(a, c)| a == c || s.constraints.iter().any(|k| matches!(*k, qymcad_core::model::Constraint::Coincident { a: x, b: y } if (x, y) == (a, c) || (x, y) == (c, a))));
+            if !ticked || up.is_none() || !on_centre || s.constraints.len() <= laid {
+                problems.push(format!(
+                    "[a construction line from the centre] the switch ticked {ticked}, the line drawn {}, on the centre {on_centre}, constraints {} -> {}",
+                    up.is_some(),
+                    laid,
+                    s.constraints.len()
+                ));
+            }
+        }
         app.finish_sketch_edit();
         check_all(&mut app, "a sketch on a face of the housing", &mut problems);
 
@@ -822,6 +856,38 @@ pub(crate) mod tests {
             problems.push(format!("[Edit -> Redo] the menu did not bring back \"{named}\": {} steps, {steps} before", app.disk.edits.undo.len()));
         }
         check_all(&mut app, "the cut was redone from the Edit menu", &mut problems);
+        // --- A PROJECTION OF THE HOUSING'S SIDE: the outline of the side face projected into a sketch on it, by its button
+        // and "Face outline", a line drawn from its top corner. The height of the housing is changed below, and the
+        // projection and the line tied to it follow ---
+        let projected = {
+            let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
+            let side = app.project.regen_faces[&body].iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned().expect("the side face");
+            let key = qymcad_core::feature::FaceKey { index: 0, centroid: [side.centroid.x, side.centroid.y, side.centroid.z], normal: side.normal, id: side.id };
+            let si5 = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
+            let mut hand = Hand::new(&mut app);
+            let taken = hand.press_hint(&crate::i18n::tr("tb-project-body-hint")) && hand.press_word(&crate::i18n::tr("opt-face-outline"), egui::pos2(0.0, 0.0));
+            hand.click2d(0.0, 0.0);
+            let corner = hand.app.project.sketches[si5]
+                .projected_points()
+                .into_iter()
+                .filter_map(|id| hand.app.project.sketches[si5].points.iter().find(|q| q.id == id).map(|q| (id, (q.x, q.y))))
+                .max_by(|a, b| (a.1 .1 + a.1 .0 * 1e-3).total_cmp(&(b.1 .1 + b.1 .0 * 1e-3)));
+            match (taken, corner) {
+                (true, Some((cid, at))) => {
+                    hand.key(egui::Key::Escape);
+                    hand.sk_tool(1).click2d(at.0, at.1).click2d(at.0 + 10.0, at.1 + 10.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                    let sid = hand.app.project.sketches[si5].id;
+                    app.finish_sketch_edit();
+                    check_all(&mut app, "the side of the housing projected, a line drawn from its corner", &mut problems);
+                    Some((sid, cid, at))
+                }
+                _ => {
+                    problems.push(format!("the outline of the side of the housing was not projected: the tool taken {taken}, the status {:?}", hand.app.status));
+                    app.finish_sketch_edit();
+                    None
+                }
+            }
+        };
 
         // --- SAVE AND REOPEN ---
         let mut app = save_and_reopen(&mut app, &folder, "the housing is finished", &mut problems);
@@ -836,6 +902,28 @@ pub(crate) mod tests {
             }
             app.apply_feat_cmd();
             check_all(&mut app, "the height of the housing was changed to 35", &mut problems);
+        }
+        // the projection of the side followed the height, and the line drawn from its corner with it
+        if let Some((sid, corner, at)) = projected {
+            match app.project.sketch_index(sid) {
+                Some(si) => {
+                    let s = &app.project.sketches[si];
+                    let now = s.points.iter().find(|q| q.id == corner).map(|q| (q.x, q.y));
+                    let start = s.entities.iter().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Line { a, .. } if !s.projected_entities().contains(&e.id) => s.points.iter().find(|q| q.id == a).map(|q| (q.x, q.y)),
+                        _ => None,
+                    });
+                    let moved = now.is_some_and(|n| (n.0 - at.0).hypot(n.1 - at.1) > 5.0);
+                    let tied = now.zip(start).is_some_and(|(n, b)| (n.0 - b.0).hypot(n.1 - b.1) < 1e-6);
+                    if s.projections.is_empty() || !moved || !tied {
+                        problems.push(format!(
+                            "[the height changed under a projection] still projected {}, its corner went from {at:?} to {now:?}, the line drawn from it starts at {start:?}",
+                            !s.projections.is_empty()
+                        ));
+                    }
+                }
+                None => problems.push("[the height changed under a projection] the sketch of the projection is gone".into()),
+            }
         }
 
         // --- A SECOND PART IN THE SAME DOCUMENT: THE LID ---
@@ -859,6 +947,66 @@ pub(crate) mod tests {
             hand.look_at([30.0, 20.0, 2.0], 8.0).tool(4).click(e.mid).set("radius", 2.0).enter();
         }
         check_all(&mut app, "the lid was filleted", &mut problems);
+
+        // --- A SKETCH OF THE LID ON THE SIDE OF THE HOUSING: the outline of that face of the neighbour projected into it,
+        // a line drawn from its top corner; the housing made taller - the projection in the lid's sketch and the line tied
+        // to it follow ---
+        let housing = projected.and_then(|(sid, _, _)| app.project.sketch_index(sid)).and_then(|si| app.project.sketches[si].projections.first().map(|p| p.body)).map(|b| app.project.live_body(b));
+        // THE STEP MUST HAPPEN: without the housing found it would be skipped and the green would mean nothing
+        if housing.is_none() {
+            problems.push("[the lid's sketch on the housing] the body of the housing was not found from the projection of its side".into());
+        }
+        let in_the_lid = housing.and_then(|body| {
+            let side = app.project.regen_faces.get(&body)?.iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned()?;
+            let key = qymcad_core::feature::FaceKey { index: 0, centroid: [side.centroid.x, side.centroid.y, side.centroid.z], normal: side.normal, id: side.id };
+            let si6 = app.create_sketch_on(qymcad_core::feature::SketchPlane::Face(body, key));
+            let mut hand = Hand::new(&mut app);
+            let taken = hand.press_hint(&crate::i18n::tr("tb-project-body-hint")) && hand.press_word(&crate::i18n::tr("opt-face-outline"), egui::pos2(0.0, 0.0));
+            hand.click2d(0.0, 0.0);
+            let s = &hand.app.project.sketches[si6];
+            let corner = s
+                .projected_points()
+                .into_iter()
+                .filter_map(|id| s.points.iter().find(|q| q.id == id).map(|q| (id, (q.x, q.y))))
+                .max_by(|a, b| (a.1 .1 + a.1 .0 * 1e-3).total_cmp(&(b.1 .1 + b.1 .0 * 1e-3)));
+            hand.key(egui::Key::Escape);
+            let Some((cid, at)) = corner.filter(|_| taken) else {
+                problems.push(format!("[the lid's sketch on the housing] the outline of the side of the housing was not projected: the tool taken {taken}, the status {:?}", hand.app.status));
+                app.finish_sketch_edit();
+                return None;
+            };
+            hand.sk_tool(1).click2d(at.0, at.1).click2d(at.0 + 10.0, at.1 + 10.0).key(egui::Key::Escape).key(egui::Key::Escape);
+            let sid = hand.app.project.sketches[si6].id;
+            app.finish_sketch_edit();
+            check_all(&mut app, "a sketch of the lid on the side of the housing, its outline projected", &mut problems);
+            Some((sid, cid, at))
+        });
+        if let Some((sid, corner, at)) = in_the_lid {
+            app.exit_context();
+            if let Some(ti) = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })) {
+                let nid = app.project.timeline[ti].id;
+                app.tree_action(1, ti, nid, None, None);
+                if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
+                    p.val = 45.0;
+                    p.txt = "45".into();
+                }
+                app.apply_feat_cmd();
+                check_all(&mut app, "the housing made 45 tall under the lid's sketch", &mut problems);
+            }
+            let s = app.project.sketch_index(sid).map(|si| &app.project.sketches[si]);
+            let now = s.and_then(|s| s.points.iter().find(|q| q.id == corner).map(|q| (q.x, q.y)));
+            let start = s.and_then(|s| {
+                s.entities.iter().find_map(|e| match e.kind {
+                    qymcad_core::model::EntityKind::Line { a, .. } if !s.projected_entities().contains(&e.id) => s.points.iter().find(|q| q.id == a).map(|q| (q.x, q.y)),
+                    _ => None,
+                })
+            });
+            let moved = now.is_some_and(|n| (n.0 - at.0).hypot(n.1 - at.1) > 5.0);
+            let tied = now.zip(start).is_some_and(|(n, b)| (n.0 - b.0).hypot(n.1 - b.1) < 1e-6);
+            if !moved || !tied {
+                problems.push(format!("[the housing changed under the lid's sketch] the corner of the projection went from {at:?} to {now:?}, the line drawn from it starts at {start:?}"));
+            }
+        }
 
         // --- THE ASSEMBLY: THE LID IS FASTENED TO THE HOUSING ---
         app.exit_context();
@@ -1397,6 +1545,66 @@ pub(crate) mod tests {
                 check_all(&mut app, &format!("sketch: {name}"), &mut problems);
             }
 
+            // A SIZE ONLY WHEN TYPED: the circles and the arc above were drawn without a value typed and carry no size of
+            // their own; a circle drawn with 12 typed carries one diameter of 12.
+            {
+                // the sizes on the rims of the circles and arcs drawn as shapes; the construction circle of the polygon keeps
+                // the radius that holds the polygon
+                let sizes = |a: &App| {
+                    let sk = &a.project.sketches[si];
+                    let shapes: Vec<u64> = sk
+                        .entities
+                        .iter()
+                        .filter(|e| !e.construction)
+                        .filter_map(|e| match e.kind {
+                            qymcad_core::model::EntityKind::Circle { center, .. } | qymcad_core::model::EntityKind::Arc { center, .. } => Some(center),
+                            _ => None,
+                        })
+                        .collect();
+                    sk.constraints
+                        .iter()
+                        .filter_map(|c| match c {
+                            qymcad_core::model::Constraint::Diameter { c, d, diam, .. } if shapes.contains(c) => Some((*diam, *d)),
+                            _ => None,
+                        })
+                        .collect::<Vec<_>>()
+                };
+                if !sizes(&app).is_empty() {
+                    problems.push(format!("sketch: circles and an arc drawn without a value typed carry sizes {:?}", sizes(&app)));
+                }
+                let mut hand = Hand::new(&mut app);
+                hand.sk_tool(3).click2d(100.0, 10.0).click2d(106.0, 10.0).type_text("12").key(egui::Key::Enter);
+                hand.key(egui::Key::Escape).key(egui::Key::Escape);
+                if sizes(&app) != vec![(true, 12.0)] {
+                    problems.push(format!("sketch: a circle drawn with 12 typed carries sizes {:?}", sizes(&app)));
+                }
+                check_all(&mut app, "sketch: a circle sized by a value typed", &mut problems);
+            }
+
+            // A RECTANGLE WITH ITS CENTRE FIXED: drawn from a corner, the centre picked and fixed, a corner dragged by the
+            // mouse - it resizes about the centre, which stays
+            {
+                let mut hand = Hand::new(&mut app);
+                hand.sk_tool(2).click2d(110.0, 30.0).click2d(130.0, 50.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                hand.sk_tool(0);
+                let centre = hand.app.project.sketches[si].rects.last().map(|r| r.centre);
+                match centre {
+                    Some(c) if hand.select2d(&[(0, c)]) => {
+                        hand.constraint(6);
+                        hand.key(egui::Key::Escape);
+                        hand.drag2d((130.0, 50.0), (134.0, 53.0));
+                        let sk = &hand.app.project.sketches[si];
+                        let stays = sk.points.iter().find(|q| q.id == c).is_some_and(|q| (q.x - 120.0).abs() < 0.6 && (q.y - 40.0).abs() < 0.6);
+                        let moved = sk.points.iter().any(|q| (q.x - 134.0).abs() < 0.6 && (q.y - 53.0).abs() < 0.6);
+                        if !stays || !moved {
+                            problems.push(format!("sketch: a corner of a rectangle with its centre fixed dragged to (134, 53): the centre stays {stays}, the corner went there {moved}"));
+                        }
+                    }
+                    _ => problems.push("sketch: the centre of a rectangle drawn from a corner could not be picked".into()),
+                }
+                check_all(&mut app, "sketch: a rectangle with its centre fixed resized by a corner", &mut problems);
+            }
+
             // CONSTRAINTS: each is placed on a suitable selection. One that did not take must say so through
             // the status line rather than silently doing nothing.
             let codes: [(u8, &str); 9] =
@@ -1424,18 +1632,93 @@ pub(crate) mod tests {
                 check_all(&mut app, &format!("sketch: the {name} constraint"), &mut problems);
             }
 
+            // A DRAWING TOOL TAKEN OVER A SELECTION drops it: two lines selected, the circle taken and drawn beside
+            // them, and nothing stays selected - neither the lines nor the circle.
+            {
+                let mut hand = Hand::new(&mut app);
+                hand.sk_select();
+                let lines: Vec<(u8, u64)> = hand.app.project.sketches[si].entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).map(|e| (1u8, e.id)).collect();
+                if lines.windows(2).any(|w| hand.select2d(w)) {
+                    hand.sk_tool(3).click2d(150.0, 150.0).click2d(160.0, 150.0).key(egui::Key::Escape);
+                    if !hand.app.tools.sel_sk.items.is_empty() {
+                        problems.push(format!("sketch: a circle drawn over two selected lines left {:?} selected", hand.app.tools.sel_sk.items));
+                    }
+                    hand.sk_tool(0);
+                } else {
+                    problems.push("sketch: no pair of lines could be clicked before a drawing tool was taken".into());
+                }
+                check_all(&mut app, "sketch: a drawing tool taken over a selection", &mut problems);
+            }
+
             // EDITING WHAT WAS DRAWN: corner fillets, chamfers, trimming, extending, breaking, offsetting,
             // moving, copying, rotating. Every tool must either DO something or say why it cannot: silently
             // doing nothing is the worst of behaviours.
             {
                 let count = |a: &App| a.project.sketches[si].entities.len() + a.project.sketches[si].points.len();
                 let before = count(&app);
-                crate::gui::fillet_all_corners(&mut app.tools.corner, &mut app.tools.picking, app.chosen.sel, &app.tools.sel_sk, &mut app.status, &app.tool_prefs);
+                crate::gui::fillet_all_corners(&app.project, &mut app.tools.corner, &mut app.tools.picking, app.chosen.sel, &app.tools.sel_sk, &mut app.status, &app.tool_prefs);
                 app.project.regen_sketch(si);
                 if count(&app) == before && app.status.trim().is_empty() {
                     problems.push("sketch: \"round every corner\" silently did nothing".into());
                 }
                 check_all(&mut app, "sketch: rounding every corner", &mut problems);
+                // A SET OF CORNERS, NOT ONE: a person points at three lines of the contour with Shift and one
+                // value cuts every corner they make. The same set is cut by the chamfer and by the fillet - what
+                // differs is only what each of them leaves behind.
+                for (n, (key, tool, arcs_left)) in [("tb-fillet-sketch-hint", "the fillet", true), ("tb-chamfer-sketch-hint", "the chamfer", false)].into_iter().enumerate() {
+                    // THREE LINES OF THE CONTOUR AS THEY STAND, and a place on each that a click would pick as a
+                    // LINE: a point of the drawing, a caption or a glyph takes a click before the geometry does,
+                    // and a click on one of those would answer it and not the line.
+                    let before = |a: &App| {
+                        let sk = &a.project.sketches[si];
+                        (
+                            sk.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).count(),
+                            sk.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Arc { .. })).count(),
+                        )
+                    };
+                    // A CONTOUR OF THE HAND'S OWN, drawn a long way from everything else on the sheet, because the
+                    // lines of the drawing above stand under the glyphs of the constraints put on them, and a click
+                    // on a glyph answers the constraint and not the line.
+                    let off = 200.0 * n as f64; // the contour of the second tool stands clear of the first
+                    let legs: [[(f64, f64); 2]; 3] = [[(100.0, 100.0), (160.0, 100.0)], [(160.0, 100.0), (130.0, 150.0)], [(130.0, 150.0), (100.0, 100.0)]];
+                    for leg in legs {
+                        let mut hand = Hand::new(&mut app);
+                        hand.sk_tool(0); // THE BUTTON OF A TOOL IN HAND PUTS IT DOWN, so the second leg needs it put down first
+                        hand.sk_tool(1);
+                        for (x, y) in leg {
+                            hand.click2d(x + off, y);
+                        }
+                    }
+                    // THE THREE LEGS JUST DRAWN, which are the last three lines of the sketch. Their ends move a
+                    // little under the solver, so they are taken by their place in the drawing rather than by their
+                    // coordinates - and the drawing above is left where it was.
+                    let lines: Vec<u64> = app.project.sketches[si].entities.iter().rev().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).take(3).map(|e| e.id).collect();
+                    let (lines0, arcs0) = before(&app);
+                    let named: Vec<(u8, u64)> = lines.iter().map(|&id| (1u8, id)).collect();
+                    app.status.clear(); // so that what is said afterwards is said about THIS action
+                    let mut hand = Hand::new(&mut app);
+                    if lines.len() < 3 || !hand.sk_corner_set(key, &named, 3.0) {
+                        problems.push(format!("sketch: {tool} found no place to click on the lines of the contour"));
+                    } else {
+                        let (lines1, arcs1) = before(&app);
+                        // THREE LINES THAT MEET MAKE THREE CORNERS, AND ONE ANSWER CUTS ALL OF THEM. The fillet rounds
+                        // each corner in the lines themselves and leaves an arc at each; the chamfer lays a straight
+                        // line across each corner and leaves none, so it is the lines that grow by three.
+                        let (want_arcs, want_lines) = if arcs_left { (arcs0 + 3, lines0) } else { (arcs0, lines0 + 3) };
+                        if (lines1, arcs1) != (want_lines, want_arcs) {
+                            problems.push(format!(
+                                "sketch: three lines were named and {tool} 3 left {lines1} lines and {arcs1} arcs, where {want_lines} and {want_arcs} were the ones it owes; status {:?}",
+                                app.status
+                            ));
+                        }
+                        // ONE STEP OF UNDO FOR THE WHOLE SET: a person naming three corners meant one act.
+                        let step = app.disk.edits.undo.last().map(|s| s.name.clone());
+                        if step.as_deref() != Some(crate::i18n::tr(if arcs_left { "tool-fillet" } else { "tool-chamfer" }).as_str()) {
+                            problems.push(format!("sketch: {tool} left the step of undo {step:?}"));
+                        }
+                    }
+                    check_all(&mut app, &format!("sketch: {tool} over a set of corners"), &mut problems);
+                }
 
                 let ops: [(u8, &str, (f64, f64)); 4] = [(5, "chamfer", (30.0, 0.0)), (1, "trim", (40.0, 0.0)), (2, "extend", (30.0, 7.0)), (3, "break", (50.0, 7.0))];
                 for (op, name, (x, y)) in ops {
@@ -1449,6 +1732,30 @@ pub(crate) mod tests {
                     check_all(&mut app, &format!("sketch: {name}"), &mut problems);
                 }
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
+
+                // EXTEND AS EVERY TOOL: a line short of another selected, Extend taken, the pointer past its end, Enter -
+                // the end goes to the line across
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(1).click2d(200.0, 0.0).click2d(210.0, 0.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                    hand.sk_tool(1).click2d(220.0, -5.0).click2d(220.0, 5.0).key(egui::Key::Escape).key(egui::Key::Escape);
+                    hand.sk_tool(0);
+                    let short = hand.app.project.sketches[si].entities.iter().rev().nth(1).map(|e| e.id);
+                    match short {
+                        Some(eid) if hand.select2d(&[(1, eid)]) => {
+                            if hand.press_hint(&crate::i18n::tr("tb-extend-hint")) {
+                                hand.hover2d(212.0, 1.0).key(egui::Key::Enter);
+                            }
+                            let reached = hand.app.project.sketches[si].points.iter().any(|q| (q.x - 220.0).abs() < 1e-6 && q.y.abs() < 1e-6);
+                            if !reached {
+                                problems.push("sketch: a line selected, Extend and Enter - it did not reach the line across at x 220".into());
+                            }
+                            hand.key(egui::Key::Escape).key(egui::Key::Escape);
+                        }
+                        _ => problems.push("sketch: the line short of another could not be picked for Extend".into()),
+                    }
+                    check_all(&mut app, "sketch: a line extended as every tool works", &mut problems);
+                }
 
                 // MOVING, COPYING AND ROTATING GO THROUGH THE TOOL'S OWN DOOR: three clicks - what is being
                 // moved, the base point, the target - and for a turn the angle typed into the popup, every click
@@ -1604,6 +1911,136 @@ pub(crate) mod tests {
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
                 check_all(&mut app, "sketch: a fillet by its chord", &mut problems);
 
+                // A FILLET AT A CROSSING: two lines drawn through each other on a place of their own, the fillet clicked in
+                // the upper right quarter by the crossing, 4 typed, Enter. The quarter is rounded about (284, -21).
+                {
+                    let mut hand = Hand::new(&mut app);
+                    // the line tool stays in hand after a chain is ended: the second line is drawn with it as it is
+                    hand.sk_tool(1).look2d((280.0, -25.0)).click2d(265.0, -25.0).double_click2d(295.0, -25.0);
+                    hand.click2d(280.0, -40.0).double_click2d(280.0, -10.0);
+                    hand.sk_tool(0).look2d((280.0, -25.0));
+                    // by its radius: the way of the fillet stays as the step before left it, by its chord
+                    let pressed = hand.press_hint(&qymcad_i18n::tr("tb-fillet-sketch-hint")) && hand.press_word(&qymcad_i18n::tr("opt-radius"), egui::pos2(0.0, 0.0));
+                    // the crossing has four corners to give: a second click in the quarter fixes the corner there
+                    hand.click2d(280.6, -24.4).click2d(281.0, -24.0).type_text("4").key(egui::Key::Enter);
+                    let sk = &app.project.sketches[si];
+                    let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+                    let rounded = sk.entities.iter().any(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Arc { center, .. } => at(center).is_some_and(|c| (c.0 - 284.0).hypot(c.1 + 21.0) < 1e-5),
+                        _ => false,
+                    });
+                    if !pressed || !rounded {
+                        let centres: Vec<(f64, f64)> = sk
+                            .entities
+                            .iter()
+                            .filter_map(|e| match e.kind {
+                                qymcad_core::model::EntityKind::Arc { center, .. } => at(center).filter(|c| c.0 > 250.0),
+                                _ => None,
+                            })
+                            .collect();
+                        problems.push(format!(
+                            "sketch: a fillet clicked by a crossing did not round its quarter about (284, -21) (pressed: {pressed}); the arcs there stand about {centres:?}; status: {}",
+                            app.status
+                        ));
+                    }
+                }
+                qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
+                check_all(&mut app, "sketch: a fillet at a crossing", &mut problems);
+
+                // AN OPEN CHAIN OFFSET: a polyline east then north on a place of its own, its two lines chosen, Offset
+                // taken, a click to the left of the chain fixing the side, 2 typed into the box beside the copy, Enter.
+                // The copy starts square to the start of the chain, 2 above it; its corner is sharp, not an arc.
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(1).look2d((320.0, -25.0)).click2d(310.0, -35.0).click2d(330.0, -35.0).double_click2d(330.0, -15.0);
+                    hand.key(egui::Key::Escape).sk_tool(0).look2d((320.0, -25.0));
+                    hand.click2d(320.0, -35.0).shift_click2d(330.0, -25.0);
+                    let pressed = hand.press_hint(&qymcad_i18n::tr("tb-offset-hint"));
+                    hand.click2d(315.0, -30.0).type_text("2").key(egui::Key::Enter);
+                    let sk = &app.project.sketches[si];
+                    let copied = sk.points.iter().any(|q| (q.x - 310.0).abs() < 1e-6 && (q.y + 33.0).abs() < 1e-6);
+                    let sharp = sk.points.iter().any(|q| (q.x - 328.0).abs() < 1e-6 && (q.y + 33.0).abs() < 1e-6);
+                    if !pressed || !copied || !sharp {
+                        problems.push(format!("sketch: an open chain offset by 2 to its left: no copy above its start, or its corner not at (328, -33) (pressed: {pressed}); status: {}", app.status));
+                    }
+                }
+                qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
+                check_all(&mut app, "sketch: an open chain offset", &mut problems);
+
+                // TANGENT RUNS A LINE ON TO A CIRCLE IT DOES NOT REACH: a circle and a line apart from it on a place of their
+                // own, the line picked off its middle and the circle with Shift, Tangent. The nearer end of the line is the
+                // point it touches at: the radius to it square to the line.
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(3).look2d((425.0, -35.0)).click2d(410.0, -25.0).click2d(415.0, -25.0).key(egui::Key::Escape);
+                    hand.sk_tool(1).look2d((425.0, -35.0)).click2d(420.0, -45.0).double_click2d(440.0, -40.0);
+                    hand.key(egui::Key::Escape).sk_tool(0).look2d((425.0, -35.0));
+                    hand.click2d(435.0, -41.25).shift_click2d(410.0, -20.0).constraint(9);
+                    let sk = &app.project.sketches[si];
+                    let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| (q.x, q.y));
+                    let centre = sk.entities.iter().rev().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Circle { center, .. } => at(center),
+                        _ => None,
+                    });
+                    let ends = sk.entities.iter().rev().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Line { a, b } => at(a).zip(at(b)),
+                        _ => None,
+                    });
+                    let touches = centre.zip(ends).is_some_and(|(c, (a, b))| {
+                        [(a, b), (b, a)].into_iter().any(|(t, o)| {
+                            let (rx, ry, dx, dy) = (t.0 - c.0, t.1 - c.1, o.0 - t.0, o.1 - t.1);
+                            rx.hypot(ry) > 1.0 && (rx * dx + ry * dy).abs() < 1e-6 * rx.hypot(ry) * dx.hypot(dy)
+                        })
+                    });
+                    if !touches {
+                        problems.push(format!("sketch: Tangent on a line apart from a circle did not run the line on to it (centre {centre:?}, line {ends:?}); status: {}", app.status));
+                    }
+                }
+                check_all(&mut app, "sketch: tangent runs a line on to a circle", &mut problems);
+
+                // THE MIRROR ADDS WITH SHIFT AND REFLECTS ABOUT A POINT: a slanted line chosen, Mirror taken, a short level
+                // line added with Shift, a plain click on the lower end of the slanted one. Both are copied to the far side
+                // of that point, and the tool stays in hand.
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(1).look2d((470.0, -35.0)).click2d(460.0, -40.0).double_click2d(470.0, -30.0);
+                    hand.key(egui::Key::Escape).sk_tool(1).look2d((470.0, -35.0)).click2d(475.0, -40.0).double_click2d(485.0, -40.0);
+                    hand.key(egui::Key::Escape).sk_tool(0).look2d((470.0, -35.0));
+                    hand.click2d(465.0, -35.0);
+                    let pressed = hand.press_hint(&qymcad_i18n::tr("tb-mirror-sketch-hint"));
+                    hand.shift_click2d(482.0, -40.0).click2d(460.0, -40.0);
+                    let sk = &app.project.sketches[si];
+                    let stands = |x: f64, y: f64| sk.points.iter().any(|q| (q.x - x).abs() < 1e-6 && (q.y - y).abs() < 1e-6);
+                    let in_hand = app.tools.sel_sk.modify == Some(qymcad_ui_state::EditTool::Mirror);
+                    if !pressed || !stands(450.0, -50.0) || !stands(445.0, -40.0) || !stands(435.0, -40.0) || !in_hand {
+                        problems.push(format!(
+                            "sketch: two lines mirrored about the point (460, -40) are not on its far side, or the tool went (pressed: {pressed}, in hand: {in_hand}); status: {}",
+                            app.status
+                        ));
+                    }
+                }
+                qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
+                check_all(&mut app, "sketch: the mirror adds with Shift and reflects about a point", &mut problems);
+
+                // THE SNAP SHOWN IS THE TIE LAID: a level line on a place of its own, then a circle whose centre is clicked
+                // on the line, off its middle. The centre is held on the line, not only put there.
+                {
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(1).look2d((520.0, -40.0)).click2d(500.0, -40.0).double_click2d(540.0, -40.0);
+                    hand.key(egui::Key::Escape).sk_tool(3).look2d((520.0, -40.0)).click2d(510.0, -40.0).click2d(514.0, -40.0).key(egui::Key::Escape);
+                    hand.sk_tool(0);
+                    let sk = &app.project.sketches[si];
+                    let centre = sk.entities.iter().rev().find_map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Circle { center, .. } => Some(center),
+                        _ => None,
+                    });
+                    let held = centre.is_some_and(|c| sk.constraints.iter().any(|k| matches!(k, qymcad_core::model::Constraint::PointOnLine { p, .. } if *p == c)));
+                    if !held {
+                        problems.push(format!("sketch: a circle centred on a line is not held on it (centre {centre:?}); status: {}", app.status));
+                    }
+                }
+                check_all(&mut app, "sketch: a circle centred on a line is held on it", &mut problems);
+
                 // A RECTANGLE IS ONE SHAPE: drawn on a place of its own, picked by one side with Rotate and turned 30 deg
                 // about its centre, it turns as a whole and stays square.
                 {
@@ -1625,12 +2062,45 @@ pub(crate) mod tests {
                 }
                 qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, 0);
                 check_all(&mut app, "sketch: a rectangle turned as one shape", &mut problems);
+                // THE MIDDLE OF A LINE IS PICKED AS A POINT: a line and a circle on a place of their own, the middle of the
+                // line clicked where its triangle shows, the centre of the circle added with Shift, Vertical pressed - the
+                // centre stands straight above the middle.
+                {
+                    Hand::new(&mut app).sk_tool(1).look2d((290.0, -20.0)).click2d(270.0, -40.0).click2d(310.0, -40.0).key(egui::Key::Escape);
+                    Hand::new(&mut app).sk_tool(3).look2d((290.0, -20.0)).click2d(296.0, -10.0).click2d(300.0, -10.0).key(egui::Key::Escape);
+                    let mut hand = Hand::new(&mut app);
+                    hand.sk_tool(0).look2d((290.0, -20.0)).hover2d(290.0, -40.0).click2d(290.0, -40.0);
+                    let picked = hand.app.tools.sel_sk.items.clone();
+                    let centre = hand.app.project.sketches[si].points.iter().find(|q| (q.x - 296.0).hypot(q.y + 10.0) < 1e-6).map(|q| q.id);
+                    hand.shift_click2d(296.0, -10.0);
+                    Hand::new(&mut app).constraint(2);
+                    let sk = &app.project.sketches[si];
+                    let at = |id: u64| sk.points.iter().find(|q| q.id == id).map(|q| q.x);
+                    // the middle is laid by Vertical, held to the line clicked
+                    let line = match picked.as_slice() {
+                        [(1, eid)] => sk.entities.iter().find(|e| e.id == *eid).and_then(|e| if let qymcad_core::model::EntityKind::Line { a, b } = e.kind { Some((a, b)) } else { None }),
+                        _ => None,
+                    };
+                    let mid = line.and_then(|(a, b)| {
+                        sk.constraints.iter().find_map(|k| match *k {
+                            qymcad_core::model::Constraint::Midpoint { p, a: x, b: y } if (x, y) == (a, b) => Some(p),
+                            _ => None,
+                        })
+                    });
+                    let stands = mid.zip(centre).and_then(|(m, c)| Some((at(m)? - at(c)?).abs() < 1e-6));
+                    if stands != Some(true) {
+                        problems
+                            .push(format!("sketch: the middle of a line picked and held Vertical with a centre: picked {picked:?}, centre {centre:?}, standing {stands:?}; status: {}", app.status));
+                    }
+                }
+                check_all(&mut app, "sketch: the middle of a line takes a constraint", &mut problems);
             }
 
             // DIMENSIONS: linear, angular, radial. A dimension is not a caption but A CONSTRAINT: it must take
-            // away a degree of freedom, otherwise the sketch stays rubbery while it looks set.
+            // away a degree of freedom, otherwise the sketch stays rubbery while it looks set. The angle has a free
+            // point among its three: the points on the X axis are held on it, and an angle of them alone is a reference.
             {
-                let dims: [Drawing; 3] = [drawing(1, "linear", &[(30.0, 0.0), (50.0, 15.0)]), drawing(3, "radial", &[(70.0, 10.0)]), drawing(2, "angular", &[(0.0, 0.0), (20.0, 0.0), (30.0, 0.0)])];
+                let dims: [Drawing; 3] = [drawing(1, "linear", &[(30.0, 0.0), (50.0, 15.0)]), drawing(3, "radial", &[(70.0, 10.0)]), drawing(2, "angular", &[(0.0, 0.0), (30.0, 0.0), (50.0, 15.0)])];
                 for Drawing { tool: kind, name, clicks: picks } in dims {
                     // ONLY DIMENSION CONSTRAINTS ARE COUNTED. Any constraint used to count, and the fixed ones
                     // from the neighbouring block got into the tally - the check blamed a dimension for
@@ -1652,7 +2122,13 @@ pub(crate) mod tests {
                         problems.push(format!("sketch: the {name} dimension was not created and SAID NOTHING about why"));
                     }
                     if after > before && app.project.sketch_dof(si) >= dof_before {
-                        problems.push(format!("sketch: the {name} dimension took, but took away no degree of freedom"));
+                        let laid: Vec<&Constraint> = app.project.sketches[si]
+                            .constraints
+                            .iter()
+                            .filter(|c| matches!(c, Constraint::Distance { .. } | Constraint::Diameter { .. } | Constraint::Angle { .. }))
+                            .skip(before)
+                            .collect();
+                        problems.push(format!("sketch: the {name} dimension took, but took away no degree of freedom: {laid:?}, freedom {dof_before:?} -> {:?}", app.project.sketch_dof(si)));
                     }
                     check_all(&mut app, &format!("sketch: the {name} dimension"), &mut problems);
                 }
@@ -1772,8 +2248,54 @@ pub(crate) mod tests {
                 }
             }
 
+            // A COPY GOES TO THE CLIPBOARD and is pasted into another sketch: everything picked with Ctrl+A, copied by
+            // its base point, the sketch left; a new sketch of the part takes it with Ctrl+V and a click
+            {
+                let mut hand = Hand::new(&mut app);
+                hand.sk_tool(0).ctrl(egui::Key::A);
+                hand.copy().click2d(0.0, 0.0);
+                let copied = hand.app.side.clip.geom.as_ref().map_or(0, |c| c.entities.len());
+                if copied == 0 || hand.app.side.clip.geom_place {
+                    problems.push(format!("sketch: Ctrl+C and the base point: {copied} curves in the clipboard, a ghost follows the pointer {}", hand.app.side.clip.geom_place));
+                }
+                hand.app.finish_sketch_edit();
+                let other = hand.app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+                hand.sk_tool(0).paste().click2d(0.0, 0.0);
+                let pasted = hand.app.project.sketches[other].entities.len();
+                if pasted != copied {
+                    problems.push(format!("sketch: {copied} curves copied, {pasted} pasted into another sketch"));
+                }
+                check_all(&mut app, "sketch: a copy pasted into another sketch", &mut problems);
+            }
+
             app.finish_sketch_edit();
             app.exit_context();
+        }
+
+        // A BIG DRAWING IN THE MIDDLE OF THE WORK: 300 rectangles of four segments - the size of sketch that hung the
+        // program (#95) - come in through Import, are laid on a plane, and a corner is dragged by hand; the document
+        // holds after each.
+        {
+            let path = crate::gui::a_big_drawing_stays_live::tests::rectangles_dxf(300);
+            let ctx = egui::Context::default();
+            crate::gui::install_fonts(&ctx);
+            crate::gui::import_door::tests::answer(&mut app, &ctx, qymcad_ui_state::Want::Anything, &path.to_string_lossy());
+            Hand::new(&mut app).click([5.0, 5.0, 0.0]);
+            match app.project.sketches.iter().position(|s| s.entities.len() >= 1_200) {
+                None => problems.push(format!("a big drawing: 1 200 segments did not come in as a sketch; the status says {:?}", app.status)),
+                Some(si) => {
+                    check_all(&mut app, "a big drawing came in", &mut problems);
+                    // the corner (10, 6) of the first rectangle, led 2 mm on along both axes
+                    Hand::new(&mut app).sk_tool(0).drag2d((10.0, 6.0), (12.0, 8.0));
+                    let moved = app.project.sketches[si].points.iter().any(|p| (p.x - 12.0).hypot(p.y - 8.0) < 0.5);
+                    if !moved {
+                        problems.push("a big drawing: the corner (10, 6) dragged to (12, 8) did not go".into());
+                    }
+                    check_all(&mut app, "a big drawing: a corner dragged", &mut problems);
+                    app.finish_sketch_edit();
+                    app.exit_context();
+                }
+            }
         }
 
         // --- THE MONKEY: RANDOM ACTIONS ON A FINISHED DOCUMENT ---
@@ -1836,6 +2358,9 @@ pub(crate) mod tests {
         // This is already checked inside a sketch; here it is the same thing at the level of THE TIMELINE: the
         // height of an extrude holds on to a variable, and editing that variable must rebuild THE BODY.
         // Otherwise the parametrics end at the sketch and the part stays hand-made.
+        //
+        // The name carries a capital: `Height` is a name of its own, not `height`. The window marks nothing by hand
+        // after the edit, so neither does this step: what rebuilds the body is the edit of the variable alone.
         {
             use qymcad_core::feature::FeatureKind as FK;
             let ext = app.project.timeline.iter().find_map(|n| match n.kind {
@@ -1846,25 +2371,29 @@ pub(crate) mod tests {
                 let area = |a: &App| a.project.regen_faces.get(&body).map(|fs| fs.iter().map(|f| f.area).sum::<f64>()).unwrap_or(0.0);
                 let a0 = area(&app);
                 qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "the height follows a variable");
-                app.project.parameters.push(qymcad_core::model::Param { name: "height".into(), expr: "18".into(), value: 18.0 });
-                app.project.feat_dims.entry(node).or_default().insert("height".into(), "height".into());
+                app.project.parameters.push(qymcad_core::model::Param { name: "Height".into(), expr: "18".into(), value: 18.0 });
+                app.project.set_feat_dim(node, "height", "Height".into());
                 qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
-                app.project.mark_node_dirty(node);
                 qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let a1 = area(&app);
 
                 qymcad_ui_state::begin_edit(&mut app.disk.edits, &app.project, "editing the variable");
-                if let Some(p) = app.project.parameters.iter_mut().find(|p| p.name == "height") {
+                if let Some(p) = app.project.parameters.iter_mut().find(|p| p.name == "Height") {
                     p.expr = "34".into();
                     p.value = 34.0;
                 }
                 qymcad_ui_state::commit_edit(&mut app.rebuild_ctx());
-                app.project.mark_node_dirty(node);
                 qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
                 let a2 = area(&app);
 
                 if (a2 - a1).abs() < 1e-6 {
                     problems.push(format!("the variable was changed from 18 to 34 and the body did not move: the area went {a1:.0} -> {a2:.0} (it was {a0:.0} before the binding)"));
+                }
+                let ti = app.project.timeline.iter().position(|n| n.id == node).unwrap_or(0);
+                let row = crate::gui::panels_tree::feature_row_label(&app.project, ti);
+                let height = crate::i18n::num(34.0, 1);
+                if !row.contains(&height) {
+                    problems.push(format!("the variable was changed to 34 and the tree row of the extrude reads \"{row}\""));
                 }
                 check_all(&mut app, "the height of an extrude driven by a global variable", &mut problems);
             }
@@ -2667,6 +3196,19 @@ pub(crate) mod tests {
                     Err(e) => problems.push(format!("the STL export left no file: {e}")),
                 },
                 Err(e) => problems.push(format!("the STL export refused: {e}")),
+            }
+
+            // The chooser of the export opens in the project's folder, and after an export written elsewhere,
+            // in that folder. The document is given the path of the save round, as Save As gives it.
+            let saved = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();
+            crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, saved);
+            let home = app.disk.project_path.as_deref().and_then(|p| std::path::Path::new(p).parent()).map(std::path::Path::to_path_buf);
+            if home.is_none() || crate::gui::export_folder::export_folder(&app.disk) != home {
+                problems.push(format!("the export chooser opens in {:?}, not in the project's folder {home:?}", crate::gui::export_folder::export_folder(&app.disk)));
+            }
+            crate::gui::export_folder::remember_export(&mut app.disk, std::path::Path::new(&path));
+            if crate::gui::export_folder::export_folder(&app.disk).as_deref() != Some(folder.path()) {
+                problems.push(format!("after an export into {:?} the next chooser opens in {:?}", folder.path(), crate::gui::export_folder::export_folder(&app.disk)));
             }
             check_all(&mut app, "the project export", &mut problems);
         }

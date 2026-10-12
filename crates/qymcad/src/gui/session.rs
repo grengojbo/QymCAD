@@ -278,6 +278,9 @@ pub struct Solid {
     pub consumed: bool,
     /// A surface rather than a solid.
     pub sheet: bool,
+    /// How many vertices of its mesh carry the surface's own normal - what its smooth light is shaded by. None: a mesh
+    /// saved before the normals were kept, or one with no surface behind it.
+    pub lit_by_the_surface: usize,
 }
 
 /// WHAT AN EXACT BODY IS MADE OF, read on demand ([`Session::inspect`]): checking a large body takes time, so it is
@@ -347,6 +350,33 @@ impl Picture {
         img.write_to(&mut std::io::Cursor::new(&mut out), image::ImageFormat::Png).expect("a picture in memory writes");
         out
     }
+
+    /// The colour of the picture at a point of the screen.
+    pub fn colour_at(&self, at: Pos2) -> [u8; 3] {
+        let (x, y) = (at.x.round() as usize, at.y.round() as usize);
+        let o = (y * self.width + x) * 4;
+        [self.rgba[o], self.rgba[o + 1], self.rgba[o + 2]]
+    }
+
+    /// How far apart two colours are, the largest of the three channels.
+    pub fn apart(a: [u8; 3], b: [u8; 3]) -> i32 {
+        (0..3).map(|k| (a[k] as i32 - b[k] as i32).abs()).max().unwrap_or(0)
+    }
+}
+
+/// THE GLYPH OF A SNAP drawn at the pointer while a sketch tool is in hand: the tie a click there is to lay (its name, as
+/// the glyph is named), and where on the sketch it stands.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SnapGlyph {
+    pub glyph: String,
+    pub at: (f64, f64),
+}
+
+/// A BADGE OF A CONSTRAINT drawn on the sketch: its glyph, as the glyph is named, and where on the screen it stands.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Badge {
+    pub glyph: String,
+    pub at: Pos2,
 }
 
 /// WHAT A CLICK ON THE SKETCH WOULD TAKE, in the coordinates of the sketch.
@@ -476,6 +506,24 @@ impl Session {
             }
         }
         self
+    }
+
+    /// WAIT FOR `what` TO HAPPEN, as a person does - frames drawn, the clock on the wall moving - until `happened` says
+    /// it has, for no longer than `deadline`. A probe that slept a fixed span and then looked passed on a fast machine
+    /// and went red now and then on a runner of the CI, where the same work came later: an autosave of 1 s and an
+    /// extrude did not fit in 2.5 s there. The deadline is the bound of a fault, not of a slow machine.
+    ///
+    /// # Panics
+    /// When `deadline` passes first, naming what was waited for.
+    pub fn wait_for(&mut self, what: &str, deadline: Duration, mut happened: impl FnMut(&mut Self) -> bool) -> &mut Self {
+        let began = Instant::now();
+        while !happened(self) {
+            assert!(began.elapsed() < deadline, "waited {deadline:?} for {what}, and it did not happen");
+            assert!(!self.win.closed, "the window closed while waiting for {what}");
+            std::thread::sleep(Duration::from_millis(16));
+            self.frame(Vec::new());
+        }
+        self.settle()
     }
 
     /// LET `span` OF REAL TIME PASS with the window drawing its frames, as a person waits with the program in front
@@ -648,7 +696,14 @@ impl Session {
     /// WHICH CHOOSER THE PROGRAM HAS PUT UP and waits on, if any.
     pub fn chooser(&mut self) -> Option<Chooser> {
         self.settle();
-        crate::system::with_stand_in(|s| s.asked.as_ref().map(|(kind, _)| *kind)).flatten()
+        crate::system::with_stand_in(|s| s.asked.as_ref().map(|a| a.kind)).flatten()
+    }
+
+    /// THE FOLDER THE CHOOSER THAT IS UP OPENS IN; `None` when no chooser is up or it leaves the folder to the
+    /// system.
+    pub fn chooser_folder(&mut self) -> Option<std::path::PathBuf> {
+        self.settle();
+        crate::system::with_stand_in(|s| s.asked.as_ref().and_then(|a| a.folder.clone())).flatten()
     }
 
     /// ANSWER THE CHOOSER with `path`, as a person picks a file in it.
@@ -1100,6 +1155,20 @@ impl Session {
         self.drag(a, b, PointerButton::Primary, Modifiers::default())
     }
 
+    /// THE GLYPH OF THE SNAP SHOWN AT THE POINTER, as the frame draws it - none where the pointer snaps to nothing a
+    /// click would be tied to.
+    pub fn snap_glyph(&mut self) -> Option<SnapGlyph> {
+        self.settle();
+        qymcad_pick::snap_infer_glyph(&self.app.painting()).map(|(g, p)| SnapGlyph { glyph: format!("{g:?}"), at: (p.x, p.y) })
+    }
+
+    /// THE BADGES OF THE CONSTRAINTS DRAWN ON THE OPEN SKETCH, as the frame draws them; none outside a sketch.
+    pub fn badges(&mut self) -> Vec<Badge> {
+        self.settle();
+        let Some(si) = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses) else { return Vec::new() };
+        qymcad_pick::visible_constraint_glyphs(&self.app.painting(), self.app.viewing.view_rect, si).into_iter().map(|(_, at, g)| Badge { glyph: format!("{g:?}"), at }).collect()
+    }
+
     /// WHAT A CLICK AT (x, y) OF THE OPEN SKETCH WOULD TAKE, brought into view as [`Session::on_sketch`] does.
     pub fn sketch_under(&mut self, x: f64, y: f64) -> Option<SketchPick> {
         let pos = self.on_sketch(x, y);
@@ -1314,6 +1383,16 @@ impl Session {
         out
     }
 
+    /// HOW MANY THINGS OF THE SKETCH STAND LIT - the count a person would count by eye.
+    pub fn lit_in_sketch(&self) -> usize {
+        self.app.tools.sel_sk.items.len()
+    }
+
+    /// WHICH EDITING BUTTON IS IN HAND, by its own number: 4 the corner fillet, 5 the chamfer, 0 none of them.
+    pub fn editing_tool(&self) -> u8 {
+        self.app.tools.armed.click_op()
+    }
+
     /// Is a text field taking the keys - a person in the middle of typing, where Ctrl+Z is the field's own?
     pub fn typing(&self) -> bool {
         self.win.ctx.egui_wants_keyboard_input()
@@ -1447,6 +1526,7 @@ impl Session {
                     max: bounds.as_ref().map(|bb| [bb.max.x, bb.max.y, bb.max.z]).unwrap_or([f64::NAN; 3]),
                     visible: b.visible,
                     consumed: consumed.contains(&b.id),
+                    lit_by_the_surface: m.norms.iter().filter(|&&n| n != 0).count(),
                     sheet: b.sheet,
                 }
             })
@@ -1666,7 +1746,7 @@ impl Session {
             (app.tools.picking.is_sketch_plane(), "the plane of a new sketch"),
             (app.side.m3.on, "the elements to measure"),
             (app.tools.picking.fillet_all(), "the shape whose corners are rounded"),
-            (app.side.clip.geom_pending.is_some() || app.side.clip.geom_place.is_some(), "the base point or the place of a copy"),
+            (app.side.clip.geom_pending.is_some() || app.side.clip.geom_place, "the base point or the place of a copy"),
             (app.params.boolean.pick.is_some(), "the second body of a boolean"),
             (app.params.boolean.edit.is_some(), "the kind of a boolean being edited"),
             (joint.pick_faces || joint.conn_pick, "an anchor of a joint"),
@@ -1866,8 +1946,8 @@ impl Session {
     fn answer(&mut self, path: Option<std::path::PathBuf>) -> &mut Self {
         self.settle();
         let asked = crate::system::with_stand_in(|s| s.asked.take()).flatten();
-        let (_, tx) = asked.expect("the program has put up no chooser to answer");
-        tx.send(path).expect("the program stopped waiting for the chooser");
+        let asked = asked.expect("the program has put up no chooser to answer");
+        asked.tx.send(path).expect("the program stopped waiting for the chooser");
         self.settle();
         self.stepped("an answer to the chooser");
         self

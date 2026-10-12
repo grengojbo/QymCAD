@@ -738,8 +738,8 @@ const fn rect_of_width(w: f64) -> Outcome {
         texts: 0,
         notes: 0,
         // the four turns of its sides, its centre on the middle, the dimension
-        constraints: Some(6),
-        dof: Some(3),
+        constraints: Some(7),
+        dof: Some(1),
         box_of: None,
         // a dimension sets the size; where the line stands is for the solver, which moves both of its free ends
         size_of: Some([w, 30.0]),
@@ -866,7 +866,7 @@ pub static DIM_RADIUS: Tool = Tool {
 
 /// The two lines of the fixture with the angle between them set: the lines stay, the angle is one more constraint.
 const fn angle_of(_deg: f64) -> Outcome {
-    Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(3), box_of: None, size_of: None, under: &[] }
+    Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] }
 }
 
 /// AN ANGULAR DIMENSION: two lines clicked, the dimension placed with a third click, the number typed into it.
@@ -988,9 +988,9 @@ pub static BREAK: Tool = Tool {
         splines: 0,
         texts: 0,
         notes: 0,
-        // the diameter of the circle and a horizontal for each half
-        constraints: Some(3),
-        dof: Some(6),
+        // a horizontal for each half; the circle, drawn with no size typed, carries none and its radius is free
+        constraints: Some(4),
+        dof: Some(4),
         box_of: Some(([-20.0, -10.0], [20.0, 10.0])),
         size_of: None,
         under: &[(17.0, 0.0, Under::Line), (-17.0, 0.0, Under::Line)],
@@ -1008,11 +1008,12 @@ pub static BREAK: Tool = Tool {
     not_applicable: CUTS,
 };
 
-/// EXTEND: the line that stops at x = 20 stretched by a click near its end to the line standing across its way at
-/// x = 30. Nothing is added or taken away: the end moves, and the stretch is a line where there was none.
+/// EXTEND: the line that stops at x = 20 taken by a click on it, and a click past its end stretches it to the line
+/// standing across its way at x = 30, as the preview shows. Nothing is added or taken away: the end moves, and the
+/// stretch is a line where there was none.
 pub static EXTEND: Tool = Tool {
     id: "sketch.extend",
-    flow: Flow::Drawing(&[(18.0, 0.0)], Finish::LastClick),
+    flow: Flow::Drawing(&[(18.0, 0.0), (25.0, 3.0)], Finish::LastClick),
     title: "tool-extend",
     entries: &[Entry::Button("tb-extend-hint"), Entry::SearchByArticle],
     other: (Entry::Button("tb-line-hint"), "tool-line"),
@@ -1053,7 +1054,7 @@ pub static EXTEND: Tool = Tool {
 
 /// The circle of radius 10 and its copy `d` away: outwards for a positive distance, inwards for a negative one. The
 /// copy follows the circle it was made from, as an offset does in the professional systems: the two stand concentric
-/// at their distance, so between them they keep the two degrees of freedom of the one centre.
+/// at their distance. The circle is drawn about the origin and held on it, so what is left free is its radius.
 fn offset_ring(d: f64) -> Outcome {
     let across = 20.0 + 2.0 * d.max(0.0);
     Outcome::Sketch {
@@ -1066,17 +1067,19 @@ fn offset_ring(d: f64) -> Outcome {
         texts: 0,
         notes: 0,
         constraints: None,
-        dof: Some(2),
+        // the radius of the circle drawn with no size typed: the copy keeps its distance from it
+        dof: Some(1),
         box_of: None,
         size_of: Some([across, across]),
         under: &[],
     }
 }
 
-/// OFFSET: the circle copied 3 outwards - the distance stands in the bar, the contour is clicked.
+/// OFFSET: the circle copied 3 outwards - the distance stands in the bar, the circle is clicked, the pointer stands
+/// outside it, Enter; a negative distance takes the other side, inwards.
 pub static OFFSET: Tool = Tool {
     id: "sketch.offset",
-    flow: Flow::Drawing(&[(10.0, 0.0)], Finish::LastClick),
+    flow: Flow::Drawing(&[(10.0, 0.0)], Finish::EnterAt((20.0, 0.0))),
     title: "tool-offset",
     entries: &[Entry::Button("tb-offset-hint"), Entry::SearchByArticle],
     other: (Entry::Button("tb-line-hint"), "tool-line"),
@@ -1110,7 +1113,8 @@ pub static OFFSET: Tool = Tool {
         texts: 0,
         notes: 0,
         constraints: None,
-        dof: Some(2),
+        // the centre, and the radius of the circle drawn with no size typed: the copy keeps its distance from it
+        dof: Some(1),
         box_of: None,
         size_of: Some([26.0, 26.0]),
         under: &[],
@@ -1139,7 +1143,8 @@ pub static OFFSET: Tool = Tool {
 
 /// The right-angled corner rounded with radius `r`: the arc touches each line r from the corner, its centre at (r, r),
 /// and it passes the corner as close as r - r / sqrt(2) = 0.293 r on the diagonal. What stays: the two far ends, the two
-/// points of touching, the centre of the arc; the box of the whole is untouched.
+/// points of touching, the centre of the arc and the corner itself, kept as the virtual sharp; the box of the whole is
+/// untouched.
 fn corner_rounded(r: f64) -> Outcome {
     let near = r - r / std::f64::consts::SQRT_2;
     // the line is looked for halfway along what is left of it (a radius of 29.9 leaves 0.1 of it); the gap and the arc at
@@ -1150,7 +1155,7 @@ fn corner_rounded(r: f64) -> Outcome {
     }
     let under: &'static [(f64, f64, Under)] = Box::leak(at.into_boxed_slice());
     Outcome::Sketch {
-        points: 5,
+        points: 6,
         lines: 2,
         arcs: 1,
         circles: 0,
@@ -1171,7 +1176,7 @@ fn corner_rounded(r: f64) -> Outcome {
 /// what is left of it and the arc r - r / sqrt 2 out on the diagonal; the gap at half the radius along the line is not
 /// looked for: the arc of a radius of 2.1 passes 0.25 from it, within a click.
 const ROUNDED_BY_CHORD_3: Outcome = Outcome::Sketch {
-    points: 5,
+    points: 6,
     lines: 2,
     arcs: 1,
     circles: 0,
@@ -1188,7 +1193,7 @@ const ROUNDED_BY_CHORD_3: Outcome = Outcome::Sketch {
 
 /// See `ROUNDED_BY_CHORD_3`: an arc of 3, a radius of 1.9099.
 const ROUNDED_BY_ARC_3: Outcome = Outcome::Sketch {
-    points: 5,
+    points: 6,
     lines: 2,
     arcs: 1,
     circles: 0,
@@ -1205,7 +1210,7 @@ const ROUNDED_BY_ARC_3: Outcome = Outcome::Sketch {
 
 /// The corner rounded with a radius of 3, the result of the tool as the bar opens.
 const ROUNDED_BY_RADIUS_3: Outcome = Outcome::Sketch {
-    points: 5,
+    points: 6,
     lines: 2,
     arcs: 1,
     circles: 0,
@@ -1278,7 +1283,10 @@ pub static CORNER: Tool = Tool {
 /// The right-angled corner cut with a chamfer of `d`: a line from (d, 0) to (0, d) in place of the corner. What stays:
 /// the two far ends, the two ends of the cut, and the sharp corner itself, unseen, which the dimensions of the chamfer
 /// are measured from; the box of the whole is untouched.
-fn corner_cut(d: f64) -> Outcome {
+fn corner_cut(cut: f64) -> Outcome {
+    // the field of the symmetric chamfer, the mode the tool is taken in, is the length of the cut: on a square corner each
+    // leg is cut / sqrt(2)
+    let d = cut / std::f64::consts::SQRT_2;
     // as for the rounding: the line halfway along what is left of it, the corner only for a leg the screen tells apart
     let mut at = if 30.0 - d >= 2.0 { vec![((d + 30.0) / 2.0, 0.0, Under::Line)] } else { Vec::new() }; // a stub of the line under 2 lies within a click of its ends
     if d >= 1.0 {
@@ -1302,8 +1310,25 @@ fn corner_cut(d: f64) -> Outcome {
     }
 }
 
-/// The corner cut with a chamfer of 3 - what every mode makes of the field typed 3 on a square corner, its second value
-/// left as the mode sets it: the second leg as the first, the angle 45 deg.
+/// The corner cut with a symmetric chamfer of 3: the cut is 3 long, each leg 3 / sqrt(2) = 2.1213 on a square corner.
+const CORNER_SYMMETRIC_3: Outcome = Outcome::Sketch {
+    points: 5,
+    lines: 3,
+    arcs: 0,
+    circles: 0,
+    ellipses: 0,
+    splines: 0,
+    texts: 0,
+    notes: 0,
+    constraints: None,
+    dof: None,
+    box_of: Some(([0.0, 0.0], [30.0, 30.0])),
+    size_of: None,
+    under: &[(0.53, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (1.06, 1.06, Under::Line)],
+};
+
+/// The corner cut with a chamfer of 3 by two legs or by a leg and an angle, its second value left as the mode sets it:
+/// the second leg as the first, the angle 45 deg - legs of 3 either way.
 const CORNER_CUT_3: Outcome = Outcome::Sketch {
     points: 5,
     lines: 3,
@@ -1320,8 +1345,8 @@ const CORNER_CUT_3: Outcome = Outcome::Sketch {
     under: &[(0.75, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (1.5, 1.5, Under::Line)],
 };
 
-/// CORNER_CHAMFER: the same corner cut with a chamfer of 3, the size typed in the field at the corner; equal legs, two
-/// legs, or a leg and an angle.
+/// CORNER_CHAMFER: the same corner cut with a chamfer of 3, the size typed in the field at the corner; a symmetric cut of
+/// that length, two legs, or a leg and an angle.
 pub static CORNER_CHAMFER: Tool = Tool {
     id: "sketch.corner-chamfer",
     flow: Flow::Drawing(&[(0.0, 0.0)], Finish::LastClick),
@@ -1334,7 +1359,7 @@ pub static CORNER_CHAMFER: Tool = Tool {
     pick_trial: &[],
     wrong_picks: &[],
     words: &[],
-    // a cut longer than the lines it cuts (d > 30) cannot be drawn. The field is the first on the bar showing the grey
+    // a cut whose legs are as long as the lines it cuts cannot be drawn: 29.9 is short of it in every mode. The field is the first on the bar showing the grey
     // words: its caption changes with the mode (size, first leg, length), and with two values the bar holds a second
     // field of the same grey words after it
     fields: &[Field {
@@ -1350,11 +1375,11 @@ pub static CORNER_CHAMFER: Tool = Tool {
         outcome: corner_cut,
     }],
     modes: &[&[
-        Mode { word: "cmd-symmetric", clicks: None, outcome: Some(CORNER_CUT_3) },
+        Mode { word: "cmd-symmetric", clicks: None, outcome: Some(CORNER_SYMMETRIC_3) },
         Mode { word: "cmd-two-distances", clicks: None, outcome: Some(CORNER_CUT_3) },
         Mode { word: "cmd-leg-angle", clicks: None, outcome: Some(CORNER_CUT_3) },
     ]],
-    result: CORNER_CUT_3,
+    result: CORNER_SYMMETRIC_3,
     node: "Sketch",
     undo: "tool-chamfer",
     undo_steps: 1,
@@ -1543,9 +1568,9 @@ pub static MIRROR: Tool = Tool {
         notes: 0,
         constraints: None,
         dof: None,
-        box_of: Some(([-30.0, -20.0], [30.0, 20.0])),
+        box_of: Some(([-30.0, -20.0], [30.0, 25.0])),
         size_of: None,
-        under: &[(-20.0, 10.0, Under::Line), (20.0, 10.0, Under::Line)],
+        under: &[(-20.0, 15.0, Under::Line), (20.0, 15.0, Under::Line)],
     },
     node: "Sketch",
     undo: "tool-mirror",
@@ -1602,7 +1627,7 @@ pub static CON_HORIZONTAL: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1632,7 +1657,7 @@ pub static CON_VERTICAL: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1662,7 +1687,7 @@ pub static CON_PARALLEL: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1692,7 +1717,7 @@ pub static CON_PERPENDICULAR: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1724,7 +1749,7 @@ pub static CON_EQUAL: Tool = Tool {
     fields: &[],
     modes: &[],
     // four corners and the centre of the rectangle
-    result: Outcome::Sketch { points: 5, lines: 4, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: None, dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 5, lines: 4, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: None, dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1754,7 +1779,7 @@ pub static CON_COLLINEAR: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1784,6 +1809,7 @@ pub static CON_CONCENTRIC: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
+    // the concentric alone: the circles drawn with no size typed carry none, and the centre and both radii are free
     result: Outcome::Sketch { points: 2, lines: 0, arcs: 0, circles: 2, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(2), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
@@ -1814,7 +1840,8 @@ pub static CON_TANGENT: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 1, arcs: 0, circles: 1, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(4), box_of: None, size_of: None, under: &[] },
+    // the horizontal of the line and the tangent; the circle drawn with no size typed carries none
+    result: Outcome::Sketch { points: 3, lines: 1, arcs: 0, circles: 1, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(2), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1847,7 +1874,7 @@ pub static CON_MIDPOINT: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(2), dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1879,7 +1906,7 @@ pub static CON_COINCIDENT: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(3), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1909,7 +1936,7 @@ pub static CON_FIX: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(2), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 3, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(4), dof: Some(1), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -1950,9 +1977,9 @@ pub static MOVE: Tool = Tool {
         notes: 0,
         constraints: None,
         dof: None,
-        box_of: Some(([0.0, -30.0], [30.0, 20.0])),
+        box_of: Some(([0.0, -25.0], [30.0, 20.0])),
         size_of: None,
-        under: &[(20.0, -20.0, Under::Line), (20.0, 10.0, Under::Nothing)],
+        under: &[(20.0, -15.0, Under::Line), (20.0, 15.0, Under::Nothing)],
     },
     node: "Sketch",
     undo: "tool-move",
@@ -2002,9 +2029,9 @@ pub static COPY: Tool = Tool {
         notes: 0,
         constraints: None,
         dof: None,
-        box_of: Some(([0.0, -30.0], [30.0, 20.0])),
+        box_of: Some(([0.0, -25.0], [30.0, 25.0])),
         size_of: None,
-        under: &[(20.0, -20.0, Under::Line), (20.0, 10.0, Under::Line)],
+        under: &[(20.0, -15.0, Under::Line), (20.0, 15.0, Under::Line)],
     },
     node: "Sketch",
     undo: "tool-copy",
@@ -2029,12 +2056,12 @@ pub static COPY: Tool = Tool {
     ],
 };
 
-/// The picked line from (10, 0) to (30, 20) turned by `deg` about the origin, the upright line from (0, -20) to (0, 20)
+/// The picked line from (10, 5) to (30, 25) turned by `deg` about the origin, the upright line from (0, -20) to (0, 20)
 /// beside it: the box of the two, and the middle of the turned line where the line lies.
 fn turned_line(deg: f64) -> Outcome {
     let (c, sn) = (deg.to_radians().cos(), deg.to_radians().sin());
     let turn = |x: f64, y: f64| (x * c - y * sn, x * sn + y * c);
-    let (a, b, m) = (turn(10.0, 0.0), turn(30.0, 20.0), turn(20.0, 10.0));
+    let (a, b, m) = (turn(10.0, 5.0), turn(30.0, 25.0), turn(20.0, 15.0));
     let xs = [a.0, b.0, 0.0];
     let ys = [a.1, b.1, -20.0, 20.0];
     let lo = [xs.iter().copied().fold(f64::MAX, f64::min), ys.iter().copied().fold(f64::MAX, f64::min)];
@@ -2080,9 +2107,9 @@ pub static ROTATE: Tool = Tool {
         notes: 0,
         constraints: None,
         dof: None,
-        box_of: Some(([-20.0, -20.0], [0.0, 30.0])),
+        box_of: Some(([-25.0, -20.0], [0.0, 30.0])),
         size_of: None,
-        under: &[(-10.0, 20.0, Under::Line), (20.0, 10.0, Under::Nothing)],
+        under: &[(-15.0, 20.0, Under::Line), (20.0, 15.0, Under::Nothing)],
     },
     node: "Sketch",
     undo: "tool-rotate",
@@ -2144,9 +2171,9 @@ pub static LINEAR_PATTERN: Tool = Tool {
         notes: 0,
         constraints: None,
         dof: None,
-        box_of: Some(([0.0, -20.0], [70.0, 20.0])),
+        box_of: Some(([0.0, -20.0], [70.0, 25.0])),
         size_of: None,
-        under: &[(40.0, 10.0, Under::Line), (60.0, 10.0, Under::Line)],
+        under: &[(40.0, 15.0, Under::Line), (60.0, 15.0, Under::Line)],
     },
     node: "", // the pattern adds to the sketch open, it lays no node of the timeline
     undo: "g-sketch-array",
@@ -2197,7 +2224,7 @@ pub static CIRCULAR_PATTERN: Tool = Tool {
         notes: 0,
         constraints: None,
         dof: None,
-        box_of: Some(([-32.320508, -35.980762], [30.0, 20.0])),
+        box_of: Some(([-36.650635, -38.480762], [30.0, 25.0])),
         size_of: None,
         under: &[],
     },
@@ -2237,30 +2264,16 @@ const EDITS: &[(u8, &str)] = &[
     DRAWS[5],
 ];
 
-/// A rectangle 40 x 30 - its four corners and its centre - with one more side 30 below its bottom: a copy placed.
-const RECT_AND_SIDE_BELOW: Outcome = Outcome::Sketch {
-    points: 7,
-    lines: 5,
-    arcs: 0,
-    circles: 0,
-    ellipses: 0,
-    splines: 0,
-    texts: 0,
-    notes: 0,
-    constraints: None,
-    dof: None,
-    box_of: Some(([0.0, -30.0], [40.0, 30.0])),
-    size_of: None,
-    under: &[(20.0, -30.0, Under::Line), (20.0, 0.0, Under::Line)],
-};
-
-/// EDIT_COPY: Edit -> Copy on the picked bottom side: the base point on it, the target 30 below - a copy there.
+/// EDIT_COPY: Edit -> Copy on the picked bottom side: the base point on it, and the side is in the clipboard - the
+/// sketch as it was, nothing placed and no step of undo; a paste places it (`EDIT_INSERT`).
 pub static EDIT_COPY: Tool = Tool {
     id: "sketch.edit-copy",
-    flow: Flow::Drawing(&[(20.0, 0.0), (20.0, -30.0)], Finish::LastClick),
+    flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "tool-copy",
     entries: &[Entry::Menu(&["menu-edit", "menu-copy"])],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    // over Trim, not a drawing tool: a drawing tool taken drops the selection, and with nothing selected there is nothing
+    // to copy
+    other: (Entry::Button("tb-trim-hint"), "tool-trim"),
     fixture: Fixture::RectangleSidePicked,
     picks: &[],
     pick_trial: &[],
@@ -2268,10 +2281,10 @@ pub static EDIT_COPY: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[],
-    result: RECT_AND_SIDE_BELOW,
+    result: RECT_BY_CORNERS,
     node: "Sketch",
     undo: "tool-copy",
-    undo_steps: 1,
+    undo_steps: 0,
     stays: false,
     upstream: None,
     dependency: None,
@@ -2289,7 +2302,9 @@ pub static EDIT_CUT: Tool = Tool {
     flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "menu-cut",
     entries: &[Entry::Menu(&["menu-edit", "menu-cut"])],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    // over Trim, not a drawing tool: a drawing tool taken drops the selection, and with nothing selected there is nothing
+    // to copy
+    other: (Entry::Button("tb-trim-hint"), "tool-trim"),
     fixture: Fixture::RectangleSidePicked,
     picks: &[],
     pick_trial: &[],
@@ -2376,13 +2391,13 @@ pub static CON_SYMMETRY: Tool = Tool {
     entries: &[Entry::Button("con-symmetric-hint")],
     other: (Entry::Button("tb-line-hint"), "tool-line"),
     fixture: Fixture::LineAndAxisPicked,
-    picks: &[Pick::Sketch(10.0, 0.0), Pick::Sketch(30.0, 20.0), Pick::Sketch(0.0, 10.0)],
+    picks: &[Pick::Sketch(10.0, 5.0), Pick::Sketch(30.0, 25.0), Pick::Sketch(0.0, 10.0)],
     pick_trial: &[],
     wrong_picks: &[],
     words: &[],
     fields: &[],
     modes: &[],
-    result: Outcome::Sketch { points: 4, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(2), dof: Some(5), box_of: None, size_of: None, under: &[] },
+    result: Outcome::Sketch { points: 4, lines: 2, arcs: 0, circles: 0, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: Some(3), dof: Some(4), box_of: None, size_of: None, under: &[] },
     node: "Sketch",
     // one step of undo named by the kind of edit, "Constraint", as the other constraints name theirs
     undo: "sk-constraint",
@@ -2471,14 +2486,14 @@ pub static MEASURE: Tool = Tool {
 
 /// The rectangle 40 x 30 with every corner rounded with radius `r`: four sides cut back by r at each end, four arcs of
 /// quarter turns - eight points where arcs touch sides and four centres, and the rectangle's own five: its four
-/// corners left as virtual sharps, which are neither drawn nor picked (the far corner (40, 30) takes no click), and
+/// corners left as virtual sharps, drawn and picked like any point (a click on the far corner (40, 30) takes it), and
 /// its centre; the box of the whole is untouched.
 fn all_corners_rounded(r: f64) -> Outcome {
     let near = r - r / std::f64::consts::SQRT_2;
     // what lies under the pointer is asked only of an arc the pointer can tell from its ends: at 0.01 the whole arc is
     // under one pixel with its two ends, and the pick rightly finds a point there
     let under: &'static [(f64, f64, Under)] = if r >= 1.0 {
-        Box::leak(vec![(r / 2.0, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (near, near, Under::Arc), (40.0 - near, 30.0 - near, Under::Arc), (40.0, 30.0, Under::Nothing)].into_boxed_slice())
+        Box::leak(vec![(r / 2.0, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (near, near, Under::Arc), (40.0 - near, 30.0 - near, Under::Arc), (40.0, 30.0, Under::Point)].into_boxed_slice())
     } else {
         &[(20.0, 0.0, Under::Line)]
     };
@@ -2527,7 +2542,7 @@ pub static FILLET_ALL: Tool = Tool {
         outcome: all_corners_rounded,
     }],
     modes: &[],
-    // see `all_corners_rounded`: twelve drawn, the four virtual sharps and the centre of the rectangle
+    // see `all_corners_rounded`: twelve points of the arcs, the four virtual sharps - drawn and picked - and the centre
     result: Outcome::Sketch {
         points: 17,
         lines: 4,
@@ -2541,7 +2556,7 @@ pub static FILLET_ALL: Tool = Tool {
         dof: None,
         box_of: Some(([0.0, 0.0], [40.0, 30.0])),
         size_of: None,
-        under: &[(2.5, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (40.0, 30.0, Under::Nothing)],
+        under: &[(2.5, 0.0, Under::Nothing), (20.0, 0.0, Under::Line), (40.0, 30.0, Under::Point)],
     },
     node: "Sketch",
     undo: "tool-fillet",

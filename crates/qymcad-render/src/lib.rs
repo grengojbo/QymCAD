@@ -1049,7 +1049,7 @@ pub fn draw_sketch_grid(scheme: &SchemeUi, set: &Settings, view: View2d, painter
 pub fn draw_clip_ghost(clip: &Clipboard, cursor: Option<Point2>, scheme: &SchemeUi, view: View2d, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view, rect };
     use qymcad_core::model::EntityKind;
-    if clip.geom_place.is_none() {
+    if !clip.geom_place {
         return;
     }
     let Some(clip) = clip.geom.as_ref() else { return };
@@ -1116,8 +1116,9 @@ pub fn draw_clip_ghost(clip: &Clipboard, cursor: Option<Point2>, scheme: &Scheme
 ///
 /// A projection enters a profile on a par with one's own geometry (it is what gets extruded), so it
 /// is drawn as an ordinary outline. But a person must SEE that it is a view of the part rather than
-/// something they drew: otherwise it is not clear why the line does not drag with the mouse. A lost
-/// source is drawn in red.
+/// something they drew: otherwise it is not clear why the line does not drag with the mouse. A projected curve made
+/// construction is drawn pink, dashed and thin. A projection whose source is gone is ordinary geometry and is not drawn
+/// here at all.
 pub fn draw_projection_overlay(project: &Project, scheme: &SchemeUi, sel: Sel, view: View2d, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view, rect };
     use qymcad_core::model::EntityKind;
@@ -1126,43 +1127,44 @@ pub fn draw_projection_overlay(project: &Project, scheme: &SchemeUi, sel: Sel, v
     if s.projections.is_empty() {
         return;
     }
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
     for proj in &s.projections {
-        let col = if proj.lost { scheme.pal.error() } else { scheme.pal.sketch_driven() };
-        let stroke = Stroke::new(if proj.lost { 2.2 } else { 1.8 }, col);
+        let stroke = Stroke::new(1.8, scheme.pal.sketch_driven());
         for eid in &proj.entities {
-            let Some(kind) = s.entities.iter().find(|e| e.id == *eid).map(|e| e.kind) else { continue };
-            match kind {
-                EntityKind::Line { a, b } => {
-                    if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
-                        painter.line_segment([sh.at(pa), sh.at(pb)], stroke);
-                    }
-                }
-                EntityKind::Circle { center, r } => {
-                    if let Some(c) = pt(center) {
-                        let sc = sh.at(c);
-                        let rp = (sh.at(Point2::new(c.x + r, c.y)).x - sc.x).abs();
-                        painter.circle_stroke(sc, rp.max(1.0), stroke);
-                    }
-                }
-                EntityKind::Arc { center, a, b, ccw } => {
-                    if let (Some(c), Some(pa), Some(pb)) = (pt(center), pt(a), pt(b)) {
+            let Some(e) = s.entities.iter().find(|e| e.id == *eid) else { continue };
+            // PROJECTED AND CONSTRUCTION: pink, dashed and thin - told from a projection that makes a contour, and from
+            // construction geometry drawn by hand
+            let construction = e.construction;
+            let stroke = if construction { Stroke::new(1.0, scheme.pal.sketch_driven_construction()) } else { stroke };
+            let path: Vec<Pos2> = match e.kind {
+                EntityKind::Line { a, b } => pt(a).zip(pt(b)).map(|(pa, pb)| vec![sh.at(pa), sh.at(pb)]).unwrap_or_default(),
+                EntityKind::Circle { center, r } => pt(center)
+                    .map(|c| qymcad_core::geom::tessellate_arc(c.x, c.y, r, 0.0, std::f64::consts::TAU, true, 0.02).iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect())
+                    .unwrap_or_default(),
+                EntityKind::Arc { center, a, b, ccw } => match (pt(center), pt(a), pt(b)) {
+                    (Some(c), Some(pa), Some(pb)) => {
                         let r = ((pa.x - c.x).powi(2) + (pa.y - c.y).powi(2)).sqrt();
                         let (a0, a1) = ((pa.y - c.y).atan2(pa.x - c.x), (pb.y - c.y).atan2(pb.x - c.x));
-                        let arc = qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02);
-                        let sp: Vec<Pos2> = arc.iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect();
-                        if sp.len() >= 2 {
-                            painter.add(egui::Shape::line(sp, stroke));
-                        }
+                        qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02).iter().map(|q| sh.at(Point2::new(q.x, q.y))).collect()
                     }
-                }
-                EntityKind::Ellipse { .. } => {}
+                    _ => Vec::new(),
+                },
+                EntityKind::Ellipse { .. } => Vec::new(),
+            };
+            if path.len() < 2 {
+                continue;
+            }
+            if construction {
+                painter.extend(egui::Shape::dashed_line(&path, stroke, 6.0, 4.0));
+            } else {
+                painter.add(egui::Shape::line(path, stroke));
             }
         }
         // THE DRIVEN NODES as small circles: they can be snapped to, but not dragged
         for pid in &proj.points {
             if let Some(q) = pt(*pid) {
-                painter.circle_stroke(sh.at(q), 3.0, Stroke::new(1.2, col));
+                painter.circle_stroke(sh.at(q), 3.0, Stroke::new(1.2, scheme.pal.sketch_driven()));
             }
         }
     }
@@ -1602,6 +1604,69 @@ pub fn draw_loft_preview(cam: Cam3, loft: &LoftParams, project: &Project, scheme
     }
 }
 
+/// THE TRIANGLES OF A REGION OF A SKETCH, in the sketch's plane: contour `cid` minus its direct children - the material
+/// an extrusion takes from it (`Project::feature_holes`). Regions told apart this way never overlap, so their fills do
+/// not add up where contours nest.
+pub fn region_triangles(project: &qymcad_core::model::Project, cid: Id) -> Vec<[Point2; 3]> {
+    let Some(ci) = project.contour_index(cid) else { return Vec::new() };
+    let outer = &project.contours[ci];
+    if !outer.closed || outer.points.len() < 3 {
+        return Vec::new();
+    }
+    let holes: Vec<Vec<Point2>> = project
+        .sketch_of_contour(cid)
+        .map(|sid| project.feature_holes(sid, cid))
+        .unwrap_or_default()
+        .into_iter()
+        .filter_map(|h| project.contour_index(h).map(|hi| project.contours[hi].points.clone()))
+        .collect();
+    qymcad_core::geom::triangulate_with_holes(&outer.points, &holes)
+}
+
+/// FILL THE TRIANGLES OF A REGION, each corner placed on the screen by `at`.
+fn fill_region(painter: &egui::Painter, tris: &[[Point2; 3]], at: impl Fn(Point2) -> Pos2, colour: Color32) {
+    let mut mesh = egui::Mesh::default();
+    for t in tris {
+        let base = mesh.vertices.len() as u32;
+        for p in t {
+            mesh.colored_vertex(at(*p), colour);
+        }
+        mesh.add_triangle(base, base + 1, base + 2);
+    }
+    if !mesh.is_empty() {
+        painter.add(egui::Shape::mesh(mesh));
+    }
+}
+
+/// THE REGION UNDER THE POINTER in the sketch of the running command, among its closed contours: the innermost one the
+/// point lies in, as a click picks it (`contour_under_2d`).
+fn region_under(project: &qymcad_core::model::Project, si: usize, at: Point2) -> Option<Id> {
+    qymcad_ui_state::sketch_closed_contours(project, si)
+        .into_iter()
+        .filter_map(|cid| project.contour_index(cid).map(|ci| (cid, &project.contours[ci])))
+        .filter(|(_, c)| c.points.len() >= 3 && c.contains(at))
+        .min_by(|a, b| a.1.area().total_cmp(&b.1.area()))
+        .map(|(cid, _)| cid)
+}
+
+/// THE REGIONS OF A PROFILE PICKER, FILLED: the picked ones in the colour of a profile, the one under the pointer
+/// lighter, both under the lines. The owner's request: a picked region shown only by its outline did not tell a ring
+/// from its rectangle, nor which region a click would take.
+fn fill_picked_regions(pn: &Painting, painter: &egui::Painter, rect: Rect) {
+    let sheet = qymcad_ui_state::Sheet { view: pn.view, rect };
+    let picked: Vec<Id> = if pn.armed.commanding() { pn.gsel.profiles.iter().copied().collect() } else { Vec::new() };
+    let slot: Vec<Id> = pn.picking.contour().map(|s| qymcad_ui_state::slot_current_cid(pn.loft, pn.project, pn.sweep, s)).into_iter().collect();
+    for cid in picked.iter().chain(&slot) {
+        fill_region(painter, &region_triangles(pn.project, *cid), |p| sheet.at(p), qymcad_scheme::a(pn.scheme.pal.contour_profile(), 110));
+    }
+    let picking = pn.armed.commanding() || pn.picking.contour().is_some();
+    if let (true, Some(si), Some(at)) = (picking, pn.cmd.sketch, pn.cursor) {
+        if let Some(cid) = region_under(pn.project, si, at).filter(|c| !picked.contains(c) && !slot.contains(c)) {
+            fill_region(painter, &region_triangles(pn.project, cid), |p| sheet.at(p), qymcad_scheme::a(pn.scheme.pal.contour_hover(), 90));
+        }
+    }
+}
+
 pub fn draw_contours(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     // while a sketch is being edited, ONLY its outlines are shown (the neighbouring sketches and the
     // part's original one do not get in the way); outside editing, the filter goes by owner (sketch
@@ -1616,6 +1681,10 @@ pub fn draw_contours(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         return;
     }
     let hidden_cids = hidden_contour_ids(pn.project, pn.sketch_hidden);
+    // THE REGIONS ARE FILLED, under the lines: the picked ones, and the one a click would take
+    if !edit_only_none {
+        fill_picked_regions(pn, painter, rect);
+    }
     // the contours picked by the active operation are brighter
     let selected: &[Id] = &[];
     let hovered = qymcad_ui_state::hovered_contour(pn.cursor, pn.project, pn.view);
@@ -1644,10 +1713,9 @@ pub fn draw_contours(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         if c.closed {
             pts.push(pts[0]);
         }
-        // the profile is picked for a command (extrude, cut, revolve). It is NOT filled translucently:
-        // where three or four contours overlapped the fills added up (alpha), everything grew pale and the
-        // boundaries were lost. Instead there is a BRIGHT THICK outline - a thickness does not accumulate,
-        // so every picked contour stays visible on its own.
+        // the profile is picked for a command (extrude, cut, revolve): its REGION is filled above - the contour minus its
+        // direct children, so nested regions never overlap and their fills do not add up into a pale wash, which is
+        // what filling whole contours did - and its outline is drawn bright and thick over the fill.
         let is_profile = pn.armed.commanding() && pn.project.contour_id(i).is_some_and(|id| pn.gsel.profiles.contains(&id) || pick_cid == Some(id));
         let stroke = if is_profile {
             Stroke::new(3.0, pn.scheme.pal.contour_profile())
@@ -1681,7 +1749,9 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
     use qymcad_core::model::EntityKind;
     let Some(s) = pn.project.sketches.get(si) else { return };
-    let pt = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    // a table, built only when a point is looked for: with nothing hovered, selected or arguing, none is
+    let points_by_id: std::cell::OnceCell<std::collections::HashMap<Id, &qymcad_core::model::SketchPoint>> = std::cell::OnceCell::new();
+    let pt = |id: Id| points_by_id.get_or_init(|| s.points.iter().map(|p| (p.id, p)).collect()).get(&id).copied().map(|p| Point2::new(p.x, p.y));
     // hovering a constraint (its glyph or its row in the list) lights the points and edges it holds
     if let Some(ci) = pn.hover.constraint {
         let pts = pn.project.sketch_constraint_points(si, ci);
@@ -1714,6 +1784,13 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
             EntityKind::Line { a, b } => {
                 if let (Some(pa), Some(pb)) = (pt(a), pt(b)) {
                     painter.line_segment([sh.at(pa), sh.at(pb)], hl);
+                    // A LINE PICKED AT ITS MIDDLE SHOWS IT: a ring of the snap's colour round a dot of the selection's, at
+                    // the middle - lit as any picked line, the middle taken was not seen
+                    if sel && pn.sel_sk.at_middle.contains(&e.id) {
+                        let mid = sh.at(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0));
+                        painter.circle_stroke(mid, MIDDLE_RING, Stroke::new(1.6, pn.scheme.pal.snap_marker()));
+                        painter.circle_filled(mid, 2.5, pn.scheme.pal.emphasis());
+                    }
                 }
             }
             EntityKind::Circle { center, r } => {
@@ -1806,14 +1883,41 @@ pub fn draw_sketch_constraints(pn: &Painting, painter: &egui::Painter, rect: Rec
     }
 }
 
+/// The radius of the ring that marks a line picked at its middle, px.
+pub const MIDDLE_RING: f32 = 6.0;
+
+/// THE COPY THE OFFSET IN HAND WOULD MAKE, on the side of the pointer, at the distance of the bar - what Enter makes.
+fn draw_offset_preview(pn: &Painting, painter: &egui::Painter, sh: &qymcad_ui_state::Sheet) {
+    if pn.sel_sk.modify != Some(qymcad_ui_state::EditTool::Offset) {
+        return;
+    }
+    // the side a click fixed, in the colour of a fixed corner; before the click, the side of the pointer
+    let fixed = pn.sel_sk.offset.at;
+    let (Some(si), Some(cur)) = (qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses), fixed.or(pn.cursor)) else { return };
+    let eids: Vec<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect();
+    if eids.is_empty() {
+        return;
+    }
+    let dist = pn.project.offset_toward(si, &eids, pn.tool_prefs.offset, cur);
+    let stroke = Stroke::new(1.5, if fixed.is_some() { pn.scheme.pal.preview_corner_fixed() } else { pn.scheme.pal.preview_corner_new() });
+    for pl in pn.project.offset_preview(si, &eids, dist) {
+        painter.add(egui::Shape::line(pl.into_iter().map(|p| sh.at(p)).collect(), stroke));
+    }
+}
+
 pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
+    draw_offset_preview(pn, painter, &sh);
     if pn.armed.draw_kind() == 0 {
         return;
     }
     let col = if pn.tool.construction { pn.scheme.pal.sketch_construction() } else { pn.scheme.pal.sketch_line() };
     let stroke = Stroke::new(1.3, col);
-    for p in &pn.tool.pts {
+    // THE CLICKS THAT ARE NOTHING YET ARE MARKED, and of a chain of lines only the corner the next segment goes from: the
+    // corners already laid are points of the sketch and drawn as such, and the solve after an automatic constraint moves
+    // them - marked again where they were clicked, a second dot stood beside every corner of the chain.
+    let marked = if pn.armed.draw_kind() == 1 { pn.tool.pts.len().saturating_sub(1) } else { 0 };
+    for p in &pn.tool.pts[marked..] {
         painter.circle_filled(sh.at(*p), 3.0, col);
     }
     let Some(cur) = pn.cursor else { return };
@@ -1832,8 +1936,9 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         1 => {
             if let Some(&last) = pn.tool.pts.last() {
                 painter.line_segment([sh.at(last), sc], stroke);
-                // a live preview of the automatic constraints: what will be attached if a point is placed here
-                if let Some(si) = qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses) {
+                // a live preview of the automatic constraints: what will be attached if a point is placed here - none
+                // where none will be ("No ties", the auto constraints off)
+                if let Some(si) = qymcad_ui_state::edit_si(pn.project, &pn.sketch_ses).filter(|_| qymcad_ui_state::ties_laid(pn.tool, pn.set)) {
                     let prev = (pn.tool.pts.len() >= 2).then(|| pn.tool.pts[pn.tool.pts.len() - 2]);
                     for (g, at) in qymcad_pick::infer_hints(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, si, prev, last, cur) {
                         let sat = sh.at(at) + egui::vec2(11.0, -11.0);
@@ -2035,6 +2140,43 @@ pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// The hover preview for trim, extend and break: what will happen if the entity under the cursor is
 /// clicked. Trim lights the span that will be removed in red; break puts a marker at the point; extend
 /// lights in green the end that will be pulled.
+/// THE RING WHERE AN EXTENDED END LANDS, in px.
+pub const EXTEND_RING: f32 = 4.0;
+
+/// THE LINE EXTEND HOLDS and where the pointer stands on the canvas.
+#[derive(Clone, Copy)]
+struct ExtendHeld {
+    si: usize,
+    line: Id,
+    pos: Pos2,
+}
+
+/// THE PREVIEW OF EXTEND: the line it holds lit, and from each end that goes, a dashed line to where it goes - the
+/// curve under the pointer when it lies on that side of the axis, else the nearest there. A side meeting nothing draws
+/// nothing.
+fn draw_extend_preview(pn: &Painting, painter: &egui::Painter, rect: Rect, held: ExtendHeld) {
+    let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
+    let pick = PickCtx { project: pn.project, set: pn.set, view: &pn.view };
+    let Some(s) = pn.project.sketches.get(held.si) else { return };
+    let Some(qymcad_core::model::EntityKind::Line { a, b }) = s.entities.iter().find(|e| e.id == held.line).map(|e| e.kind) else { return };
+    let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let (Some(pa), Some(pb)) = (at(a), at(b)) else { return };
+    let green = pn.scheme.pal.add();
+    painter.line_segment([sh.at(pa), sh.at(pb)], Stroke::new(3.0, green));
+    let over = qymcad_pick::nearest_line_eid(&pick, rect, held.pos, held.si).filter(|e| *e != held.line).or_else(|| qymcad_pick::nearest_circle_entity(&pick, rect, held.pos, held.si));
+    let sides = if pn.tool_prefs.extend_both { qymcad_core::model::ExtendSides::Both } else { qymcad_core::model::ExtendSides::Nearer };
+    let Some(pointer) = pn.cursor else { return };
+    let ext = pn.project.line_extension(held.si, held.line, &qymcad_core::model::ExtendAsk { pointer, over, sides });
+    let along = |t: f64| Point2::new(pa.x + (pb.x - pa.x) * t, pa.y + (pb.y - pa.y) * t);
+    for (end, t) in [(pa, ext.a), (pb, ext.b)] {
+        if let Some(t) = t {
+            // the dashes, and a ring where the end lands: the last dash stops short of it by up to a gap
+            painter.add(egui::Shape::dashed_line(&[sh.at(end), sh.at(along(t))], Stroke::new(2.0, green), 6.0, 4.0));
+            painter.circle_stroke(sh.at(along(t)), EXTEND_RING, Stroke::new(2.0, green));
+        }
+    }
+}
+
 pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
     use qymcad_core::model::EntityKind;
@@ -2044,6 +2186,10 @@ pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let Some(cur) = pn.cursor else { return };
     let Sel::Sketch(si) = pn.sel else { return };
     let pos = sh.at(cur);
+    if let (2, Some(held)) = (pn.armed.click_op(), pn.tool.extend) {
+        draw_extend_preview(pn, painter, rect, ExtendHeld { si, line: held, pos });
+        return;
+    }
     let Some(eid) = qymcad_pick::nearest_line_eid(&PickCtx { project: pn.project, set: pn.set, view: &pn.view }, rect, pos, si)
         .or_else(|| qymcad_pick::nearest_circle_entity(&PickCtx { project: pn.project, set: pn.set, view: &pn.view }, rect, pos, si))
     else {
@@ -2051,7 +2197,8 @@ pub fn draw_trim_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     };
     let Some(s) = pn.project.sketches.get(si) else { return };
     let Some(kind) = s.entities.iter().find(|e| e.id == eid).map(|e| e.kind) else { return };
-    let pt = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt = |id: Id| points_by_id.get(&id).copied().map(|q| Point2::new(q.x, q.y));
     let red = pn.scheme.pal.error();
     let green = pn.scheme.pal.add();
     let inter = pn.project.entity_intersections(si, eid);
@@ -2376,6 +2523,138 @@ pub fn draw_move_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     painter.line_segment([sh.at(base), sh.at(cur)], Stroke::new(0.8, col));
 }
 
+/// Two plain points nearer on the screen than this, px - the width of a plain point - are one blot: the later one is
+/// left out. Counted by points in sight instead (5 000), a grid of 200 lines across 200 others, 800 ends 5 px apart at
+/// a whole view, drew its ends as solid bars.
+pub const POINT_ROOM: f32 = 7.0;
+
+/// The room a number of a point takes on the screen, px, as written in the monospace face of 10 px.
+fn number_room(n: usize) -> egui::Vec2 {
+    egui::vec2(6.2 * n.to_string().len() as f32 + 2.0, 11.0)
+}
+
+/// THE PLACES TAKEN ON THE SCREEN, on a grid of square cells: whether a place is free of what was put before it.
+struct Taken {
+    cell: f32,
+    cells: std::collections::HashMap<(i32, i32), Vec<Rect>>,
+}
+
+impl Taken {
+    fn new(cell: f32) -> Self {
+        Taken { cell, cells: std::collections::HashMap::new() }
+    }
+
+    fn at(&self, p: Pos2) -> (i32, i32) {
+        ((p.x / self.cell).floor() as i32, (p.y / self.cell).floor() as i32)
+    }
+
+    /// Whether `r` meets nothing put before, the cells it spans and those round them looked at.
+    fn free(&self, r: Rect) -> bool {
+        let ((x0, y0), (x1, y1)) = (self.at(r.min), self.at(r.max));
+        (x0 - 1..=x1 + 1).all(|x| (y0 - 1..=y1 + 1).all(|y| self.cells.get(&(x, y)).is_none_or(|put| put.iter().all(|q| !q.intersects(r)))))
+    }
+
+    fn put(&mut self, r: Rect) {
+        let ((x0, y0), (x1, y1)) = (self.at(r.min), self.at(r.max));
+        for x in x0..=x1 {
+            for y in y0..=y1 {
+                self.cells.entry((x, y)).or_default().push(r);
+            }
+        }
+    }
+}
+
+/// THE POINTS DRAWN ON THE SCREEN, on a dense grid of cells as wide as a point: whether a point stands nearer than
+/// `POINT_ROOM` on both axes to one drawn before - the cells round its own looked at. A map of cells to the boxes put in
+/// them, made for 70 000 points in sight, was most of 60 ms of a frame.
+struct Dots {
+    origin: Pos2,
+    cols: usize,
+    rows: usize,
+    cells: Vec<Vec<Pos2>>,
+}
+
+impl Dots {
+    fn new(area: Rect) -> Self {
+        let (cols, rows) = (((area.width() / POINT_ROOM).ceil() as usize).max(1), ((area.height() / POINT_ROOM).ceil() as usize).max(1));
+        Dots { origin: area.min, cols, rows, cells: vec![Vec::new(); cols * rows] }
+    }
+
+    fn at(&self, p: Pos2) -> (i64, i64) {
+        (((p.x - self.origin.x) / POINT_ROOM).floor() as i64, ((p.y - self.origin.y) / POINT_ROOM).floor() as i64)
+    }
+
+    fn cell(&self, x: i64, y: i64) -> Option<usize> {
+        (x >= 0 && y >= 0 && (x as usize) < self.cols && (y as usize) < self.rows).then(|| y as usize * self.cols + x as usize)
+    }
+
+    /// Whether no point drawn stands nearer than `POINT_ROOM` to `p` on both axes.
+    fn free(&self, p: Pos2) -> bool {
+        let (cx, cy) = self.at(p);
+        let room = POINT_ROOM - 0.02;
+        (cx - 1..=cx + 1).all(|x| (cy - 1..=cy + 1).all(|y| self.cell(x, y).is_none_or(|k| self.cells[k].iter().all(|q| (q.x - p.x).abs() >= room || (q.y - p.y).abs() >= room))))
+    }
+
+    fn put(&mut self, p: Pos2) {
+        let (x, y) = self.at(p);
+        if let Some(k) = self.cell(x, y) {
+            self.cells[k].push(p);
+        }
+    }
+}
+
+/// THE POINTS OF A SKETCH, each in the colour of how defined it is: green defined, yellow still free, red while the
+/// sketch holds a conflict of dimensions (harmless redundancy reddens nothing). The selected, the lit and the picked
+/// ones larger, and always drawn. Only the points in sight are drawn; a plain point only where no point drawn before
+/// it stands nearer than `POINT_ROOM`, and a number only where no number written before it stands - brought nearer,
+/// the points part and are all drawn again. `picked` - the points the dimension tool holds.
+pub fn draw_sketch_points(pn: &Painting, painter: &egui::Painter, rect: Rect, si: usize, picked: &[Id]) {
+    let Some(s) = pn.project.sketches.get(si) else { return };
+    let sh = Sheet { view: pn.view, rect };
+    let diag = sketch_diag(pn.cache, pn.project, si);
+    let has_conflict = !diag.conflicts.is_empty();
+    // the reference points and the virtual sharps of rectangles are not drawn as numbered geometry
+    let unseen = s.unseen_points();
+    let selected: std::collections::HashSet<Id> = pn.sel_sk.items.iter().filter(|(k, _)| *k == 0).map(|(_, id)| *id).collect();
+    let sight = rect.expand(8.0);
+    let in_sight: Vec<(usize, Pos2)> =
+        s.points.iter().enumerate().filter(|(_, p)| !unseen.contains(&p.id)).map(|(pi, p)| (pi, sh.at(Point2::new(p.x, p.y)))).filter(|(_, sp)| sight.contains(*sp)).collect();
+    // the points marked go first, so a plain point gives way to them and not they to it
+    let marked = |id: Id| selected.contains(&id) || pn.hover.sketch == Some((0, id)) || picked.contains(&id);
+    // stable, in two passes rather than a sort: 70 000 points in sight sorted every frame were part of 60 ms
+    let in_sight = in_sight.iter().filter(|&&(pi, _)| marked(s.points[pi].id)).chain(in_sight.iter().filter(|&&(pi, _)| !marked(s.points[pi].id))).copied();
+    let (mut dots, mut numbers) = (Dots::new(rect.expand(8.0)), Taken::new(24.0));
+    for (pi, sp) in in_sight {
+        let id = s.points[pi].id;
+        let base_col = if has_conflict {
+            pn.scheme.pal.error_mild() // a conflict of dimensions - the points do not satisfy the constraints
+        } else if diag.free.get(pi).copied().unwrap_or(true) {
+            pn.scheme.pal.underdefined() // still free
+        } else {
+            pn.scheme.pal.ok() // defined
+        };
+        let (col, r) = if selected.contains(&id) {
+            (pn.scheme.pal.emphasis(), 5.0)
+        } else if pn.hover.sketch == Some((0, id)) {
+            (pn.scheme.pal.preview(), 5.0) // the pre-select highlight
+        } else if picked.contains(&id) {
+            (pn.scheme.pal.sketch_point(), 4.5)
+        } else {
+            (base_col, 3.5)
+        };
+        if !marked(id) && !dots.free(sp) {
+            continue;
+        }
+        dots.put(sp);
+        painter.circle_filled(sp, r, col);
+        let label = Rect::from_min_size(sp + egui::vec2(5.0, -5.0 - 11.0), number_room(pi + 1));
+        if pn.set.show_point_numbers && numbers.free(label) {
+            numbers.put(label);
+            painter.text(sp + egui::vec2(5.0, -5.0), egui::Align2::LEFT_BOTTOM, format!("{}", pi + 1), egui::FontId::monospace(10.0), pn.scheme.pal.text_faint());
+        }
+    }
+}
+
 /// Draw the associative dimensions and constraints of the selected sketch in the viewport.
 pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: usize) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
@@ -2383,9 +2662,8 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
     let Some(s) = pn.project.sketches.get(si) else { return };
     let dim_col = pn.scheme.pal.dimension();
     let font = egui::FontId::proportional(pn.set.dim_font);
-    // what a label says, as the settings ask, and the room it takes - the same the mouse takes it by
+    // what a label says, as the settings ask
     let caption = |c: &Constraint| qymcad_ui_state::dim_caption(pn.project, si, c, pn.set).unwrap_or_default();
-    let room = |t: &str| qymcad_ui_state::dim_text_size(t, pn.set.dim_font);
     // the text of a linear dimension beside its line, or on a shelf past the arrow when it does not fit between them
     // the text of a linear dimension where it was led along its line, or beside the line's middle, or on a shelf past
     // the arrow when it does not fit between them - the place the mouse takes it by
@@ -2398,15 +2676,40 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
     };
     // construction geometry is dashed
     let aux_col = pn.scheme.pal.sketch_construction();
-    // the tangent handles of the splines: a line from the knot to the handle + a grabbable point at its end
-    let hcol = pn.scheme.pal.dim_helper();
-    for spi in 0..s.splines.len() {
-        for (knot, hend) in pn.project.spline_handles(si, spi) {
-            let (sk, sh) = (sh.at(knot), sh.at(hend));
-            painter.line_segment([sk, sh], Stroke::new(1.0, hcol));
-            painter.circle_filled(sh, 3.5, hcol);
-            painter.circle_stroke(sh, 3.5, Stroke::new(1.0, pn.scheme.pal.dim_helper_ring()));
+    // A SPLINE PICKED OR UNDER THE POINTER IS LIT along its curve, as a picked or hovered line is
+    for (spi, sp) in s.splines.iter().enumerate() {
+        let key = sp.points.first().map(|&id| (qymcad_ui_state::SEL_SPLINE, id));
+        let (sel, hov) = (key.is_some_and(|k| pn.sel_sk.items.contains(&k)), key.is_some() && pn.hover.sketch == key);
+        if !sel && !hov {
+            continue;
         }
+        let hl = if sel { Stroke::new(2.5, pn.scheme.pal.emphasis()) } else { Stroke::new(2.0, pn.scheme.pal.preview()) };
+        let mut line: Vec<Pos2> = pn.project.spline_polyline(si, spi).iter().map(|p| sh.at(*p)).collect();
+        if sp.closed {
+            line.extend(line.first().copied());
+        }
+        painter.add(egui::Shape::line(line, hl));
+    }
+    // THE TANGENT HANDLES of the splines picked (`splines_with_handles`): a line from the knot to the handle and a point
+    // at its end to take it by. The one under the pointer is lit in the colour of what a click takes, and the one held by
+    // the pressed button in the colour of what is being moved - the handle follows the pointer, so the one under it is
+    // the one held.
+    let hcol = pn.scheme.pal.dim_helper();
+    let grab = qymcad_ui_state::grab::grab(pn.set, qymcad_ui_state::grab::Grab::Point);
+    let pointer = painter.ctx().input(|i| i.pointer.hover_pos().map(|p| (p, i.pointer.primary_down())));
+    let handles: Vec<(Point2, Point2)> = qymcad_ui_state::splines_with_handles(pn.project, pn.sel_sk, si).into_iter().flat_map(|spi| pn.project.spline_handles(si, spi)).collect();
+    let under = pointer.and_then(|(p, _)| handles.iter().map(|(_, h)| sh.at(*h).distance(p)).enumerate().filter(|(_, d)| *d <= grab).min_by(|a, b| a.1.total_cmp(&b.1)).map(|(k, _)| k));
+    let held = pointer.is_some_and(|(_, down)| down);
+    for (k, (knot, hend)) in handles.into_iter().enumerate() {
+        let (sk, sh) = (sh.at(knot), sh.at(hend));
+        let (col, r) = match under == Some(k) {
+            true if held => (pn.scheme.pal.active(), 5.0),
+            true => (pn.scheme.pal.preview(), 5.0),
+            false => (hcol, 3.5),
+        };
+        painter.line_segment([sk, sh], Stroke::new(1.0, col));
+        painter.circle_filled(sh, r, col);
+        painter.circle_stroke(sh, r, Stroke::new(1.0, pn.scheme.pal.dim_helper_ring()));
     }
     // construction splines are dashed (they do not go into a profile)
     for spi in 0..s.splines.len() {
@@ -2419,7 +2722,8 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
             painter.add(egui::Shape::dashed_line(&pts, Stroke::new(1.0, aux_col), 6.0, 4.0));
         }
     }
-    let pt_of = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| Point2::new(p.x, p.y));
+    let points_by_id: std::collections::HashMap<Id, &qymcad_core::model::SketchPoint> = s.points.iter().map(|p| (p.id, p)).collect(); // a table: these are looked up for every entity or constraint
+    let pt_of = |id: Id| points_by_id.get(&id).copied().map(|p| Point2::new(p.x, p.y));
     for e in &s.entities {
         if !e.construction {
             continue;
@@ -2599,79 +2903,30 @@ pub fn draw_sketch_dims(pn: &Painting, painter: &egui::Painter, rect: Rect, si: 
                 }
                 text_turned(painter, g.text, label.clone(), font.clone(), dim_col, g.angle);
             }
-            Constraint::ArcLength { c, a, b, off, len, .. } => {
-                // the arc length: a leader from the middle of the arc
-                let (Some(cp), Some(pa), Some(pb)) = (qymcad_ui_state::sketch_pt(pn.project, si, c), qymcad_ui_state::sketch_pt(pn.project, si, a), qymcad_ui_state::sketch_pt(pn.project, si, b))
-                else {
-                    continue;
-                };
-                let r = ((pa.x - cp.x).powi(2) + (pa.y - cp.y).powi(2)).sqrt();
-                let mid = Point2::new((pa.x + pb.x) / 2.0 - cp.x, (pa.y + pb.y) / 2.0 - cp.y);
-                let ml = (mid.x * mid.x + mid.y * mid.y).sqrt().max(1e-9);
-                let edge = Point2::new(cp.x + mid.x / ml * r, cp.y + mid.y / ml * r);
-                let ed = sh.at(edge);
-                let _ = len;
-                painter.text((ed.to_vec2() + egui::vec2(2.0, -8.0 + off as f32 * sc)).to_pos2(), egui::Align2::LEFT_CENTER, label.clone(), font.clone(), dim_col);
+            Constraint::ArcLength { .. } => {
+                // the arc length as the drawing standards draw it: a dimension arc, extension lines, arrows, the number
+                // and the arc mark over it - one geometry with the taking of its text
+                let Some(g) = qymcad_ui_state::arc_length_dim_geom(pn.project, si, ci, &sh, pn.set) else { continue };
+                for e in g.ext {
+                    painter.line_segment(e, Stroke::new(0.7, dim_col));
+                }
+                painter.add(egui::Shape::line(g.arc.clone(), Stroke::new(1.2, dim_col)));
+                for (tip, dir) in g.arrows {
+                    let side = egui::vec2(-dir.y, dir.x);
+                    let back = tip - dir * 6.0;
+                    painter.line_segment([tip, back + side * 2.5], Stroke::new(1.0, dim_col));
+                    painter.line_segment([tip, back - side * 2.5], Stroke::new(1.0, dim_col));
+                }
+                painter.add(egui::Shape::line(g.mark, Stroke::new(1.0, dim_col)));
+                painter.text(g.text, egui::Align2::CENTER_CENTER, label.clone(), font.clone(), dim_col);
             }
             _ => {}
         }
     }
-    // the radii and diameters of circle entities and of arcs and fillets:
-    // the selected entity (in sk_sel) or the one being edited is highlighted
-    for e in &s.entities {
-        let dim_col = if pn.sel_sk.items.contains(&(1, e.id)) || pn.inline.circle() == Some(e.id) { pn.scheme.pal.selected() } else { dim_col };
-        match e.kind {
-            EntityKind::Circle { center, r } => {
-                // if the circle already carries a diameter or radius dimension (a Diameter constraint), that loop draws it
-                let has_dim = s.constraints.iter().any(|x| matches!(x, Constraint::Diameter { c, .. } if *c == center));
-                if !has_dim {
-                    if let Some(cp) = qymcad_ui_state::sketch_pt(pn.project, si, center) {
-                        // drawn in the same style as a Diameter constraint at off=0 (the radius to the right,
-                        // the label beyond the rim), so that grabbing the label (which materialises a
-                        // reference diameter) causes no jump.
-                        let sc = sh.at(cp);
-                        let r_px = (sh.at(Point2::new(cp.x + r, cp.y)) - sc).length();
-                        let dir = egui::vec2(1.0, 0.0);
-                        let edge = sc + dir * r_px;
-                        let knee = sc + dir * (r_px + 14.0);
-                        painter.line_segment([sc, edge], Stroke::new(1.0, dim_col));
-                        painter.line_segment([edge, knee], Stroke::new(0.7, dim_col));
-                        let txt = format!("Ø{:.1}", 2.0 * r);
-                        let (at, shelf) = qymcad_ui_state::radial_text_place(knee, dir, room(&txt));
-                        painter.line_segment(shelf, Stroke::new(0.7, dim_col));
-                        painter.text(at, egui::Align2::CENTER_CENTER, txt, font.clone(), dim_col);
-                    }
-                }
-            }
-            EntityKind::Arc { center, a, b, .. } => {
-                // if the arc already carries a radius or diameter dimension (a Diameter constraint), that loop above draws it
-                let has_dim = s.constraints.iter().any(|x| matches!(x, Constraint::Diameter { c, .. } if *c == center));
-                // a fillet radius: an R leader from the centre to the middle of the arc, the label beyond
-                // the rim (r+14) - the same style and position that passive_radius_label_at grabs, otherwise
-                // the two would not line up.
-                if !has_dim {
-                    if let (Some(cp), Some(pa), Some(pb)) =
-                        (qymcad_ui_state::sketch_pt(pn.project, si, center), qymcad_ui_state::sketch_pt(pn.project, si, a), qymcad_ui_state::sketch_pt(pn.project, si, b))
-                    {
-                        let r = ((pa.x - cp.x).powi(2) + (pa.y - cp.y).powi(2)).sqrt();
-                        let sc = sh.at(cp);
-                        let r_px = (sh.at(Point2::new(cp.x + r, cp.y)) - sc).length();
-                        let m = sh.at(Point2::new((pa.x + pb.x) / 2.0, (pa.y + pb.y) / 2.0)) - sc;
-                        let dir = if m.length() > 1e-3 { m.normalized() } else { egui::vec2(1.0, 0.0) };
-                        let edge = sc + dir * r_px;
-                        let knee = sc + dir * (r_px + 14.0);
-                        painter.line_segment([sc, edge], Stroke::new(1.0, dim_col));
-                        painter.line_segment([edge, knee], Stroke::new(0.7, dim_col));
-                        let txt = format!("R{r:.1}");
-                        let (at, shelf) = qymcad_ui_state::radial_text_place(knee, dir, room(&txt));
-                        painter.line_segment(shelf, Stroke::new(0.7, dim_col));
-                        painter.text(at, egui::Align2::CENTER_CENTER, txt, font.clone(), dim_col);
-                    }
-                }
-            }
-            _ => {}
-        }
-    }
+    // A CIRCLE OR AN ARC WITH NO SIZE OF ITS OWN SHOWS NO NUMBER. A label of its size in the style of a dimension cannot
+    // be told from one: a diameter deleted would look still laid. Reported behaviour: "on circles a radius is always put
+    // ... it is nailed down". A size is seen by laying a dimension; while the field of a new circle or arc is open, the
+    // field shows it.
 }
 
 pub fn draw_mesh(pn: &Painting, painter: &egui::Painter, rect: Rect) {
@@ -3838,6 +4093,14 @@ pub fn draw_feat_cmd_preview(pn: &Painting, painter: &egui::Painter, rect: Rect)
     let down = if pn.cmd.extent.two_sided() { qymcad_ui_state::cmd_val(pn.cmd, "down").abs() } else { 0.0 };
     let (start, total) = qymcad_core::feature::extrude_extent(h, down, qymcad_ui_state::cmd_reach(pn.cmd, pn.feat));
     let col = qymcad_scheme::a(pn.scheme.pal.preview(), 220);
+    // THE PICKED REGIONS FILLED ON THE SKETCH'S PLANE, where the extrusion starts, as on the flat sheet
+    for cid in &pn.gsel.profiles {
+        let base = |p: Point2| {
+            let w = f.lift(p);
+            scr.at([w.x + n[0] * start, w.y + n[1] * start, w.z + n[2] * start]).0
+        };
+        fill_region(painter, &region_triangles(pn.project, *cid), base, qymcad_scheme::a(pn.scheme.pal.contour_profile(), 100));
+    }
     for cid in &pn.gsel.profiles {
         let Some(xy) = pn.project.contour_profile_xy(*cid) else { continue };
         let m = xy.len() / 2;

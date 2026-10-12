@@ -46,6 +46,24 @@
 use egui::Color32;
 use serde::{Deserialize, Serialize};
 
+/// All supported CAD icon color token names.
+pub const ICON_TOKENS: &[&str] = &[
+    "icon-stroke",
+    "icon-neutral",
+    "icon-accent",
+    "icon-dimmed",
+    "icon-sketch-primary",
+    "icon-sketch-secondary",
+    "icon-constraint-primary",
+    "icon-constraint-secondary",
+    "icon-part-primary",
+    "icon-part-secondary",
+    "icon-assembly-primary",
+    "icon-assembly-secondary",
+    "icon-datum-primary",
+    "icon-datum-secondary",
+];
+
 /// NAMED COLOURS. The fields are named BY MEANING: the code asks for "the sketch line", not "yellow" -
 /// otherwise the light scheme would send you hunting for where yellow meant a selection and where it meant
 /// a warning.
@@ -126,6 +144,8 @@ pub struct Palette {
     pub sketch_construction: [u8; 3],
     /// a live projection of outside geometry into the sketch
     pub sketch_driven: [u8; 3],
+    /// a live projection made construction geometry: drawn dashed and thin in it
+    pub sketch_driven_construction: [u8; 3],
     /// the edges of the face the sketch lies on
     pub sketch_face_edge: [u8; 3],
     /// a sketch shown in 3D, on its own, not selected
@@ -245,6 +265,12 @@ pub struct Palette {
     pub preview_axis: [u8; 3],
     /// helper geometry inside a preview: a datum, a mirror plane, the grid of copies
     pub preview_datum: [u8; 3],
+    /// THE NEWEST CORNER OF A SET - the one named last, the one a further pick can still re-aim. A corner is the
+    /// newest because it was named last: the state is the fact, and the scheme says what that state looks like.
+    pub preview_corner_new: [u8; 3],
+    /// A CORNER ALREADY FIXED - the pair of lines that makes it is remembered, so the next pick cannot move it.
+    /// Drawn apart from the newest one so that a person can see at a glance what a further click will still change.
+    pub preview_corner_fixed: [u8; 3],
     /// THE MEASURING LINE - ONE FOR THE WHOLE PROGRAM. It used to be amber in 3D and green in a sketch:
     /// one tool, two colours, which is not a design but a disagreement. It was merged into the green one
     /// by decision, so that one colour sets it everywhere.
@@ -403,6 +429,36 @@ pub struct Palette {
     pub ui_text_strong: [u8; 3],
     /// a link
     pub ui_link: [u8; 3],
+
+    // --- icon theme color tokens ---
+    /// the outline and contours of CAD icons
+    pub icon_stroke: [u8; 3],
+    /// the neutral solid body fill of CAD icons
+    pub icon_neutral: [u8; 3],
+    /// universal accent for icons
+    pub icon_accent: [u8; 3],
+    /// translucent dimmed underlay for CAD icons
+    pub icon_dimmed: [u8; 3],
+    /// sketch group primary accent
+    pub icon_sketch_primary: [u8; 3],
+    /// sketch group secondary accent
+    pub icon_sketch_secondary: [u8; 3],
+    /// constraint group primary accent
+    pub icon_constraint_primary: [u8; 3],
+    /// constraint group secondary accent
+    pub icon_constraint_secondary: [u8; 3],
+    /// 3D part group primary accent
+    pub icon_part_primary: [u8; 3],
+    /// 3D part group secondary accent
+    pub icon_part_secondary: [u8; 3],
+    /// assembly group primary accent
+    pub icon_assembly_primary: [u8; 3],
+    /// assembly group secondary accent
+    pub icon_assembly_secondary: [u8; 3],
+    /// datum group primary accent
+    pub icon_datum_primary: [u8; 3],
+    /// datum group secondary accent
+    pub icon_datum_secondary: [u8; 3],
 }
 
 impl Default for Palette {
@@ -486,18 +542,165 @@ macro_rules! readers {
 }
 
 readers!(
-    viewport_bg, toolbar_bg, panel_bg, panel_border, splash_bg, thumbnail_bg, scrim, text_strong, text_dim, text_faint, emphasis, glyph_text, glyph_backing, grid, grid_minor, axis_x, axis_y, axis_z,
-    grid_axis_x, grid_axis_y, grid_axis_z, sketch_axis_x, sketch_axis_y, sketch_axis_idle, sketch_line, sketch_construction, sketch_driven, sketch_face_edge, sketch_edge_3d, dimension,
-    dimension_driven, dim_helper, dim_helper_ring, selected, highlight, active, handle, handle_face, snap_point, axis_pick_idle, clip, plate_text, pattern_center, sketch_point, annotation, note,
-    hint, hint_action, tree_selected, connector, rollback, select_window, select_cross, rubber_band, snap_marker, snap_intersection, snap_edge, snap_axis, snap_grid, edge_idle, body_face, body_ghost,
-    body_clash, add, remove, modify, reference, offset_in, plane_face, plane_fill, plane_idle, plane_normal, datum_point, datum_axis, preview, preview_prim, preview_array, preview_axis,
-    preview_datum, measure, cut_line, gizmo_label, constraint_ok, constraint_selected, constraint_hover, joint_idle, joint_hover, joint_pick_a, joint_pick_b, grounded, contour_idle, contour_hover,
-    contour_profile, ok, ok_soft, underdefined, warning, error, error_mild, confirm, refuse, cam_plunge, cam_rapid, cam_table, cam_table_grid, cam_stock, ghost_target, viewcube_face, viewcube_edge,
-    cam_stock_idle, cam_op1, cam_op2, cam_op3, cam_op4, cam_op5, cam_op6, ui_window, ui_field, ui_stripe, ui_outline, ui_control, ui_control_hover, ui_control_active, ui_accent, ui_text, ui_text_dim,
-    ui_text_strong, ui_link,
+    viewport_bg,
+    toolbar_bg,
+    panel_bg,
+    panel_border,
+    splash_bg,
+    thumbnail_bg,
+    scrim,
+    text_strong,
+    text_dim,
+    text_faint,
+    emphasis,
+    glyph_text,
+    glyph_backing,
+    grid,
+    grid_minor,
+    axis_x,
+    axis_y,
+    axis_z,
+    grid_axis_x,
+    grid_axis_y,
+    grid_axis_z,
+    sketch_axis_x,
+    sketch_axis_y,
+    sketch_axis_idle,
+    sketch_line,
+    sketch_construction,
+    sketch_driven,
+    sketch_driven_construction,
+    sketch_face_edge,
+    sketch_edge_3d,
+    dimension,
+    dimension_driven,
+    dim_helper,
+    dim_helper_ring,
+    selected,
+    highlight,
+    active,
+    handle,
+    handle_face,
+    snap_point,
+    axis_pick_idle,
+    clip,
+    plate_text,
+    pattern_center,
+    sketch_point,
+    annotation,
+    note,
+    hint,
+    hint_action,
+    tree_selected,
+    connector,
+    rollback,
+    select_window,
+    select_cross,
+    rubber_band,
+    snap_marker,
+    snap_intersection,
+    snap_edge,
+    snap_axis,
+    snap_grid,
+    edge_idle,
+    body_face,
+    body_ghost,
+    body_clash,
+    add,
+    remove,
+    modify,
+    reference,
+    offset_in,
+    plane_face,
+    plane_fill,
+    plane_idle,
+    plane_normal,
+    datum_point,
+    datum_axis,
+    preview,
+    preview_prim,
+    preview_array,
+    preview_axis,
+    preview_datum,
+    preview_corner_new,
+    preview_corner_fixed,
+    measure,
+    cut_line,
+    gizmo_label,
+    constraint_ok,
+    constraint_selected,
+    constraint_hover,
+    joint_idle,
+    joint_hover,
+    joint_pick_a,
+    joint_pick_b,
+    grounded,
+    contour_idle,
+    contour_hover,
+    contour_profile,
+    ok,
+    ok_soft,
+    underdefined,
+    warning,
+    error,
+    error_mild,
+    confirm,
+    refuse,
+    cam_plunge,
+    cam_rapid,
+    cam_table,
+    cam_table_grid,
+    cam_stock,
+    ghost_target,
+    viewcube_face,
+    viewcube_edge,
+    cam_stock_idle,
+    cam_op1,
+    cam_op2,
+    cam_op3,
+    cam_op4,
+    cam_op5,
+    cam_op6,
+    ui_window,
+    ui_field,
+    ui_stripe,
+    ui_outline,
+    ui_control,
+    ui_control_hover,
+    ui_control_active,
+    ui_accent,
+    ui_text,
+    ui_text_dim,
+    ui_text_strong,
+    ui_link,
+    icon_stroke,
+    icon_neutral,
+    icon_accent,
+    icon_dimmed,
+    icon_sketch_primary,
+    icon_sketch_secondary,
+    icon_constraint_primary,
+    icon_constraint_secondary,
+    icon_part_primary,
+    icon_part_secondary,
+    icon_assembly_primary,
+    icon_assembly_secondary,
+    icon_datum_primary,
+    icon_datum_secondary,
 );
 
 impl Palette {
+    /// The unique scheme identifier or name (e.g. "dark", "light", or a custom scheme name).
+    pub fn identifier(&self) -> &str {
+        if !self.id.is_empty() {
+            &self.id
+        } else if !self.name.is_empty() {
+            &self.name
+        } else {
+            "default"
+        }
+    }
+
     /// AN IMPRINT OF THE SCHEME - for the keys of the image caches.
     ///
     /// The raster of the viewport and the GPU vertex buffer are computed once and reused while their key
@@ -518,6 +721,29 @@ impl Palette {
             f.to_bits().hash(&mut h);
         }
         h.finish()
+    }
+
+    /// Format an icon color token value (e.g. "icon-stroke" or "--icon-stroke") as hex string.
+    pub fn format_icon_color(&self, token: &str) -> Option<String> {
+        let name = token.strip_prefix("--").unwrap_or(token);
+        let rgb = match name {
+            "icon-stroke" => self.icon_stroke,
+            "icon-neutral" => self.icon_neutral,
+            "icon-accent" => self.icon_accent,
+            "icon-dimmed" => self.icon_dimmed,
+            "icon-sketch-primary" => self.icon_sketch_primary,
+            "icon-sketch-secondary" => self.icon_sketch_secondary,
+            "icon-constraint-primary" => self.icon_constraint_primary,
+            "icon-constraint-secondary" => self.icon_constraint_secondary,
+            "icon-part-primary" => self.icon_part_primary,
+            "icon-part-secondary" => self.icon_part_secondary,
+            "icon-assembly-primary" => self.icon_assembly_primary,
+            "icon-assembly-secondary" => self.icon_assembly_secondary,
+            "icon-datum-primary" => self.icon_datum_primary,
+            "icon-datum-secondary" => self.icon_datum_secondary,
+            _ => return None,
+        };
+        Some(format!("#{:02X}{:02X}{:02X}", rgb[0], rgb[1], rgb[2]))
     }
 
     /// The caption of a scheme in the person's language.
@@ -578,11 +804,12 @@ pub fn dark() -> Palette {
         sketch_axis_y: [90, 165, 95],   //
         sketch_axis_idle: [60, 60, 60], // draw_axes: from_gray(60)
 
-        sketch_line: [250, 230, 120],         // draw_sketch_preview
-        sketch_construction: [120, 170, 230], // also the helper leader of a dimension
-        sketch_driven: [150, 210, 255],       // a live projection
-        sketch_face_edge: [150, 170, 210],    // draw_sketch_face_edges
-        sketch_edge_3d: [150, 180, 235],      // a sketch shown in 3D
+        sketch_line: [250, 230, 120],                // draw_sketch_preview
+        sketch_construction: [120, 170, 230],        // also the helper leader of a dimension
+        sketch_driven: [150, 210, 255],              // a live projection
+        sketch_driven_construction: [255, 140, 200], // a live projection made construction: pink
+        sketch_face_edge: [150, 170, 210],           // draw_sketch_face_edges
+        sketch_edge_3d: [150, 180, 235],             // a sketch shown in 3D
 
         dimension: [110, 200, 230],
         dimension_driven: [135, 135, 135],
@@ -639,6 +866,9 @@ pub fn dark() -> Palette {
         preview_array: [120, 210, 235],
         preview_axis: [180, 160, 250],
         preview_datum: [150, 200, 255],
+        // the newest corner says "a pick may still move this one", the fixed one says "this one is remembered"
+        preview_corner_new: [240, 200, 90],
+        preview_corner_fixed: [157, 122, 235],
         measure: [120, 220, 160], // green, both in 3D and in a sketch
         cut_line: [255, 210, 120],
         gizmo_label: [245, 230, 150],
@@ -705,6 +935,22 @@ pub fn dark() -> Palette {
         ui_text_dim: [140, 140, 140],    // widgets.noninteractive.fg_stroke
         ui_text_strong: [240, 240, 240], // widgets.hovered.fg_stroke
         ui_link: [90, 170, 255],         // hyperlink_color
+
+        // icon theme color tokens
+        icon_stroke: [0, 0, 0],                  // #000000
+        icon_neutral: [188, 188, 188],           // #BCBCBC
+        icon_accent: [24, 242, 242],             // #18F2F2
+        icon_dimmed: [124, 124, 124],            // #7C7C7C
+        icon_sketch_primary: [24, 242, 242],     // #18F2F2
+        icon_sketch_secondary: [38, 38, 38],     // #262626
+        icon_constraint_primary: [242, 97, 24],  // #F26118
+        icon_constraint_secondary: [51, 51, 51], // #333333
+        icon_part_primary: [24, 242, 242],       // #18F2F2
+        icon_part_secondary: [242, 170, 24],     // #F2AA18
+        icon_assembly_primary: [24, 242, 242],   // #18F2F2
+        icon_assembly_secondary: [242, 170, 24], // #F2AA18
+        icon_datum_primary: [24, 242, 242],      // #18F2F2
+        icon_datum_secondary: [242, 170, 24],    // #F2AA18
     }
 }
 
@@ -784,6 +1030,22 @@ pub fn light() -> Palette {
     p.ui_text_strong = [0, 0, 0]; // widgets.hovered.fg_stroke
     p.ui_link = [0, 155, 255]; // hyperlink_color
 
+    // icon theme color tokens for light scheme
+    p.icon_stroke = [128, 128, 128]; // #808080
+    p.icon_neutral = [204, 204, 204]; // #CCCCCC
+    p.icon_accent = [24, 242, 242]; // #18F2F2
+    p.icon_dimmed = [171, 171, 171]; // #ABABAB
+    p.icon_sketch_primary = [24, 242, 242]; // #18F2F2
+    p.icon_sketch_secondary = [128, 128, 128]; // #808080
+    p.icon_constraint_primary = [242, 97, 24]; // #F26118
+    p.icon_constraint_secondary = [128, 128, 128]; // #808080
+    p.icon_part_primary = [24, 242, 242]; // #18F2F2
+    p.icon_part_secondary = [242, 170, 24]; // #F2AA18
+    p.icon_assembly_primary = [24, 242, 242]; // #18F2F2
+    p.icon_assembly_secondary = [242, 170, 24]; // #F2AA18
+    p.icon_datum_primary = [24, 242, 242]; // #18F2F2
+    p.icon_datum_secondary = [242, 170, 24]; // #F2AA18
+
     p
 }
 
@@ -830,6 +1092,7 @@ pub fn dracula() -> Palette {
     p.sketch_line = [241, 250, 140]; // yellow
     p.sketch_construction = [98, 114, 164];
     p.sketch_driven = [189, 147, 249]; // purple
+    p.sketch_driven_construction = [255, 121, 198]; // pink
     p.dimension = [139, 233, 253];
     p.dimension_driven = [98, 114, 164];
     p.selected = [255, 121, 198]; // pink
@@ -903,6 +1166,7 @@ pub fn alucard() -> Palette {
     p.sketch_line = [132, 110, 21]; // yellow
     p.sketch_construction = [108, 102, 75];
     p.sketch_driven = [100, 74, 201]; // purple
+    p.sketch_driven_construction = [196, 52, 132]; // pink
     p.dimension = [3, 106, 150];
     p.dimension_driven = [108, 102, 75];
     p.selected = [163, 20, 77]; // pink

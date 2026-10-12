@@ -185,17 +185,15 @@ mod tests {
         assert_eq!(at(gy), (0.0, 1.0), "the guide of the Y axis was dragged: the axis is no longer vertical");
     }
 
-    /// A SHAPE HELD BY ITS CONSTRAINTS DOES NOT PRETEND TO HAVE MOVED.
+    /// A SHAPE MOVED OFF THE ORIGIN DOES NOT PRETEND: the move tool lifts the coincidence of the centre with the origin
+    /// and the circle stands where it was taken, its drawing and its constraints agreeing.
     ///
-    /// Reported behaviour: "I took the move tool, moved the circle far away, and the coincidence with the
-    /// origin stayed - and stayed GREEN. Reopen the project and the circle is back at the centre; draw
-    /// anything and it jumps back too."
-    ///
-    /// The move shifted the points and never asked the solver. The screen then showed a shape standing
-    /// where nothing allows it to stand, and the lie held until the next edit - at which point the jump
-    /// back looked like a defect of its own.
+    /// Reported behaviour: "I took the move tool, moved the circle far away, and the coincidence with the origin
+    /// stayed, and stayed GREEN. Reopen the project and the circle is back at the centre." The move shifted the points
+    /// and never asked the solver, and the screen showed a shape where nothing allowed it to stand. The move takes
+    /// what goes off what stays, the origin among it (`lift_ties_to_what_stays`): nothing is left to pull it back.
     #[test]
-    fn a_constrained_circle_does_not_pretend_to_have_moved() {
+    fn a_circle_moved_off_the_origin_leaves_its_coincidence_with_it() {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
@@ -220,41 +218,40 @@ mod tests {
         app.project.solve_sketch(si);
 
         let p = app.project.sketches[si].points.iter().find(|p| p.id == centre).expect("the centre is still there");
+        let tied = app.project.sketches[si].constraints.iter().any(|c| matches!(*c, qymcad_core::model::Constraint::Coincident { a, b } if (a, b) == (centre, origin) || (a, b) == (origin, centre)));
         assert!(
-            p.x.abs() < 1e-6 && p.y.abs() < 1e-6,
-            "a circle held at the origin by a coincidence ended up at ({}, {}): the drawing shows it somewhere its constraints forbid, and the next edit will snap it back",
+            (p.x - 40.0).abs() < 1e-6 && (p.y - 30.0).abs() < 1e-6 && !tied,
+            "a circle moved by (40, 30) off the origin stands at ({}, {}), its coincidence with the origin kept: {tied}",
             p.x,
             p.y
         );
     }
 
-    /// A CIRCLE DRAWN BY HAND IS DEFINED BY WHAT IS SHOWN ON IT.
+    /// A CIRCLE DRAWN BY HAND IS DEFINED BY WHAT IS SHOWN ON IT: the number at a circle just drawn is the field of its
+    /// diameter, and a value typed there and closed with Enter is a real, driving diameter.
     ///
     /// Reported behaviour: "the sketch is not defined although the point is locked and a dimension is
     /// shown on the screen - it was placed automatically while drawing. I edit that dimension on purpose,
     /// and only then does it become a diameter, appear in the panel, and the sketch becomes defined."
     ///
-    /// What stood on the drawing was the FIELD waiting for a value, not a constraint. A number that looks
-    /// like a dimension and holds nothing is worse than no number: the reason the sketch stays short by
-    /// one is then invisible.
+    /// A number that looks like a dimension and holds nothing is worse than no number. Closed untouched, the field
+    /// leaves no number at all (`a_circle_and_an_arc_take_a_size_only_when_typed`).
     #[test]
     fn a_circle_drawn_by_hand_carries_a_real_diameter() {
         let mut app = App::default();
         let si = app.create_sketch_on(SketchPlane::default());
         app.chosen.sel = Sel::Sketch(si);
-        Hand::new(&mut app).sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        let mut hand = Hand::new(&mut app);
+        hand.sk_tool(3).click2d(0.0, 0.0).click2d(10.0, 0.0);
+        assert!(hand.app.tools.inline.circle().is_some(), "the circle drawn opened no field of its diameter");
+        hand.type_text("20").key(egui::Key::Enter);
 
         let s = &app.project.sketches[si];
         let diameters: Vec<&qymcad_core::model::Constraint> = s.constraints.iter().filter(|c| matches!(c, qymcad_core::model::Constraint::Diameter { .. })).collect();
-        assert_eq!(
-            diameters.len(),
-            1,
-            "the circle was drawn and no diameter dimension was made: the number on screen holds nothing and the sketch stays under-defined. Constraints: {:?}",
-            s.constraints
-        );
+        assert_eq!(diameters.len(), 1, "the circle was drawn with 20 typed and no diameter dimension was made. Constraints: {:?}", s.constraints);
         match diameters[0] {
             qymcad_core::model::Constraint::Diameter { d, driven, diam, .. } => {
-                assert!((*d - 20.0).abs() < 1e-6, "the diameter is {d}, and the circle was drawn with a radius of 10");
+                assert!((*d - 20.0).abs() < 1e-6, "the diameter is {d}, and 20 was typed");
                 assert!(*diam, "it was made as a radius; a circle is dimensioned by its diameter unless asked otherwise");
                 assert!(!*driven, "it was made a reference dimension, so it defines nothing");
             }

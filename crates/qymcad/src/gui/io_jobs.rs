@@ -4,8 +4,9 @@
 pub(crate) use qymcad_ui_state::ensure_brep;
 #[allow(unused_imports)] // used by the checks through this module, which is the address they know
 pub(crate) use qymcad_ui_state::regenerate_now;
-pub(crate) use qymcad_ui_state::finish_dim;
 use super::*;
+use crate::gui::export_folder::{export_folder, project_folder, remember_export};
+use crate::gui::file_ask::Question;
 
 /// The rebuild writes `line` on the status line and remembers it as its own.
 fn rebuild_says(regen: &mut qymcad_ui_state::Rebuilding, status: &mut String, line: String) {
@@ -173,9 +174,7 @@ impl App {
 
     /// Save As (Ctrl+Shift+S): always ask for the path and the name.
     pub(super) fn save_project_as(&mut self) {
-        let start = self.disk.project_path.clone().unwrap_or_else(|| "project.qcad".into());
-        let name = std::path::Path::new(&start).file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
-        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(name).add_filter("QymCAD project", &["qcad", "ron"]), |app, path| {
+        self.ask_save_file(save_as_dialog(self.disk.project_path.as_deref()), |app, path| {
             let path = path.to_string_lossy().into_owned();
             crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
             app.disk.io.saved_key = Some(qymcad_ui_state::edit_key(&app.draw_ctx())); // confirmed once the write actually succeeds
@@ -230,9 +229,12 @@ impl App {
             self.status = nothing_exact_to_write(format, &plan);
             return;
         }
-        let dialog = exact_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target));
+        let dialog = exact_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target), export_folder(&self.disk));
         let job = ExportJob { format, tree: export_tree_of(&self.project, format, target, &plan.brep), bodies: plan.brep.clone(), note: plan.note(true) };
-        self.ask_save_file(dialog, move |app, path| write_exact_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &job));
+        self.ask_save_file(dialog, move |app, path| {
+            remember_export(&mut app.disk, &path);
+            write_exact_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &job)
+        });
     }
 
     /// Exporting a target as a mesh (STL, OBJ) at a given detail (deflection in mm). A live `Shape` is
@@ -248,8 +250,9 @@ impl App {
             self.status = crate::i18n::tr1("io-mesh-no-bodies", "format", crate::gui::mesh_entry(format).name());
             return;
         }
-        let dialog = mesh_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target));
+        let dialog = mesh_dialog(format, &export_base_name(&self.project, &self.disk.project_path, target), export_folder(&self.disk));
         self.ask_save_file(dialog, move |app, path| {
+            remember_export(&mut app.disk, &path);
             let job = mesh_job(&app.project, format, target, bodies, note, deflection);
             write_mesh_to(qymcad_ui_state::editing_of!(app), &mut app.live, &path, &job)
         });
@@ -262,15 +265,10 @@ impl App {
             self.status = crate::i18n::tr("io-export-empty-sketch");
             return;
         }
-        let name = self.project.sketches.get(si).map(|s| crate::i18n::name(&s.name)).unwrap_or_else(|| crate::i18n::tr("io-sketch-lower"));
-        let (ext, filter) = if dxf { ("dxf", "DXF") } else { ("svg", "SVG") };
-        self.ask_save_file(rfd::AsyncFileDialog::new().set_file_name(format!("{name}.{ext}")).add_filter(filter, &[ext]), move |app, path| {
-            let p = path.to_string_lossy();
-            let res = if dxf { qymcad_io::export_dxf(&edges, &p) } else { qymcad_io::export_svg(&edges, &p) };
-            match res {
-                Ok(()) => app.status = format!("{filter} -> {}", path.display()),
-                Err(e) => app.status = crate::i18n::name(&e),
-            }
+        let drawing = Drawing::of(dxf);
+        self.ask_save_file(drawing_dialog(&self.project, si, drawing, export_folder(&self.disk)), move |app, path| {
+            remember_export(&mut app.disk, &path);
+            app.status = write_drawing(&edges, &path, drawing);
         });
     }
 
@@ -287,20 +285,14 @@ impl App {
         // whole on every round and immediately asked for the next one.
         qymcad_ui_state::mark_changed_params_dirty(&self.params_seen, &mut self.project);
         let plan = self.project.regen_plan();
-        let mut proj = self.project.clone_without_source_data();
+        let proj = self.project.clone_without_source_data();
         let shapes = std::mem::take(&mut self.live.shapes);
         // precision is a property of THE DOCUMENT, taken here: in the thread there is no project to ask
         let quality_k = self.project.geom_quality.deflection_k();
         let (tx, rx) = std::sync::mpsc::channel();
         let pulse = std::sync::Arc::new(qymcad_ui_state::RegenPulse { stamp, ..Default::default() });
         let watch = pulse.clone();
-        std::thread::spawn(move || {
-            let _gate = qymcad_kernel::kernel_gate();
-            let kernel = OcctKernel { shapes: std::cell::RefCell::new(shapes), quality_k, stop: watch.stop.clone(), ..Default::default() };
-            let report = proj.regenerate_watched(&kernel, watch.as_ref());
-            let shapes = kernel.shapes.into_inner().into_iter().collect::<Vec<_>>();
-            let _ = tx.send(JobResult::Regenerated { stamp, project: Box::new(proj), shapes, built: report.built, errors: report.errors, cancelled: report.cancelled });
-        });
+        std::thread::spawn(move || rebuild_in_worker(proj, shapes, quality_k, watch, stamp, tx));
         // WHAT EXACTLY IS BEING REBUILT IS ASKED IN ADVANCE, and how to announce it depends on the answer.
         //
         // Reported: a cut in a single part pops up a modal window and makes you wait. A modal window over a
@@ -380,23 +372,12 @@ impl App {
                                                           // joints.
         project.take_placement_from(&self.project);
         self.project = project;
-        self.project.solve_joints(); // live placement, new geometry - reconcile them at once, in this same frame
-        qymcad_ui_state::settle_params_seen(&mut self.params_seen, &mut self.project); // the rebuild ARRIVED - the values from IT are the ones now "seen"
-                                                                                       // LIVE SHAPES ARE ADDED, THEY DO NOT REPLACE THE CACHE WHOLE.
-                                                                                       //
-                                                                                       // THIS USED TO BE `self.live.shapes = shapes...`, AND IT WAS THE LATCH OF AN ENDLESS CIRCLE. A rebuild
-                                                                                       // TAKES the cache with it into the thread (`mem::take` at dispatch) and returns its own copy. If the
-                                                                                       // cache was empty at dispatch - and right after "Rebuild all" it is exactly empty - then the copy is
-                                                                                       // empty, and the return WIPED everything that had come up while the thread was computing: the
-                                                                                       // imports restored from the embedded STEP. The preparation then saw zero shapes again and asked for
-                                                                                       // another rebuild.
-                                                                                       //
-                                                                                       // A MEASUREMENT IN A LIVE WINDOW caught it word for word: "B-rep preparation started: 136 live
-                                                                                       // shapes" -> "rebuild result accepted" -> "B-rep preparation started: 0 live shapes". Without end.
-                                                                                       //
-                                                                                       // The same class as the placement just above: the copy from the thread is stale for EVERYTHING THE
-                                                                                       // THREAD DID NOT COMPUTE. It brings back its own and lays it on top; it does not touch anyone
-                                                                                       // else's.
+        // live placement, new geometry - reconcile them at once, in this same frame
+        self.project.solve_joints();
+        // the rebuild ARRIVED - the values from IT are the ones now "seen"
+        qymcad_ui_state::settle_params_seen(&mut self.params_seen, &mut self.project);
+        // LIVE SHAPES ARE ADDED, NOT PUT IN PLACE OF THE CACHE: the thread took the cache with it and brings back only what
+        // it computed; laid in place of the cache, an empty copy wiped the imports restored while it ran
         adopt_shapes(&mut self.live, shapes);
         qymcad_ui_state::keep_live_shapes(&mut self.live, &self.project);
         for (body, faces) in built {
@@ -531,6 +512,101 @@ impl App {
     }
 }
 
+/// THE REBUILD ON ITS WORKER THREAD, sent back over `tx`. A free function rather than a closure inside `spawn_regen`:
+/// it needs nothing of the window.
+fn rebuild_in_worker(
+    mut proj: Project,
+    shapes: std::collections::HashMap<Id, qymcad_kernel::Shape>,
+    quality_k: f64,
+    watch: std::sync::Arc<qymcad_ui_state::RegenPulse>,
+    stamp: u64,
+    tx: std::sync::mpsc::Sender<JobResult>,
+) {
+    let _gate = qymcad_kernel::kernel_gate();
+    let kernel = OcctKernel { shapes: std::cell::RefCell::new(shapes), quality_k, stop: watch.stop.clone(), ..Default::default() };
+    // A PANIC IN THE REBUILD DOES NOT TAKE THE LIVE B-rep WITH IT. The cache came into this thread whole and
+    // goes back only in the result; a panic used to end the thread with it, and every body of the document
+    // was left without its live B-rep (reported behaviour, issue #119: live shapes [4] before, [] after,
+    // still [] 100 frames later). Caught, the panic leaves the kernel to hand the cache back.
+    //
+    // Unwind-safe as asserted: after a panic only `kernel.shapes` is read, by value (`into_inner` - the
+    // borrows of the `RefCell` ended as the panic unwound), and the half-rebuilt copy of the document is
+    // dropped unread. What is caught is a Rust panic on this thread, in core or in the kernel's Rust side. A
+    // C++ exception escaping the bridge or a crash inside OCCT still ends the process, as before; a panic
+    // outside the caught region goes the `Disconnected` way in `tick_async`.
+    let report = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        #[cfg(test)]
+        if proj.meta.comment == REBUILD_PANICS_FOR_TEST {
+            panic!("a rebuild made to fail by a test");
+        }
+        proj.regenerate_watched(&kernel, watch.as_ref())
+    }));
+    let shapes = kernel.shapes.into_inner().into_iter().collect::<Vec<_>>();
+    let _ = tx.send(match report {
+        Ok(report) => JobResult::Regenerated { stamp, project: Box::new(proj), shapes, built: report.built, errors: report.errors, cancelled: report.cancelled },
+        // the first line: the status is one line
+        Err(panic) => JobResult::RegenFailed { stamp, shapes, why: panic_line(panic.as_ref()) },
+    });
+}
+
+/// THE FIRST LINE OF WHAT A PANIC SAID, for the status line, which is one line.
+fn panic_line(payload: &(dyn std::any::Any + Send)) -> String {
+    let text = crate::crash::panic_text(payload);
+    text.lines().next().filter(|l| !l.trim().is_empty()).unwrap_or("(the panic carried no message)").to_string()
+}
+
+/// AN EXPORT THAT PANICKED, said on the status line: the format and what the panic said. The bodies it took into its
+/// thread are back in the cache by then (`JobResult::Exported`), so the model is as it was.
+fn export_failed(format: &str, payload: &(dyn std::any::Any + Send)) -> String {
+    format!("{} {}", egui_phosphor::regular::WARNING, crate::i18n::tr2("io-export-failed", "format", format, "why", &panic_line(payload)))
+}
+
+/// A REBUILD THAT PANICKED, met as a cancelled one is (`finish_regen_checked`) where the document is concerned,
+/// and as a worker that died (`tick_async`'s `Disconnected` branch) where the B-rep wait is: the live B-rep the
+/// thread took is taken back, the document stays what it was, and nothing is started again - the same rebuild
+/// would fail the same way. When the rebuild was for the last edit, that edit is taken back, and Redo brings it
+/// back. The status says what failed rather than only that something was interrupted.
+///
+/// The shapes taken back are what the kernel held at the panic: a body the failed rebuild had finished carries
+/// its new B-rep, as after a Cancel. When the edit is taken back, the rebuild of the restored document replaces
+/// them; when it is not, they stay until the next edit rebuilds those bodies.
+///
+/// A free function over the rebuild's context rather than a method of `App`: it needs nothing else. Answers the
+/// context path to stand at when an edit was taken back.
+pub(crate) fn finish_regen_failed(rc: &mut qymcad_ui_state::RebuildCtx, stamp: u64, shapes: Vec<(Id, qymcad_kernel::Shape)>, why: String) -> Option<Vec<Id>> {
+    adopt_shapes(rc.live, shapes);
+    // the B-rep preparation was waiting for this result: left in place, the wait would stick
+    rc.live.wait = None;
+    // what a quiet start put aside to bring back at the end: this rebuild has no end to bring it back at, and left
+    // here it would come back after some later rebuild, in place of that one's words
+    rc.regen.over.clear();
+    if regen_doc_stamp(rc.project) != stamp {
+        // the document moved on under the rebuild: the new one is computed, as for a stale result. Every failure
+        // ends in a pause, an edit taken back or (this one) a rebuild of the new document - never a loop.
+        rebuild_says(rc.regen, rc.status, crate::i18n::tr("io-doc-changed"));
+        qymcad_ui_state::mark_dirty_for_rebuild(rc);
+        return None;
+    }
+    let warn = egui_phosphor::regular::WARNING;
+    // `rebuild_cancelled` writes a line about a cancel; it is replaced, on purpose, by one about the failure
+    match qymcad_ui_state::rebuild_cancelled(rc) {
+        Some(path) => {
+            let what = rc.edits.redo.last().map(|s| s.name.clone()).unwrap_or_default();
+            // WRITTEN AS THE OPERATION'S OWN WORDS, NOT THE REBUILD'S, as a Cancel's are: taking the edit back
+            // starts a rebuild of the document it restored, and a quiet one puts these words aside and back when
+            // it ends. Written as the rebuild's line, they were replaced by "Done" before anyone read that the
+            // edit was gone.
+            *rc.status = format!("{warn} {}", crate::i18n::trn("io-rebuild-failed-undone", &[("why", &why), ("what", &what)]));
+            Some(path)
+        }
+        // the rebuild's own line, so a later quiet rebuild that succeeds says so instead of bringing this one back
+        None => {
+            rebuild_says(rc.regen, rc.status, format!("{warn} {}", crate::i18n::tr1("io-rebuild-failed", "why", &why)));
+            None
+        }
+    }
+}
+
 /// AN IMPRINT OF WHAT THE REBUILD WAS COMPUTED FROM - to check whether its result has gone stale.
 ///
 /// THE FULL DOCUMENT KEY (`state_key`) USED TO BE HERE, and it was THE SAME mistake the planner made: it
@@ -598,6 +674,17 @@ pub(crate) fn adopt_shapes(live: &mut super::LiveGeom, shapes: Vec<(Id, qymcad_k
     }
 }
 
+/// THE TEST-ONLY SWITCH: a rebuild of a document whose comment is this panics in the worker, inside the caught region.
+/// A mark in the document rather than a flag of the process, so tests rebuilding side by side cannot take each other's
+/// panic.
+#[cfg(test)]
+pub(crate) const REBUILD_PANICS_FOR_TEST: &str = "a test asks this rebuild to panic";
+
+/// THE TEST-ONLY SWITCH OF AN EXPORT: a file whose name holds this is written by a worker that panics, inside the caught
+/// region. A mark in the path rather than a flag of the process, so exports side by side cannot take each other's panic.
+#[cfg(test)]
+pub(crate) const EXPORT_PANICS_FOR_TEST: &str = "export-panics-for-test";
+
 /// Writing the STL, once a name has been given. Like STEP, the solids leave the cache only here: while
 /// the chooser is up the program goes on drawing, and a viewport whose bodies were taken out from under
 /// it draws nothing.
@@ -620,10 +707,19 @@ pub(crate) fn mesh_job(project: &Project, format: qymcad_ui_state::MeshFormat, t
     MeshJob { format, bodies, note, deflection, tree }
 }
 
-/// The chooser for writing a mesh: the suggested name with the format's extension, and the format's filter.
-fn mesh_dialog(format: qymcad_ui_state::MeshFormat, base: &str) -> rfd::AsyncFileDialog {
+/// The chooser of Save As: the document's file name, opened in the folder it is saved in. A document never
+/// saved is offered `project.qcad` and the folder the system chooses.
+fn save_as_dialog(project_path: Option<&str>) -> Question {
+    let start = std::path::Path::new(project_path.unwrap_or("project.qcad"));
+    let name = start.file_name().map(|s| s.to_string_lossy().into_owned()).unwrap_or_default();
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(name).add_filter("QymCAD project", &["qcad", "ron"]), project_folder(project_path))
+}
+
+/// The chooser for writing a mesh: the suggested name with the format's extension, and the format's filter,
+/// opened in `folder`.
+fn mesh_dialog(format: qymcad_ui_state::MeshFormat, base: &str, folder: Option<std::path::PathBuf>) -> Question {
     let entry = crate::gui::mesh_entry(format);
-    rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions())
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions()), folder)
 }
 
 /// What the status says once meshes have come in: the format, how many bodies, how many triangles.
@@ -661,20 +757,33 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
     let p = path.to_string_lossy().into_owned();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        // every live body tessellated at the detail, every stored mesh as it is; a tree goes out with every part in its
-        // own coordinates, placed by the tree, flat with every body where it stands in the world
-        let solids: Vec<(Id, &qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(id, s, m)| (*id, s, *m)).collect();
-        let written = qymcad_doc::export::write_mesh(&out, &solids, raw, &p);
-        drop(solids);
-        // STL writes EVERYTHING that is on screen (B-rep plus meshes), but it must say that some of the
-        // bodies have no B-rep: the same sort STEP uses, so that the contents of the two files do not
-        // drift apart SILENTLY. A body whose tessellation failed is NOT dropped silently but reported.
-        let said = match written {
-            Ok(w) if w.failed > 0 => format!("(!) {}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p), ("failed", &w.failed.to_string())]), note),
-            Ok(w) if !note.is_empty() => format!("(!) {}{}", crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p)]), note),
-            Ok(w) => crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p)]),
-            Err(e) => crate::i18n::name(&e),
-        };
+        // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT, as a rebuild's does not (`rebuild_in_worker`): the
+        // bodies came into this thread from the cache and go back only in the result, so the work that may panic is
+        // caught and the shapes are sent home whatever came of it. Unwind-safe as asserted: after a panic only `moved`
+        // is read, by value, and what the work built is dropped unread.
+        let said = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            if p.contains(EXPORT_PANICS_FOR_TEST) {
+                panic!("an export made to fail by a test");
+            }
+            // every live body tessellated at the detail, every stored mesh as it is; a tree goes out with every part in its
+            // own coordinates, placed by the tree, flat with every body where it stands in the world
+            let solids: Vec<(Id, &qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(id, s, m)| (*id, s, *m)).collect();
+            let written = qymcad_doc::export::write_mesh(&out, &solids, raw, &p);
+            drop(solids);
+            // STL writes EVERYTHING that is on screen (B-rep plus meshes), but it must say that some of the
+            // bodies have no B-rep: the same sort STEP uses, so that the contents of the two files do not
+            // drift apart SILENTLY. A body whose tessellation failed is NOT dropped silently but reported.
+            match written {
+                Ok(w) if w.failed > 0 => {
+                    format!("(!) {}{}", crate::i18n::trn("io-mesh-partial", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p), ("failed", &w.failed.to_string())]), note)
+                }
+                Ok(w) if !note.is_empty() => format!("(!) {}{}", crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p)]), note),
+                Ok(w) => crate::i18n::trn("io-mesh-done", &[("format", name), ("n", &w.bodies.to_string()), ("path", &p)]),
+                Err(e) => crate::i18n::name(&e),
+            }
+        }))
+        .unwrap_or_else(|panic| export_failed(name, panic.as_ref()));
         let shapes_back = moved.into_iter().map(|(id, s, _)| (id, s)).collect();
         let _ = tx.send(JobResult::Exported { status: said, shapes_back });
     });
@@ -724,10 +833,63 @@ fn nothing_exact_to_write(format: qymcad_kernel::ExactFormat, plan: &ExportPlan)
 }
 
 /// The chooser for writing an exact file: the suggested name with the format's first extension, and the
-/// format's own filter.
-fn exact_dialog(format: qymcad_kernel::ExactFormat, base: &str) -> rfd::AsyncFileDialog {
+/// format's own filter, opened in `folder`.
+fn exact_dialog(format: qymcad_kernel::ExactFormat, base: &str, folder: Option<std::path::PathBuf>) -> Question {
     let entry = crate::gui::exact_entry(format);
-    rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions())
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(format!("{base}.{}", entry.extensions()[0])).add_filter(entry.name(), entry.extensions()), folder)
+}
+
+/// The kind of flat drawing a sketch is written out as.
+#[derive(Clone, Copy)]
+enum Drawing {
+    Dxf,
+    Svg,
+}
+
+impl Drawing {
+    /// `flat=true` of the tree's request -> DXF, else SVG.
+    fn of(dxf: bool) -> Self {
+        if dxf {
+            Drawing::Dxf
+        } else {
+            Drawing::Svg
+        }
+    }
+
+    fn ext(self) -> &'static str {
+        match self {
+            Drawing::Dxf => "dxf",
+            Drawing::Svg => "svg",
+        }
+    }
+
+    /// The name of the format, for the chooser's filter and the status.
+    fn name(self) -> &'static str {
+        match self {
+            Drawing::Dxf => "DXF",
+            Drawing::Svg => "SVG",
+        }
+    }
+}
+
+/// The chooser for writing the sketch `si` out as `drawing`, named after the sketch and opened in `folder`.
+fn drawing_dialog(project: &Project, si: usize, drawing: Drawing, folder: Option<std::path::PathBuf>) -> Question {
+    let name = project.sketches.get(si).map(|s| crate::i18n::name(&s.name)).unwrap_or_else(|| crate::i18n::tr("io-sketch-lower"));
+    let ext = drawing.ext();
+    Question::in_folder(rfd::AsyncFileDialog::new().set_file_name(format!("{name}.{ext}")).add_filter(drawing.name(), &[ext]), folder)
+}
+
+/// Write `edges` to `path` as `drawing` and answer what the status says about it.
+fn write_drawing(edges: &[qymcad_core::geom::ProfEdge], path: &std::path::Path, drawing: Drawing) -> String {
+    let p = path.to_string_lossy();
+    let res = match drawing {
+        Drawing::Dxf => qymcad_io::export_dxf(edges, &p),
+        Drawing::Svg => qymcad_io::export_svg(edges, &p),
+    };
+    match res {
+        Ok(()) => format!("{} -> {}", drawing.name(), path.display()),
+        Err(e) => crate::i18n::name(&e),
+    }
 }
 
 /// WHAT IS TO BE WRITTEN into an exact file: the format, the bodies, and the note on what was left out.
@@ -776,17 +938,27 @@ pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: 
     let tree = job.tree.clone();
     let (tx, rx) = std::sync::mpsc::channel();
     std::thread::spawn(move || {
-        let solids: Vec<(Id, &qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(id, s, m)| (*id, s, *m)).collect();
-        // honest about what was skipped: a body with no live B-rep (an imported STL, a failed regen)
-        // does not get into the STEP - such a file used to come out short of parts SILENTLY, and that
-        // was discovered only by whoever received it. A STEP goes out as the document's tree; a format with none, flat.
-        let done = || crate::i18n::trn("io-exact-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
-        let status = match qymcad_doc::export::write_exact(format, &tree, &solids, &p) {
-            Ok(_) if !note.is_empty() => format!("(!) {}{}", done(), note),
-            Ok(_) => done(),
-            Err(e) => crate::i18n::name(&e),
-        };
-        drop(solids);
+        // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT: caught as in `write_mesh_to`, the shapes sent home
+        // whatever came of the write.
+        let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            #[cfg(test)]
+            if p.contains(EXPORT_PANICS_FOR_TEST) {
+                panic!("an export made to fail by a test");
+            }
+            let solids: Vec<(Id, &qymcad_kernel::Shape, [f64; 12])> = moved.iter().map(|(id, s, m)| (*id, s, *m)).collect();
+            // honest about what was skipped: a body with no live B-rep (an imported STL, a failed regen)
+            // does not get into the STEP - such a file used to come out short of parts SILENTLY, and that
+            // was discovered only by whoever received it. A STEP goes out as the document's tree; a format with none, flat.
+            let done = || crate::i18n::trn("io-exact-done", &[("format", name), ("n", &n.to_string()), ("path", &p)]);
+            let status = match qymcad_doc::export::write_exact(format, &tree, &solids, &p) {
+                Ok(_) if !note.is_empty() => format!("(!) {}{}", done(), note),
+                Ok(_) => done(),
+                Err(e) => crate::i18n::name(&e),
+            };
+            drop(solids);
+            status
+        }))
+        .unwrap_or_else(|panic| export_failed(name, panic.as_ref()));
         let shapes_back = moved.into_iter().map(|(id, s, _)| (id, s)).collect();
         let _ = tx.send(JobResult::Exported { status, shapes_back });
     });
@@ -851,9 +1023,13 @@ pub(crate) fn save_part_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
     }
     let mut open = true;
     let (mut do_save, mut cancel) = (false, false);
-    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("io-save-as-part"))).collapsible(false).resizable(false).open(&mut open).anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0]).show(
-        ctx,
-        |ui| {
+    egui::Window::new(format!("{} {}", ph::PACKAGE, crate::i18n::tr("io-save-as-part")))
+        .id(egui::Id::new("win_save_as_part"))
+        .collapsible(false)
+        .resizable(false)
+        .open(&mut open)
+        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .show(ctx, |ui| {
             let Some(d) = wc.parts.save.as_mut() else { return }; // the window may have closed
                                                                   // the preview texture is loaded lazily
             if d.tex.is_none() {
@@ -912,8 +1088,7 @@ pub(crate) fn save_part_window(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Con
                 }
                 ui.label(egui::RichText::new(crate::i18n::tr("io-to-my-parts")).weak().small());
             });
-        },
-    );
+        });
     if do_save {
         match crate::gui::commit_save_part(wc.parts, wc.project, wc.tex_graveyard) {
             Ok(p) => *wc.status = crate::i18n::tr1("io-part-saved", "path", &p),

@@ -41,22 +41,6 @@ fn only_whole_names_are_replaced() {
     assert_eq!(expr::rename_ident("h*2", "w", "s"), "h*2", "an unrelated expression must not change");
 }
 
-/// A name is replaced whatever its case, as `eval` reads it: `W*2` and `w*2` both use the parameter `w`, and
-/// renaming `w` that left `W*2` behind would point the formula at a name that no longer exists.
-#[test]
-fn a_name_is_replaced_whatever_its_case() {
-    assert_eq!(expr::rename_ident("W*2+w", "w", "s"), "s*2+s");
-    assert_eq!(expr::rename_ident("Wall+W", "w", "s"), "Wall+s", "a name inside a longer name stays");
-    assert_eq!(expr::rename_ident("ΔΕΛΤΑ*2", "δελτα", "w"), "w*2", "a letter outside ASCII has its case too");
-
-    let mut p = Project::default();
-    p.new_document();
-    param(&mut p, "W", "20");
-    param(&mut p, "h", "W*2");
-    assert_eq!(p.rename_driver("W", "s"), Ok(1));
-    assert_eq!(p.parameters[1].expr, "s*2");
-}
-
 /// A multi-byte letter is never split in the middle: names are written in the language of the author, and
 /// working byte by byte ends in a panic.
 #[test]
@@ -70,6 +54,23 @@ fn cyrillic_names_survive() {
     assert!(!expr::mentions("ширина_общая", "ширина"), "a name inside a longer name is not a name of its own");
     assert!(expr::mentions("ширина_общая+ширина", "ширина"));
     assert!(expr::mentions("длина", "длина"));
+}
+
+/// `H` and `h` are two parameters, so renaming one leaves the other and its formulas alone.
+#[test]
+fn a_name_in_another_case_is_another_name() {
+    assert_eq!(expr::rename_ident("H*2+h", "H", "s"), "s*2+h");
+
+    let mut p = Project::default();
+    p.new_document();
+    param(&mut p, "H", "20");
+    param(&mut p, "h", "30");
+    param(&mut p, "sum", "H+h");
+    assert_eq!(p.rename_driver("H", "w"), Ok(1));
+    assert_eq!(p.parameters[0].name, "w");
+    assert_eq!(p.parameters[1].name, "h", "renaming H renamed h too");
+    assert_eq!(p.parameters[2].expr, "w+h");
+    assert_eq!(p.rename_driver("w", "h"), Err(RenameError::Taken), "h is held by the other parameter");
 }
 
 // ── what makes a valid name ──────────────────────────────────────────────────────────────────────
@@ -164,8 +165,8 @@ fn renaming_something_that_does_not_exist_is_refused() {
     assert_eq!(p.rename_driver("net_takogo", "novoe"), Err(RenameError::NotFound));
 }
 
-/// Changing the case of one's own name is not a conflict. Names are compared case-insensitively, and `len` to
-/// `Len` would otherwise run into being taken by itself.
+/// Changing the case of one's own name is a rename like any other: `Len` is a name of its own, free while nobody
+/// holds it, and the formulas follow.
 #[test]
 fn changing_the_case_of_ones_own_name_is_allowed() {
     let mut p = Project::default();
@@ -208,7 +209,7 @@ fn a_taken_name_says_who_holds_it() {
     assert_eq!(owner.path, "Housing.Profile", "an owner without a path explains nothing");
     assert_eq!(owner.value, Some(20.0));
 
-    assert!(p.name_owner("LEN").is_some(), "case must not hide a namesake");
+    assert!(p.name_owner("LEN").is_none(), "LEN is a name of its own, not len");
     assert!(p.name_owner("svobodno").is_none());
     assert!(p.name_owner("").is_none(), "an empty name belongs to nobody");
 }

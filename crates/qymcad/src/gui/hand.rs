@@ -7,6 +7,15 @@
 //!
 //! The hand can do exactly what a person can: press a tool button, click a point in the scene, press
 //! Enter or Esc. It has nothing else — and that is its main property.
+/// A DRAG ON THE SKETCH: from where to where, in the sketch's own coordinates, by which button and with which keys held.
+#[cfg(test)]
+pub(super) struct Drag2d {
+    pub from: (f64, f64),
+    pub to: (f64, f64),
+    pub button: egui::PointerButton,
+    pub modifiers: egui::Modifiers,
+}
+
 #[cfg(test)]
 pub(super) struct Hand<'a> {
     pub app: &'a mut super::App,
@@ -14,6 +23,14 @@ pub(super) struct Hand<'a> {
     /// THE WINDOW the mouse and the keys go into, kept for the whole gesture: egui tells a click from a drag,
     /// and a double click from two clicks, by what it saw in the frames before.
     win: super::window::Window,
+    /// the longest frame since it was last asked for (`worst_frame`): what a person feels as the window standing still
+    worst: std::time::Duration,
+}
+
+#[cfg(test)]
+thread_local! {
+    /// Where the button of each hint was found last, looked at first the next time.
+    static SEEN: std::cell::RefCell<std::collections::HashMap<String, egui::Pos2>> = Default::default();
 }
 
 #[cfg(test)]
@@ -26,7 +43,7 @@ impl<'a> Hand<'a> {
         app.viewing.mode_3d = true;
         app.viewing.cam.init = true;
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
-        Self { app, rect, win: super::window::Window::new(Self::SCREEN) }
+        Self { app, rect, win: super::window::Window::new(Self::SCREEN), worst: std::time::Duration::ZERO }
     }
 
     /// ONE WHOLE FRAME OF THE WINDOW with `events` in it, a sixtieth of a second after the one before.
@@ -72,8 +89,17 @@ impl<'a> Hand<'a> {
     }
 
     fn run(&mut self, modifiers: egui::Modifiers, events: Vec<egui::Event>) -> &mut Self {
+        let started = std::time::Instant::now();
         self.win.run(self.app, modifiers, events, false);
+        self.worst = self.worst.max(started.elapsed());
         self
+    }
+
+    /// THE LONGEST FRAME SINCE THIS WAS LAST ASKED: the window standing still under a step of the hand. The time of a
+    /// whole gesture holds the hand's own looking - over the hint of every button, four frames each - which a person
+    /// who knows the panel does not do; the longest frame is what the person waits.
+    pub fn worst_frame(&mut self) -> std::time::Duration {
+        std::mem::take(&mut self.worst)
     }
 
     /// PRESS THE BUTTON WHOSE HINT IS `hint`, found as a person finds an icon they do not know: the hand goes
@@ -83,39 +109,91 @@ impl<'a> Hand<'a> {
     /// A hint comes up once the pointer has stood still for half a second, so the hand rests a second over each
     /// button. Where a button was found last time is looked at first; it is still read before it is pressed.
     pub fn press_hint(&mut self, hint: &str) -> bool {
-        thread_local! {
-            static SEEN: std::cell::RefCell<std::collections::HashMap<String, egui::Pos2>> = Default::default();
+        match self.find_hint(hint) {
+            Some(at) => {
+                self.press_screen(at);
+                true
+            }
+            None => false,
         }
+    }
+
+    /// KNOW WHERE THE BUTTON OF `hint` STANDS, pressing nothing: the hand looks for it as `press_hint` does and
+    /// remembers the place. A person knows where the buttons of the panel are; a probe that times a tool learns them
+    /// first, or it times the looking - over the hint of every button, four frames each, 6 s of a frame of 30 ms.
+    pub fn know_hint(&mut self, hint: &str) -> bool {
+        self.find_hint(hint).is_some()
+    }
+
+    fn find_hint(&mut self, hint: &str) -> Option<egui::Pos2> {
         self.frame(Vec::new());
+        self.rebuild_gone();
         let known = SEEN.with(|s| s.borrow().get(hint).copied());
         if let Some(at) = known.filter(|at| self.win.plates.contains(at)) {
             if self.hint_comes_up(at, hint) {
-                self.press_screen(at);
-                return true;
+                return Some(at);
             }
         }
+        // down the panel from where it stands; and where the button was not below, from the top of the panel down: a
+        // button looked for before may have led the panel down past this one
+        if let Some(at) = self.hint_down_the_panel(hint) {
+            return Some(at);
+        }
+        self.panel_to_its_top();
+        self.hint_down_the_panel(hint)
+    }
+
+    /// A REBUILD UNDER WAY REFUSES INPUT: its card lies over the window, nothing under it is pressed and no hint comes up.
+    /// A person waits for the card to go before pressing or looking for anything; so does the hand, a minute at most.
+    /// Measured in a run of the whole crate, the kernel held by the checks beside it: the card stood over the window
+    /// for the whole search of a button, 70 buttons rested over and none answered.
+    fn rebuild_gone(&mut self) {
+        let waiting = std::time::Instant::now();
+        while self.app.regen.busy.is_some() && waiting.elapsed() < std::time::Duration::from_secs(60) {
+            std::thread::sleep(std::time::Duration::from_millis(20));
+            self.frame(Vec::new());
+        }
+    }
+
+    /// The button of `hint` looked for down the panel, a notch of the wheel at a time; it is remembered where found.
+    fn hint_down_the_panel(&mut self, hint: &str) -> Option<egui::Pos2> {
         let mut scrolled = 0;
         loop {
             for at in self.win.plates.clone() {
                 if self.hint_comes_up(at, hint) {
                     SEEN.with(|s| s.borrow_mut().insert(hint.to_string(), at));
-                    self.press_screen(at);
-                    return true;
+                    return Some(at);
                 }
             }
-            // down the panel the buttons stand in, a notch of the wheel at a time
-            let Some(over) = self.win.plates.first().copied() else { return false };
-            let before = self.win.plates.clone();
-            let wheel = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, -200.0), phase: egui::TouchPhase::Move, modifiers: Default::default() };
-            self.frame(vec![egui::Event::PointerMoved(over), wheel]);
-            for _ in 0..10 {
-                self.frame(vec![egui::Event::PointerMoved(over)]); // the scroll is smoothed over frames
+            if !self.panel_turned(-200.0) {
+                return None; // the panel went no further: there is no such button below
             }
             scrolled += 1;
-            if self.win.plates == before || scrolled > 10 {
-                return false; // the panel went no further: there is no such button
+            if scrolled > 10 {
+                return None;
             }
         }
+    }
+
+    /// The panel the buttons stand in turned back to its top.
+    fn panel_to_its_top(&mut self) {
+        for _ in 0..12 {
+            if !self.panel_turned(200.0) {
+                break;
+            }
+        }
+    }
+
+    /// The panel turned by a notch of the wheel, `by` points up (positive) or down; answers whether it moved.
+    fn panel_turned(&mut self, by: f32) -> bool {
+        let Some(over) = self.win.plates.first().copied() else { return false };
+        let before = self.win.plates.clone();
+        let wheel = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta: egui::vec2(0.0, by), phase: egui::TouchPhase::Move, modifiers: Default::default() };
+        self.frame(vec![egui::Event::PointerMoved(over), wheel]);
+        for _ in 0..10 {
+            self.frame(vec![egui::Event::PointerMoved(over)]); // the scroll is smoothed over frames
+        }
+        self.win.plates != before
     }
 
     /// Does `hint` come up with the pointer resting over `at`? Only a hint that was not on screen before counts:
@@ -144,10 +222,24 @@ impl<'a> Hand<'a> {
         self.frame(vec![button(false)]);
     }
 
+    /// CLICK A POINT OF THE SCREEN: a press and a release of the left button there, each in a frame of its own - a glyph
+    /// or a caption that has no place in the sketch's own coordinates.
+    pub fn click_screen(&mut self, at: egui::Pos2) -> &mut Self {
+        self.press_screen(at);
+        self
+    }
+
     /// WHERE THE NUMBER FIELD NEAREST TO `near` STANDS, the next frame drawn - a field a person drags or types into.
     pub fn number_near(&mut self, near: egui::Pos2) -> Option<egui::Rect> {
         self.frame(Vec::new());
         self.win.widgets.iter().filter(|w| w.kind == super::window::Kind::Number).map(|w| w.rect).min_by(|a, b| a.center().distance(near).total_cmp(&b.center().distance(near)))
+    }
+
+    /// WHERE THE WINDOW TITLED `title` STANDS, the next frame drawn, as a screen reader is told about it: the whole
+    /// window, its title bar included.
+    pub fn window_titled(&mut self, title: &str) -> Option<egui::Rect> {
+        self.frame(Vec::new());
+        self.win.widgets.iter().find(|w| w.kind == super::window::Kind::Window && w.label == title).map(|w| w.rect)
     }
 
     /// DOUBLE-CLICK A POINT OF THE SCREEN: the hand rests over it, then presses and releases twice, each in a frame
@@ -188,6 +280,25 @@ impl<'a> Hand<'a> {
         self.written_at(word).is_some()
     }
 
+    /// A NOTCH OF THE WHEEL over a point of the sketch: up brings the sheet nearer, down takes it away, as by hand.
+    pub fn wheel2d(&mut self, at: (f64, f64), up: bool) -> &mut Self {
+        let over = self.screen2d(at);
+        let delta = egui::vec2(0.0, if up { 120.0 } else { -120.0 });
+        let wheel = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, phase: egui::TouchPhase::Move, modifiers: Default::default() };
+        self.frame(vec![egui::Event::PointerMoved(over)]); // the hand comes over the view first
+        self.frame(vec![egui::Event::PointerMoved(over), wheel]);
+        // the wheel is smoothed over frames
+        for _ in 0..10 {
+            self.frame(vec![egui::Event::PointerMoved(over)]);
+        }
+        self
+    }
+
+    /// EVERY WORD THE LAST FRAME WROTE, with where it stands.
+    pub fn words_drawn(&self) -> &[(String, egui::Rect)] {
+        &self.win.drawn
+    }
+
     /// WHERE `word` IS WRITTEN, the next frame drawn - the place written first, when it is written in several.
     pub fn written_at(&mut self, word: &str) -> Option<egui::Rect> {
         self.frame(Vec::new());
@@ -213,6 +324,32 @@ impl<'a> Hand<'a> {
         let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
         self.frame(vec![button(true)]);
         self.frame(vec![button(false)]);
+        true
+    }
+
+    /// WHAT THE TRIAL BUILD SAYS of the command as it stands, waited for the way a person waits for the preview: the
+    /// words of its refusal, if it refuses. A trial runs on a worker; a check that ends without waiting for it leaves the
+    /// kernel working while the process exits.
+    pub fn trial_says(&mut self) -> Option<String> {
+        let ctx = egui::Context::default();
+        for _ in 0..6000 {
+            match qymcad_part::trial_refusal(&mut self.app.part_ctx(), &ctx) {
+                qymcad_part::Trial::Checking => std::thread::sleep(std::time::Duration::from_millis(10)),
+                qymcad_part::Trial::Refused(_, words) => return Some(words),
+                qymcad_part::Trial::Clear => return None,
+            }
+        }
+        panic!("the trial build of the command never answered");
+    }
+
+    /// DOUBLE-CLICK WHERE `word` IS WRITTEN - a row of the tree reopens its feature or enters its part this way. The
+    /// icon drawn before a word by a font of its own is not part of the words on screen, so it is left out of `word`.
+    /// Answers whether the word was on screen.
+    pub fn double_click_word(&mut self, word: &str) -> bool {
+        let word: String = word.chars().filter(|c| !('\u{e000}'..='\u{f8ff}').contains(c)).collect();
+        let Some(at) = self.written_at(word.trim()) else { return false };
+        self.double_click_screen(at.center());
+        self.close_window();
         true
     }
 
@@ -254,6 +391,17 @@ impl<'a> Hand<'a> {
         self.press_at2d(egui::Modifiers::default(), (x, y))
     }
 
+    /// THE RIGHT BUTTON ON A PLACE OF THE SKETCH: the hand rests over it, then presses and releases the right button,
+    /// each in a frame of its own - the menu of the right button comes up there.
+    pub fn right_click2d(&mut self, x: f64, y: f64) -> &mut Self {
+        self.in_view2d(&[(x, y)]);
+        let at = self.rest_over2d((x, y));
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Secondary, pressed, modifiers: Default::default() };
+        self.frame(vec![button(true)]);
+        self.frame(vec![button(false)]);
+        self.frame(Vec::new())
+    }
+
     /// The hand rests over a place already in view, then presses and releases with `modifiers` held.
     fn press_at2d(&mut self, modifiers: egui::Modifiers, place: (f64, f64)) -> &mut Self {
         let at = self.rest_over2d(place);
@@ -285,7 +433,7 @@ impl<'a> Hand<'a> {
         true
     }
 
-    /// A PLACE TO CLICK ON AN ITEM of the sketch (`(0, point)` or `(1, line)`), found as a person finds it: along
+    /// A PLACE TO CLICK ON AN ITEM of the sketch (`(0, point)`, or `(1, line or circle)`), found as a person finds it: along
     /// the item until a click there would pick it. The view is aimed at the item first, at the scale of the
     /// sketch tools; the window closes after it.
     pub fn spot2d(&mut self, item: (u8, u64)) -> Option<(f64, f64)> {
@@ -312,11 +460,16 @@ impl<'a> Hand<'a> {
                     .entities
                     .iter()
                     .find(|e| e.id == *id)
-                    .and_then(|e| match e.kind {
-                        qymcad_core::model::EntityKind::Line { a, b } => Some((at(a)?, at(b)?)),
-                        _ => None,
+                    .map(|e| match e.kind {
+                        qymcad_core::model::EntityKind::Line { a, b } => {
+                            at(a).zip(at(b)).map(|(u, v)| [0.5, 0.37, 0.63, 0.25, 0.75, 0.15, 0.85].iter().map(|t| (u.0 + (v.0 - u.0) * t, u.1 + (v.1 - u.1) * t)).collect()).unwrap_or_default()
+                        }
+                        // a circle along its rim, from the top round
+                        qymcad_core::model::EntityKind::Circle { center, r } => at(center)
+                            .map(|c| [90.0f64, 45.0, 135.0, 0.0, 180.0, 225.0, 315.0, 270.0].iter().map(|deg| (c.0 + r * deg.to_radians().cos(), c.1 + r * deg.to_radians().sin())).collect())
+                            .unwrap_or_default(),
+                        _ => Vec::new(),
                     })
-                    .map(|(u, v)| [0.5, 0.37, 0.63, 0.25, 0.75, 0.15, 0.85].iter().map(|t| (u.0 + (v.0 - u.0) * t, u.1 + (v.1 - u.1) * t)).collect())
                     .unwrap_or_default(),
             })
             .collect()
@@ -349,12 +502,7 @@ impl<'a> Hand<'a> {
     fn in_view2d(&mut self, places: &[(f64, f64)]) {
         self.app.viewing.mode_3d = false;
         self.frame(Vec::new()); // the canvas as this frame lays it out, with the view as it now stands
-                                // A REBUILD UNDER WAY REFUSES INPUT, and a person waits for its spinner to go before pressing anything.
-        let waiting = std::time::Instant::now();
-        while self.app.regen.busy.is_some() && waiting.elapsed() < std::time::Duration::from_secs(60) {
-            std::thread::sleep(std::time::Duration::from_millis(20));
-            self.frame(Vec::new());
-        }
+        self.rebuild_gone();
         let canvas = self.app.viewing.view_rect.shrink(40.0);
         if places.iter().any(|p| !canvas.contains(self.screen2d(*p))) {
             let n = places.len().max(1) as f64;
@@ -364,13 +512,32 @@ impl<'a> Hand<'a> {
         }
     }
 
+    /// WHERE THE BOX OF THE CORNER TOOLS STANDS on screen, as the last frame laid it out; `None` while it is not up. The
+    /// box of a set of corners, or the one of "fillet all", which is opened for the whole shape (point 0).
+    pub fn corner_box(&self) -> Option<egui::Rect> {
+        let si = qymcad_ui_state::edit_si(&self.app.project, &self.app.sketch_ses)?;
+        [qymcad_ui_state::CORNER_SET, 0].into_iter().find_map(|pid| self.win.ctx.memory(|m| m.area_rect(egui::Id::new(("cornerinput", si, pid)))))
+    }
+
     /// Where a place of the sketch stands on screen, on the canvas as the last frame laid it out.
+    pub fn on_screen2d(&self, place: (f64, f64)) -> egui::Pos2 {
+        self.screen2d(place)
+    }
+
     fn screen2d(&self, (x, y): (f64, f64)) -> egui::Pos2 {
         (qymcad_ui_state::Sheet { view: self.app.viewing.view, rect: self.app.viewing.view_rect }).at(qymcad_core::geom::Point2::new(x, y))
     }
 
     /// The hand comes over a place and rests there a second - the pause between two gestures of a person - with
     /// two frames of hover, the second being the one the snap reads.
+    /// THE HAND COMES OVER A POINT OF THE SKETCH AND RESTS there, pressing nothing: what stands lit under it is what
+    /// a click would take.
+    pub fn hover2d(&mut self, x: f64, y: f64) -> &mut Self {
+        self.in_view2d(&[(x, y)]);
+        self.rest_over2d((x, y));
+        self
+    }
+
     fn rest_over2d(&mut self, place: (f64, f64)) -> egui::Pos2 {
         let at = self.screen2d(place);
         self.win.clock += 1.0;
@@ -572,6 +739,20 @@ impl<'a> Hand<'a> {
         })
     }
 
+    /// THE SEGMENTS OF `colour` THE LAST FRAME DREW, where they stand on screen: a dashed line is drawn as its dashes.
+    pub fn segments_in(&self, colour: egui::Color32) -> Vec<[egui::Pos2; 2]> {
+        fn walk(s: &egui::Shape, colour: egui::Color32, out: &mut Vec<[egui::Pos2; 2]>) {
+            match s {
+                egui::Shape::LineSegment { points, stroke } if stroke.color == colour => out.push(*points),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, colour, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        self.win.shapes.iter().for_each(|cs| walk(&cs.shape, colour, &mut out));
+        out
+    }
+
     /// HOW MANY STROKES OF `colour` THE FRAME DRAWS NEAR THE POINTER, the hand resting over `place` of the sketch: a
     /// path or a segment with a point within 40 px of it. What follows the pointer is drawn there.
     pub fn strokes_near2d(&mut self, place: (f64, f64), colour: egui::Color32) -> usize {
@@ -640,6 +821,162 @@ impl<'a> Hand<'a> {
         self.type_text(&format!("{deg}"));
         self.key(egui::Key::Enter);
         self.close_window()
+    }
+
+    /// NAME A SET OF CORNERS AND CUT THEM ALL WITH ONE ANSWER: the corner tool by its button, then a click with
+    /// Shift on each of the lines, then the value typed into the field that stands up at the first corner, and
+    /// Enter - every one of it a key or a click in a whole frame of the window.
+    ///
+    /// `lines` are `(1, id)` items of the sketch. A place to click is found for each of them BEFORE the first click
+    /// and looked up again before every one of the next, because the field stands where the first corner was named
+    /// and its buttons take a click before a line does. Answers whether a place was found for all of them: a hand
+    /// that cannot reach the third line must not have taken the tool either, since it would be standing over half
+    /// a contour.
+    pub fn sk_corner_set(&mut self, key: &str, lines: &[(u8, u64)], value: f64) -> bool {
+        self.sk_corner_set_in(key, None, lines, value)
+    }
+
+    /// THE SAME IN A MODE OF THE TOOL: after the tool is taken, the word of the mode on its bar is pressed - "two
+    /// distances", "chord" - as a person picks it before naming the corners.
+    pub fn sk_corner_set_in(&mut self, key: &str, mode: Option<&str>, lines: &[(u8, u64)], value: f64) -> bool {
+        if !self.sk_corner_typed(key, mode, lines, value) {
+            return false;
+        }
+        self.key(egui::Key::Enter);
+        self.close_window();
+        true
+    }
+
+    /// THE SAME UP TO THE VALUE TYPED, and no Enter: the tool stands with its set named and the value in its field,
+    /// as a person looks at the preview before answering. The window stays open.
+    pub fn sk_corner_typed(&mut self, key: &str, mode: Option<&str>, lines: &[(u8, u64)], value: f64) -> bool {
+        let places = self.places_on2d(lines);
+        let all: Vec<(f64, f64)> = places.iter().flatten().copied().collect();
+        let n = all.len().max(1) as f64;
+        self.sk_tool(0); // the canvas is in view and the sketch is the selection, whatever was in hand
+        self.look2d(all.iter().fold((0.0, 0.0), |(sx, sy), (x, y)| (sx + x / n, sy + y / n)));
+        self.in_view2d(&all);
+        if !lines.iter().zip(&places).all(|(item, places)| places.iter().any(|p| self.picks2d(*p) == Some(*item))) {
+            self.close_window();
+            return false;
+        }
+        self.press_hint_or_fail(key);
+        if let Some(word) = mode {
+            assert!(self.press_word(&crate::i18n::tr(word), egui::Pos2::ZERO), "the mode {word} is not on the bar of the tool");
+        }
+        for (item, places) in lines.iter().zip(&places) {
+            // THE FIELD OF THE CORNER ALREADY NAMED STANDS WHERE IT WAS NAMED, and a click on its buttons answers
+            // the field rather than joining the set - so the place is looked up again now, not only before the tool
+            // was taken. The line goes in the set or the hand does not go on.
+            let Some(spot) = places.iter().copied().find(|p| self.picks2d(*p) == Some(*item)) else {
+                self.close_window();
+                return false;
+            };
+            self.press_at2d(egui::Modifiers::SHIFT, spot);
+        }
+        self.frame(Vec::new()); // the field takes the focus
+        self.type_text(&format!("{value}"));
+        true
+    }
+
+    /// THE FIELDS OF THE TOP BAR THAT HAVE NO CAPTION BEFORE THEM, the next frame drawn: a field above the canvas with no
+    /// words to its left on the same row, or with another field between it and the nearest words.
+    pub fn bar_fields_without_caption(&mut self) -> Vec<egui::Rect> {
+        self.frame(Vec::new());
+        let top = self.app.viewing.view_rect.top();
+        let field = |k: &super::window::Kind| matches!(k, super::window::Kind::TextField | super::window::Kind::Number);
+        let fields: Vec<egui::Rect> = self.win.widgets.iter().filter(|w| field(&w.kind) && w.rect.bottom() <= top).map(|w| w.rect).collect();
+        let row = |a: &egui::Rect, b: &egui::Rect| (a.center().y - b.center().y).abs() < 6.0;
+        fields
+            .iter()
+            .filter(|f| {
+                let caption = self
+                    .win
+                    .drawn
+                    .iter()
+                    .filter(|(t, r)| !t.trim().is_empty() && t.trim().parse::<f64>().is_err() && row(r, f) && r.right() <= f.left() + 1.0)
+                    .map(|(_, r)| r.right())
+                    .fold(f32::NEG_INFINITY, f32::max);
+                caption.is_infinite() || fields.iter().any(|g| g != *f && row(g, f) && g.left() >= caption && g.right() <= f.left() + 1.0)
+            })
+            .copied()
+            .collect()
+    }
+
+    /// TYPE `text` INTO THE FIELD THAT STANDS RIGHT AFTER `word`, all of what it held replaced, with no Enter. Answers
+    /// whether the word and a field after it were on screen.
+    pub fn type_after_word(&mut self, word: &str, text: &str) -> bool {
+        let Some(at) = self.written_at(word) else { return false };
+        let field = |k: &super::window::Kind| matches!(k, super::window::Kind::TextField | super::window::Kind::Number);
+        let Some(f) = self
+            .win
+            .widgets
+            .iter()
+            .filter(|w| field(&w.kind) && w.rect.left() >= at.right() - 1.0 && (w.rect.center().y - at.center().y).abs() < 6.0)
+            .map(|w| w.rect)
+            .min_by(|a, b| a.left().total_cmp(&b.left()))
+        else {
+            return false;
+        };
+        self.press_screen(f.center());
+        self.chord(egui::Modifiers::COMMAND, egui::Key::A);
+        self.type_text(text);
+        true
+    }
+
+    /// THE SMALL RINGS OF `radius` px THE LAST FRAME DREW, where they stand on screen: the marks a preview puts where a
+    /// line will be cut.
+    pub fn rings_drawn(&self, radius: f32) -> Vec<egui::Pos2> {
+        self.circles_drawn(radius, |_| true)
+    }
+
+    /// THE FILLED DOTS OF `radius` px THE LAST FRAME DREW, where they stand on screen: the points of a sketch, and not
+    /// the outlined marker of the origin, which is a ring of the same 3.5 px.
+    pub fn dots_drawn(&self, radius: f32) -> Vec<egui::Pos2> {
+        self.circles_drawn(radius, |c| c.fill != egui::Color32::TRANSPARENT)
+    }
+
+    /// THE BADGES IN `colour` THE LAST FRAME DREW, by their centres: the filled squares of 14 px a constraint is shown in,
+    /// the live preview of a tie that a drawing tool is about to lay among them.
+    pub fn badges_in(&self, colour: egui::Color32) -> Vec<egui::Pos2> {
+        fn walk(s: &egui::Shape, colour: egui::Color32, out: &mut Vec<egui::Pos2>) {
+            match s {
+                egui::Shape::Rect(r) if r.fill == colour && (r.rect.width() - 14.0).abs() < 0.5 && (r.rect.height() - 14.0).abs() < 0.5 => out.push(r.rect.center()),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, colour, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        self.win.shapes.iter().for_each(|cs| walk(&cs.shape, colour, &mut out));
+        out
+    }
+
+    /// THE FILLED DOTS OF `radius` px IN `colour` THE LAST FRAME DREW: the points of a sketch drawn free, or defined.
+    pub fn dots_in(&self, radius: f32, colour: egui::Color32) -> Vec<egui::Pos2> {
+        fn walk(s: &egui::Shape, dot: &egui::epaint::CircleShape, out: &mut Vec<egui::Pos2>) {
+            match s {
+                egui::Shape::Circle(c) if (c.radius - dot.radius).abs() < 1e-3 && c.fill == dot.fill => out.push(c.center),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, dot, out)),
+                _ => {}
+            }
+        }
+        let dot = egui::epaint::CircleShape::filled(egui::Pos2::ZERO, radius, colour);
+        let mut out = Vec::new();
+        self.win.shapes.iter().for_each(|cs| walk(&cs.shape, &dot, &mut out));
+        out
+    }
+
+    fn circles_drawn(&self, radius: f32, takes: fn(&egui::epaint::CircleShape) -> bool) -> Vec<egui::Pos2> {
+        fn walk(s: &egui::Shape, radius: f32, takes: fn(&egui::epaint::CircleShape) -> bool, out: &mut Vec<egui::Pos2>) {
+            match s {
+                egui::Shape::Circle(c) if (c.radius - radius).abs() < 1e-3 && takes(c) => out.push(c.center),
+                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, radius, takes, out)),
+                _ => {}
+            }
+        }
+        let mut out = Vec::new();
+        self.win.shapes.iter().for_each(|cs| walk(&cs.shape, radius, takes, &mut out));
+        out
     }
 
     /// A LEFTOVER SELECTION IS DROPPED WITH Esc before a shape is picked, as a person drops it: the move tool
@@ -827,6 +1164,26 @@ impl<'a> Hand<'a> {
         self.close_window()
     }
 
+    /// Ctrl+X, as egui hands it over: an event of its own.
+    pub fn cut(&mut self) -> &mut Self {
+        self.frame_holding(egui::Modifiers::COMMAND, vec![egui::Event::Cut]);
+        self.close_window()
+    }
+
+    /// Ctrl+V, AS egui HANDS IT OVER IN A LIVE WINDOW: a paste event with the text of the system clipboard, and only when
+    /// that clipboard holds some - with it empty the keys bring nothing at all. The system clipboard of the hand is what
+    /// the program put there (`Window::copied`). Reported behaviour: "Ctrl+V does not paste (Edit -> Paste works)" - a
+    /// copy of sketch geometry left the system clipboard empty, and a paste event handed over regardless hid it.
+    ///
+    /// A FRAME GOES BY FIRST, as in a live window, which draws on between a click and the next key: what a click asked of
+    /// the system is handed over in the frame after it.
+    pub fn paste(&mut self) -> &mut Self {
+        self.frame(Vec::new());
+        let events = self.win.copied.last().filter(|t| !t.is_empty()).map(|t| vec![egui::Event::Paste(t.clone())]).unwrap_or_default();
+        self.frame_holding(egui::Modifiers::COMMAND, events);
+        self.close_window()
+    }
+
     /// DRAG WITH THE MOUSE from one place of the sketch to another: press, lead, release, in whole frames, and
     /// the window closes after it. What is taken is what the window takes - a point, a dimension, a label, or
     /// nothing and a band of selection.
@@ -836,17 +1193,43 @@ impl<'a> Hand<'a> {
     /// that jumped 40 px in one frame would start its drag with the point already out of reach, which is not what
     /// a person's hand does.
     pub fn drag2d(&mut self, from: (f64, f64), to: (f64, f64)) -> &mut Self {
+        self.drag2d_held(Drag2d { from, to, button: egui::PointerButton::Primary, modifiers: egui::Modifiers::NONE })
+    }
+
+    /// THE SAME DRAG WITH `drag.button`, the keys of `drag.modifiers` held through every frame of it.
+    pub fn drag2d_held(&mut self, drag: Drag2d) -> &mut Self {
+        let Drag2d { from, to, button, modifiers } = drag;
         self.in_view2d(&[from, to]);
         let a = self.rest_over2d(from);
         let b = self.screen2d(to);
-        let press = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-        self.frame(vec![press(a, true)]);
+        let press = |pos, pressed| egui::Event::PointerButton { pos, button, pressed, modifiers };
+        self.frame_holding(modifiers, vec![press(a, true)]);
+        let steps = ((b - a).length() / 3.0).ceil().max(1.0) as usize;
+        for k in 1..=steps {
+            self.frame_holding(modifiers, vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
+        }
+        self.frame_holding(modifiers, vec![press(b, false)]);
+        self.close_window()
+    }
+
+    /// A DRAG NOT LET GO: the left button pressed at `from` and led to `to` in steps of 3 px, still held - what the
+    /// window shows in the middle of a drag. `release2d` ends it.
+    pub fn drag2d_begun(&mut self, from: (f64, f64), to: (f64, f64)) -> &mut Self {
+        self.in_view2d(&[from, to]);
+        let a = self.rest_over2d(from);
+        let b = self.screen2d(to);
+        self.frame(vec![egui::Event::PointerButton { pos: a, button: egui::PointerButton::Primary, pressed: true, modifiers: egui::Modifiers::NONE }]);
         let steps = ((b - a).length() / 3.0).ceil().max(1.0) as usize;
         for k in 1..=steps {
             self.frame(vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
         }
-        self.frame(vec![press(b, false)]);
-        self.close_window()
+        self
+    }
+
+    /// LET GO of the left button at `at`, a drag begun by `drag2d_begun` ends there.
+    pub fn release2d(&mut self, at: (f64, f64)) -> &mut Self {
+        let pos = self.screen2d(at);
+        self.frame(vec![egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed: false, modifiers: egui::Modifiers::NONE }])
     }
 
     /// DRAG WITH THE MOUSE from one point of the scene to another, given in world coordinates and seen through the
@@ -857,15 +1240,22 @@ impl<'a> Hand<'a> {
         let basis = self.app.viewing.cam.basis();
         let scr = qymcad_ui_state::Screen { cam: &self.app.viewing.cam, set: &self.app.set, rect: self.app.viewing.view_rect, basis: &basis };
         let (a, b) = (scr.at(from).0, scr.at(to).0);
+        self.drag_screen(a, b)
+    }
+
+    /// DRAG WITH THE MOUSE from one point of the screen to another: the hand comes over `from`, presses, leads in
+    /// steps of 3 px and releases, in whole frames. What is taken is what lies under `from` - the title of a
+    /// window, a handle, or the canvas.
+    pub fn drag_screen(&mut self, from: egui::Pos2, to: egui::Pos2) -> &mut Self {
         self.win.clock += 1.0;
-        self.frame(vec![egui::Event::PointerMoved(a)]);
+        self.frame(vec![egui::Event::PointerMoved(from)]);
         let press = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
-        self.frame(vec![press(a, true)]);
-        let steps = ((b - a).length() / 3.0).ceil().max(1.0) as usize;
+        self.frame(vec![press(from, true)]);
+        let steps = ((to - from).length() / 3.0).ceil().max(1.0) as usize;
         for k in 1..=steps {
-            self.frame(vec![egui::Event::PointerMoved(a + (b - a) * (k as f32 / steps as f32))]);
+            self.frame(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / steps as f32))]);
         }
-        self.frame(vec![press(b, false)])
+        self.frame(vec![press(to, false)])
     }
 
     /// Whether a text field holds the keyboard - a caret blinking in it.
@@ -942,5 +1332,29 @@ mod tests {
         let made = app.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Fillet { .. }));
         assert!(made, "a click on an edge and Enter must create a fillet; status: {}", app.status);
         assert!(app.project.regen_errors.is_empty(), "and it must build: {:?}", app.project.regen_errors);
+    }
+
+    /// A BUTTON IS LOOKED FOR ONCE THE REBUILD HAS GONE: while the model rebuilds, its card lies over the window and no
+    /// hint comes up under the pointer. The kernel held by a neighbour for 8 s - as a heavy check beside this one holds
+    /// it - and the rectangle is still found by its hint.
+    ///
+    /// Measured in a run of the whole crate: the card "Rebuilding the model" stood over the window for the whole search,
+    /// 70 buttons rested over, and the rectangle was reported missing from a panel that had it.
+    #[test]
+    fn a_button_is_found_after_the_rebuild_card_goes() {
+        let (held, holding) = std::sync::mpsc::channel();
+        let neighbour = std::thread::spawn(move || {
+            let _gate = qymcad_kernel::kernel_gate();
+            held.send(()).expect("the probe waits for the kernel to be held");
+            std::thread::sleep(std::time::Duration::from_secs(8));
+        });
+        holding.recv().expect("the neighbour holds the kernel");
+        let (mut app, _ctx) = crate::gui::import_door::tests::running();
+        let si = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        let mut hand = Hand::new(&mut app);
+        hand.app.enter_sketch_edit(si);
+        hand.sk_tool(2);
+        assert_eq!(hand.app.tools.armed.draw_kind(), 2, "the rectangle was not taken");
+        neighbour.join().expect("the neighbour lets the kernel go");
     }
 }

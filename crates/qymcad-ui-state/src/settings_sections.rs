@@ -70,7 +70,7 @@ impl SettingsSection {
                 "settings-recent-limit",
                 "settings-profile",
             ],
-            Appearance => &["settings-scheme", "settings-ui-scale"],
+            Appearance => &["settings-scheme", "settings-ui-scale", "settings-icon-themes"],
             Viewport => &[
                 "settings-engine",
                 "settings-projection",
@@ -84,12 +84,14 @@ impl SettingsSection {
                 "settings-fov",
                 "settings-msaa",
                 "settings-frame-time",
+                "settings-graphics-adapter",
             ],
             Sketch => &[
                 "settings-snap-on",
                 "settings-grid-step",
                 "settings-rot-step",
                 "settings-auto-constrain",
+                "settings-point-numbers",
                 "settings-dim-name",
                 "settings-dim-formula",
                 "settings-dim-font",
@@ -145,6 +147,10 @@ impl SettingsSection {
             Appearance => {
                 s.scheme = d.scheme;
                 s.ui_scale = d.ui_scale;
+                s.active_icon_packs = d.active_icon_packs;
+                s.inactive_icon_packs = d.inactive_icon_packs;
+                s.icon_dev_watch = d.icon_dev_watch;
+                s.watched_icon_packs = d.watched_icon_packs;
             }
             Viewport => {
                 s.gpu_viewport = d.gpu_viewport;
@@ -164,6 +170,7 @@ impl SettingsSection {
             Sketch => {
                 s.snap = d.snap;
                 s.auto_constrain = d.auto_constrain;
+                s.show_point_numbers = d.show_point_numbers;
                 (s.dim_show_name, s.dim_show_formula, s.dim_font, s.dim_text) = (d.dim_show_name, d.dim_show_formula, d.dim_font, d.dim_text);
             }
             Part => s.defaults = d.defaults,

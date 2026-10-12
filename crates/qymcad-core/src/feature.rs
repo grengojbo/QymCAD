@@ -221,6 +221,11 @@ impl PlaneFrame {
         for v in &mut mesh.verts {
             *v = self.lift3(*v);
         }
+        for n in &mut mesh.norms {
+            if let Some(d) = crate::geom::unpack_direction(*n) {
+                *n = crate::geom::pack_direction(self.rotate_dir(d));
+            }
+        }
         for f in &mut faces {
             f.centroid = self.lift3(f.centroid);
             f.normal = self.rotate_dir(f.normal);
@@ -2232,6 +2237,13 @@ pub trait Kernel {
     /// stays on one thread - which is the honest answer for a mock.
     fn split_off(&self, _bodies: &[Id]) -> Option<Box<dyn KernelWorker>> {
         None
+    }
+
+    /// Whether two live bodies share a sub-shape (a face or an edge). The batch rebuild asks this to keep bodies
+    /// that share geometry on one worker thread: meshing or healing a shared sub-shape on two threads at once is not
+    /// safe. The default is `false` - a kernel whose bodies never share geometry, or a test stub, needs no grouping.
+    fn shares(&self, _a: Id, _b: Id) -> bool {
+        false
     }
 
     /// The bodies come home: the shapes the worker was given, plus whatever it built.

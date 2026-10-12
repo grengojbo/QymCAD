@@ -277,6 +277,12 @@ pub(crate) fn finish_click(s: &mut Session, x: f64, y: f64, last: Finish) {
             let at = s.on_sketch(x, y);
             s.double_click(at);
         }
+        Finish::EnterAt((px, py)) => {
+            s.click_on_sketch(x, y);
+            let at = s.on_sketch(px, py);
+            s.move_to(at);
+            s.key(Key::Enter);
+        }
     }
 }
 
@@ -329,6 +335,21 @@ fn finish_with(s: &mut Session, tool: &Tool, field: &Field, text: &str) {
         type_into_field(s, field, text);
         enter_key(s);
     }
+}
+
+/// THE WORDS DRAWN IN THE BOX A FIELD STANDS IN, below the field itself: what the box says about the value in it.
+///
+/// The search is bounded on purpose. Everything under the field on the sheet is not the box - the status line and the
+/// coordinates stand there too - so only the words that lie within a hand's width below the field and no higher than
+/// it are taken, and the field's own text is left out because the value is not a reason.
+fn words_in_the_box(s: &mut Session, field: &qymcad::Widget) -> Vec<String> {
+    let below = field.rect.max.y;
+    let limit = below + 40.0;
+    s.painted()
+        .into_iter()
+        .filter(|(r, text)| !text.is_empty() && r.min.y >= below - 2.0 && r.max.y <= limit && r.max.x >= field.rect.min.x - 40.0 && !text.trim().eq_ignore_ascii_case(field.value.trim()))
+        .map(|(_, text)| text)
+        .collect()
 }
 
 /// WHERE THE FIELD `f` STANDS on screen.
@@ -1146,8 +1167,18 @@ fn valid_values(tool: &Tool) {
     // the unit as a Russian keyboard types it: "mm" in Cyrillic
     for text in [fmt(habit).replace('.', ","), format!("{}mm", fmt(habit)), format!("{} \u{43c}\u{43c}", fmt(habit))] {
         let mut s = value_ready(tool, f, &text);
+        // THE DOCUMENT AS THE FIELD STANDS OPEN is what the value is judged against: a field filled after the last click
+        // may stand on what that click made - a diameter laid on a circle that had none - and that is the click's work
+        if f.when == When::After {
+            finish(&mut s, tool);
+        }
         let before = shape_of(&s.document());
-        finish_with(&mut s, tool, f, &text);
+        if f.when == When::After {
+            type_into_field(&mut s, f, &text);
+            enter_key(&mut s);
+        } else {
+            finish(&mut s, tool);
+        }
         let doc = s.document();
         if shape_of(&doc) != before && matches(&mut s, &(f.outcome)(habit)).is_err() {
             problems.push(format!("{text:?} gave another number without a word: {:?}", the_body(&doc).map(|b| b.volume)));
@@ -1179,7 +1210,6 @@ fn invalid_values(tool: &Tool) {
     for f in tool.fields {
         for text in invalid_inputs(f) {
             let mut s = ready(tool);
-            let before = shape_of(&s.document());
             if f.when == When::After {
                 finish(&mut s, tool);
                 if field_if_there(&mut s, f).is_none() {
@@ -1187,12 +1217,20 @@ fn invalid_values(tool: &Tool) {
                     break;
                 }
             }
+            // as the field stands open: what Enter does with a refused value is judged, not what the last click made
+            let before = shape_of(&s.document());
             type_into_field(&mut s, f, &text);
             let caption = s.word(f.caption);
             let field = field_of(&mut s, f);
             let apply = s.word("cmd-apply-enter");
             let apply_enabled = s.widgets().iter().any(|w| w.label == apply && w.enabled);
-            let reason = s.hint_at(pos2(field.rect.max.x + 10.0, field.rect.center().y));
+            // WHY THE VALUE IS REFUSED IS READ WHERE A PERSON READS IT: the words drawn in the box beside the field, and the
+            // hint that comes up over the mark next to it. The box was not read at all: a reason said only as a tooltip
+            // exists while the pointer rests on the glyph beside it, and a person reading back what they typed has
+            // their eyes on the field, not on a mark they have to find first - so the words stand in the box, and a
+            // check that looked for a tooltip and found none reported a tool that says nothing.
+            let mut reason = words_in_the_box(&mut s, &field);
+            reason.extend(s.hint_at(pos2(field.rect.max.x + 10.0, field.rect.center().y)));
             if f.when == When::Before {
                 finish(&mut s, tool);
             } else {
@@ -1401,7 +1439,7 @@ fn cancel(tool: &Tool) {
         }
         // WHAT WAS CANCELLED CANNOT BE FINISHED: the click that would have made the shape makes none of it now - it
         // begins a new one at most
-        if let (true, Flow::Drawing([_, .., (x, y)], Finish::LastClick | Finish::Placed)) = (how == "Esc", tool.flow) {
+        if let (true, Flow::Drawing([_, .., (x, y)], Finish::LastClick | Finish::Placed | Finish::EnterAt(_))) = (how == "Esc", tool.flow) {
             s.click_on_sketch(*x, *y);
         }
         if shape_of(&s.document()) != doc {

@@ -69,11 +69,12 @@ mod tests {
     /// splines alone was not taken for one that can be edited.
     #[test]
     fn the_nodes_of_a_lone_spline_are_dragged() {
-        let drawn = vec![vec![(0.0, 0.0), (20.0, 10.0), (40.0, 0.0)]];
+        // off the axes: a node put on one is held there
+        let drawn = vec![vec![(10.0, 10.0), (30.0, 20.0), (50.0, 10.0)]];
         let mut problems = Vec::new();
-        for (node, to) in [(0usize, (0.0, -10.0)), (1, (20.0, 25.0)), (2, (45.0, -8.0))] {
+        for (node, to) in [(0usize, (10.0, 0.5)), (1, (30.0, 35.0)), (2, (55.0, 2.0))] {
             let (mut app, si) = a_sketch();
-            Hand::new(&mut app).sk_tool(9).click2d(0.0, 0.0).click2d(20.0, 10.0).double_click2d(40.0, 0.0);
+            Hand::new(&mut app).sk_tool(9).click2d(10.0, 10.0).click2d(30.0, 20.0).double_click2d(50.0, 10.0);
             assert_eq!(spline_nodes(&app, si), drawn, "setup: the spline as clicked");
             Hand::new(&mut app).sk_tool(0).drag2d(drawn[0][node], to);
             let got = spline_nodes(&app, si)[0][node];
