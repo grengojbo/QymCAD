@@ -274,7 +274,7 @@ fn a_lofted_body_holds_the_bar() {
     let sid1 = p.sketches[s1].id;
     // THE SECOND SECTION SITS ON A DATUM PLANE: SketchPlane carries no offset, so the height comes
     // from the datum.
-    let pl = p.add_plane(WorkPlane { id: 0, name: "z20".into(), origin: [0.0, 0.0, 20.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "z20".into(), origin: [0.0, 0.0, 20.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     p.sketches[s1].plane = SketchPlane::Datum(pl);
     p.add_sketch_node(sid1, "top");
     p.add_circle_entity(s1, 0.0, 0.0, 5.0, qymcad_core::feature::Purpose::Real);
@@ -559,7 +559,7 @@ fn a_split_by_a_tilted_datum_holds_the_bar() {
     p.new_document();
     let body = box_body(&mut p, 24.0, 18.0, 12.0);
     let n = (1.0f64 / 3.0f64.sqrt(), 1.0 / 3.0f64.sqrt(), 1.0 / 3.0f64.sqrt());
-    let pl = p.add_plane(WorkPlane { id: 0, name: "tilted".into(), origin: [12.0, 9.0, 6.0], normal: [n.0, n.1, n.2], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "tilted".into(), origin: [12.0, 9.0, 6.0], normal: [n.0, n.1, n.2], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     let pieces = p.add_split_body(body, 0, pl, 0.0, 2);
     qymcad_testkit::regenerate(&mut p);
     assert_eq!(pieces.len(), 2, "a tilted split must yield two pieces");
@@ -653,7 +653,7 @@ fn a_three_section_loft_holds_the_bar() {
         let si = p.new_sketch(name);
         let sid = p.sketches[si].id;
         if z > 0.0 {
-            let pl = p.add_plane(WorkPlane { id: 0, name: name.into(), origin: [0.0, 0.0, z], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+            let pl = p.add_plane(WorkPlane { id: 0, name: name.into(), origin: [0.0, 0.0, z], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
             p.sketches[si].plane = SketchPlane::Datum(pl);
         }
         p.add_sketch_node(sid, name);
@@ -857,7 +857,7 @@ fn a_loft_between_unlike_sections_holds_the_bar() {
     p.add_circle_entity(s0i, 0.0, 0.0, 9.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(s0i);
     let c0 = p.sketches[s0i].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("circle contour");
-    let pl = p.add_plane(WorkPlane { id: 0, name: "z18".into(), origin: [0.0, 0.0, 18.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "z18".into(), origin: [0.0, 0.0, 18.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     let s1i = p.new_sketch("square");
     let s1 = p.sketches[s1i].id;
     p.sketches[s1i].plane = SketchPlane::Datum(pl);
@@ -1225,7 +1225,7 @@ fn a_shell_on_a_loft_holds_the_bar() {
     p.add_circle_entity(s0, 0.0, 0.0, 20.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(s0);
     let c0 = p.sketches[s0].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("bottom contour");
-    let pl = p.add_plane(WorkPlane { id: 0, name: "z18".into(), origin: [0.0, 0.0, 18.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "z18".into(), origin: [0.0, 0.0, 18.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     let s1 = p.new_sketch("top");
     let sid1 = p.sketches[s1].id;
     p.sketches[s1].plane = SketchPlane::Datum(pl);
@@ -1462,7 +1462,7 @@ fn holes_through_a_loft_hold_the_bar() {
     p.add_circle_entity(s0, 0.0, 0.0, 30.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(s0);
     let c0 = p.sketches[s0].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("bottom contour");
-    let pl = p.add_plane(WorkPlane { id: 0, name: "z16".into(), origin: [0.0, 0.0, 16.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "z16".into(), origin: [0.0, 0.0, 16.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     let s1 = p.new_sketch("top");
     let sid1 = p.sketches[s1].id;
     p.sketches[s1].plane = SketchPlane::Datum(pl);
@@ -1549,7 +1549,7 @@ fn a_chamfer_on_a_loft_edge_holds_the_bar() {
     p.add_circle_entity(s0, 0.0, 0.0, 30.0, qymcad_core::feature::Purpose::Real);
     p.regen_sketch(s0);
     let c0 = p.sketches[s0].contour_ids.iter().copied().find(|c| p.contour_profile_xy(*c).is_some()).expect("bottom contour");
-    let pl = p.add_plane(WorkPlane { id: 0, name: "z14".into(), origin: [0.0, 0.0, 14.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: Default::default() });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "z14".into(), origin: [0.0, 0.0, 14.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: Default::default() });
     let s1 = p.new_sketch("top");
     let sid1 = p.sketches[s1].id;
     p.sketches[s1].plane = SketchPlane::Datum(pl);

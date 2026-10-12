@@ -112,3 +112,29 @@ probe! {
         assert!(bodies.len() == 1 && (bodies[0] - want).abs() < 0.01 * want, "the region of the spline and the two lines, 10 long, holds {want}; the bodies hold {bodies:?}; the program says {:?}", s.status());
     }
 }
+
+probe! {
+    /// THE FIELDS OF AN EXTRUSION STAND BESIDE ITS ARROW, clear of it: a rectangle 40 x 30 on XY taken by the extrusion,
+    /// its arrow from the middle of the profile, (20, 15, 0), to (20, 15, 10) - every point of the arrow on the screen is
+    /// 20 px or more from the words of the box of its length. Reported behaviour: the box stood against the tip of the
+    /// arrow, and the arrow could hardly be seen or taken.
+    fn the_fields_of_an_extrusion_stand_beside_its_arrow() {
+        let mut s = Session::start();
+        build::into_the_first_part(&mut s);
+        build::rectangle_on_xy(&mut s);
+        let finish = s.word("wb-finish");
+        s.press_word(&finish);
+        let extrude = s.word("tb-extrude-hint");
+        s.press_hint(&extrude);
+        let (base, tip) = (s.projected([20.0, 15.0, 0.0]), s.projected([20.0, 15.0, 10.0]));
+        let length = s.word("f-length");
+        // the box of the length: its words within 300 px of the tip, the bars of the window far above it left out
+        let canvas = s.canvas();
+        let boxes: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(_, r)| r.min.y > canvas.min.y && r.center().distance(tip) < 300.0).map(|(_, r)| r.expand(2.0)).collect();
+        assert!(s.words_at().iter().any(|(w, r)| *w == length && r.center().distance(tip) < 300.0), "setup: no box of the length beside the arrow; on screen {:?}", s.words());
+        // how near the arrow comes to the box: the nearest of its points to the nearest word of the box
+        let gap = (0..=20).map(|k| base + (tip - base) * (k as f32 / 20.0)).flat_map(|p| boxes.iter().map(move |r| r.distance_to_pos(p))).fold(f32::INFINITY, f32::min);
+        let near: Vec<(String, qymcad::Rect)> = s.words_at().into_iter().filter(|(_, r)| r.center().distance(tip) < 120.0).collect();
+        assert!(gap >= 20.0, "the arrow from {base:?} to {tip:?} comes {gap:.1} px from the box of its length - it stands on the arrow; near: {near:?}");
+    }
+}

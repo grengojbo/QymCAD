@@ -3863,6 +3863,22 @@ pub struct DeferredUi {
     /// with a spinner so that the program would not seem silent. And silent it was: on Save the interface went
     /// into a blocking `wait_bg` and no frame was drawn at all.
     pub nav_after_save: bool,
+    /// THE ROWS OF THE TREE PICKED TOGETHER when the delete was asked, by their ids: the question names them all, and
+    /// a yes deletes each. Empty when one thing is asked.
+    pub delete_group: Vec<Id>,
+    /// What a group delete has still to delete, one node a frame (`next_of_a_group_delete`).
+    pub delete_queue: DeleteQueue,
+}
+
+/// THE NODES A GROUP DELETE HAS STILL TO DELETE, by their ids, and whether what stands on them goes too. One a frame,
+/// each found again by its id: deleting one moves the places of the rest in their lists.
+#[derive(Clone, Default)]
+pub struct DeleteQueue {
+    pub ids: Vec<Id>,
+    pub dependents: bool,
+    /// THE ONE STEP OF UNDO the whole group is, open from the yes until the last node is deleted: each delete opens a
+    /// step of its own inside it, and a nested step only counts down (`commit_edit`). Its name while open.
+    pub step: Option<String>,
 }
 
 /// THE RENAME INPUT: what is being renamed and what has been typed.
@@ -5339,7 +5355,7 @@ pub struct Painting<'a> {
     /// the chamfer in hand: its mode and its reference face, which the preview lays the legs by
     pub chamfer: ChamferParams,
     pub edges: &'a EdgeCache,
-    pub face_arrow_drag: Option<f64>,
+    pub handle_drag: Option<Handle>,
     pub feat: FeatTarget,
     pub gpu_ok: bool,
     pub gsel: &'a GeomSelection,
@@ -7348,8 +7364,8 @@ pub struct Dragged {
     pub body_giz: BodyGizmo,
     /// Dragging the rollback bar along the timeline.
     pub rollback: RollbackDrag,
-    /// The arrow on a face being dragged: how far it has travelled.
-    pub face_arrow_drag: Option<f64>,
+    /// THE HANDLE OF THE COMMAND BEING DRAGGED, by the value it drives (`handles`).
+    pub handle_drag: Option<Handle>,
     /// Pulling a part by a degree of freedom: which one, from where, in which direction.
     pub part_pull: Option<(Id, [f64; 3], [f64; 3])>,
 }
@@ -8984,11 +9000,10 @@ pub fn tangent_radius_to_edge(dc: &DrawCtx, si: usize, eref: EdgeRef, p: Point2)
 /// datum (unlike `resolve_mirror_plane`). For a face, the local centroid and normal are taken into
 /// world space through the body's display transform.
 pub fn mirror_plane_world(dc: &DrawCtx, sp: &qymcad_core::feature::SketchPlane) -> Option<([f64; 3], [f64; 3])> {
-    use qymcad_core::feature::{apply12, BasePlane, SketchPlane};
+    use qymcad_core::feature::{apply12, SketchPlane};
     match sp {
-        SketchPlane::World(BasePlane::XY) => Some(([0.0, 0.0, 0.0], [0.0, 0.0, 1.0])),
-        SketchPlane::World(BasePlane::XZ) => Some(([0.0, 0.0, 0.0], [0.0, 1.0, 0.0])),
-        SketchPlane::World(BasePlane::YZ) => Some(([0.0, 0.0, 0.0], [1.0, 0.0, 0.0])),
+        // the side a plane offset from it goes to, as the plane made goes (`BasePlane::offset_direction`)
+        SketchPlane::World(b) => Some(([0.0, 0.0, 0.0], b.offset_direction())),
         SketchPlane::Datum(id) => dc.project.planes.iter().find(|p| p.id == *id).map(|p| (p.origin, p.normal)),
         SketchPlane::Face(body, key) => {
             let ctx = current_ctx_id(dc.active_path, dc.project);
@@ -9537,7 +9552,7 @@ pub fn mesh_center(project: &qymcad_core::model::Project, mi: usize) -> [f64; 3]
 /// direction the operation does not have — that is, it would lie.
 pub fn face_arrow_key(armed: &Armed) -> Option<&'static str> {
     match armed.cmd_kind() {
-        25 => Some("dist"),
+        20 | 25 => Some("dist"),
         6 | 28 => Some("thickness"),
         27 => Some("offset"),
         _ => None,
@@ -9617,8 +9632,263 @@ pub fn cmd_arrow_ref(pn: &Painting) -> Option<([f64; 3], [f64; 3])> {
             Some(([f.centroid.x, f.centroid.y, f.centroid.z], f.normal))
         }
         27 => pn.split.plane.as_ref().and_then(|sp| mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, sp)),
+        // a datum plane: from the reference picked, along the side its offset goes to (`BasePlane::offset_direction`)
+        20 => pn.datum.plane_pick.as_ref().and_then(|sp| mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, sp)),
         _ => None,
     }
+}
+
+/// HOW LONG THE ARROWS OF A POSITION ARE ON THE SCREEN, in pixels: a point or the origin of an axis is moved along X, Y and
+/// Z by arrows of this length whatever the zoom.
+const POSITION_ARROW_PX: f64 = 60.0;
+
+/// HOW WIDE THE RINGS OF A DATUM ARE ON THE SCREEN, in pixels (the radius), whatever the zoom: inside the arrows of a
+/// position (60 px), so the ball at an arrow's tip stands clear of every ring and the two are not taken for each other.
+const DATUM_RING_PX: f64 = 42.0;
+
+/// A HANDLE OF THE COMMAND IN HAND, by the value it drives: an arrow dragged along its direction, a ring turned about its
+/// axis.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Handle {
+    Arrow(&'static str),
+    Ring(&'static str),
+}
+
+/// WHAT TURNING A RING OF A COMMAND CHANGES.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RingTurns {
+    /// The angle field the ring is called by, by the degrees it is turned: a datum plane's tilts and its turn.
+    Field,
+    /// The direction in the fields `dx`, `dy`, `dz`, turned about the ring's axis: a datum axis by hand.
+    Direction,
+}
+
+/// ONE RING OF A COMMAND, as it is drawn and as it is grabbed: one geometry for both.
+pub struct CmdRing {
+    pub center: [f64; 3],
+    /// The unit axis the ring turns about; the ring lies across it.
+    pub axis: [f64; 3],
+    pub radius: f64,
+    /// The field it turns, or the name of the axis it turns the direction about.
+    pub key: &'static str,
+    pub turns: RingTurns,
+}
+
+impl CmdRing {
+    /// The ring as points in the world, closed: 48 chords, as a ring of a body's gizmo.
+    pub fn points(&self) -> Vec<[f64; 3]> {
+        let (u, v) = perp_basis(self.axis);
+        let (c, r) = (self.center, self.radius);
+        (0..=48)
+            .map(|k| {
+                let (s, co) = (f64::from(k) / 48.0 * std::f64::consts::TAU).sin_cos();
+                [c[0] + r * (u[0] * co + v[0] * s), c[1] + r * (u[1] * co + v[1] * s), c[2] + r * (u[2] * co + v[2] * s)]
+            })
+            .collect()
+    }
+}
+
+/// EVERY HANDLE OF THE COMMAND IN HAND: its arrows and its rings.
+pub struct Handles {
+    pub arrows: Vec<CmdArrow>,
+    pub rings: Vec<CmdRing>,
+}
+
+/// The handles of the command in hand (`handle_arrows`, `handle_rings`).
+pub fn handles(pn: &Painting) -> Handles {
+    Handles { arrows: handle_arrows(pn), rings: handle_rings(pn) }
+}
+
+/// THE HANDLE ARROWS OF THE COMMAND IN HAND, as they are drawn and as they are grabbed: the arrow of a value along a
+/// direction (a face pushed, thickened, shelled, a split, a datum plane's offset - `face_arrow_geometry`), or the three
+/// arrows of a position along X, Y and Z (a datum point by its coordinates, a datum axis by its origin). Reported
+/// behaviour: the datum tools had no arrow to drag, their values were typed only.
+pub fn handle_arrows(pn: &Painting) -> Vec<CmdArrow> {
+    if let (Some(key), Some((o, tip, n))) = (face_arrow_key(pn.armed), face_arrow_geometry(pn)) {
+        let len = (tip[0] - o[0]) * n[0] + (tip[1] - o[1]) * n[1] + (tip[2] - o[2]) * n[2];
+        return vec![CmdArrow { base: o, dir: n, len, key }];
+    }
+    let keys: Option<[&'static str; 3]> = match pn.armed.cmd_kind() {
+        21 if pn.datum.pt_mode == 0 => Some(["x", "y", "z"]),
+        22 if pn.datum.axis_mode == 1 => Some(["ox", "oy", "oz"]),
+        _ => None,
+    };
+    let Some(keys) = keys else { return Vec::new() };
+    let base = keys.map(|k| cmd_val(pn.cmd, k));
+    let len = POSITION_ARROW_PX / f64::from(pn.cam.scale).max(1e-9);
+    let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    keys.iter().zip(axes).map(|(&key, dir)| CmdArrow { base, dir, len, key }).collect()
+}
+
+/// THE DATUM PLANE THE COMMAND IN HAND WILL MAKE, as the core makes it (`Project::resolve_plane_into`): the preview and
+/// the rings are drawn from it, so what is seen before Enter is what Enter makes.
+pub struct DatumPlaneMade {
+    /// Where it stands: the reference's origin, moved by the offset to the side the offset goes to.
+    pub origin: [f64; 3],
+    /// Its normal before the tilt, the reference's: the axes of the tilt are taken from it (`PlaneTilt::axes`).
+    pub untilted: [f64; 3],
+    /// Its normal tilted.
+    pub normal: [f64; 3],
+    /// Its turn about the normal, in degrees.
+    pub turn: f64,
+}
+
+/// The datum plane the command in hand will make, once its reference is picked.
+pub fn datum_plane_made(pn: &Painting) -> Option<DatumPlaneMade> {
+    use qymcad_core::feature::{PlaneTilt, SketchPlane};
+    if pn.armed.cmd_kind() != 20 {
+        return None;
+    }
+    let sp = pn.datum.plane_pick.as_ref()?;
+    let (o, side) = mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, sp)?;
+    let l = (side[0] * side[0] + side[1] * side[1] + side[2] * side[2]).sqrt();
+    if l < 1e-9 {
+        return None;
+    }
+    let side = [side[0] / l, side[1] / l, side[2] / l];
+    // a base plane is offset to its positive side, while its normal is its frame's (XZ: +Y against -Y)
+    let untilted = match sp {
+        SketchPlane::World(b) => b.frame().normal(),
+        SketchPlane::Datum(_) | SketchPlane::Face(..) => side,
+    };
+    let d = cmd_val(pn.cmd, "dist");
+    let tilt = PlaneTilt { about_x: cmd_val(pn.cmd, "tilt_x"), about_y: cmd_val(pn.cmd, "tilt_y") };
+    Some(DatumPlaneMade { origin: [o[0] + side[0] * d, o[1] + side[1] * d, o[2] + side[2] * d], untilted, normal: tilt.apply(untilted), turn: cmd_val(pn.cmd, "turn") })
+}
+
+/// THE RINGS OF THE COMMAND IN HAND: a datum plane is tilted about its X and its Y and turned about its normal, a datum
+/// axis by hand has its direction turned about X, Y and Z. Reported behaviour: the axis by hand and the datum plane had
+/// no rings, their direction was typed only.
+pub fn handle_rings(pn: &Painting) -> Vec<CmdRing> {
+    let radius = DATUM_RING_PX / f64::from(pn.cam.scale).max(1e-9);
+    match pn.armed.cmd_kind() {
+        20 => {
+            let Some(m) = datum_plane_made(pn) else { return Vec::new() };
+            let f = qymcad_core::feature::PlaneTilt::axes(m.untilted);
+            let field = |axis: [f64; 3], key: &'static str| CmdRing { center: m.origin, axis, radius, key, turns: RingTurns::Field };
+            vec![field(f.x, "tilt_x"), field(f.y, "tilt_y"), field(m.normal, "turn")]
+        }
+        22 if pn.datum.axis_mode == 1 => {
+            let center = ["ox", "oy", "oz"].map(|k| cmd_val(pn.cmd, k));
+            let axes = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+            ["about_x", "about_y", "about_z"].iter().zip(axes).map(|(&key, axis)| CmdRing { center, axis, radius, key, turns: RingTurns::Direction }).collect()
+        }
+        _ => Vec::new(),
+    }
+}
+
+/// THE HANDLE UNDER THE POINTER, grabbed: a press on it takes the value as it stands, and the field lets go of the
+/// keyboard.
+pub fn grab_handle(ctx: &egui::Context, pn: &Painting, scr: &Screen, pos: Pos2) -> Option<Handle> {
+    let hit = handle_at(pn, scr, pos)?;
+    ctx.memory_mut(|m| m.stop_text_input());
+    Some(hit)
+}
+
+/// The handle whose line passes within 9 px of `pos`, the nearest: the arrows before the rings, as on a body's gizmo -
+/// an arrow's ball stands inside the rings; none elsewhere.
+pub fn handle_at(pn: &Painting, scr: &Screen, pos: Pos2) -> Option<Handle> {
+    let hs = handles(pn);
+    let nearest = |hits: Vec<(&'static str, f32)>| hits.into_iter().filter(|(_, d)| *d <= 9.0).min_by(|x, y| x.1.total_cmp(&y.1)).map(|(k, _)| k);
+    if let Some(k) = nearest(hs.arrows.iter().map(|a| (a.key, screen_dist_seg(pos, scr.at(a.base).0, scr.at(a.tip()).0))).collect()) {
+        return Some(Handle::Arrow(k));
+    }
+    let ring_dist = |r: &CmdRing| {
+        let pts: Vec<Pos2> = r.points().into_iter().map(|p| scr.at(p).0).collect();
+        pts.windows(2).map(|w| screen_dist_seg(pos, w[0], w[1])).fold(f32::MAX, f32::min)
+    };
+    nearest(hs.rings.iter().map(|r| (r.key, ring_dist(r))).collect()).map(Handle::Ring)
+}
+
+/// WHERE THE POINTER IS AND HOW FAR IT WENT this frame, on the screen.
+#[derive(Clone, Copy)]
+pub struct PointerStep {
+    pub at: Pos2,
+    pub by: egui::Vec2,
+}
+
+/// THE HANDLE `held` DRAGGED BY THE POINTER: an arrow adds the pointer's travel along its line, in the units of the world,
+/// to its field; a ring adds the angle the pointer turned about its centre on the screen. The field and the handle are
+/// one value. `hs` are the command's (`handles`).
+pub fn drag_handle(cmd: &mut FeatCommand, regen: &mut Rebuilding, hs: &Handles, held: Option<Handle>, scr: &Screen, step: PointerStep) {
+    let set = |cmd: &mut FeatCommand, key: &str, v: f64, digits: usize| {
+        if let Some(p) = cmd.params.iter_mut().find(|p| p.key == key) {
+            p.val = v;
+            p.txt = format!("{v:.digits$}"); // the field and the handle are one value, not two independent ones
+        }
+    };
+    match held {
+        Some(Handle::Arrow(key)) => {
+            let Some(a) = hs.arrows.iter().find(|a| a.key == key) else { return };
+            let l = POSITION_ARROW_PX / f64::from(scr.cam.scale).max(1e-9);
+            let (s0, s1) = (scr.at(a.base).0, scr.at([a.base[0] + a.dir[0] * l, a.base[1] + a.dir[1] * l, a.base[2] + a.dir[2] * l]).0);
+            let pd = s1 - s0;
+            let denom = f64::from(pd.x * pd.x + pd.y * pd.y);
+            if denom < 1e-6 {
+                return;
+            }
+            set(cmd, a.key, cmd_val(cmd, a.key) + f64::from(step.by.x * pd.x + step.by.y * pd.y) * l / denom, 2);
+        }
+        Some(Handle::Ring(key)) => {
+            let Some(r) = hs.rings.iter().find(|r| r.key == key) else { return };
+            // the turn about the centre on the screen, counter-clockwise as seen (y runs down), signed by which way
+            // the axis faces the eye - as a ring of a body's gizmo turns
+            let radial = step.at - scr.at(r.center).0;
+            let r2 = f64::from(radial.x * radial.x + radial.y * radial.y);
+            if r2 < 4.0 {
+                return;
+            }
+            let ccw = -f64::from(radial.x * step.by.y - radial.y * step.by.x) / r2;
+            let b = scr.basis.2;
+            let deg = ccw.to_degrees() * ring_drag_sign(b[0] * r.axis[0] + b[1] * r.axis[1] + b[2] * r.axis[2]);
+            match r.turns {
+                RingTurns::Field => set(cmd, r.key, cmd_val(cmd, r.key) + deg, 2),
+                RingTurns::Direction => {
+                    let keys = ["dx", "dy", "dz"];
+                    let d = qymcad_core::feature::turn_about(keys.map(|k| cmd_val(cmd, k)), r.axis, deg);
+                    for (k, v) in keys.iter().zip(d) {
+                        set(cmd, k, v, 4); // a component of a unit direction: two digits would lose a turn of a degree
+                    }
+                }
+            }
+        }
+        None => return,
+    }
+    invalidate(regen);
+}
+
+/// THE PLACE THE HANDLES OF THE COMMAND TOOK ON THE SCREEN in a frame, as they were drawn.
+#[derive(Clone, Copy)]
+struct HandlesSeen {
+    frame: u64,
+    rect: Rect,
+}
+
+fn handles_seen_id() -> egui::Id {
+    egui::Id::new("command_handles_seen")
+}
+
+/// The place `hs` take on the screen: their lines and the balls at the arrows' tips, none when there are no handles.
+pub fn handles_screen_rect(hs: &Handles, scr: &Screen) -> Option<Rect> {
+    let pts = hs.arrows.iter().flat_map(|a| [a.base, a.tip()]).chain(hs.rings.iter().flat_map(|r| r.points())).map(|p| scr.at(p).0);
+    pts.fold(None, |acc: Option<Rect>, p| Some(acc.map_or(Rect::from_min_max(p, p), |r| r.union(Rect::from_min_max(p, p))))).map(|r| r.expand(7.0))
+}
+
+/// Remember where the handles were drawn this frame (`handles_screen_rect`): the fields of the command stand clear of them.
+pub fn remember_handles(ctx: &egui::Context, rect: Option<Rect>) {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| match rect {
+        Some(rect) => {
+            d.insert_temp(handles_seen_id(), HandlesSeen { frame, rect });
+        }
+        None => d.remove::<HandlesSeen>(handles_seen_id()),
+    });
+}
+
+/// Where the handles of the command were drawn, this frame or the one before; none when none were.
+pub fn handles_seen(ctx: &egui::Context) -> Option<Rect> {
+    let seen = ctx.data(|d| d.get_temp::<HandlesSeen>(handles_seen_id()))?;
+    (seen.frame + 1 >= ctx.cumulative_frame_nr()).then_some(seen.rect)
 }
 
 /// The DOF gizmo handles of a joint in the frame of the context: (the origin, [(slot, whether it is a
@@ -11717,6 +11987,129 @@ pub fn sel_point_ids(sel_sk: &SketchSelection) -> Vec<Id> {
 /// things are deleted.
 pub fn ask_delete(deferred: &mut DeferredUi, sel: Sel) {
     deferred.delete = Some(sel);
+    deferred.delete_group.clear();
+}
+
+/// ASK TO DELETE WHAT IS CHOSEN, AND THE ROWS OF THE TREE PICKED WITH IT: several rows picked with Shift or Ctrl, the one
+/// chosen among them, are asked about and deleted together. Reported behaviour: several parts picked in the tree with
+/// Shift, Delete removed the lowest of them alone.
+pub fn ask_delete_chosen(deferred: &mut DeferredUi, project: &Project, sel: Sel, tree_sel: &TreeSelection) {
+    deferred.delete = Some(sel);
+    let in_group = tree_sel.multi.len() > 1 && node_of_sel(project, sel).is_some_and(|id| tree_sel.multi.contains(&id));
+    deferred.delete_group = if in_group { tree_sel.multi.clone() } else { Vec::new() };
+}
+
+/// THE DELETE KEY OUTSIDE A SKETCH: a node of the tree chosen - a feature, a body, a sketch, a datum, a mate, a
+/// component - and the rows picked with it, asked about. Answers whether the key is for the sketch being edited.
+pub fn delete_key(ctx: &egui::Context, sketch_ses: &SketchSession, chosen: &Chosen, project: &Project, deferred: &mut DeferredUi) -> bool {
+    if ctx.egui_wants_keyboard_input() || !ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
+        return false;
+    }
+    if sketch_ses.editing.is_some() {
+        return true;
+    }
+    // any structural node of the tree brings up the yes-or-no question; DEL used to do nothing for datums and sketches
+    if matches!(chosen.sel, Sel::Feature(_) | Sel::Mesh(_) | Sel::Sketch(_) | Sel::Plane(_) | Sel::DatumPoint(_) | Sel::DatumAxis(_) | Sel::Joint(_) | Sel::Component(_)) {
+        ask_delete_chosen(deferred, project, chosen.sel, &chosen.tree_sel);
+    }
+    false
+}
+
+/// THE ID OF THE ROW OF THE TREE A SELECTION IS: a component's, or the timeline node's of a feature, a sketch or a datum.
+pub fn node_of_sel(project: &Project, sel: Sel) -> Option<Id> {
+    use qymcad_core::feature::FeatureKind as FK;
+    let node = |hit: &dyn Fn(&FK) -> bool| project.timeline.iter().find(|n| hit(&n.kind)).map(|n| n.id);
+    match sel {
+        Sel::Component(ci) => project.components.get(ci).map(|c| c.id),
+        Sel::Feature(ti) => project.timeline.get(ti).map(|n| n.id),
+        Sel::Sketch(si) => project.sketches.get(si).map(|s| s.id).and_then(|sid| node(&|k| matches!(k, FK::Sketch { sketch } if *sketch == sid))),
+        Sel::Plane(i) => project.planes.get(i).map(|p| p.id).and_then(|pid| node(&|k| matches!(k, FK::Plane { plane } if *plane == pid))),
+        Sel::DatumPoint(i) => project.datum_points.get(i).map(|p| p.id).and_then(|pid| node(&|k| matches!(k, FK::DatumPoint { point } if *point == pid))),
+        Sel::DatumAxis(i) => project.datum_axes.get(i).map(|a| a.id).and_then(|aid| node(&|k| matches!(k, FK::DatumAxis { axis } if *axis == aid))),
+        _ => None,
+    }
+}
+
+/// THE SELECTION A ROW OF THE TREE STANDS FOR, by its id: a component, or a timeline node as the tree selects it - a
+/// sketch, a datum, or a feature. None once it is gone.
+pub fn sel_of_node(project: &Project, id: Id) -> Option<Sel> {
+    use qymcad_core::feature::FeatureKind as FK;
+    if let Some(ci) = project.components.iter().position(|c| c.id == id) {
+        return Some(Sel::Component(ci));
+    }
+    let ti = project.timeline.iter().position(|n| n.id == id)?;
+    Some(match project.timeline[ti].kind {
+        FK::Sketch { sketch } => Sel::Sketch(project.sketch_index(sketch)?),
+        FK::Plane { plane } => Sel::Plane(project.planes.iter().position(|p| p.id == plane)?),
+        FK::DatumPoint { point } => Sel::DatumPoint(project.datum_points.iter().position(|p| p.id == point)?),
+        FK::DatumAxis { axis } => Sel::DatumAxis(project.datum_axes.iter().position(|a| a.id == axis)?),
+        _ => Sel::Feature(ti),
+    })
+}
+
+/// THE NEXT NODE OF A GROUP DELETE, asked when nothing else is: one a frame, found again by its id; a node a delete
+/// before it took along is passed over.
+pub fn next_of_a_group_delete(deferred: &mut DeferredUi, project: &Project) -> Option<(Sel, bool)> {
+    while deferred.delete.is_none() && !deferred.delete_queue.ids.is_empty() {
+        let id = deferred.delete_queue.ids.remove(0);
+        if let Some(sel) = sel_of_node(project, id) {
+            return Some((sel, deferred.delete_queue.dependents));
+        }
+    }
+    None
+}
+
+/// HOW A ROW OF THE TREE WAS CLICKED: alone, with Ctrl (Cmd on a Mac) to add it or take it away, with Shift for the run
+/// of rows from the one clicked before.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum TreeClick {
+    Alone,
+    Toggle,
+    Run,
+}
+
+impl TreeClick {
+    pub fn of(m: &egui::Modifiers) -> Self {
+        if m.shift {
+            TreeClick::Run
+        } else if m.ctrl || m.command {
+            TreeClick::Toggle
+        } else {
+            TreeClick::Alone
+        }
+    }
+}
+
+/// PICK THE ROW `id` OF THE TREE among `order`, the rows it stands among, as `click` says: alone, added or taken away,
+/// or the run of rows from the anchor to it.
+pub fn tree_pick(tree_sel: &mut TreeSelection, order: &[Id], id: Id, click: TreeClick) {
+    match click {
+        TreeClick::Run => match (tree_sel.anchor.and_then(|a| order.iter().position(|&x| x == a)), order.iter().position(|&x| x == id)) {
+            (Some(ia), Some(ib)) => tree_sel.multi = order[ia.min(ib)..=ia.max(ib)].to_vec(),
+            _ => {
+                tree_sel.multi = vec![id];
+                tree_sel.anchor = Some(id);
+            }
+        },
+        TreeClick::Toggle => {
+            match tree_sel.multi.iter().position(|&x| x == id) {
+                Some(p) => {
+                    tree_sel.multi.remove(p);
+                }
+                None => tree_sel.multi.push(id),
+            }
+            tree_sel.anchor = Some(id);
+        }
+        TreeClick::Alone => {
+            tree_sel.multi = vec![id];
+            tree_sel.anchor = Some(id);
+        }
+    }
+}
+
+/// Whether the row `id` is lit as one of several picked in the tree.
+pub fn in_tree_group(tree_sel: &TreeSelection, id: Id) -> bool {
+    tree_sel.multi.len() > 1 && tree_sel.multi.contains(&id)
 }
 
 /// The centre of the selected object (for the gizmo), in the part's XY coordinates.

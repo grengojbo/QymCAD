@@ -643,7 +643,15 @@ fn sketch_frame_resolves_datum_and_face() {
     let mut p = part_project();
     let si = p.new_sketch("s");
     // Datum.
-    let plane_id = p.add_plane(qymcad_core::model::WorkPlane { id: 0, name: "d".into(), origin: [1.0, 2.0, 3.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: qymcad_core::model::PlaneDef::Manual });
+    let plane_id = p.add_plane(qymcad_core::model::WorkPlane {
+        id: 0,
+        name: "d".into(),
+        origin: [1.0, 2.0, 3.0],
+        normal: [0.0, 0.0, 1.0],
+        rot_deg: 0.0,
+        tilt: Default::default(),
+        def: qymcad_core::model::PlaneDef::Manual,
+    });
     p.sketches[si].plane = SketchPlane::Datum(plane_id);
     let f = p.sketch_frame(si).expect("the datum frame");
     // The origin is the projection of the world origin onto the plane z = 3, that is (0,0,3), with XY matching
@@ -663,7 +671,15 @@ fn extrude_on_datum_plane_is_placed_in_world() {
     let mut p = part_project();
     let sid = square(&mut p, "s");
     // A datum at z = 10 with normal +Z lifts the body to z = 10 while XY is preserved.
-    let plane_id = p.add_plane(qymcad_core::model::WorkPlane { id: 0, name: "d".into(), origin: [0.0, 0.0, 10.0], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: qymcad_core::model::PlaneDef::Manual });
+    let plane_id = p.add_plane(qymcad_core::model::WorkPlane {
+        id: 0,
+        name: "d".into(),
+        origin: [0.0, 0.0, 10.0],
+        normal: [0.0, 0.0, 1.0],
+        rot_deg: 0.0,
+        tilt: Default::default(),
+        def: qymcad_core::model::PlaneDef::Manual,
+    });
     let si = p.sketch_index(sid).unwrap();
     p.sketches[si].plane = SketchPlane::Datum(plane_id);
     p.add_sketch_node(sid, "s");
@@ -1171,7 +1187,7 @@ fn mirror_by_datum_plane_uses_plane_origin_normal() {
     let sid = square(&mut p, "square");
     p.add_sketch_node(sid, "square");
     let base = p.add_extrude_on(sid, 0, 5.0, qymcad_core::feature::Reach::Forward, 0.0);
-    let pl = p.add_plane(WorkPlane { id: 0, name: "d".into(), origin: [10.0, 0.0, 0.0], normal: [1.0, 0.0, 0.0], rot_deg: 0.0, def: PlaneDef::Manual });
+    let pl = p.add_plane(WorkPlane { id: 0, name: "d".into(), origin: [10.0, 0.0, 0.0], normal: [1.0, 0.0, 0.0], rot_deg: 0.0, tilt: Default::default(), def: PlaneDef::Manual });
     let mir = p.add_mirror(base, 0, false, 0);
     if let Some(n) = p.timeline.iter_mut().find(|n| n.id == mir) {
         if let qymcad_core::feature::FeatureKind::Mirror { datum, .. } = &mut n.kind {
@@ -2838,4 +2854,52 @@ fn marking_everything_stale_touches_every_node() {
     p.mark_all_dirty();
     assert!(p.timeline.iter().all(|n| n.dirty), "every node must be stale again");
     let _ = base;
+}
+
+/// A PLANE OFFSET FROM A BASE PLANE GOES TO THE SIDE ITS PREVIEW SHOWS: along the positive axis across it - +Z from XY,
+/// +Y from XZ, +X from YZ - the side `BasePlane::offset_direction` gives the preview as well. Reported behaviour: an offset
+/// of 100 from XZ was previewed on one side, and Enter put the plane on the other.
+#[test]
+fn a_plane_offset_from_a_base_plane_goes_along_its_positive_axis() {
+    use qymcad_core::feature::BasePlane;
+    let mut failed = Vec::new();
+    for (base, axis) in [(BasePlane::XY, 2usize), (BasePlane::XZ, 1), (BasePlane::YZ, 0)] {
+        let mut p = qymcad_core::model::Project::default();
+        let id = p.add_offset_plane(base, 100.0);
+        p.regenerate(&MockKernel::default());
+        let o = p.planes.iter().find(|pl| pl.id == id).map(|pl| pl.origin).expect("the plane is made");
+        if (o[axis] - 100.0).abs() > 1e-9 || base.offset_direction()[axis] != 1.0 {
+            failed.push(format!("{base:?}: the plane stands at {o:?}, the preview's direction is {:?}", base.offset_direction()));
+        }
+    }
+    assert!(failed.is_empty(), "planes offset by 100 not on the positive side:\n{}", failed.join("\n"));
+}
+
+/// A DATUM PLANE TILTED BY ITS ANGLES: about the X of the plane it is offset from, about its Y, the turn about its normal,
+/// each parametric through its feature dimension as the offset is - and the second rebuild does not tilt it again.
+#[test]
+fn a_datum_plane_is_tilted_by_its_angles_through_the_point_it_stands_at() {
+    use qymcad_core::feature::BasePlane;
+    let mut failed = Vec::new();
+    let mut p = qymcad_core::model::Project::default();
+    let id = p.add_offset_plane(BasePlane::XY, 10.0);
+    p.set_feat_dim(id, "tilt_x", "90".into());
+    for pass in 0..2 {
+        p.regenerate(&MockKernel::default());
+        let pl = p.planes.iter().find(|pl| pl.id == id).expect("the plane is made");
+        // XY's X is world X: turned 90 deg about it, the normal +Z goes to -Y, the plane stands where the offset put it
+        if (pl.normal[1] + 1.0).abs() > 1e-9 || pl.normal[2].abs() > 1e-9 || (pl.origin[2] - 10.0).abs() > 1e-9 {
+            failed.push(format!("rebuild {pass}: tilt_x 90 gives the normal {:?} at {:?}", pl.normal, pl.origin));
+        }
+    }
+    p.set_feat_dim(id, "tilt_x", String::new());
+    p.set_feat_dim(id, "tilt_y", "90".into());
+    p.set_feat_dim(id, "turn", "30".into());
+    p.regenerate(&MockKernel::default());
+    let pl = p.planes.iter().find(|pl| pl.id == id).expect("the plane is made");
+    // about XY's Y (world Y) the normal +Z goes to +X
+    if (pl.normal[0] - 1.0).abs() > 1e-9 || (pl.rot_deg - 30.0).abs() > 1e-9 {
+        failed.push(format!("tilt_y 90, turn 30 give the normal {:?}, the turn {}", pl.normal, pl.rot_deg));
+    }
+    assert!(failed.is_empty(), "the tilt of a datum plane:\n{}", failed.join("\n"));
 }

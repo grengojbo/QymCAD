@@ -106,16 +106,9 @@ impl App {
         if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::F2)) {
             qymcad_ui_state::rename_selected(&self.project, &mut self.side.rename, self.chosen.sel);
         }
-        // Delete removes the selected entities of a sketch (while editing one)
-        if !ctx.egui_wants_keyboard_input() && ctx.input(|i| i.key_pressed(egui::Key::Delete) || i.key_pressed(egui::Key::Backspace)) {
-            // OUTSIDE the editing of a sketch: any structural node of the tree (a feature, a body, a
-            // sketch, a datum, a mate) brings up a yes-or-no confirmation. DEL used to do nothing at all
-            // for datums and sketches.
-            if self.sketch_ses.editing.is_none() {
-                if matches!(self.chosen.sel, Sel::Feature(_) | Sel::Mesh(_) | Sel::Sketch(_) | Sel::Plane(_) | Sel::DatumPoint(_) | Sel::DatumAxis(_) | Sel::Joint(_) | Sel::Component(_)) {
-                    self.deferred.delete = Some(self.chosen.sel);
-                }
-            } else if let Sel::Sketch(si) = self.chosen.sel {
+        // Delete: the selected entities of the sketch being edited, or a node of the tree and the rows picked with it
+        if qymcad_ui_state::delete_key(ctx, &self.sketch_ses, &self.chosen, &self.project, &mut self.deferred) {
+            if let Sel::Sketch(si) = self.chosen.sel {
                 qymcad_sketch::delete_selected_in_sketch(&mut self.sketch_ctx(), si);
             }
         }

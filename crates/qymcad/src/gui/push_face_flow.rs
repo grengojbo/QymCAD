@@ -216,17 +216,24 @@ mod tests {
             p.val = 0.0;
             p.txt = "0".into();
         }
-        let (o, tip, _) = app.face_arrow_geometry().expect("the selected face must have a handle");
+        let (o, tip, _) = qymcad_ui_state::face_arrow_geometry(&app.painting()).expect("the selected face must have a handle");
         let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis };
         let at = scr.at(tip).0;
-        assert!(app.face_arrow_hit(rect, at, &basis), "a cursor at the tip of the arrow must grab it");
+        assert!(
+            qymcad_ui_state::handle_at(&app.painting(), &qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }, at).is_some(),
+            "a cursor at the tip of the arrow must grab it"
+        );
         let far = scr.at([o[0] + 500.0, o[1] + 500.0, o[2]]).0;
-        assert!(!app.face_arrow_hit(rect, far, &basis), "far from the arrow there must be no grab");
+        assert!(
+            !qymcad_ui_state::handle_at(&app.painting(), &qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }, far).is_some(),
+            "far from the arrow there must be no grab"
+        );
 
         // THE DRAG changes the offset, and THE FIELD follows the arrow (one value, not two independent ones)
         let before = qymcad_ui_state::cmd_val(&app.tools.cmd, "dist");
-        app.dragged.face_arrow_drag = Some(before);
-        app.face_arrow_drag_to(egui::vec2(0.0, -40.0), rect, &basis);
+        let hs = qymcad_ui_state::handles(&app.painting());
+        let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis };
+        qymcad_ui_state::drag_handle(&mut app.tools.cmd, &mut app.regen, &hs, Some(qymcad_ui_state::Handle::Arrow("dist")), &scr, qymcad_ui_state::PointerStep { at, by: egui::vec2(0.0, -40.0) });
         let after = qymcad_ui_state::cmd_val(&app.tools.cmd, "dist");
         assert!((after - before).abs() > 0.5, "the drag must change the offset: it was {before}, it became {after}");
         let txt = app.tools.cmd.params.iter().find(|p| p.key == "dist").map(|p| p.txt.clone()).unwrap_or_default();

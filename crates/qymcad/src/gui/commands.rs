@@ -231,7 +231,7 @@ impl App {
         self.side.datum.axis_pts.clear();
         match code {
             20 => {
-                self.tools.cmd.params = vec![CmdParam::new("f-offset", "dist", 10.0, -100000.0, 100000.0)];
+                self.tools.cmd.params = qymcad_part::datum_plane_fields();
                 self.status = crate::i18n::tr("msg-plane-pick");
             }
             21 => {

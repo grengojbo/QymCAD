@@ -889,8 +889,25 @@ pub(crate) mod tests {
             }
         };
 
+        // --- A DATUM PLANE OFF THE SIDE OF THE HOUSING, TILTED: offset 10 and tilted 30 deg about its X, it is made so and
+        // stays so through the save below ---
+        let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
+        let side = app.project.regen_faces[&body].iter().filter(|f| f.normal[1] < -0.9).max_by(|a, b| a.area.total_cmp(&b.area)).cloned().expect("the side face");
+        let planes = app.project.planes.len();
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([30.0, 20.0, 12.0], 8.0).tool(20).click([side.centroid.x, side.centroid.y, side.centroid.z]).set("dist", 10.0).set("tilt_x", 30.0).enter();
+        // the face looks along -Y: tilted 30 deg, the plane's normal leans 30 deg off it
+        let tilted = |app: &App| app.project.planes.last().map(|p| (-p.normal[1]).acos().to_degrees());
+        if app.project.planes.len() != planes + 1 || tilted(&app).is_none_or(|deg| (deg - 30.0).abs() > 1e-6) {
+            problems.push(format!("[a tilted datum plane] {} planes made, the last leans {:?} deg off the side face", app.project.planes.len() - planes, tilted(&app)));
+        }
+        check_all(&mut app, "a tilted datum plane off the side of the housing", &mut problems);
+
         // --- SAVE AND REOPEN ---
         let mut app = save_and_reopen(&mut app, &folder, "the housing is finished", &mut problems);
+        if tilted(&app).is_none_or(|deg| (deg - 30.0).abs() > 1e-6) {
+            problems.push(format!("[a tilted datum plane] after opening it leans {:?} deg off the side face", tilted(&app)));
+        }
 
         // --- EDITING A DIMENSION IN THE MIDDLE OF THE HISTORY ---
         if let Some(ti) = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })) {

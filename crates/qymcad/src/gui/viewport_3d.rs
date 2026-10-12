@@ -154,12 +154,9 @@ impl App {
         if resp.drag_started() {
             // THE HANDLE AT A FACE (push, thicken): grabbing the arrow outranks the orbit, otherwise a
             // face could not be dragged with the mouse and only typing a number would be left.
-            if let Some(key) = qymcad_ui_state::face_arrow_key(&self.tools.armed) {
-                if let Some(pp) = resp.interact_pointer_pos() {
-                    if self.face_arrow_hit(rect, pp, basis3) {
-                        self.dragged.face_arrow_drag = Some(qymcad_ui_state::take_arrow_value(&resp.ctx, &self.tools.cmd, key));
-                    }
-                }
+            if let Some(pp) = resp.interact_pointer_pos() {
+                let scr = qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect, basis: basis3 };
+                self.dragged.handle_drag = qymcad_ui_state::grab_handle(&resp.ctx, &self.painting(), &scr, pp).or(self.dragged.handle_drag);
             }
             // priority goes to the ACTIVE command's arrow (extrude, cut, ...) when a profile is picked
             if self.tools.armed.commanding() && !self.tools.gsel.profiles.is_empty() {
@@ -301,13 +298,15 @@ impl App {
             if resp.drag_stopped() {
                 self.tools.cmd.drag = None;
             }
-        } else if self.dragged.face_arrow_drag.is_some() {
-            // DRAGGING A FACE WITH THE MOUSE: the offset grows along the normal, and the field and the arrow show one value
-            if resp.dragged() {
-                self.face_arrow_drag_to(resp.drag_delta(), rect, basis3);
+        } else if self.dragged.handle_drag.is_some() {
+            // DRAGGING A HANDLE OF THE COMMAND: the field and the arrow or the ring show one value
+            if let (true, Some(at)) = (resp.dragged(), resp.interact_pointer_pos()) {
+                let hs = qymcad_ui_state::handles(&self.painting());
+                let scr = qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect, basis: basis3 };
+                qymcad_ui_state::drag_handle(&mut self.tools.cmd, &mut self.regen, &hs, self.dragged.handle_drag, &scr, qymcad_ui_state::PointerStep { at, by: resp.drag_delta() });
             }
             if resp.drag_stopped() {
-                self.dragged.face_arrow_drag = None;
+                self.dragged.handle_drag = None;
             }
         } else if qymcad_assembly::joint_drag_active(&self.side.joint, &self.dragged.part_pull) {
             // dragging a joint FREEDOM pulls the parameter (angle/offset/offset2), and solve_joints lays out the rest

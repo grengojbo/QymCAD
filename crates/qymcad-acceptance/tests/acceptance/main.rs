@@ -76,5 +76,6 @@ mod targets;
 mod undo_redo;
 mod view_and_mouse;
 mod timeline;
+mod tree_group_delete;
 mod tree_panel;
 mod waiting;

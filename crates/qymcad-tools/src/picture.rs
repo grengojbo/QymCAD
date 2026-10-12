@@ -165,7 +165,7 @@ impl AtRest {
             draft: Default::default(),
             chamfer: Default::default(),
             edges: &self.edges,
-            face_arrow_drag: None,
+            handle_drag: None,
             feat: Default::default(),
             gpu_ok: false,
             gsel: &self.gsel,

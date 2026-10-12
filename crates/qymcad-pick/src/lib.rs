@@ -625,15 +625,14 @@ pub fn sketch_at_3d(pn: &Painting, rect: Rect, screen: Pos2) -> Option<usize> {
 pub fn pick_sketch_plane_at(pn: &Painting, rect: Rect, screen: Pos2) -> Option<qymcad_core::feature::SketchPlane> {
     use qymcad_core::feature::SketchPlane;
     let basis = pn.cam.basis();
-    let face_best: Option<(f64, SketchPlane)> = face_under_cursor(pn, rect, screen).map(|(d, b, k)| (d, SketchPlane::Face(b, k)));
-    // A base plane (XY/XZ/YZ or a datum) is compared with a face BY DEPTH rather than "a face always
-    // wins". A plane (a fixed 60 mm square) used to be blocked SOLIDLY by any body under the cursor
-    // (`body_hit`, even when the hit did not resolve into a valid face) — and at the enlarged,
-    // scale-dependent size that would have blocked the plane almost everywhere a body appears on
-    // screen. An honest comparison of depth also removes the flicker at the silhouette of a body — it
-    // was reported as planes flashing yellow for a second and vanishing, with a shift of one pixel
-    // curing it: `body_hit` used to jump between true and false at the boundary, while depth changes
-    // continuously.
+    // A BODY UNDER THE POINTER IS TAKEN BEFORE ANY PLANE behind it or in front of it: a base plane (XY, XZ, YZ) or a
+    // datum is picked, and lit, only where no body is under the pointer. Reported behaviour: the yellow square of a base
+    // plane at the origin stood over the faces and edges a sketch or a datum was to be put on, in a part and in an
+    // assembly alike. The depth of a plane was the depth of the middle of its square, not of the point under the
+    // pointer, so a slanted plane came out nearer than the face it hid.
+    if let Some((_, b, k)) = face_under_cursor(pn, rect, screen) {
+        return Some(SketchPlane::Face(b, k));
+    }
     let h = plane_pick_half_size(pn);
     let mut plane_best: Option<(f64, SketchPlane)> = None;
     for (sp, fr) in sketch_plane_candidates(pn) {
@@ -646,12 +645,7 @@ pub fn pick_sketch_plane_at(pn: &Painting, rect: Rect, screen: Pos2) -> Option<q
             }
         }
     }
-    match (face_best, plane_best) {
-        (Some((fd, fsp)), Some((pd, psp))) => Some(if fd <= pd { fsp } else { psp }),
-        (Some((_, fsp)), None) => Some(fsp),
-        (None, Some((_, psp))) => Some(psp),
-        (None, None) => None,
-    }
+    plane_best.map(|(_, sp)| sp)
 }
 
 /// Picking the axis of a circular array or of a datum axis by a click: the nearest DATUM AXIS (a line)

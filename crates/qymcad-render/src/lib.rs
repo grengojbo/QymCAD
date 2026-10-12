@@ -3555,24 +3555,10 @@ pub fn draw_datum_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let st = Stroke::new(1.6, qymcad_scheme::a(pn.scheme.pal.preview_datum(), 205));
     match pn.armed.cmd_kind() {
         20 => {
-            let Some(sp) = pn.datum.plane_pick else { return };
-            let Some((o, n)) = qymcad_ui_state::mirror_plane_world(&DrawCtx { cam: &pn.cam, set: pn.set, scheme: pn.scheme, project: pn.project, active_path: pn.active_path }, &sp) else { return };
-            let nl = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt();
-            if nl < 1e-9 {
-                return;
-            }
-            let nn = [n[0] / nl, n[1] / nl, n[2] / nl];
-            let dist = qymcad_ui_state::cmd_val(pn.cmd, "dist");
-            let c = [o[0] + nn[0] * dist, o[1] + nn[1] * dist, o[2] + nn[2] * dist];
-            // an orthonormal frame (u,v) in the plane
-            let up = if nn[2].abs() < 0.9 { [0.0, 0.0, 1.0] } else { [1.0, 0.0, 0.0] };
-            let cross = |a: [f64; 3], b: [f64; 3]| [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]];
-            let normd = |a: [f64; 3]| {
-                let l = (a[0] * a[0] + a[1] * a[1] + a[2] * a[2]).sqrt().max(1e-9);
-                [a[0] / l, a[1] / l, a[2] / l]
-            };
-            let u = normd(cross(up, nn));
-            let v = cross(nn, u);
+            // the plane as Enter makes it - offset, tilted and turned (`datum_plane_made`), the square along its own axes
+            let Some(m) = qymcad_ui_state::datum_plane_made(pn) else { return };
+            let f = qymcad_core::feature::PlaneFrame::world_aligned(m.origin, m.normal, m.turn);
+            let (c, u, v) = (m.origin, f.x, f.y);
             let h = 30.0;
             let corner = |su: f64, sv: f64| [c[0] + u[0] * su * h + v[0] * sv * h, c[1] + u[1] * su * h + v[1] * sv * h, c[2] + u[2] * su * h + v[2] * sv * h];
             let poly: Vec<Pos2> = [corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0)].iter().map(|p| scr.at(*p).0).collect();
@@ -3970,16 +3956,28 @@ pub fn draw_fillet_vertices(pn: &Painting, painter: &egui::Painter, rect: Rect) 
 /// the face is selected - even at a zero value. Otherwise there would be nothing to drag: the arrow
 /// would appear only after the number had been typed in, that is, exactly when it is no longer needed.
 ///
-/// One handle for every command of the "pick a face, set a distance along its normal" kind (push, thicken):
-/// what it actually drags is decided by `face_arrow_key`.
+/// One drawing for every handle of a command (`handles`): the arrow of a value along a direction of a face pushed,
+/// thickened or shelled, a split or a datum plane's offset, the three arrows of a datum point's or axis's position, and
+/// the rings of a datum plane's tilts and turn and of a datum axis's direction. Where they stand is remembered for the
+/// fields of the command to stand clear of them (`remember_handles`).
 pub fn draw_face_arrow(pn: &Painting, painter: &egui::Painter, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) {
-    let Some((o, tip, _)) = qymcad_ui_state::face_arrow_geometry(pn) else { return };
     let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis };
-    let (a, b) = (scr.at(o).0, scr.at(tip).0);
-    let hot = pn.face_arrow_drag.is_some();
-    let col = if hot { pn.scheme.pal.highlight() } else { pn.scheme.pal.handle_face() };
-    painter.add(egui::Shape::line_segment([a, b], Stroke::new(if hot { 3.5 } else { 2.5 }, col)));
-    painter.circle_filled(b, if hot { 6.0 } else { 5.0 }, col);
+    let hs = qymcad_ui_state::handles(pn);
+    // the rings under the arrows, as on a body's gizmo
+    for ring in &hs.rings {
+        let hot = pn.handle_drag == Some(qymcad_ui_state::Handle::Ring(ring.key));
+        let col = if hot { pn.scheme.pal.highlight() } else { pn.scheme.pal.handle_face() };
+        let pts: Vec<Pos2> = ring.points().into_iter().map(|p| scr.at(p).0).collect();
+        painter.add(egui::Shape::line(pts, Stroke::new(if hot { 2.8 } else { 1.6 }, col)));
+    }
+    for arrow in &hs.arrows {
+        let (a, b) = (scr.at(arrow.base).0, scr.at(arrow.tip()).0);
+        let hot = pn.handle_drag == Some(qymcad_ui_state::Handle::Arrow(arrow.key));
+        let col = if hot { pn.scheme.pal.highlight() } else { pn.scheme.pal.handle_face() };
+        painter.add(egui::Shape::line_segment([a, b], Stroke::new(if hot { 3.5 } else { 2.5 }, col)));
+        painter.circle_filled(b, if hot { 6.0 } else { 5.0 }, col);
+    }
+    qymcad_ui_state::remember_handles(painter.ctx(), qymcad_ui_state::handles_screen_rect(&hs, &scr));
 }
 
 /// THE FACES THE COMMAND WILL ADD, as its trial built them, in the "will be added" colour over the part - the surface of

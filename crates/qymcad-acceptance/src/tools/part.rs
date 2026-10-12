@@ -713,18 +713,13 @@ pub static DATUM_PLANE: Tool = Tool {
     words: &[],
     // a datum plane may sit on the face it is taken from (0) or under it (a negative offset), so both are values of
     // its own; the body is the same whatever the plane does, and where the plane stands is read by what is built on it
-    fields: &[Field {
-        caption: "f-offset",
-        by_placeholder: false,
-        when: When::Before,
-        class: Class::Length,
-        typical: 10.0,
-        lo: -100000.0,
-        hi: 100000.0,
-        zero: true,
-        negative: true,
-        outcome: block_alone,
-    }],
+    // its tilts about its X and Y and its turn about its normal take any angle either way, and the body stays as it is
+    fields: &[
+        Field { caption: "f-offset", by_placeholder: false, when: When::Before, class: Class::Length, typical: 10.0, lo: -100000.0, hi: 100000.0, zero: true, negative: true, outcome: block_alone },
+        Field { caption: "f-tilt-x", by_placeholder: false, when: When::Before, class: Class::Angle, typical: 15.0, lo: -360.0, hi: 360.0, zero: true, negative: true, outcome: block_alone },
+        Field { caption: "f-tilt-y", by_placeholder: false, when: When::Before, class: Class::Angle, typical: 15.0, lo: -360.0, hi: 360.0, zero: true, negative: true, outcome: block_alone },
+        Field { caption: "f-turn", by_placeholder: false, when: When::Before, class: Class::Angle, typical: 30.0, lo: -360.0, hi: 360.0, zero: true, negative: true, outcome: block_alone },
+    ],
     modes: &[],
     result: block_alone(10.0),
     node: "Plane",

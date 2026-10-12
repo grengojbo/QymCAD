@@ -5651,13 +5651,15 @@ impl Project {
     /// parametric through the `dist` feature dimension of the plane node. `Manual` is left alone.
     pub(super) fn resolve_plane_into(&mut self, plane_id: Id, vars: &std::collections::HashMap<String, f64>, dim: Option<&std::collections::HashMap<String, String>>) {
         let Some(pi) = self.planes.iter().position(|p| p.id == plane_id) else { return };
-        match self.planes[pi].def {
+        let placed = match self.planes[pi].def {
             PlaneDef::OffsetBase { base, dist } => {
                 let dist = eval_dim(dim, "dist", dist, vars);
                 let f = base.frame();
-                let n = f.normal();
-                self.planes[pi].normal = n;
-                self.planes[pi].origin = [f.origin[0] + n[0] * dist, f.origin[1] + n[1] * dist, f.origin[2] + n[2] * dist];
+                // the side the preview shows (`offset_direction`); the normal stays the frame's, as sketches on it lie
+                let d = base.offset_direction();
+                self.planes[pi].normal = f.normal();
+                self.planes[pi].origin = [f.origin[0] + d[0] * dist, f.origin[1] + d[1] * dist, f.origin[2] + d[2] * dist];
+                true
             }
             PlaneDef::OffsetFace { body, face, dist } => {
                 let dist = eval_dim(dim, "dist", dist, vars);
@@ -5665,19 +5667,36 @@ impl Project {
                                                              // normal.
                 self.planes[pi].normal = n;
                 self.planes[pi].origin = [c[0] + n[0] * dist, c[1] + n[1] * dist, c[2] + n[2] * dist];
+                true
             }
             PlaneDef::OffsetPlane { plane: src, dist } => {
                 // The source plane is resolved earlier in the timeline, having been created earlier, so its
                 // origin and normal are already available.
                 let dist = eval_dim(dim, "dist", dist, vars);
-                if let Some((o, n)) = self.planes.iter().find(|p| p.id == src).map(|p| (p.origin, p.normal)) {
-                    let nl = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-9);
-                    let nn = [n[0] / nl, n[1] / nl, n[2] / nl];
-                    self.planes[pi].normal = n;
-                    self.planes[pi].origin = [o[0] + nn[0] * dist, o[1] + nn[1] * dist, o[2] + nn[2] * dist];
+                match self.planes.iter().find(|p| p.id == src).map(|p| (p.origin, p.normal)) {
+                    Some((o, n)) => {
+                        let nl = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-9);
+                        let nn = [n[0] / nl, n[1] / nl, n[2] / nl];
+                        self.planes[pi].normal = n;
+                        self.planes[pi].origin = [o[0] + nn[0] * dist, o[1] + nn[1] * dist, o[2] + nn[2] * dist];
+                        true
+                    }
+                    None => false,
                 }
             }
-            PlaneDef::Manual | PlaneDef::FaceGone | PlaneDef::PlaneGone => {}
+            PlaneDef::Manual | PlaneDef::FaceGone | PlaneDef::PlaneGone => false,
+        };
+        // THE TILT AND THE TURN, parametric as the offset is: applied to the normal just resolved from the definition,
+        // never to the one left from the rebuild before - that would tilt it again on every rebuild
+        if placed {
+            let pl = &mut self.planes[pi];
+            let tilt = crate::feature::PlaneTilt { about_x: eval_dim(dim, "tilt_x", pl.tilt.about_x, vars), about_y: eval_dim(dim, "tilt_y", pl.tilt.about_y, vars) };
+            // an untilted plane keeps the normal its definition gave bit for bit: normalised, a face's normal moved in its
+            // last bits, and a project just opened called itself unsaved
+            if tilt != crate::feature::PlaneTilt::default() {
+                pl.normal = tilt.apply(pl.normal);
+            }
+            pl.rot_deg = eval_dim(dim, "turn", pl.rot_deg, vars);
         }
     }
     /// Deep clone of sketch `sid` into a new node under component `target_parent`.

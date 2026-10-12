@@ -975,14 +975,6 @@ impl App {
     }
 
     /// Is the cursor on the face arrow? The threshold matches the body gizmo's, in pixels along the segment.
-    pub(super) fn face_arrow_hit(&self, rect: Rect, pos: Pos2, basis: &([f64; 3], [f64; 3], [f64; 3])) -> bool {
-        face_arrow_hit(&self.painting(), rect, pos, basis)
-    }
-
-    pub(super) fn face_arrow_geometry(&self) -> Option<([f64; 3], [f64; 3], [f64; 3])> {
-        face_arrow_geometry(&self.painting())
-    }
-
     /// The gizmo mode of the selected component: grounded gives None; driven by a joint that has a freedom
     /// gives Joint(jid); otherwise (free, or a seed with no freedoms of its own) gives Free, the plain 6-DOF one.
     fn comp_gizmo_mode(&self, comp: Id) -> CompGizmoMode {
@@ -1013,7 +1005,7 @@ impl App {
             draft: self.params.draft,
             chamfer: self.params.chamfer,
             edges: &self.edges,
-            face_arrow_drag: self.dragged.face_arrow_drag,
+            handle_drag: self.dragged.handle_drag,
             feat: self.feat,
             gpu_ok: self.gpu_ok,
             gsel: &self.tools.gsel,
@@ -2292,28 +2284,6 @@ impl App {
                 false
             }
         }
-    }
-
-    /// Dragging the face arrow: the offset grows along the face's NORMAL, just as it does for a body gizmo's axis.
-    pub(super) fn face_arrow_drag_to(&mut self, d: egui::Vec2, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3])) {
-        let Some((o, _, n)) = self.face_arrow_geometry() else { return };
-        let l = 60.0 / self.viewing.cam.scale as f64;
-        let scr = qymcad_ui_state::Screen { cam: &self.viewing.cam, set: &self.set, rect, basis };
-        let s0 = scr.at(o).0;
-        let s1 = scr.at([o[0] + n[0] * l, o[1] + n[1] * l, o[2] + n[2] * l]).0;
-        let pd = s1 - s0;
-        let denom = (pd.x * pd.x + pd.y * pd.y) as f64;
-        if denom < 1e-6 {
-            return;
-        }
-        let Some(key) = face_arrow_key(&self.tools.armed) else { return };
-        let inc = (d.x * pd.x + d.y * pd.y) as f64 * l / denom;
-        let cur = qymcad_ui_state::cmd_val(&self.tools.cmd, key) + inc;
-        if let Some(p) = self.tools.cmd.params.iter_mut().find(|p| p.key == key) {
-            p.val = cur;
-            p.txt = format!("{:.2}", cur); // the field and the arrow are one value, not two independent ones
-        }
-        invalidate(&mut self.regen);
     }
 
     /// Finish a body gizmo drag: apply the accumulated transform as a PARAMETRIC Move feature.
@@ -4205,11 +4175,3 @@ mod dim_to_axis;
 mod deaf_while_the_system_asks;
 mod a_machine_with_no_graphics;
 mod the_card_holds_its_words;
-
-/// Is the cursor on the face arrow? The threshold matches the body gizmo's, in pixels along the segment.
-pub(crate) fn face_arrow_hit(pn: &qymcad_ui_state::Painting, rect: Rect, pos: Pos2, basis: &([f64; 3], [f64; 3], [f64; 3])) -> bool {
-    let Some((o, tip, _)) = face_arrow_geometry(pn) else { return false };
-    let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis };
-    let (a, b) = (scr.at(o).0, scr.at(tip).0);
-    screen_dist_seg(pos, a, b) <= 9.0
-}

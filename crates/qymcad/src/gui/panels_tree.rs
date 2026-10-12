@@ -494,35 +494,22 @@ pub(crate) fn tree_row_matches(project: &Project, tree: &TreeUi, ti: usize) -> b
     tree_text_matches(tree, &feature_row_label(project, ti)) || project.timeline.get(ti).is_some_and(|n| tree_text_matches(tree, &crate::i18n::name(&n.name)))
 }
 
-pub(crate) fn tree_select_component(project: &Project, sel: &mut Sel, tree_sel: &mut TreeSelection, ci: usize, cid: Id, ctrl: bool, shift: bool) {
-    if shift {
-        let par = project.components.get(ci).and_then(|c| c.parent);
-        let sibs: Vec<Id> = project.components.iter().filter(|c| c.parent == par).map(|c| c.id).collect();
-        match (tree_sel.anchor.and_then(|a| sibs.iter().position(|&x| x == a)), sibs.iter().position(|&x| x == cid)) {
-            (Some(ia), Some(ib)) => {
-                let (lo, hi) = if ia <= ib { (ia, ib) } else { (ib, ia) };
-                tree_sel.multi = sibs[lo..=hi].to_vec();
-            }
-            _ => {
-                tree_sel.multi = vec![cid];
-                tree_sel.anchor = Some(cid);
-            }
-        }
-    } else if ctrl {
-        if let Some(p) = tree_sel.multi.iter().position(|&x| x == cid) {
-            tree_sel.multi.remove(p);
-        } else {
-            tree_sel.multi.push(cid);
-        }
-        tree_sel.anchor = Some(cid);
-    } else {
-        tree_sel.multi = vec![cid];
-        tree_sel.anchor = Some(cid);
-    }
+pub(crate) fn tree_select_component(project: &Project, sel: &mut Sel, tree_sel: &mut TreeSelection, ci: usize, cid: Id, click: qymcad_ui_state::TreeClick) {
+    let par = project.components.get(ci).and_then(|c| c.parent);
+    let sibs: Vec<Id> = project.components.iter().filter(|c| c.parent == par).map(|c| c.id).collect();
+    qymcad_ui_state::tree_pick(tree_sel, &sibs, cid, click);
     *sel = Sel::Component(ci);
 }
 
-pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui, _id: Id, kind: &qymcad_core::feature::FeatureKind) {
+/// PICK THE ROW OF TIMELINE NODE `id` as the click says, among the rows of the timeline, and choose `sel` - several
+/// sketches, features and datums are picked with Shift or Ctrl and deleted together.
+fn tree_pick_node(tc: &mut qymcad_ui_state::TreeCtx, ui: &egui::Ui, id: Id, sel: Sel) {
+    let order: Vec<Id> = tc.project.timeline.iter().map(|n| n.id).collect();
+    qymcad_ui_state::tree_pick(&mut *tc.tree_sel, &order, id, qymcad_ui_state::TreeClick::of(&ui.input(|i| i.modifiers)));
+    *tc.sel = sel;
+}
+
+pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui, id: Id, kind: &qymcad_core::feature::FeatureKind) {
     use qymcad_core::feature::FeatureKind as FK;
     match *kind {
         FK::Plane { plane } => {
@@ -533,9 +520,11 @@ pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::U
                     if rename_node_active(tc, ui, RenameNode::Plane(plane)) {
                         return; // inline renaming
                     }
-                    let r = ui.selectable_label(*tc.sel == Sel::Plane(pi), format!("{} {nm}", ph::SELECTION_ALL)).on_hover_text(crate::i18n::tr("tree-datum-hint"));
+                    let r = ui
+                        .selectable_label(*tc.sel == Sel::Plane(pi) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, id), format!("{} {nm}", ph::SELECTION_ALL))
+                        .on_hover_text(crate::i18n::tr("tree-datum-hint"));
                     if r.clicked() {
-                        *tc.sel = Sel::Plane(pi);
+                        tree_pick_node(tc, ui, id, Sel::Plane(pi));
                     }
                     if r.double_clicked() {
                         tc.ask.push(qymcad_ui_state::TreeAsk::EditFeature(plane));
@@ -562,9 +551,11 @@ pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::U
                     if rename_node_active(tc, ui, RenameNode::DatumPoint(point)) {
                         return; // inline renaming
                     }
-                    let r = ui.selectable_label(*tc.sel == Sel::DatumPoint(pi), format!("{} {nm}", ph::DOT)).on_hover_text(crate::i18n::tr("tree-datum-hint"));
+                    let r = ui
+                        .selectable_label(*tc.sel == Sel::DatumPoint(pi) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, id), format!("{} {nm}", ph::DOT))
+                        .on_hover_text(crate::i18n::tr("tree-datum-hint"));
                     if r.clicked() {
-                        *tc.sel = Sel::DatumPoint(pi); // a datum point is selectable (in sync with 3D)
+                        tree_pick_node(tc, ui, id, Sel::DatumPoint(pi)); // a datum point is selectable (in sync with 3D)
                     }
                     if r.double_clicked() {
                         tc.ask.push(qymcad_ui_state::TreeAsk::EditFeature(point));
@@ -591,9 +582,11 @@ pub(crate) fn tree_datum_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::U
                     if rename_node_active(tc, ui, RenameNode::DatumAxis(axis)) {
                         return; // inline renaming
                     }
-                    let r = ui.selectable_label(*tc.sel == Sel::DatumAxis(ai), format!("{} {nm}", ph::LINE_SEGMENT)).on_hover_text(crate::i18n::tr("tree-datum-hint"));
+                    let r = ui
+                        .selectable_label(*tc.sel == Sel::DatumAxis(ai) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, id), format!("{} {nm}", ph::LINE_SEGMENT))
+                        .on_hover_text(crate::i18n::tr("tree-datum-hint"));
                     if r.clicked() {
-                        *tc.sel = Sel::DatumAxis(ai); // a datum axis is selectable
+                        tree_pick_node(tc, ui, id, Sel::DatumAxis(ai)); // a datum axis is selectable
                     }
                     if r.double_clicked() {
                         tc.ask.push(qymcad_ui_state::TreeAsk::EditFeature(axis));
@@ -714,14 +707,17 @@ pub(crate) fn tree_sketch_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::
             }
             return;
         }
-        let resp = ui.selectable_label(*tc.sel == Sel::Sketch(si), crate::gui::sel_title(&*tc.scheme, raw, *tc.sel == Sel::Sketch(si))).on_hover_text(crate::i18n::tr("tree-sketch-hint"));
+        let nid = qymcad_ui_state::node_of_sel(&*tc.project, Sel::Sketch(si)).unwrap_or(sid);
+        let lit = *tc.sel == Sel::Sketch(si) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, nid);
+        let resp = ui.selectable_label(lit, crate::gui::sel_title(&*tc.scheme, raw, lit)).on_hover_text(crate::i18n::tr("tree-sketch-hint"));
         if resp.double_clicked() {
             tc.ask.push(qymcad_ui_state::TreeAsk::EnterSketch(si));
         } else if resp.clicked() {
-            if *tc.sel == Sel::Sketch(si) {
+            let alone = qymcad_ui_state::TreeClick::of(&ui.input(|i| i.modifiers)) == qymcad_ui_state::TreeClick::Alone;
+            if alone && *tc.sel == Sel::Sketch(si) {
                 tc.ask.push(qymcad_ui_state::TreeAsk::SketchAgain(si));
             }
-            *tc.sel = Sel::Sketch(si);
+            tree_pick_node(tc, ui, nid, Sel::Sketch(si));
         }
         resp.context_menu(|ui| {
             if ui.button(format!("{} {}", ph::TEXT_T, crate::i18n::tr("act-rename"))).clicked() {
@@ -832,9 +828,10 @@ pub(crate) fn tree_feature_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui:
             (None, Some(w)) => format!("{} {}", ph::LINK_BREAK, crate::i18n::tr1("tree-feature-rebound", "what", w)),
             _ => crate::i18n::tr("tree-feature-hint"),
         };
-        let resp = ui.selectable_label(*tc.sel == Sel::Feature(ti), txt).on_hover_text(hover);
+        let nid = tc.project.timeline.get(ti).map(|n| n.id).unwrap_or_default();
+        let resp = ui.selectable_label(*tc.sel == Sel::Feature(ti) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, nid), txt).on_hover_text(hover);
         if resp.clicked() {
-            *tc.sel = Sel::Feature(ti);
+            tree_pick_node(tc, ui, nid, Sel::Feature(ti));
         }
         if resp.double_clicked() {
             act = Some(1);
@@ -1288,7 +1285,10 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
             }
 
             let after_tick = toggle_all.rect.max.x + ui.spacing().item_spacing.x * 0.5;
-            let heading_text = egui::RichText::new(format!("{} {}", ph::STACK, crate::i18n::tr("tree-components"))).text_style(egui::TextStyle::Button);
+            // in the colour of the other branches' headings (a widget's text), not the plainer colour of a label: the
+            // heading of the components stood greyer than Origin beside it
+            let heading_text =
+                egui::RichText::new(format!("{} {}", ph::STACK, crate::i18n::tr("tree-components"))).text_style(egui::TextStyle::Button).color(ui.visuals().widgets.inactive.text_color());
             ui.add(egui::Label::new(heading_text).selectable(false));
 
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1373,8 +1373,8 @@ pub(crate) fn build_tree(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui) {
                     if resp.double_clicked() {
                         tc.ask.push(qymcad_ui_state::TreeAsk::EnterComponent(cid));
                     } else if resp.clicked() {
-                        let m = ui.input(|i| i.modifiers);
-                        tree_select_component(&*tc.project, &mut *tc.sel, &mut *tc.tree_sel, ci, cid, m.ctrl || m.command, m.shift);
+                        let click = qymcad_ui_state::TreeClick::of(&ui.input(|i| i.modifiers));
+                        tree_select_component(&*tc.project, &mut *tc.sel, &mut *tc.tree_sel, ci, cid, click);
                     }
                     if resp.drag_started() {
                         tc.tree.drag = Some(cid);

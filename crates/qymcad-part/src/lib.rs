@@ -516,7 +516,8 @@ pub fn update_datum_feat(
                     PlaneDef::Manual | PlaneDef::FaceGone | PlaneDef::PlaneGone => {}
                 },
             }
-            store_cmd_exprs(cmd, project, fid); // `dist` stays parametric
+            turn_datum_plane(cmd, project, fid);
+            store_cmd_exprs(cmd, project, fid); // the offset, the tilts and the turn stay parametric
             Some(fid)
         }
         21 => {
@@ -683,6 +684,35 @@ pub fn apply_stitch_cmd(cmd: &qymcad_ui_state::FeatCommand, project: &mut Projec
     Some(body)
 }
 
+/// THE FIELDS OF A NEW DATUM PLANE: its offset, its tilts about its X and Y, its turn about its normal - each one also
+/// dragged by its arrow or its ring (`qymcad_ui_state::handles`).
+pub fn datum_plane_fields() -> Vec<qymcad_ui_state::CmdParam> {
+    vec![
+        qymcad_ui_state::CmdParam::new("f-offset", "dist", 10.0, -100000.0, 100000.0),
+        qymcad_ui_state::CmdParam::new("f-tilt-x", "tilt_x", 0.0, -360.0, 360.0),
+        qymcad_ui_state::CmdParam::new("f-tilt-y", "tilt_y", 0.0, -360.0, 360.0),
+        qymcad_ui_state::CmdParam::new("f-turn", "turn", 0.0, -360.0, 360.0),
+    ]
+}
+
+/// The fields of datum plane `fid` reopened: as it stands, each with its expression.
+fn datum_plane_fields_of(project: &Project, fid: Id, pl: &qymcad_core::model::WorkPlane, dist: f64) -> Vec<qymcad_ui_state::CmdParam> {
+    vec![
+        cmd_param_from(project, fid, "f-offset", "dist", dist, -100000.0, 100000.0),
+        cmd_param_from(project, fid, "f-tilt-x", "tilt_x", pl.tilt.about_x, -360.0, 360.0),
+        cmd_param_from(project, fid, "f-tilt-y", "tilt_y", pl.tilt.about_y, -360.0, 360.0),
+        cmd_param_from(project, fid, "f-turn", "turn", pl.rot_deg, -360.0, 360.0),
+    ]
+}
+
+/// The tilts and the turn of the command written into datum plane `id`.
+fn turn_datum_plane(cmd: &qymcad_ui_state::FeatCommand, project: &mut Project, id: Id) {
+    if let Some(pl) = project.planes.iter_mut().find(|p| p.id == id) {
+        pl.tilt = qymcad_core::feature::PlaneTilt { about_x: qymcad_ui_state::cmd_val(cmd, "tilt_x"), about_y: qymcad_ui_state::cmd_val(cmd, "tilt_y") };
+        pl.rot_deg = qymcad_ui_state::cmd_val(cmd, "turn");
+    }
+}
+
 /// Apply the active datum command (Enter). Parametric: the offset and the coordinates are expressions
 /// stored as feature dimensions.
 pub fn apply_datum_cmd(
@@ -706,7 +736,8 @@ pub fn apply_datum_cmd(
                     return None;
                 }
             };
-            store_cmd_exprs(cmd, project, id); // the `dist` offset stays parametric in all three cases
+            turn_datum_plane(cmd, project, id);
+            store_cmd_exprs(cmd, project, id); // the offset, the tilts and the turn stay parametric in all three cases
             Some(id)
         }
         21 => {
@@ -1418,6 +1449,46 @@ pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
     }
 }
 
+/// HOW FAR BESIDE ITS ARROW THE FIELDS OF A COMMAND STAND, on the screen: clear of the arrow and of the ball at its tip
+/// (5 px), near enough to be read as the arrow's.
+const ARROW_CLEARANCE: f32 = 40.0;
+
+/// WHERE THE FIELDS OF A COMMAND WITH AN ARROW STAND: beside the tip of the arrow from `base` to `tip`, across it on the
+/// screen - on its right where the box fits in `rect`, on its left where it does not (`clamp_popup` keeps 200 px for the
+/// box and pushed it back against the arrow). Reported behaviour: the length field of an extrusion stood against the tip
+/// of its arrow, and the arrow could hardly be seen or taken.
+fn beside_the_arrow(base: Pos2, tip: Pos2, rect: Rect) -> Pos2 {
+    const BOX_WIDTH: f32 = 200.0; // as `clamp_popup` keeps for it
+    let d = tip - base;
+    let across = if d.length() < 1.0 { egui::vec2(1.0, 0.0) } else { egui::vec2(-d.y, d.x).normalized() };
+    let right = if across.x < 0.0 { -across } else { across };
+    let on_right = tip + right * ARROW_CLEARANCE;
+    if on_right.x + BOX_WIDTH <= rect.right() - 4.0 {
+        on_right
+    } else {
+        // the box's left edge so far left that its right edge stands clear of the arrow
+        tip - right * ARROW_CLEARANCE - egui::vec2(BOX_WIDTH, 0.0)
+    }
+}
+
+/// HOW FAR FROM THE ARROWS AND RINGS OF A DATUM ITS FIELDS STAND, on the screen.
+const HANDLE_CLEARANCE: f32 = 24.0;
+
+/// WHERE THE FIELDS OF A DATUM STAND: beside the place its arrows and rings took on the screen (`handles_seen`), clear of
+/// it by `HANDLE_CLEARANCE` - on its right, on its left, under it, over it: the first side where the whole box of `size`
+/// fits in the view. None when no side fits. Reported behaviour: the fields of a point and of an axis by hand stood over
+/// their arrows - a box laid 270 px left of the point is 230 px wide only without the axis's six fields, and an arrow
+/// along Y or Z runs left as often as right.
+fn clear_of_the_handles(handles: Rect, size: egui::Vec2, rect: Rect) -> Option<Pos2> {
+    let view = Rect::from_min_max(rect.min + egui::vec2(4.0, 32.0), rect.max - egui::vec2(4.0, 4.0));
+    let h = handles.expand(HANDLE_CLEARANCE);
+    let mid_y = (h.center().y - size.y / 2.0).clamp(view.top(), (view.bottom() - size.y).max(view.top()));
+    let mid_x = (h.center().x - size.x / 2.0).clamp(view.left(), (view.right() - size.x).max(view.left()));
+    [Pos2::new(h.right(), mid_y), Pos2::new(h.left() - size.x, mid_y), Pos2::new(mid_x, h.bottom()), Pos2::new(mid_x, h.top() - size.y)]
+        .into_iter()
+        .find(|p| view.contains_rect(Rect::from_min_size(*p, size)))
+}
+
 pub fn cmd_anchor_screen(pc: &mut qymcad_ui_state::PartCtx, rect: Rect) -> Option<Pos2> {
     let basis = pc.cam.basis();
     let scr = qymcad_ui_state::Screen { cam: pc.cam, set: pc.set, rect, basis: &basis };
@@ -1425,8 +1496,11 @@ pub fn cmd_anchor_screen(pc: &mut qymcad_ui_state::PartCtx, rect: Rect) -> Optio
         1 | 3 => {
             let (base, dir, h) = qymcad_ui_state::feat_cmd_axis(pc.cmd, pc.gsel, pc.project)?;
             let dir = if pc.armed.cmd_kind() == 1 && pc.feat.flip { [-dir[0], -dir[1], -dir[2]] } else { dir };
-            let p = if pc.armed.cmd_kind() == 3 { base } else { [base[0] + dir[0] * h, base[1] + dir[1] * h, base[2] + dir[2] * h] };
-            Some(scr.at(p).0)
+            if pc.armed.cmd_kind() == 3 {
+                return Some(scr.at(base).0);
+            }
+            let tip = [base[0] + dir[0] * h, base[1] + dir[1] * h, base[2] + dir[2] * h];
+            Some(beside_the_arrow(scr.at(base).0, scr.at(tip).0, rect))
         }
         // EVERYTHING AIMED BY CLICKING A BODY KEEPS ITS POPUP BESIDE THE BODY.
         //
@@ -1446,15 +1520,23 @@ pub fn cmd_anchor_screen(pc: &mut qymcad_ui_state::PartCtx, rect: Rect) -> Optio
         // datum plane (20): at the origin of the picked reference; point (21): at (x,y,z); axis (22): at
         // the origin of the reference or of the hand-typed one
         20 => {
-            let p = pc
-                .datum
-                .plane_pick
-                .as_ref()
-                .and_then(|sp| qymcad_ui_state::mirror_plane_world(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, sp))
-                .map(|(o, _)| o)
-                .unwrap_or([0.0, 0.0, 0.0]);
-            Some(scr.at(p).0)
+            // NOTHING PICKED YET: in the corner of the view, clear of everything a plane or a face is to be picked on - at
+            // the origin it stood over the faces of a part drawn there
+            let Some((o, n)) =
+                pc.datum.plane_pick.as_ref().and_then(|sp| {
+                    qymcad_ui_state::mirror_plane_world(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, sp)
+                })
+            else {
+                return Some(rect.min + egui::vec2(16.0, 48.0));
+            };
+            // beside the arrow of the offset, from the reference to where the plane will stand, as an extrusion's fields
+            // stand beside its arrow
+            let d = qymcad_ui_state::cmd_val(pc.cmd, "dist");
+            let tip = [o[0] + n[0] * d, o[1] + n[1] * d, o[2] + n[2] * d];
+            Some(beside_the_arrow(scr.at(o).0, scr.at(tip).0, rect))
         }
+        // A POINT AND THE ORIGIN OF AN AXIS BY HAND are moved by the arrows and rings out of them: the fields stand clear of
+        // those (`clear_of_the_handles`), at the point only where there are none
         21 => Some(scr.at([qymcad_ui_state::cmd_val(pc.cmd, "x"), qymcad_ui_state::cmd_val(pc.cmd, "y"), qymcad_ui_state::cmd_val(pc.cmd, "z")]).0),
         22 => {
             let p = if pc.datum.axis_mode == 1 {
@@ -3744,17 +3826,17 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
                 PlaneDef::OffsetBase { base, dist } => {
                     pc.cmd.open(pc.armed, 20, was_3d);
                     pc.datum.plane_pick = Some(SketchPlane::World(base));
-                    pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-offset", "dist", dist, -100000.0, 100000.0)];
+                    pc.cmd.params = datum_plane_fields_of(&*pc.project, fid, &pl, dist);
                 }
                 PlaneDef::OffsetFace { body, face, dist } => {
                     pc.cmd.open(pc.armed, 20, was_3d);
                     pc.datum.plane_pick = Some(SketchPlane::Face(body, face));
-                    pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-offset", "dist", dist, -100000.0, 100000.0)];
+                    pc.cmd.params = datum_plane_fields_of(&*pc.project, fid, &pl, dist);
                 }
                 PlaneDef::OffsetPlane { plane: src, dist } => {
                     pc.cmd.open(pc.armed, 20, was_3d);
                     pc.datum.plane_pick = Some(SketchPlane::Datum(src));
-                    pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-offset", "dist", dist, -100000.0, 100000.0)];
+                    pc.cmd.params = datum_plane_fields_of(&*pc.project, fid, &pl, dist);
                 }
                 PlaneDef::Manual | PlaneDef::FaceGone | PlaneDef::PlaneGone => {
                     *pc.status = qymcad_i18n::tr("msg-plane-manual");
@@ -3981,7 +4063,13 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
         });
     }
     let want_focus = std::mem::take(&mut pc.cmd.focus); // a one-shot auto-focus of field 0 (Enter plus selection)
-    egui::Area::new(egui::Id::new("feat_cmd_popup")).fixed_pos(qymcad_ui_state::clamp_popup(anchor, rect) + egui::vec2(10.0, -10.0)).order(egui::Order::Foreground).show(ctx, |ui| {
+                                                        // the box of a datum beside its handles, by its size as the frame before drew it
+    let size = ctx.memory(|m| m.area_rect(egui::Id::new("feat_cmd_popup"))).map_or(egui::vec2(230.0, 160.0), |r| r.size());
+    let at = qymcad_ui_state::handles_seen(ctx)
+        .filter(|_| matches!(pc.armed.cmd_kind(), 20..=22))
+        .and_then(|h| clear_of_the_handles(h, size, rect))
+        .unwrap_or_else(|| qymcad_ui_state::clamp_popup(anchor, rect) + egui::vec2(10.0, -10.0));
+    egui::Area::new(egui::Id::new("feat_cmd_popup")).fixed_pos(at).order(egui::Order::Foreground).show(ctx, |ui| {
         egui::Frame::popup(ui.style()).show(ui, |ui| {
             // WHAT EXACTLY IS WRONG AND IN WHICH FIELD. There used to be only a flag saying whether all
             // was well, and the bottom of the popup printed that a dimension expression could not be

@@ -1806,8 +1806,24 @@ pub(crate) fn mesh_quality_dialog(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::
 
 /// The modal confirmation popup for deleting a tree node. Enter or Yes deletes, Esc or No cancels.
 pub(crate) fn confirm_delete_popup(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui::Context) {
+    // a group answered yes goes on, one node a frame
+    if let Some((sel, dependents)) = qymcad_ui_state::next_of_a_group_delete(&mut *wc.deferred, &*wc.project) {
+        wc.ask.push(qymcad_ui_state::WinAsk::Delete(sel, dependents));
+        ctx.request_repaint();
+        return;
+    }
+    // the group is done: its one step of undo is closed
+    if wc.deferred.delete_queue.step.take().is_some() {
+        qymcad_ui_state::commit_edit(&mut wc.rebuild());
+    }
     let Some(sel) = wc.deferred.delete else { return };
-    let what = crate::gui::sel_delete_label(&*wc.project, sel);
+    // SEVERAL ROWS PICKED: the question names every one of them
+    let group: Vec<qymcad_ui_state::Sel> = wc.deferred.delete_group.iter().filter_map(|id| qymcad_ui_state::sel_of_node(&*wc.project, *id)).collect();
+    let what = if group.len() > 1 {
+        group.iter().map(|s| crate::gui::sel_delete_label(&*wc.project, *s)).collect::<Vec<_>>().join(", ")
+    } else {
+        crate::gui::sel_delete_label(&*wc.project, sel)
+    };
     let cascade = crate::gui::delete_cascade_names(&*wc.project, sel);
     let mut do_del = ctx.input(|i| i.key_pressed(egui::Key::Enter)); // Yes is the default
     let mut cancel = ctx.input(|i| i.key_pressed(egui::Key::Escape));
@@ -1850,10 +1866,21 @@ pub(crate) fn confirm_delete_popup(wc: &mut qymcad_ui_state::WinCtx, ctx: &egui:
         });
     if do_del {
         wc.deferred.delete = None;
-        wc.ask.push(qymcad_ui_state::WinAsk::Delete(sel, std::mem::take(&mut wc.deferred.delete_dependents)));
+        let dependents = std::mem::take(&mut wc.deferred.delete_dependents);
+        // the one chosen now, the rest of the group after it, one a frame
+        let chosen = qymcad_ui_state::node_of_sel(&*wc.project, sel);
+        let rest: Vec<qymcad_core::model::Id> = std::mem::take(&mut wc.deferred.delete_group).into_iter().filter(|id| Some(*id) != chosen).collect();
+        // SEVERAL NODES ARE ONE STEP OF UNDO: opened here, closed when the last of them is gone
+        let step = (!rest.is_empty()).then(|| crate::i18n::tr("sk-delete"));
+        if let Some(name) = &step {
+            qymcad_ui_state::begin_edit(&mut *wc.edits, &*wc.project, name.clone());
+        }
+        wc.deferred.delete_queue = qymcad_ui_state::DeleteQueue { ids: rest, dependents, step };
+        wc.ask.push(qymcad_ui_state::WinAsk::Delete(sel, dependents));
     } else if cancel {
         wc.deferred.delete = None;
         wc.deferred.delete_dependents = false;
+        wc.deferred.delete_group.clear();
     }
 }
 

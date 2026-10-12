@@ -2085,6 +2085,9 @@ pub struct WorkPlane {
     pub normal: [f64; 3],
     /// Rotation of the plane's X axis about its normal, in degrees.
     pub rot_deg: f64,
+    /// The tilt of a plane defined by an offset, applied to the normal its definition gives (`Manual` ignores it).
+    #[serde(default)]
+    pub tilt: crate::feature::PlaneTilt,
     /// Parametric definition: when it is not `Manual`, `origin` and `normal` are resolved during
     /// regenerate.
     #[serde(default)]
@@ -2093,14 +2096,14 @@ pub struct WorkPlane {
 
 impl Default for WorkPlane {
     fn default() -> Self {
-        Self { id: 0, name: "name-plane".into(), origin: [0.0; 3], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, def: PlaneDef::Manual }
+        Self { id: 0, name: "name-plane".into(), origin: [0.0; 3], normal: [0.0, 0.0, 1.0], rot_deg: 0.0, tilt: Default::default(), def: PlaneDef::Manual }
     }
 }
 
 impl WorkPlane {
     /// Build a plane from a recognised mesh face.
     pub fn from_face(name: impl Into<String>, face: &crate::geom::MeshFace) -> Self {
-        Self { id: 0, name: name.into(), origin: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, rot_deg: 0.0, def: PlaneDef::Manual }
+        Self { id: 0, name: name.into(), origin: [face.centroid.x, face.centroid.y, face.centroid.z], normal: face.normal, rot_deg: 0.0, tilt: Default::default(), def: PlaneDef::Manual }
     }
 }
 
@@ -4359,7 +4362,7 @@ impl Project {
         let m = mat_mul12(&world_to_consumer, &src_to_world);
         let origin = apply12(&m, c);
         let normal = apply12_dir(&m, n);
-        let wp = WorkPlane { name: "name-plane-from-face-frozen".into(), origin, normal, rot_deg: 0.0, def: PlaneDef::Manual, ..Default::default() };
+        let wp = WorkPlane { name: "name-plane-from-face-frozen".into(), origin, normal, rot_deg: 0.0, tilt: Default::default(), def: PlaneDef::Manual, ..Default::default() };
         self.add_plane(wp)
     }
 
@@ -4753,12 +4756,14 @@ impl Project {
         }
         // Datums and planes.
         for p in &self.planes {
-            let WorkPlane { id, name, origin, normal, rot_deg, def } = p;
+            let WorkPlane { id, name, origin, normal, rot_deg, tilt, def } = p;
             (id, name).hash(&mut h);
             for v in origin.iter().chain(normal.iter()) {
                 bits(*v, &mut h);
             }
             bits(*rot_deg, &mut h);
+            bits(tilt.about_x, &mut h);
+            bits(tilt.about_y, &mut h);
             // how the plane is defined - on a face, through points, at an offset - not only where it stands now
             feed(def, &mut h);
         }

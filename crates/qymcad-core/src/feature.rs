@@ -234,6 +234,37 @@ impl PlaneFrame {
     }
 }
 
+/// THE TILT OF A DATUM PLANE, in degrees: about the X and about the Y axis of the plane before the tilt, through the
+/// point the plane stands at. The X and Y are the ones a sketch on the plane before the tilt takes
+/// (`PlaneFrame::world_aligned`); the turn about the normal is the plane's own `rot_deg`.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct PlaneTilt {
+    pub about_x: f64,
+    pub about_y: f64,
+}
+
+impl PlaneTilt {
+    /// The axes the tilt turns about, of a plane whose normal before the tilt is `normal`: the frame's X and Y.
+    pub fn axes(normal: [f64; 3]) -> PlaneFrame {
+        PlaneFrame::world_aligned([0.0; 3], normal, 0.0)
+    }
+
+    /// The normal `normal` tilted: about the plane's X first, then about its Y, both axes of the plane before the tilt.
+    pub fn apply(self, normal: [f64; 3]) -> [f64; 3] {
+        let f = Self::axes(normal);
+        let n = norm3(normal).unwrap_or([0.0, 0.0, 1.0]);
+        turn_about(turn_about(n, f.x, self.about_x), f.y, self.about_y)
+    }
+}
+
+/// `v` turned about the unit axis `k` by `deg` degrees, counter-clockwise looking down `k` (Rodrigues).
+pub fn turn_about(v: [f64; 3], k: [f64; 3], deg: f64) -> [f64; 3] {
+    let (s, c) = deg.to_radians().sin_cos();
+    let kxv = cross3(k, v);
+    let kv = k[0] * v[0] + k[1] * v[1] + k[2] * v[2];
+    [v[0] * c + kxv[0] * s + k[0] * kv * (1.0 - c), v[1] * c + kxv[1] * s + k[1] * kv * (1.0 - c), v[2] * c + kxv[2] * s + k[2] * kv * (1.0 - c)]
+}
+
 fn cross3(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
     [a[1] * b[2] - a[2] * b[1], a[2] * b[0] - a[0] * b[2], a[0] * b[1] - a[1] * b[0]]
 }
@@ -256,6 +287,16 @@ impl BasePlane {
             BasePlane::XY => PlaneFrame { origin: [0.0; 3], x: [1.0, 0.0, 0.0], y: [0.0, 1.0, 0.0] },
             BasePlane::XZ => PlaneFrame { origin: [0.0; 3], x: [1.0, 0.0, 0.0], y: [0.0, 0.0, 1.0] },
             BasePlane::YZ => PlaneFrame { origin: [0.0; 3], x: [0.0, 1.0, 0.0], y: [0.0, 0.0, 1.0] },
+        }
+    }
+    /// THE SIDE A PLANE OFFSET FROM THIS ONE GOES TO: the positive axis across it - +Z from XY, +Y from XZ, +X from YZ.
+    /// Not the normal of `frame`, which for XZ is X x Z = -Y: offset along it, a plane 100 from XZ was previewed at
+    /// +100 and made at -100. The preview and the plane made both take it from here.
+    pub fn offset_direction(self) -> [f64; 3] {
+        match self {
+            BasePlane::XY => [0.0, 0.0, 1.0],
+            BasePlane::XZ => [0.0, 1.0, 0.0],
+            BasePlane::YZ => [1.0, 0.0, 0.0],
         }
     }
 }
