@@ -10,6 +10,7 @@ The builds are on the [Releases](https://github.com/grengojbo/QymCAD/releases) p
 |---|---|---|
 | Windows 10/11 | `qymcad-…-x64.msi` | Run it and go through the installer. Or `…-win64.zip`: unpack it anywhere. |
 | macOS (Apple Silicon) | `qymcad-…-macos-arm64.zip` | Unpack it and move `QymCAD.app` to Applications. The build has no Apple signature: clear the quarantine once with the command from `README.txt` in the archive. |
+| macOS (Intel) | `qymcad-…-macos-x86_64.zip` | The same as for Apple Silicon. Which processor you have is shown in Apple menu -> About This Mac: "Chip Apple M…" is Apple Silicon, "Processor Intel" is Intel. |
 | Linux | `qymcad-…-x86_64.AppImage` | Put the file where you like (for example `~/Applications`) and let it run: `chmod +x qymcad-*.AppImage`. |
 
 ## 2. Connect Claude — one button
