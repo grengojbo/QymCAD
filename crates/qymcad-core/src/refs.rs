@@ -319,6 +319,8 @@ pub struct Candidate {
     pub area: f64,
     /// Filled in for edges only: a face has no endpoints.
     pub edge: Option<EdgeGeom>,
+    /// For an edge, the two faces it parts as the kernel tells them; zero for a face.
+    pub faces: crate::geom::EdgeFaces,
 }
 
 /// Resolve a query against the live geometry.
@@ -429,10 +431,10 @@ pub fn resolve(query: &Query, pool: &[Candidate], names: &NameTable, face_pool: 
             let (sa, sb) = (resolve(a, face_pool, names, face_pool), resolve(b, face_pool, names, face_pool));
             pool.iter()
                 .filter(|c| {
-                    names.edge(c.desc).is_some_and(|e| {
-                        let (f0, f1) = (e.faces[0], e.faces[1]);
-                        (sa.contains(&f0) && sb.contains(&f1)) || (sa.contains(&f1) && sb.contains(&f0))
-                    })
+                    // the pair off the edge's name; an edge between faces with no names has none, and the kernel's pair
+                    // stands for it
+                    let parted = names.edge(c.desc).map(|e| crate::geom::EdgeFaces { one: e.faces[0], other: e.faces[1] }).unwrap_or(c.faces);
+                    parted.known() && ((sa.contains(&parted.one) && sb.contains(&parted.other)) || (sa.contains(&parted.other) && sb.contains(&parted.one)))
                 })
                 .map(|c| c.desc)
                 .collect()

@@ -18,7 +18,7 @@ fn stand() -> (NameTable, Vec<Candidate>, crate::model::Id, crate::model::Id) {
     let mut pool = Vec::new();
     let mut put = |names: &mut NameTable, name: GeoName, centroid: [f64; 3], normal: [f64; 3], area: f64| {
         let desc = names.intern_face(name);
-        pool.push(Candidate { desc, centroid, normal, area, edge: None });
+        pool.push(Candidate { desc, centroid, normal, area, edge: None, ..Default::default() });
         desc
     };
     // the extrusion: two caps and four walls
@@ -133,7 +133,7 @@ fn a_query_grows_with_the_model_while_a_list_of_ids_does_not() {
     // an edit earlier in the timeline: a fifth side appeared in the sketch and the feature produced another
     // wall
     let desc = names.intern_face(GeoName::new(base, Role::Wall, 105));
-    pool.push(Candidate { desc, centroid: [8.0, 8.0, 5.0], normal: [0.7, 0.7, 0.0], area: 150.0, edge: None });
+    pool.push(Candidate { desc, centroid: [8.0, 8.0, 5.0], normal: [0.7, 0.7, 0.0], area: 150.0, edge: None, ..Default::default() });
 
     let ids = by_ids.resolve("ref-what-chamfer-edges", &pool, &names, &pool).expect("the list of numbers resolves");
     let q = by_query.resolve("ref-what-chamfer-edges", &pool, &names, &pool).expect("the query resolves");
@@ -168,7 +168,7 @@ fn edges_are_described_through_the_faces_they_separate() {
     let mut edges: Vec<Candidate> = Vec::new();
     let mut put = |names: &mut NameTable, a: u32, b: u32, mid: [f64; 3]| {
         let desc = names.intern_edge(EdgeName::new(a, b, 0));
-        edges.push(Candidate { desc, centroid: mid, normal: [1.0, 0.0, 0.0], area: 10.0, edge: None });
+        edges.push(Candidate { desc, centroid: mid, normal: [1.0, 0.0, 0.0], area: 10.0, edge: None, ..Default::default() });
         desc
     };
     // the four edges of the top rim, where the cap meets the walls
@@ -200,7 +200,7 @@ fn an_edge_set_grows_when_the_face_gains_a_new_edge() {
     let mut edges: Vec<Candidate> = Vec::new();
     for (i, &w) in walls.iter().enumerate() {
         let desc = names.intern_edge(EdgeName::new(top, w, 0));
-        edges.push(Candidate { desc, centroid: [i as f64, 0.0, 10.0], normal: [1.0, 0.0, 0.0], area: 10.0, edge: None });
+        edges.push(Candidate { desc, centroid: [i as f64, 0.0, 10.0], normal: [1.0, 0.0, 0.0], area: 10.0, edge: None, ..Default::default() });
     }
     let by_ids = Ref::picks(&edges.iter().map(|c| c.desc).collect::<Vec<_>>());
     let by_query = Ref::many(Query::Adjacent(Box::new(Query::Id(top))));
@@ -208,9 +208,9 @@ fn an_edge_set_grows_when_the_face_gains_a_new_edge() {
     // the edit: a fifth edge appeared on the cap because the face was trimmed
     let new_wall = names.intern_face(GeoName::new(base, Role::Wall, 105));
     let mut faces2 = faces.clone();
-    faces2.push(Candidate { desc: new_wall, centroid: [8.0, 8.0, 5.0], normal: [0.7, 0.7, 0.0], area: 150.0, edge: None });
+    faces2.push(Candidate { desc: new_wall, centroid: [8.0, 8.0, 5.0], normal: [0.7, 0.7, 0.0], area: 150.0, edge: None, ..Default::default() });
     let desc = names.intern_edge(EdgeName::new(top, new_wall, 0));
-    edges.push(Candidate { desc, centroid: [9.0, 9.0, 10.0], normal: [1.0, 0.0, 0.0], area: 10.0, edge: None });
+    edges.push(Candidate { desc, centroid: [9.0, 9.0, 10.0], normal: [1.0, 0.0, 0.0], area: 10.0, edge: None, ..Default::default() });
 
     let ids = by_ids.resolve("ref-what-fillet-edge", &edges, &names, &faces2).expect("the list resolves");
     let q = by_query.resolve("ref-what-fillet-edge", &edges, &names, &faces2).expect("the query resolves");
@@ -228,7 +228,7 @@ fn seg(pool: &mut Vec<Candidate>, desc: u32, a: [f64; 3], b: [f64; 3]) {
     let mid = [(a[0] + b[0]) / 2.0, (a[1] + b[1]) / 2.0, (a[2] + b[2]) / 2.0];
     let d = [b[0] - a[0], b[1] - a[1], b[2] - a[2]];
     let l = (d[0] * d[0] + d[1] * d[1] + d[2] * d[2]).sqrt();
-    pool.push(Candidate { desc, centroid: mid, normal: [d[0] / l, d[1] / l, d[2] / l], area: l, edge: Some(crate::refs::EdgeGeom { a, b, ..Default::default() }) });
+    pool.push(Candidate { desc, centroid: mid, normal: [d[0] / l, d[1] / l, d[2] / l], area: l, edge: Some(crate::refs::EdgeGeom { a, b, ..Default::default() }), ..Default::default() });
 }
 
 /// A quarter-circle arc in the XY plane, from `from` to `to` about `center`.
@@ -239,6 +239,7 @@ fn arc(pool: &mut Vec<Candidate>, desc: u32, center: [f64; 3], r: f64, from: [f6
         normal: [0.0, 0.0, 0.0],
         area: r * std::f64::consts::FRAC_PI_2,
         edge: Some(crate::refs::EdgeGeom { a: from, b: to, center, axis: [0.0, 0.0, 1.0], radius: r }),
+        ..Default::default()
     });
 }
 

@@ -407,6 +407,7 @@ fn circular_edge_connector_uses_center_axis() {
             axis: [0.0, 0.0, 1.0],
             radius: 3.0,
             ref_dir: [0.0; 3],
+            ..Default::default()
         }],
     );
     // The resolved edge axis is centre plus axis, not rim plus tangent.
@@ -505,13 +506,35 @@ fn a_free_slot_stays_where_you_put_it_and_a_driven_one_holds() {
     let body_a = p.add_extrude(1, 5.0);
     p.regen_edges.insert(
         body_a,
-        vec![MeshEdge { id: 5, mid: [0.0, 0.0, 5.0], dir: [0.0, 0.0, 1.0], a: [0.0, 0.0, 0.0], b: [0.0, 0.0, 10.0], radius: 0.0, center: [0.0; 3], axis: [0.0, 0.0, 1.0], ref_dir: [0.0; 3] }],
+        vec![MeshEdge {
+            id: 5,
+            mid: [0.0, 0.0, 5.0],
+            dir: [0.0, 0.0, 1.0],
+            a: [0.0, 0.0, 0.0],
+            b: [0.0, 0.0, 10.0],
+            radius: 0.0,
+            center: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            ref_dir: [0.0; 3],
+            ..Default::default()
+        }],
     );
     p.set_active_component(Some(b));
     let body_b = p.add_extrude(2, 5.0);
     p.regen_edges.insert(
         body_b,
-        vec![MeshEdge { id: 7, mid: [0.0, 0.0, 0.0], dir: [0.0, 0.0, 1.0], a: [0.0, 0.0, -5.0], b: [0.0, 0.0, 5.0], radius: 0.0, center: [0.0; 3], axis: [0.0, 0.0, 1.0], ref_dir: [0.0; 3] }],
+        vec![MeshEdge {
+            id: 7,
+            mid: [0.0, 0.0, 0.0],
+            dir: [0.0, 0.0, 1.0],
+            a: [0.0, 0.0, -5.0],
+            b: [0.0, 0.0, 5.0],
+            radius: 0.0,
+            center: [0.0; 3],
+            axis: [0.0, 0.0, 1.0],
+            ref_dir: [0.0; 3],
+            ..Default::default()
+        }],
     );
     let ca = p.add_connector(a, AnchorRef::EdgeMid(body_a, 5));
     let cb = p.add_connector(b, AnchorRef::EdgeMid(body_b, 7));

@@ -3230,6 +3230,7 @@ impl Project {
                         centroid: [f.centroid.x, f.centroid.y, f.centroid.z],
                         normal: f.normal,
                         area: f.area,
+                        faces: Default::default(),
                     })
                     .collect()
             })
@@ -3262,6 +3263,7 @@ impl Project {
                 normal: e.dir,
                 area: ((e.b[0] - e.a[0]).powi(2) + (e.b[1] - e.a[1]).powi(2) + (e.b[2] - e.a[2]).powi(2)).sqrt(),
                 edge: Some(crate::refs::EdgeGeom { a: e.a, b: e.b, center: e.center, axis: e.axis, radius: e.radius }),
+                faces: e.faces,
             })
             .collect()
     }
@@ -3280,7 +3282,7 @@ impl Project {
             .into_iter()
             .map(|(p, ids)| {
                 let desc = self.names.intern_vertex(crate::names::VertexName::new(ids));
-                crate::refs::Candidate { desc, centroid: p, normal: [0.0, 0.0, 1.0], area: 0.0, edge: None }
+                crate::refs::Candidate { desc, centroid: p, normal: [0.0, 0.0, 1.0], area: 0.0, edge: None, ..Default::default() }
             })
             .collect()
     }

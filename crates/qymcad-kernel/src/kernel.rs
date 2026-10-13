@@ -400,6 +400,7 @@ impl qymcad_core::feature::Kernel for OcctKernel {
         let Some(s) = shapes.get(&body) else {
             return Vec::new();
         };
+        let parts: std::collections::HashMap<u32, qymcad_core::geom::EdgeFaces> = s.edge_face_pairs().into_iter().map(|(e, one, other)| (e, qymcad_core::geom::EdgeFaces { one, other })).collect();
         s.edges_info()
             .into_iter()
             .filter_map(|e| {
@@ -438,7 +439,8 @@ impl qymcad_core::feature::Kernel for OcctKernel {
                 // means there is no adjacent face: the roll about such an edge is undefined, and the solver
                 // leaves it free rather than inventing an orientation.
                 let ref_dir = e.ref_dir.unwrap_or_default();
-                Some(qymcad_core::geom::MeshEdge { id, mid, dir, a: p(0), b: p(poly.len() - 1), center, axis, radius, ref_dir })
+                let faces = parts.get(&id).copied().unwrap_or_default();
+                Some(qymcad_core::geom::MeshEdge { id, mid, dir, a: p(0), b: p(poly.len() - 1), center, axis, radius, ref_dir, faces })
             })
             .collect()
     }

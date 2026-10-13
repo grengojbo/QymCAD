@@ -823,6 +823,25 @@ pub struct MeshEdge {
     /// adjacent face removes that dependency.
     #[serde(default)]
     pub ref_dir: [f64; 3],
+    /// The two faces the edge parts, by their persistent ids, as the kernel tells them; zero where it tells none (a
+    /// seam, a free edge of a sheet). A query "between two faces" reads the pair off the edge's name, and an edge
+    /// between faces with no names - a body made of a mesh, a body come from a STEP - has none: it is found by these.
+    #[serde(default)]
+    pub faces: EdgeFaces,
+}
+
+/// The two faces an edge parts, by their persistent ids; both zero where the edge parts no two.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default, Serialize, Deserialize)]
+pub struct EdgeFaces {
+    pub one: u32,
+    pub other: u32,
+}
+
+impl EdgeFaces {
+    /// Whether the edge parts two faces at all.
+    pub fn known(&self) -> bool {
+        self.one != 0 && self.other != 0
+    }
 }
 
 impl MeshEdge {

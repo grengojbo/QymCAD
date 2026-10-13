@@ -2771,6 +2771,7 @@ fn a_moved_sketch_does_not_cost_the_fillet_its_edges() {
         axis: [0.0, 0.0, 1.0],
         radius: 0.0,
         ref_dir: [0.0, 0.0, 1.0],
+        ..Default::default()
     };
     let fid: Id = 100;
     // A part roughly 40 mm across; the edges used to sit here.
