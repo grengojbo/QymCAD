@@ -18,10 +18,11 @@ use qymcad_ui_state::PartCtx;
 use std::sync::{Arc, Mutex};
 
 /// The commands whose values the geometry bounds and a trial build answers: fillet, chamfer, shell, hole, torus, draft,
-/// split body, thicken, split faces, offset surface - a curved face moved in past its radius turns inside out. A thread
+/// split body, thicken, split faces, offset surface - a curved face moved in past its radius turns inside out - and a
+/// feature made again exact, a rounding of it as wide as its faces allow. A thread
 /// is judged by the checks the rebuild makes before the kernel instead: a trial of a good thread sweeps its turns, 3 s
 /// and more a frame in a debug build.
-const TRIED: [u8; 10] = [4, 5, 6, 7, 14, 23, 27, 28, 29, 36];
+const TRIED: [u8; 11] = [4, 5, 6, 7, 14, 23, 27, 28, 29, 36, 37];
 
 pub use qymcad_ui_state::Trial;
 
@@ -141,6 +142,8 @@ struct TrialJob {
     joint: qymcad_ui_state::JointCommand,
     workbench: qymcad_ui_state::Workbench,
     sketch_ses: qymcad_ui_state::SketchSession,
+    /// The feature a "Recognise feature" holds, the one thing of the recognition tools a trial applies.
+    feature: Option<qymcad_ui_state::FeatureInHand>,
 }
 
 /// Copies of what the command works on, gathered on the frame thread.
@@ -193,6 +196,7 @@ fn gather(pc: &PartCtx) -> TrialJob {
         joint: pc.joint.clone(),
         workbench: pc.workbench,
         sketch_ses: *pc.sketch_ses,
+        feature: pc.recognise.feature.clone(),
     }
 }
 
@@ -239,6 +243,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         joint,
         workbench,
         mut sketch_ses,
+        feature,
     } = job;
     let before: std::collections::HashSet<Id> = project.timeline.iter().map(|n| n.id).collect();
     let mut live = qymcad_ui_state::LiveGeom { ready: true, ..Default::default() };
@@ -252,7 +257,8 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     }
     // a rebuild outside a running window happens at once, here, rather than being handed to a thread of its own
     let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), String::new(), false);
-    let (mut recognise, mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default(), Default::default());
+    let (mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default());
+    let mut recognise = qymcad_ui_state::RecogniseTool { feature, ..Default::default() };
     let scheme = qymcad_ui_state::SchemeUi::default();
     let edited = cmd.edit;
     let mut trial = PartCtx {

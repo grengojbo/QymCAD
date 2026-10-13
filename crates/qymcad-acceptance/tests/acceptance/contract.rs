@@ -137,6 +137,7 @@ contract!(break_ref, qymcad_acceptance::tools::assembly::BREAK_REF);
 contract!(tree_search, qymcad_acceptance::tools::assembly::SEARCH);
 contract!(menu_parameters, qymcad_acceptance::tools::menus::PARAMETERS);
 contract!(recognise, qymcad_acceptance::tools::part::RECOGNISE);
+contract!(recognise_feature, qymcad_acceptance::tools::part::RECOGNISE_FEATURE);
 contract!(menu_export_project, qymcad_acceptance::tools::menus::EXPORT_PROJECT);
 contract!(menu_recent, qymcad_acceptance::tools::menus::RECENT);
 contract!(menu_recent_clear, qymcad_acceptance::tools::menus::RECENT_CLEAR);

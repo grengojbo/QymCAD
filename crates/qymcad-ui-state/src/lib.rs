@@ -7193,6 +7193,16 @@ pub struct RecogniseTool {
     /// the mesh, the tolerance and the sharp angle (as bits) last sent to be counted
     pub asked: Option<(Id, u64, u64)>,
     pub found: std::sync::Arc<std::sync::Mutex<Option<RecogniseFound>>>,
+    /// The hole, rounding or chamfer the "Recognise feature" tool found at its last click.
+    pub feature: Option<FeatureInHand>,
+}
+
+/// A FEATURE FOUND ON A BODY AND HELD BY THE TOOL until Enter: the body it stands on and what the core is to lay down
+/// for it, its sizes the ones the fields started from.
+#[derive(Clone, Debug)]
+pub struct FeatureInHand {
+    pub body: Id,
+    pub remake: qymcad_core::model::Remake,
 }
 
 /// What a count of a mesh found: the kind of surface under each triangle (0 plane, 1 cylinder, 2 cone, 3 sphere,
@@ -15201,6 +15211,7 @@ pub fn clear_feat_picks(p: FeatPicks) {
     p.draft.flip = false;
     p.stitch_parts.clear(); // the sheets picked for stitching are a pick like everything above
     p.recognise.src = None;
+    p.recognise.feature = None;
     p.trim.keep = None;
     p.trim.tool = None;
 }

@@ -701,13 +701,16 @@ fn row_of(s: &mut Session, tool: &Tool, node: &Node) -> Pos2 {
         Some(w) => s.word(w),
         None => doc.features.iter().find(|f| f.kind == node.kind).map(|f| f.name.clone()).unwrap_or_else(|| panic!("{}: no {} node in the timeline: {:?}", tool.id, node.kind, doc.features)),
     };
-    let left = s.canvas().min.x;
-    let mut rows: Vec<(String, qymcad::Rect)> = s.words_at().into_iter().filter(|(w, r)| r.max.x < left && w.starts_with(&lead)).collect();
+    // A ROW OF THE TREE stands beside the canvas, not above it: the title of a tool kept in hand once applied heads its
+    // bar with the same word, left of the canvas too, and the double click meant for the row went to the bar
+    let canvas = s.canvas();
+    let in_tree = |r: &qymcad::Rect| r.max.x < canvas.min.x && r.min.y >= canvas.min.y;
+    let mut rows: Vec<(String, qymcad::Rect)> = s.words_at().into_iter().filter(|(w, r)| in_tree(r) && w.starts_with(&lead)).collect();
     // a node the tree names by what it did - a boolean that cut is "Body cut" under the bar's "Body boolean" - is
     // found by the name the document gives it, when the word asked for heads no row
     if rows.is_empty() {
         if let Some(name) = doc.features.iter().find(|f| f.kind == node.kind).map(|f| f.name.clone()) {
-            rows = s.words_at().into_iter().filter(|(w, r)| r.max.x < left && w.starts_with(&name)).collect();
+            rows = s.words_at().into_iter().filter(|(w, r)| in_tree(r) && w.starts_with(&name)).collect();
         }
     }
     match rows.as_slice() {

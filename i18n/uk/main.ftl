@@ -2694,6 +2694,27 @@ cmd-recognise-exact = Точні поверхні
 cmd-recognise-asis = Як є (багатогранник)
 mesh-recognise = Розпізнане тіло
 mesh-solid = Тіло з сітки
+f-recognise-feature = Розпізнати елемент
+tb-recognise-feature-hint = Розпізнати елемент — клацніть отвір, скруглення або фаску тіла -> розмір -> Enter: елемент стає точним, його розмір — у дереві
+hint-recognise-feature = Клацніть отвір, скруглення або фаску тіла
+msg-recognise-feature = Клацніть отвір, скруглення або фаску тіла; Esc — скасування
+msg-edit-remade = Змініть розмір і натисніть Enter; Esc лишає як було
+msg-found-hole-through = Отвір наскрізь: Ø{ $measured } -> Ø{ $size }. Enter робить його точним
+msg-found-hole-blind = Глухий отвір: Ø{ $measured } -> Ø{ $size }, глибина { $depth }. Enter робить його точним
+msg-found-round = Скруглення: R{ $measured } -> R{ $size }. Enter робить його точним
+msg-found-chamfer = Фаска: { $measured } -> { $size }. Enter робить її точною
+msg-unfound-no-surface = Тут не знайдено поверхні: сітка грубіша за допуск. Збільште «Допуск» і клацніть ще раз
+msg-unfound-no-entry = Ця кругла стінка не має грані, з якої її свердлити: це вал або бобишка, а не отвір
+msg-unfound-not-two-sides = До цього скруглення вздовж нього не прилягають дві грані: клацніть іншу його смугу або скругліть ребро інструментом «Скруглення»
+msg-unfound-uneven = Катети цієї фаски різні: нерівну фаску робить «Фаска» з двома відстанями
+msg-unfound-other = Тут немає отвору, скруглення чи фаски: клацніть стінку отвору, скруглення або похилу грань між двома гранями
+feat-name-remade-hole = Розпізнаний отвір
+feat-name-remade-round = Розпізнане скруглення
+feat-name-remade-chamfer = Розпізнана фаска
+feat-remade-hole-through = Розпізнаний отвір Ø{ $d } наскрізь
+feat-remade-hole-blind = Розпізнаний отвір Ø{ $d }×{ $depth }
+feat-remade-round = Розпізнане скруглення R{ $r }
+feat-remade-chamfer = Розпізнана фаска { $d }
 
 # Е2: обрізка поверхні
 tb-trim-surface-hint = Обрізати — відсікти зайве по сусідньому тілу

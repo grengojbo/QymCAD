@@ -317,6 +317,19 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::FaceCopy { ref faces, .. } => format!("{} {}", ph::COPY_SIMPLE, crate::i18n::tr1("feat-face-copy", "n", &faces.query.picked_descs().len().to_string())),
         FeatureKind::OffsetSurface { dist, .. } => format!("{} {}", ph::SELECTION_FOREGROUND, crate::i18n::tr1("feat-offset-surface", "d", &crate::i18n::num(at("dist", dist), 1))),
         FeatureKind::RemoveFace { ref faces, .. } => format!("{} {}", ph::ERASER, crate::i18n::tr1("feat-remove-face", "n", &faces.query.picked_descs().len().to_string())),
+        // A FEATURE MADE EXACT names what it is and its size, as the tool that made it does
+        FeatureKind::Remade { ref exact, .. } => {
+            use qymcad_core::model::{Exact, Reach};
+            let text = match *exact {
+                Exact::Hole { diameter, reach: Reach::Through, .. } => crate::i18n::tr1("feat-remade-hole-through", "d", &crate::i18n::num(at("diameter", diameter), 1)),
+                Exact::Hole { diameter, depth, .. } => {
+                    crate::i18n::tr2("feat-remade-hole-blind", "d", &crate::i18n::num(at("diameter", diameter), 1), "depth", &crate::i18n::num(at("depth", depth), 1))
+                }
+                Exact::Round { radius, .. } => crate::i18n::tr1("feat-remade-round", "r", &crate::i18n::num(at("radius", radius), 1)),
+                Exact::Chamfer { leg, .. } => crate::i18n::tr1("feat-remade-chamfer", "d", &crate::i18n::num(at("dist", leg), 1)),
+            };
+            format!("{} {text}", ph::SPARKLE)
+        }
         FeatureKind::SplitFace { offset, .. } => {
             let offset = at("offset", offset);
             let off = if offset.abs() < 1e-9 { String::new() } else { format!(" {offset:+.1}") };

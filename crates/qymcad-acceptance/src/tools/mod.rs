@@ -42,6 +42,7 @@ pub static ALL: &[&Tool] = &[
     &part::SECTION,
     &part::MEASURE_3D,
     &part::RECOGNISE,
+    &part::RECOGNISE_FEATURE,
     &part::PIECE_TO_PART,
     &primitives::BOX,
     &primitives::CYLINDER,

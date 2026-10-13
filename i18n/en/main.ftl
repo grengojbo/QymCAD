@@ -2701,6 +2701,27 @@ cmd-recognise-exact = Exact surfaces
 cmd-recognise-asis = As it is (a polyhedron)
 mesh-recognise = Recognised body
 mesh-solid = Solid from a mesh
+f-recognise-feature = Recognise feature
+tb-recognise-feature-hint = Recognise feature - click a hole, a rounding or a chamfer of a body -> its size -> Enter: the feature made again exact, its size in the tree
+hint-recognise-feature = Click a hole, a rounding or a chamfer of a body
+msg-recognise-feature = Click a hole, a rounding or a chamfer of a body; Esc cancels
+msg-edit-remade = Change the size and press Enter; Esc leaves it as it was
+msg-found-hole-through = Hole through: Ø{ $measured } -> Ø{ $size }. Enter makes it exact
+msg-found-hole-blind = Blind hole: Ø{ $measured } -> Ø{ $size }, { $depth } deep. Enter makes it exact
+msg-found-round = Rounding: R{ $measured } -> R{ $size }. Enter makes it exact
+msg-found-chamfer = Chamfer: { $measured } -> { $size }. Enter makes it exact
+msg-unfound-no-surface = No surface found here: the mesh is rougher than the tolerance. Raise "Tolerance" and click again
+msg-unfound-no-entry = This round wall has no face to drill it from: it is a shaft or a boss, not a hole
+msg-unfound-not-two-sides = This rounding is not met by two faces along its length: click another strip of it, or round the edge with "Fillet"
+msg-unfound-uneven = The legs of this chamfer differ: an uneven chamfer is made with "Chamfer" and two distances
+msg-unfound-other = No hole, rounding or chamfer here: click the wall of a hole, a rounding, or a slanted face between two faces
+feat-name-remade-hole = Recognised hole
+feat-name-remade-round = Recognised rounding
+feat-name-remade-chamfer = Recognised chamfer
+feat-remade-hole-through = Recognised hole Ø{ $d } through
+feat-remade-hole-blind = Recognised hole Ø{ $d }×{ $depth }
+feat-remade-round = Recognised rounding R{ $r }
+feat-remade-chamfer = Recognised chamfer { $d }
 
 # Э2: обрезка поверхности
 tb-trim-surface-hint = Trim — cut the excess away along a neighbouring body

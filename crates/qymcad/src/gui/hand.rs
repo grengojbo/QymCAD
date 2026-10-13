@@ -599,6 +599,23 @@ impl<'a> Hand<'a> {
         self
     }
 
+    /// A FILE BROUGHT IN by File -> Import: the chooser answered with `path`, and the reading waited for as a person
+    /// waits for it.
+    pub fn import(&mut self, path: &str) -> &mut Self {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.app.arm_file_ask(rx, super::import_door::import_answer(qymcad_ui_state::Want::Anything));
+        tx.send(Some(std::path::PathBuf::from(path))).expect("the chooser's channel is open");
+        self.frame(Vec::new());
+        for _ in 0..600 {
+            if self.app.regen.busy.is_none() {
+                break;
+            }
+            self.frame(Vec::new());
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        self
+    }
+
     /// Press a tool button in the panel.
     pub fn tool(&mut self, kind: u8) -> &mut Self {
         self.app.start_feat_cmd(kind);

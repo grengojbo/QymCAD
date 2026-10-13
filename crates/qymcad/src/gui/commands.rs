@@ -191,27 +191,9 @@ impl App {
         self.tools.cmd.prev_3d = prev_3d;
         self.params.boolean.edit = None; // the edit mode of the boolean is not held over into another command
         match cmd {
-            1 | 3 => start_sketch_cmd(&mut self.part_ctx(), cmd),
-            8 => start_sweep_cmd(&mut self.part_ctx()),
-            9 => start_loft_cmd(&mut self.part_ctx()),
-            4..=7 => start_body_cmd(&mut self.part_ctx(), cmd),
-            23 => start_draft_cmd(&mut self.part_ctx()),
-            25 => start_push_face_cmd(&mut self.part_ctx()),
-            26 => start_remove_face_cmd(&mut self.part_ctx()),
-            30 | 36 => start_face_copy_cmd(&mut self.part_ctx(), cmd),
-            31 => start_surface_replace_cmd(&mut self.part_ctx()),
-            32 => crate::gui::commands::start_patch_cmd(&mut self.part_ctx()),
-            33 => start_stitch_cmd(&mut self.part_ctx()),
-            35 => start_recognise_cmd(&mut self.part_ctx()),
-            34 => start_trim_cmd(&mut self.part_ctx()),
-            27 => start_split_cmd(&mut self.part_ctx()),
-            28 => start_thicken_cmd(&mut self.part_ctx()),
-            29 => start_split_face_cmd(&mut self.part_ctx()),
-            24 => start_thread_cmd(&mut self.part_ctx()),
-            16 => start_mirror_cmd(&mut self.part_ctx()),
             17 | 18 => self.start_array_cmd(cmd),
             20..=22 => self.start_datum_cmd(cmd),
-            _ => {}
+            _ => qymcad_part::start_cmd(&mut self.part_ctx(), cmd),
         }
     }
 

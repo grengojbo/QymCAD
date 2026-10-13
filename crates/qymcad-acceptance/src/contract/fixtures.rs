@@ -66,6 +66,10 @@ pub enum Fixture {
     /// The block written out as a mesh (File, Export, STL) and brought into a new project's first part as that mesh:
     /// the 12 triangles of a 40 x 30 x 10 box, no faces to take.
     MeshOfBlock,
+    /// The block with its hole of 20 written out as a mesh (File, Export, STL), brought into a new project's first part
+    /// and made a body as it is (Recognise, As it is): a polyhedron of flat faces, the wall of the hole a ring of flat
+    /// strips - a part come from a printer's file.
+    PolyhedronWithHole,
     /// A square of 10 on the table and a straight line of 40 up the front plane, in two sketches of the first part, the
     /// square's sketch picked in the tree: a profile and a path to sweep it along.
     SweepStraight,
@@ -396,7 +400,9 @@ impl Fixture {
                 draw(s, "tb-circle-hint", &[(30.0, 0.0), (35.0, 0.0)]);
             }
             Fixture::Sample(path) => panic!("the sample {path} is a document of its own and cannot be built inside another"),
-            Fixture::SweepStraight | Fixture::LoftSquares | Fixture::CylinderBody | Fixture::MeshOfBlock => panic!("{self:?} builds its own part from the start and cannot be built inside another"),
+            Fixture::SweepStraight | Fixture::LoftSquares | Fixture::CylinderBody | Fixture::MeshOfBlock | Fixture::PolyhedronWithHole => {
+                panic!("{self:?} builds its own part from the start and cannot be built inside another")
+            }
         }
     }
 
@@ -415,6 +421,7 @@ impl Fixture {
             Fixture::LoftSquares => crate::bodies::loft_squares(&mut s),
             Fixture::CylinderBody => crate::bodies::cylinder(&mut s),
             Fixture::MeshOfBlock => mesh_of_block(&mut s),
+            Fixture::PolyhedronWithHole => polyhedron_with_hole(&mut s),
             _ => {
                 build::into_the_first_part(&mut s);
                 self.build_here(&mut s);
@@ -459,4 +466,36 @@ fn mesh_of_block(s: &mut Session) {
     // the placement and the units are taken as they come
     let go = s.word("import-scale-import");
     s.press_word_near(&go, qymcad::pos2(1200.0, 700.0));
+}
+
+/// The block with its hole written out as STL, brought back into a fresh project as a mesh and made a body as it is, as
+/// a person does it.
+fn polyhedron_with_hole(s: &mut Session) {
+    build::into_the_first_part(s);
+    Fixture::BlockWithHole.build_here(s);
+    let path = crate::scratch::file("contract-holed.stl");
+    let (file, export) = (s.word("menu-file"), s.word("file-export"));
+    s.menu(&[&file, &export, "STL\u{2026}"]);
+    let quality = s.word("stl-standard");
+    s.press_word(&quality);
+    s.answer_file(&path);
+    let (file, new) = (s.word("menu-file"), s.word("file-new"));
+    s.menu(&[&file, &new]);
+    let dont_save = s.word("nav-dont-save");
+    if let Some(button) = s.find(&dont_save, qymcad::pos2(0.0, 0.0)) {
+        s.click(button.center());
+    }
+    build::into_the_first_part(s);
+    let (file, import) = (s.word("menu-file"), s.word("file-import"));
+    s.menu(&[&file, &import]);
+    s.answer_file(&path);
+    let go = s.word("import-scale-import");
+    s.press_word_near(&go, qymcad::pos2(1200.0, 700.0));
+    let recognise = s.word("tb-recognise-hint");
+    s.press_hint(&recognise);
+    let at = s.in_space([5.0, 5.0, 10.0]);
+    s.click(at);
+    let as_it_is = s.word("cmd-recognise-asis");
+    s.press_word(&as_it_is);
+    s.key(qymcad::Key::Enter);
 }

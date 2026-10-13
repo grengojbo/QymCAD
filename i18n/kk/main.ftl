@@ -2557,6 +2557,27 @@ cmd-recognise-exact = Дәл беттер
 cmd-recognise-asis = Сол күйінде (көпжақ)
 mesh-recognise = Танылған дене
 mesh-solid = Тордан дене
+f-recognise-feature = Элементті тану
+tb-recognise-feature-hint = Элементті тану — дененің тесігін, дөңгелектеуін не фаскасын шертіңіз -> өлшем -> Enter: элемент дәл болады, өлшемі — ағашта
+hint-recognise-feature = Дененің тесігін, дөңгелектеуін не фаскасын шертіңіз
+msg-recognise-feature = Дененің тесігін, дөңгелектеуін не фаскасын шертіңіз; Esc — болдырмау
+msg-edit-remade = Өлшемді өзгертіп, Enter басыңыз; Esc бұрынғыдай қалдырады
+msg-found-hole-through = Өтпелі тесік: Ø{ $measured } -> Ø{ $size }. Enter оны дәл етеді
+msg-found-hole-blind = Тұйық тесік: Ø{ $measured } -> Ø{ $size }, тереңдігі { $depth }. Enter оны дәл етеді
+msg-found-round = Дөңгелектеу: R{ $measured } -> R{ $size }. Enter оны дәл етеді
+msg-found-chamfer = Фаска: { $measured } -> { $size }. Enter оны дәл етеді
+msg-unfound-no-surface = Мұнда бет табылмады: тор төзімділіктен дөрекі. «Төзімділікті» үлкейтіп, қайта шертіңіз
+msg-unfound-no-entry = Бұл дөңгелек қабырғаның оны бұрғылайтын беті жоқ: бұл тесік емес, білік не бобышка
+msg-unfound-not-two-sides = Бұл дөңгелектеуге бойымен екі бет жанаспайды: оның басқа жолағын шертіңіз не қырды «Дөңгелектеу» құралымен дөңгелектеңіз
+msg-unfound-uneven = Бұл фасканың катеттері әртүрлі: тең емес фасканы екі қашықтықпен «Фаска» жасайды
+msg-unfound-other = Мұнда тесік, дөңгелектеу не фаска жоқ: тесіктің қабырғасын, дөңгелектеуді не екі бет арасындағы көлбеу бетті шертіңіз
+feat-name-remade-hole = Танылған тесік
+feat-name-remade-round = Танылған дөңгелектеу
+feat-name-remade-chamfer = Танылған фаска
+feat-remade-hole-through = Танылған тесік Ø{ $d } өтпелі
+feat-remade-hole-blind = Танылған тесік Ø{ $d }×{ $depth }
+feat-remade-round = Танылған дөңгелектеу R{ $r }
+feat-remade-chamfer = Танылған фаска { $d }
 
 # Э2: обрезка поверхности
 tb-trim-surface-hint = Қию — артығын көрші дене бойымен кесіп тастау

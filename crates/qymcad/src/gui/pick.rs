@@ -231,12 +231,7 @@ impl App {
         let consumed = qymcad_ui_state::consumed_bodies(&self.project);
         let edit_hide = qymcad_ui_state::edit_hidden_bodies(&self.tools.cmd, &self.project);
         let edit_src = if !edit_hide.is_empty() { qymcad_ui_state::edit_src_body(&self.tools.cmd, &self.project) } else { None };
-        // A TOOL FOR BODIES DOES NOT CATCH ON A SURFACE. A copy of a face lies EXACTLY ON the face of the
-        // part, and a click there landed on the sheet: the shell got a face of a surface and honestly
-        // refused (`OpFailed(Shell)`), while what was seen was "I clicked the face of the part and it does
-        // not work". The tools for which a sheet is lawful (thicken, replace a face, stitch, trim, patch,
-        // copy a face) are not included here — a surface is what they want.
-        let solid_only = matches!(self.tools.armed.cmd_kind(), 4 | 5 | 6 | 7 | 23 | 25 | 26 | 27 | 29);
+        let solid_only = qymcad_part::solid_only(&self.tools.armed);
         let mut best: Option<(f64, usize, usize)> = None; // (the depth, the mesh, the triangle)
         for (mi, mesh) in self.project.bodies.iter().map(|b| &b.mesh).enumerate() {
             if !qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(self), mi) {
@@ -311,9 +306,7 @@ impl App {
                     self.chosen.sel = Sel::Mesh(mi);
                 }
             } else {
-                // A face is selected under a command that asks for one (the shell, the hole) and with nothing in
-                // hand - where a corner or an edge under the cursor goes first; other commands take THE BODY.
-                let want_face = matches!(self.tools.armed.cmd_kind(), 6 | 7 | 23 | 25 | 26 | 28 | 30 | 31 | 36) || !self.tools.armed.commanding();
+                let want_face = qymcad_part::wants_face(&self.tools.armed);
                 let fi = if want_face { self.project.bodies.get(mi).and_then(|b| b.faces.iter().position(|f| f.triangles.contains(&(ti as u32)))) } else { None };
                 let grip = qymcad_pick::edge_or_corner_under(&self.painting(), rect, screen);
                 qymcad_part::take_under_click(&mut self.part_ctx(), mi, fi, grip);
@@ -336,16 +329,7 @@ impl App {
                     let id = fi.and_then(|fi| self.project.bodies.get(mi).and_then(|b| b.faces.get(fi))).map(|f| f.id);
                     qymcad_part::toggle_face(&mut self.part_ctx(), id, false);
                 }
-                // PUSH FACE: the face is EXACTLY ONE — a click replaces the previous one rather than
-                // accumulating a set. Pushing several faces by one offset means a different result on each
-                // of them (their normals differ), and that cannot be predicted.
-                // THICKEN follows the same logic: the face is EXACTLY ONE, and one plate comes out of it.
-                if matches!(self.tools.armed.cmd_kind(), 7 | 25 | 26 | 28 | 30 | 36) {
-                    let id = fi.and_then(|fi| self.project.bodies.get(mi).and_then(|b| b.faces.get(fi))).map(|f| f.id);
-                    let only_one = matches!(self.tools.armed.cmd_kind(), 7 | 25 | 28);
-                    qymcad_part::toggle_face(&mut self.part_ctx(), id, only_one);
-                    qymcad_part::place_hole_at(&mut self.part_ctx(), rect, screen);
-                }
+                qymcad_part::face_clicked(&mut self.part_ctx(), mi, fi, rect, screen);
                 // REMOVE FACE: a multi-selection — a feature may consist of several faces (a stepped hole,
                 // a boss with a chamfer). A click adds or removes.
                 // REPLACE FACE: a click on a SHEET chooses the surface, a click on a body collects the

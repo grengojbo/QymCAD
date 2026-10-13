@@ -102,6 +102,7 @@ pub const COMMANDS: &[Command] = &[
     Command { code: "part.stitch", workbench: "part", launch: Launch::Feat(33), name_key: "" },
     Command { code: "part.trim", workbench: "part", launch: Launch::Feat(34), name_key: "" },
     Command { code: "part.recognise", workbench: "part", launch: Launch::Feat(35), name_key: "" },
+    Command { code: "part.recognise-feature", workbench: "part", launch: Launch::Feat(37), name_key: "" },
     Command { code: "part.mirror", workbench: "part", launch: Launch::Feat(16), name_key: "" },
     Command { code: "part.array-linear", workbench: "part", launch: Launch::Feat(17), name_key: "" },
     Command { code: "part.array-circular", workbench: "part", launch: Launch::Feat(18), name_key: "" },

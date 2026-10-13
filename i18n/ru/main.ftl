@@ -2701,6 +2701,27 @@ cmd-recognise-exact = Точные поверхности
 cmd-recognise-asis = Как есть (многогранник)
 mesh-recognise = Распознанное тело
 mesh-solid = Тело из сетки
+f-recognise-feature = Распознать элемент
+tb-recognise-feature-hint = Распознать элемент — щёлкните отверстие, скругление или фаску тела -> размер -> Enter: элемент становится точным, его размер — в дереве
+hint-recognise-feature = Щёлкните отверстие, скругление или фаску тела
+msg-recognise-feature = Щёлкните отверстие, скругление или фаску тела; Esc — отмена
+msg-edit-remade = Измените размер и нажмите Enter; Esc оставляет как было
+msg-found-hole-through = Сквозное отверстие: Ø{ $measured } -> Ø{ $size }. Enter делает его точным
+msg-found-hole-blind = Глухое отверстие: Ø{ $measured } -> Ø{ $size }, глубина { $depth }. Enter делает его точным
+msg-found-round = Скругление: R{ $measured } -> R{ $size }. Enter делает его точным
+msg-found-chamfer = Фаска: { $measured } -> { $size }. Enter делает её точной
+msg-unfound-no-surface = Здесь не найдено поверхности: сетка грубее допуска. Увеличьте «Допуск» и щёлкните ещё раз
+msg-unfound-no-entry = У этой круглой стенки нет грани, с которой её сверлить: это вал или бобышка, а не отверстие
+msg-unfound-not-two-sides = К этому скруглению вдоль него не примыкают две грани: щёлкните другую его полосу или скруглите ребро инструментом «Скругление»
+msg-unfound-uneven = Катеты этой фаски разные: неравную фаску делает «Фаска» с двумя расстояниями
+msg-unfound-other = Здесь нет отверстия, скругления или фаски: щёлкните стенку отверстия, скругление или наклонную грань между двумя гранями
+feat-name-remade-hole = Распознанное отверстие
+feat-name-remade-round = Распознанное скругление
+feat-name-remade-chamfer = Распознанная фаска
+feat-remade-hole-through = Распознанное отверстие Ø{ $d } насквозь
+feat-remade-hole-blind = Распознанное отверстие Ø{ $d }×{ $depth }
+feat-remade-round = Распознанное скругление R{ $r }
+feat-remade-chamfer = Распознанная фаска { $d }
 
 # Э2: обрезка поверхности
 tb-trim-surface-hint = Обрезать — отсечь лишнее по соседнему телу

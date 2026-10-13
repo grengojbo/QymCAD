@@ -386,6 +386,8 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
                 }
             }
         }
+    } else if pn.armed.cmd_kind() == 37 {
+        draw_remade_preview(pn, painter, &scr);
     } else if matches!(pn.armed.cmd_kind(), 30 | 31 | 36) {
         // COPY FACE (30) and REPLACE FACE (31): show the selection TO THE EYE, not only in the model.
         //
@@ -832,5 +834,49 @@ fn draw_open_borders(pn: &Painting, painter: &egui::Painter, scr: &qymcad_ui_sta
             let pts: Vec<egui::Pos2> = l.corners.iter().map(|&q| scr.at(qymcad_core::feature::apply12(&item.world, q)).0).collect();
             painter.add(egui::Shape::closed_line(pts, egui::Stroke::new(3.0, pn.scheme.pal.remove())));
         }
+    }
+}
+
+/// RECOGNISE FEATURE BEFORE ENTER: the faces the feature found is made of in the "will go" colour, and for a hole the
+/// circle it is drilled again with, at its mouth and - a blind one - at its bottom, in the "will be added" colour, its
+/// diameter and depth as the fields hold them now.
+fn draw_remade_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {
+    let Some(mi) = pn.gsel.faces_body.and_then(|b| pn.project.mesh_index(b)) else { return };
+    let body = &pn.project.bodies[mi];
+    let mut hm = egui::Mesh::default();
+    for face in body.faces.iter().filter(|f| pn.gsel.faces.contains(&f.id)) {
+        for &ti in &face.triangles {
+            let base = hm.vertices.len() as u32;
+            for v in &body.mesh.triangle(ti as usize) {
+                hm.colored_vertex(scr.at([v.x, v.y, v.z]).0, qymcad_scheme::a(pn.scheme.pal.remove(), 120));
+            }
+            hm.add_triangle(base, base + 1, base + 2);
+        }
+    }
+    if !hm.is_empty() {
+        painter.add(egui::Shape::mesh(hm));
+    }
+    let Some(qymcad_ui_state::FeatureInHand { remake: qymcad_core::model::Remake { exact: qymcad_core::model::Exact::Hole { entry, at, diameter, depth, reach }, .. }, .. }) =
+        pn.recognise.feature.as_ref()
+    else {
+        return;
+    };
+    let field = |key: &str, was: f64| if pn.cmd.params.iter().any(|p| p.key == key) { qymcad_ui_state::cmd_val(pn.cmd, key) } else { was };
+    let r = field("diameter", *diameter) / 2.0;
+    let n = entry.normal;
+    let (u, v) = qymcad_ui_state::perp_basis(n);
+    let ring = |depth: f64| -> Vec<egui::Pos2> {
+        (0..=48)
+            .map(|k| {
+                let a = std::f64::consts::TAU * k as f64 / 48.0;
+                let (c, s) = (a.cos() * r, a.sin() * r);
+                scr.at([at[0] + u[0] * c + v[0] * s - n[0] * depth, at[1] + u[1] * c + v[1] * s - n[1] * depth, at[2] + u[2] * c + v[2] * s - n[2] * depth]).0
+            })
+            .collect()
+    };
+    let stroke = egui::Stroke::new(2.0, pn.scheme.pal.add());
+    painter.add(egui::Shape::line(ring(0.0), stroke));
+    if *reach == qymcad_core::model::Reach::Blind {
+        painter.add(egui::Shape::line(ring(field("depth", *depth)), stroke));
     }
 }

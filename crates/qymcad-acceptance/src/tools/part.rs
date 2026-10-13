@@ -1493,6 +1493,48 @@ pub static RECOGNISE: Tool = Tool {
     ],
 };
 
+/// The block with its hole of 20 made again exact at the diameter `d`: the same block, a hole of `d` through it.
+const fn drilled_again(d: f64) -> Outcome {
+    let v = 12000.0 - PI * d * d / 4.0 * 10.0;
+    Outcome::Bodies { count: 1, volume: v, largest: v }
+}
+
+/// RECOGNISE FEATURE: a block with a hole of 20, come in as a mesh and made a polyhedron, the wall of its hole a ring of
+/// flat strips. A strip of the wall clicked - the hole found through, its diameter brought to 20 in the field - and
+/// Enter makes it again exact as one node: the same block, its hole round, its diameter driving it. The tool stays in
+/// hand for the next feature.
+pub static RECOGNISE_FEATURE: Tool = Tool {
+    id: "part.recognise-feature",
+    flow: Flow::Command,
+    title: "f-recognise-feature",
+    entries: &[Entry::Button("tb-recognise-feature-hint"), Entry::SearchByArticle],
+    other: (Entry::Button("tb-mirror-body-hint"), "cmd-mirror"),
+    fixture: Fixture::PolyhedronWithHole,
+    picks: &[Pick::Face([20.0, 25.0, 5.0])],
+    pick_trial: &[Pick::Face([20.0, 25.0, 5.0])],
+    wrong_picks: &[],
+    words: &[],
+    fields: &[Field { caption: "f-diameter", by_placeholder: false, when: When::Before, class: Class::Length, typical: 20.0, lo: 0.1, hi: 29.0, zero: false, negative: false, outcome: drilled_again }],
+    modes: &[],
+    result: drilled_again(20.0),
+    node: "Remade",
+    undo: "f-recognise-feature",
+    undo_steps: 1,
+    stays: true,
+    upstream: None,
+    dependency: Some(Node { kind: "MeshSolid", row: Some("feat-name-mesh-solid") }),
+    contexts: &[],
+    refusal: None,
+    budget: (30, 2000),
+    help: "part/28-recognise-feature",
+    not_applicable: &[
+        (2, "the bar of the tool holds no modes: what it makes is the feature the click found"),
+        (14, "nothing of a timeline stands above an imported mesh"),
+        (16, "the fixture builds its own project from the start: there is no second part to take it in"),
+        (17, "a hole wider than the block is refused by the bounds of the field; the kernel has nothing else to refuse here"),
+    ],
+};
+
 /// Any name is two parts: the block split 5 below its top, and the upper piece taken into a part of its own.
 fn two_parts(_: &str) -> Outcome {
     Outcome::Parts { parts: 2, grounded: 0, joints: 0, assemblies: 0 }
