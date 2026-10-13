@@ -2119,7 +2119,7 @@ mod assembly;
 pub use assembly::{ExportMesh, ExportNode, FileGroup, ImportNode};
 pub mod contours;
 mod regen;
-pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, ExtrudeSpan, HoleTool, RevolveAxis, RevolveTurn};
+pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, Exact, ExtrudeSpan, HoleTool, Reach, Remake, RevolveAxis, RevolveTurn};
 mod tess;
 mod timeline;
 mod sketch;

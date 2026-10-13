@@ -239,6 +239,53 @@ pub struct HoleTool {
     pub depth2: f64,
 }
 
+/// A FEATURE FOUND ON A BODY, TO BE LAID DOWN EXACT: its faces as they stand on the body, and what it is made again as.
+#[derive(Clone, Debug)]
+pub struct Remake {
+    pub faces: Vec<crate::feature::FaceKey>,
+    pub exact: Exact,
+}
+
+/// What a found feature is made again as, once its faces are taken off the body.
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub enum Exact {
+    /// A plain hole drilled from `entry` at `at`, square into it; one through is drilled past the body.
+    Hole { entry: crate::feature::FaceKey, at: [f64; 3], diameter: f64, depth: f64, reach: Reach },
+    /// A rounding of the edge the two faces meet in.
+    Round { sides: crate::geom::EdgeFaces, radius: f64 },
+    /// A chamfer of the edge the two faces meet in, both legs `leg`.
+    Chamfer { sides: crate::geom::EdgeFaces, leg: f64 },
+}
+
+/// Whether a hole goes through the body or stops inside it.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub enum Reach {
+    Through,
+    Blind,
+}
+
+impl Exact {
+    /// The faces it names, carried over as a query's own descriptors are: the entry of a hole, the sides of a blend.
+    pub fn remap_descs(&mut self, f: &mut impl FnMut(&mut u32)) {
+        match self {
+            Exact::Hole { entry, .. } => f(&mut entry.id),
+            Exact::Round { sides, .. } | Exact::Chamfer { sides, .. } => {
+                f(&mut sides.one);
+                f(&mut sides.other);
+            }
+        }
+    }
+}
+
+/// The edge of `body` between the two faces `sides`, as the kernel tells the faces every edge parts.
+fn parted_by(k: &dyn crate::feature::Kernel, body: Id, sides: crate::geom::EdgeFaces) -> Result<u32, crate::errors::CoreError> {
+    k.edge_face_pairs(body)
+        .into_iter()
+        .find(|&(_, a, b)| (a == sides.one && b == sides.other) || (a == sides.other && b == sides.one))
+        .map(|(e, _, _)| e)
+        .ok_or(crate::errors::CoreError::DescribedEdgesNotFound)
+}
+
 /// ONE DIRECTION OF A LINEAR PATTERN: the step vector and how many copies go along it.
 ///
 /// The rebuild used to take these twelve numbers and three counts as fifteen separate arguments, and the
@@ -1478,6 +1525,53 @@ impl Project {
         }
     }
 
+    /// A FEATURE MADE AGAIN EXACT, in one job: its faces taken off `src` into `body`, then the hole drilled, or the edge
+    /// the two sides meet in once healed rounded or chamfered, on `body` itself. That edge is born of the removal and has
+    /// no name yet: it is found in the job by the two faces the kernel says it parts.
+    fn prep_remade(&mut self, p: &Pass, src: Id, faces: &crate::refs::Ref, exact: &Exact, body: Id) -> crate::feature::KernelJob {
+        let ids = match self.faces_by_ref(p.node, src, faces, "ref-what-removed-faces") {
+            Ok(ids) if !ids.is_empty() => ids,
+            _ => return crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
+        };
+        match *exact {
+            Exact::Hole { entry, at, diameter, depth, .. } => {
+                let tool = HoleTool { kind: 0, diameter: p.dim("diameter", diameter), depth: p.dim("depth", depth).abs(), dia2: 0.0, depth2: 0.0 };
+                // the hole stands where it was found, brought onto the entry face as it stands now
+                let face = crate::refs::Ref::one(entry.id, crate::refs::Fingerprint { centroid: entry.centroid, normal: entry.normal });
+                let Ok(c) = self.face_by_ref(p.node, src, &face, "ref-what-hole-face") else { return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound) };
+                let off = (0..3).map(|i| (at[i] - c.centroid[i]) * c.normal[i]).sum::<f64>();
+                let point = [at[0] - off * c.normal[0], at[1] - off * c.normal[1], at[2] - off * c.normal[2]];
+                let pl = crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12();
+                let bore = self.intern_name(p.node, crate::names::Role::Hole, 0);
+                let names = self.hole_tool_names(p.node);
+                crate::feature::KernelJob::new(vec![src], move |k| {
+                    k.remove_faces(body, src, &ids)?;
+                    k.hole(body, body, tool, pl, bore, &names)
+                })
+            }
+            Exact::Round { sides, radius } => {
+                let surface = self.intern_name(p.node, crate::names::Role::Blend, 0);
+                let corner = self.intern_name(p.node, crate::names::Role::Corner, 0);
+                let radius = p.dim("radius", radius);
+                crate::feature::KernelJob::new(vec![src], move |k| {
+                    k.remove_faces(body, src, &ids)?;
+                    let edge = parted_by(k, body, sides)?;
+                    k.fillet(body, body, radius, &[edge], crate::feature::BlendNames { surfaces: &[surface], corners: &[corner], all: &[] })
+                })
+            }
+            Exact::Chamfer { sides, leg } => {
+                let surface = self.intern_name(p.node, crate::names::Role::Blend, 0);
+                let corner = self.intern_name(p.node, crate::names::Role::Corner, 0);
+                let leg = p.dim("dist", leg);
+                crate::feature::KernelJob::new(vec![src], move |k| {
+                    k.remove_faces(body, src, &ids)?;
+                    let edge = parted_by(k, body, sides)?;
+                    k.chamfer(body, body, leg, &[edge], crate::feature::BlendNames { surfaces: &[surface], corners: &[corner], all: &[] })
+                })
+            }
+        }
+    }
+
     fn prep_patch(&mut self, p: &Pass, src: Id, edges: &crate::refs::Ref, tangent: bool, body: Id) -> crate::feature::KernelJob {
         let edges = edges.clone();
         let live = self.live_fillet_edges(p.node, src, &edges, p.emap, p.kernel);
@@ -2422,6 +2516,7 @@ impl Project {
             }
             FeatureKind::Shell { src, thickness, faces, side, body } => (*body, self.prep_shell(p, *src, *thickness, faces, *side, *body)),
             FeatureKind::RemoveFace { src, faces, body } => (*body, self.prep_removeface(p, *src, faces, *body)),
+            FeatureKind::Remade { src, faces, exact, body } => (*body, self.prep_remade(p, *src, faces, exact, *body)),
             FeatureKind::PushFace { src, face, dist, body } => (*body, self.prep_pushface(p, *src, face, *dist, *body)),
             FeatureKind::Patch { src, edges, tangent, body } => (*body, self.prep_patch(p, *src, edges, *tangent, *body)),
             FeatureKind::SurfaceReplace { src, faces, surface, body } => (*body, self.prep_surfacereplace(p, *src, faces, *surface, *body)),

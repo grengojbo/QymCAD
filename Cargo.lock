@@ -3964,6 +3964,7 @@ dependencies = [
  "qymcad-doc",
  "qymcad-io",
  "qymcad-kernel",
+ "qymcad-meshfit",
  "ron",
 ]
 

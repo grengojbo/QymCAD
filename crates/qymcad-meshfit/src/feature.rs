@@ -14,9 +14,12 @@
 //! same click works on all of them: the wall of a hole drawn as twelve flat strips lies on one cylinder as an exact wall
 //! does, its corners on the circle. No interface lives here: the tool asks and shows what came back.
 
-use crate::{prepare, region_at, weld_tolerance, Prepared, Surface, Tolerance, NO_NEIGHBOUR};
+use crate::{cylinder_of, prepare, region_at, weld_tolerance, Prepared, Region, Surface, Tolerance, NO_NEIGHBOUR};
 use nalgebra::{Matrix3, Vector3};
+use qymcad_core::feature::FaceKey;
 use qymcad_core::geom::{EdgeFaces, Mesh, MeshFace};
+pub use qymcad_core::model::Reach;
+use qymcad_core::model::{Exact, Remake};
 use std::collections::{HashMap, HashSet};
 
 /// AN EDGE OF THE BODY IS NOT CROSSED ABOVE THIS, in degrees. The recognition of a whole mesh stops at 30 deg; here the
@@ -37,18 +40,26 @@ const ROUND_BLEND: f64 = 190.0;
 /// turns 45.
 const STRIP_DEG: f64 = 46.0;
 
+/// A FACE WHOSE TRIANGLES TURN MORE THAN THIS, in degrees, is curved: a face of an exact surface, or a smooth wall a
+/// recognition fitted. A flat face of a polyhedron turns none.
+const CURVED_DEG: f64 = 2.0;
+
+/// HOW FAR A CURVED FACE MAY STAND OFF ITS CYLINDER, as a share of the radius. A recognition that took a hole drawn by
+/// chords for a smooth wall left it between the chords and the circle: measured on a hole of 10 meshed at 0.1, its
+/// corners stood 4.986 to 5.000 from the axis - 0.3% - where the distance tolerance of the mesh is 0.0005 mm, and the
+/// wall grew no further than 10 of its 310 triangles. A chord of a circle drawn with 16 sides sags 1.9% of it.
+const ROUND_OFF: f64 = 0.03;
+
+/// A FLAT FACE WIDER THAN THIS MANY OF THE STRIP CLICKED is never a strip of the same wall. The strips of one wall are
+/// cut alike, and a side of the part beside a rounding drawn with 16 strips, turned 2.8 deg from the first of them, lay
+/// with it on a cylinder of 370 and took the rounding: 360 mm^2 against 3.9.
+const STRIP_AREA: f64 = 4.0;
+
 /// The place a person clicked: the face under the pointer, by its persistent id, and the point on it.
 #[derive(Clone, Copy, Debug)]
 pub struct Pick {
     pub face: u32,
     pub at: [f64; 3],
-}
-
-/// Whether a hole goes through the body or stops inside it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Reach {
-    Through,
-    Blind,
 }
 
 /// A hole found on a body.
@@ -131,25 +142,109 @@ pub fn feature_at(mesh: &Mesh, faces: &[MeshFace], pick: Pick, tol: f64) -> Resu
     let mut t = Tolerance::for_mesh(&p);
     t.distance *= if tol > 0.0 { tol } else { 1.0 };
     t.sharp_deg = SHARP_DEG;
-    let region = region_at(&p, &t, seed).ok_or(Unfound::NoSurface)?;
-    let mut inside: HashSet<u32> = region.tris.iter().copied().collect();
-    let mut surface = region.surface;
-    // A CYLINDER THROUGH THE CORNERS OF BROAD FLAT FACES IS NONE. Three corners always lie on some circle: a chamfer and
-    // the side of the plate it leans on, 3 and 27 mm long, lay on a cylinder of 21 square to the plate, and the chamfer
-    // was taken for a rounding. A wall drawn by flat strips turns little across each: `STRIP_DEG` at the most.
-    if let Some(Surface::Cylinder { point, axis, .. }) = &surface {
-        let axis = Axis { point: Vector3::from(*point), dir: Vector3::from(*axis).normalize() };
-        if inside.iter().any(|&t| turned_deg(&p.mesh.tris[t as usize].map(|i| vertex(&p, i)), axis) > STRIP_DEG) {
-            inside = (0..p.mesh.tris.len() as u32).filter(|&t| face_of[t as usize] == pick.face).collect();
-            surface = faces.iter().find(|f| f.id == pick.face).map(|f| Surface::Plane { point: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal });
-        }
+    let mut by_face: HashMap<u32, Vec<u32>> = HashMap::new();
+    for (tri, &f) in face_of.iter().enumerate() {
+        by_face.entry(f).or_default().push(tri as u32);
     }
+    let clicked = by_face.get(&pick.face).cloned().unwrap_or_default();
+    let wall = if curved(&p, &clicked) { round_faces(&p, &by_face, &face_of, pick.face, &t)? } else { strips(&p, &by_face, &face_of, seed, pick.face, &t)? };
+    let inside: HashSet<u32> = wall.tris.iter().copied().collect();
     let look = Look { p: &p, face_of: &face_of, faces, inside: &inside, distance: t.distance };
-    match surface {
+    match wall.surface {
         Some(Surface::Cylinder { point, axis, radius }) => look.round_wall(Axis { point: point.into(), dir: Vector3::from(axis).normalize() }, radius, at),
         Some(Surface::Plane { normal, .. }) => look.slanted(Vector3::from(normal).normalize()),
         _ => Err(Unfound::Other),
     }
+}
+
+impl Found {
+    /// The feature made again exact, as the core lays it down (`Project::add_remade_feature`): its faces as keys of
+    /// `faces` - the body's own list - and its sizes brought to what was drawn. A hole through is drilled twice its
+    /// depth and a millimetre more, so that it still goes through where the body grows thicker above it.
+    pub fn remake(&self, faces: &[MeshFace]) -> Option<Remake> {
+        let key = |id: u32| faces.iter().position(|f| f.id == id).map(|i| face_key(i, &faces[i]));
+        let keys = |ids: &[u32]| ids.iter().map(|&id| key(id)).collect::<Option<Vec<FaceKey>>>();
+        Some(match self {
+            Found::Hole(h) => {
+                let depth = match h.reach {
+                    Reach::Through => 2.0 * h.depth + 1.0,
+                    Reach::Blind => rounded(h.depth),
+                };
+                Remake { faces: keys(&h.faces)?, exact: Exact::Hole { entry: key(h.entry)?, at: h.at, diameter: rounded_bore(h.diameter), depth, reach: h.reach } }
+            }
+            Found::Round(r) => Remake { faces: keys(&r.faces)?, exact: Exact::Round { sides: r.sides, radius: rounded(r.radius) } },
+            Found::Chamfer(c) => Remake { faces: keys(&c.faces)?, exact: Exact::Chamfer { sides: c.sides, leg: rounded(c.leg) } },
+        })
+    }
+}
+
+/// The key of face `i` of a body's list, as a pick gives it.
+fn face_key(i: usize, f: &MeshFace) -> FaceKey {
+    FaceKey { index: i as u32, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id }
+}
+
+/// Whether the triangles of a face turn more than `CURVED_DEG` from each other.
+fn curved(p: &Prepared, tris: &[u32]) -> bool {
+    let cos = CURVED_DEG.to_radians().cos();
+    tris.first().is_some_and(|&a| tris.iter().any(|&b| normal(p, a as usize).dot(&normal(p, b as usize)) < cos))
+}
+
+/// A CURVED FACE CLICKED IS TAKEN WHOLE: the cylinder through all its corners, and the curved faces beside it across a
+/// smooth edge lying on that cylinder too - a wall a kernel parted at its seam. A face standing off its cylinder by more
+/// than `ROUND_OFF` of the radius is no round wall.
+fn round_faces(p: &Prepared, by_face: &HashMap<u32, Vec<u32>>, face_of: &[u32], clicked: u32, t: &Tolerance) -> Result<Region, Unfound> {
+    let mut tris = by_face.get(&clicked).cloned().unwrap_or_default();
+    let surface = cylinder_of(p, &tris, t).ok_or(Unfound::Other)?;
+    let Surface::Cylinder { radius, .. } = surface else { return Err(Unfound::Other) };
+    let off = |tris: &[u32]| tris.iter().flat_map(|&tri| p.mesh.tris[tri as usize]).map(|i| surface.distance(vertex(p, i).into())).fold(0.0, f64::max);
+    let room = (ROUND_OFF * radius).max(t.distance);
+    if off(&tris) > room {
+        return Err(Unfound::Other);
+    }
+    let cos_sharp = t.sharp_deg.to_radians().cos();
+    let mut taken = HashSet::from([clicked]);
+    let mut queue = vec![clicked];
+    while let Some(f) = queue.pop() {
+        for &tri in by_face.get(&f).map(Vec::as_slice).unwrap_or_default() {
+            for &u in &p.neighbours[tri as usize] {
+                if u == NO_NEIGHBOUR || normal(p, tri as usize).dot(&normal(p, u as usize)) < cos_sharp {
+                    continue;
+                }
+                let g = face_of[u as usize];
+                let next = by_face.get(&g).map(Vec::as_slice).unwrap_or_default();
+                if g == 0 || taken.contains(&g) || !curved(p, next) || off(next) > room {
+                    continue;
+                }
+                taken.insert(g);
+                queue.push(g);
+                tris.extend_from_slice(next);
+            }
+        }
+    }
+    Ok(Region { tris, surface: Some(surface) })
+}
+
+/// A FLAT FACE CLICKED IS A STRIP OF A WALL DRAWN FLAT, OR A FLAT FACE: the surface is grown from the triangle clicked
+/// over the strips beside it (`region_at`), the faces wider than `STRIP_AREA` strips barred. A cylinder in which one
+/// triangle turns more than `STRIP_DEG` about its axis is none - three corners of two broad faces always lie on some
+/// circle: a chamfer and the side of the plate it leans on, 3 and 27 mm long, lay on a cylinder of 21 - and the face
+/// clicked is then taken as the plane it is.
+fn strips(p: &Prepared, by_face: &HashMap<u32, Vec<u32>>, face_of: &[u32], seed: usize, clicked: u32, t: &Tolerance) -> Result<Region, Unfound> {
+    let face_area = |f: u32| by_face.get(&f).map(Vec::as_slice).unwrap_or_default().iter().map(|&tri| area(p, tri as usize)).sum::<f64>();
+    let mine = face_area(clicked);
+    let wide: HashSet<u32> = by_face.keys().copied().filter(|&f| f != clicked && face_area(f) > STRIP_AREA * mine).collect();
+    let barred: Vec<bool> = face_of.iter().map(|f| wide.contains(f)).collect();
+    let region = region_at(p, t, seed, &barred).ok_or(Unfound::NoSurface)?;
+    if let Some(Surface::Cylinder { point, axis, .. }) = &region.surface {
+        let axis = Axis { point: Vector3::from(*point), dir: Vector3::from(*axis).normalize() };
+        if region.tris.iter().any(|&tri| turned_deg(&p.mesh.tris[tri as usize].map(|i| vertex(p, i)), axis) > STRIP_DEG) {
+            let face = by_face.get(&clicked).cloned().unwrap_or_default();
+            let n = face.first().map(|&tri| normal(p, tri as usize)).ok_or(Unfound::NoSurface)?;
+            let c = face.first().map(|&tri| centroid(p, tri as usize)).ok_or(Unfound::NoSurface)?;
+            return Ok(Region { tris: face, surface: Some(Surface::Plane { point: c.into(), normal: n.into() }) });
+        }
+    }
+    Ok(region)
 }
 
 /// The diameters of holes a size is brought to: the clearance holes for metric screws, fine and medium, and the

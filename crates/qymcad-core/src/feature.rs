@@ -1423,6 +1423,10 @@ pub enum FeatureKind {
     /// Delete faces: the faces named by `faces` are removed from body `src` and the neighbouring ones are
     /// extended, producing `body`. The reference is a query.
     RemoveFace { src: Id, faces: crate::refs::Ref, body: Id },
+    /// A feature found on body `src` made again exact, as one operation: its faces, named by `faces`, taken off - the
+    /// neighbours closing over them - and a hole, a rounding or a chamfer laid down by its own tool on what is left,
+    /// producing `body`. The sizes are the node's dimensions: `diameter` and `depth`, `radius`, `dist`.
+    Remade { src: Id, faces: crate::refs::Ref, exact: crate::model::Exact, body: Id },
     /// Split a body by a plane: `src` falls apart into pieces, each an independent body. `bodies` holds one id
     /// per piece, ordered from bottom to top along the normal, and the first of them also serves as the
     /// `body()` of the node.
@@ -2475,6 +2479,13 @@ impl FeatureKind {
             FeatureKind::Prism { r, h, .. } => vec![("r", r), ("h", h)],
             FeatureKind::Fillet { radius, .. } => vec![("radius", radius)],
             FeatureKind::Chamfer { dist, d2, .. } => vec![("dist", dist), ("d2", d2)],
+            // a hole made exact through has no depth to set: it is drilled past the body
+            FeatureKind::Remade { ref exact, .. } => match *exact {
+                crate::model::Exact::Hole { diameter, reach: crate::model::Reach::Through, .. } => vec![("diameter", diameter)],
+                crate::model::Exact::Hole { diameter, depth, .. } => vec![("diameter", diameter), ("depth", depth)],
+                crate::model::Exact::Round { radius, .. } => vec![("radius", radius)],
+                crate::model::Exact::Chamfer { leg, .. } => vec![("dist", leg)],
+            },
             FeatureKind::Shell { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Thicken { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Draft { angle, .. } => vec![("angle", angle)],
@@ -2519,6 +2530,7 @@ impl FeatureKind {
             | FeatureKind::Fillet { body, .. }
             | FeatureKind::PushFace { body, .. }
             | FeatureKind::RemoveFace { body, .. }
+            | FeatureKind::Remade { body, .. }
             | FeatureKind::Chamfer { body, .. }
             | FeatureKind::FaceCopy { body, .. }
             | FeatureKind::OffsetSurface { body, .. }
@@ -2680,6 +2692,7 @@ impl FeatureKind {
             | FeatureKind::Draft { src, .. }
             | FeatureKind::PushFace { src, .. }
             | FeatureKind::RemoveFace { src, .. }
+            | FeatureKind::Remade { src, .. }
             | FeatureKind::LinearArray { src, .. }
             | FeatureKind::CircularArray { src, .. }
             | FeatureKind::Mirror { src, .. }
@@ -2741,6 +2754,7 @@ impl FeatureKind {
             | FeatureKind::Sweep { src, .. }
             | FeatureKind::PushFace { src, .. }
             | FeatureKind::RemoveFace { src, .. }
+            | FeatureKind::Remade { src, .. }
             | FeatureKind::FaceCopy { src, .. }
             | FeatureKind::OffsetSurface { src, .. }
             | FeatureKind::Patch { src, .. }
@@ -2809,7 +2823,7 @@ impl FeatureKind {
                 }
                 m(body);
             }
-            FeatureKind::RemoveFace { src, body, .. } => {
+            FeatureKind::RemoveFace { src, body, .. } | FeatureKind::Remade { src, body, .. } => {
                 m(src);
                 m(body);
             }
@@ -2941,6 +2955,10 @@ impl FeatureKind {
             // does contain the descriptors written into it, and those are what get remapped.
             FeatureKind::Hole { face, .. } | FeatureKind::PushFace { face, .. } => face.remap_descs(&mut |d| m(d)),
             FeatureKind::RemoveFace { faces, .. } => faces.remap_descs(&mut |d| m(d)),
+            FeatureKind::Remade { faces, exact, .. } => {
+                faces.remap_descs(&mut |d| m(d));
+                exact.remap_descs(&mut |d| m(d));
+            }
             // Surface features hold references of the same kind: without translation a cloned part and a
             // deleted node would break them exactly as they broke a thread.
             FeatureKind::FaceCopy { faces, .. } | FeatureKind::OffsetSurface { faces, .. } | FeatureKind::SurfaceReplace { faces, .. } => faces.remap_descs(&mut |d| m(d)),
@@ -3009,6 +3027,7 @@ impl FeatureKind {
             | FeatureKind::Draft { src, .. }
             | FeatureKind::PushFace { src, .. }
             | FeatureKind::RemoveFace { src, .. }
+            | FeatureKind::Remade { src, .. }
             | FeatureKind::LinearArray { src, .. }
             | FeatureKind::CircularArray { src, .. }
             | FeatureKind::Mirror { src, .. }

@@ -1249,6 +1249,23 @@ impl Project {
         body
     }
 
+    /// A feature found on body `src` laid down exact, as one node: its faces removed and a hole, a rounding or a chamfer
+    /// made by its own tool on the healed body (`FeatureKind::Remade`). The faces go by their ids, as a pick does.
+    pub fn add_remade_feature(&mut self, src: Id, remake: super::Remake) -> Id {
+        use crate::feature::{FeatureKind, FeatureNode};
+        let super::Remake { faces, exact } = remake;
+        let body = self.alloc_id();
+        let parent = Some(self.body_parent());
+        let name = match exact {
+            super::Exact::Hole { .. } => "feat-name-remade-hole",
+            super::Exact::Round { .. } => "feat-name-remade-round",
+            super::Exact::Chamfer { .. } => "feat-name-remade-chamfer",
+        };
+        let faces = crate::refs::Ref::picks(&faces.iter().map(|f| f.id).collect::<Vec<_>>());
+        self.push_timeline(FeatureNode { id: body, name: name.into(), kind: FeatureKind::Remade { src, faces, exact, body }, parent, dirty: true, suppressed: false });
+        body
+    }
+
     /// Thicken a face: face `face` of body `src` becomes a plate of `thickness` as a separate body. The source
     /// stays — a skin is made from a face of the housing while the housing remains. The thickness is parametric
     /// (the `thickness` feature dimension).

@@ -13,6 +13,7 @@ qymcad-core.workspace = true
 qymcad-doc.workspace = true
 qymcad-kernel.workspace = true
 qymcad-io.workspace = true
+qymcad-meshfit.workspace = true # what a click on a body finds, made again by the core
 ron.workspace = true
 
 [lints]

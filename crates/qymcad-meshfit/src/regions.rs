@@ -342,9 +342,9 @@ pub fn regions_until(p: &Prepared, tol: &Tolerance, stop: &dyn Fn() -> bool) -> 
 
 /// THE REGION GROWN FROM ONE TRIANGLE, as `regions` grows each of its own from a seed: the surfaces of every kind tried
 /// at `seed`, each grown over the neighbours lying on it, and the one covering most kept. Where a person points at one
-/// place of a body - a hole, a rounding - only the surface there is asked, and the rest of the mesh is not split. `None`
-/// where no surface holds the seed.
-pub fn region_at(p: &Prepared, tol: &Tolerance, seed: usize) -> Option<Region> {
+/// place of a body - a hole, a rounding - only the surface there is asked, and the rest of the mesh is not split. The
+/// triangles `barred` marks are never taken. `None` where no surface holds the seed.
+pub fn region_at(p: &Prepared, tol: &Tolerance, seed: usize, barred: &[bool]) -> Option<Region> {
     let n = p.mesh.tris.len();
     if seed >= n {
         return None;
@@ -355,8 +355,16 @@ pub fn region_at(p: &Prepared, tol: &Tolerance, seed: usize) -> Option<Region> {
     }
     let g = Grower { p, tol, cos_sharp: tol.sharp_deg.to_radians().cos(), cos_angle: tol.angle_deg.to_radians().cos(), sliver: &sliver };
     let area: Vec<f64> = (0..n).map(|t| g.area(t)).collect();
-    let owner = vec![NONE; n];
+    let owner: Vec<u32> = (0..n).map(|t| if barred.get(t).copied().unwrap_or(false) && t != seed { 0 } else { NONE }).collect();
     g.widest_at(seed, &owner, &area).map(|w| Region { tris: w.tris, surface: Some(w.surface) })
+}
+
+/// THE CYLINDER THROUGH THE CORNERS OF `tris` as they are - a whole face of a body, taken without growing - fitted by
+/// least squares, its axis from their normals; `None` where their normals span no plane.
+pub fn cylinder_of(p: &Prepared, tris: &[u32], tol: &Tolerance) -> Option<Surface> {
+    let sliver = vec![false; p.mesh.tris.len()];
+    let g = Grower { p, tol, cos_sharp: tol.sharp_deg.to_radians().cos(), cos_angle: tol.angle_deg.to_radians().cos(), sliver: &sliver };
+    g.fit(tris, Kind::Cylinder)
 }
 
 /// A region grown from a seed: its triangles, the surface they lie on, and the area they cover.
