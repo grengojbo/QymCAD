@@ -277,6 +277,39 @@ impl Exact {
     }
 }
 
+/// A rounding or a chamfer made exact carried across a push: `face` is its face, taken off before the push and named
+/// again after it, `corner` the name of the patch where blends meet.
+struct Carried {
+    face: u32,
+    sides: crate::geom::EdgeFaces,
+    blend: Blend,
+    corner: u32,
+}
+
+/// What a blend carried across a push is laid down again as, and its size.
+#[derive(Clone, Copy)]
+enum Blend {
+    Round(f64),
+    Chamfer(f64),
+}
+
+/// How far two flat faces may turn apart (1 - cos) and stand apart (mm) and still lie in one plane. A face of a body
+/// made of a mesh lies on the mesh's vertices, read from the file in single precision: 40 mm comes back within 4e-6.
+const PLANE_TURN: f64 = 1e-6;
+const PLANE_GAP: f64 = 1e-3;
+
+/// The face of `among` lying in the plane of flat face `f`, the nearest one when several do.
+fn in_plane_of(f: &crate::geom::MeshFace, among: &[crate::geom::MeshFace]) -> Option<u32> {
+    let n = f.normal;
+    let level = |c: &crate::geom::Point3| n[0] * c.x + n[1] * c.y + n[2] * c.z;
+    let gap = |g: &crate::geom::MeshFace| (g.centroid.x - f.centroid.x).powi(2) + (g.centroid.y - f.centroid.y).powi(2) + (g.centroid.z - f.centroid.z).powi(2);
+    among
+        .iter()
+        .filter(|g| n[0] * g.normal[0] + n[1] * g.normal[1] + n[2] * g.normal[2] > 1.0 - PLANE_TURN && (level(&g.centroid) - level(&f.centroid)).abs() < PLANE_GAP)
+        .min_by(|a, b| gap(a).total_cmp(&gap(b)))
+        .map(|g| g.id)
+}
+
 /// The edge of `body` between the two faces `sides`, as the kernel tells the faces every edge parts.
 fn parted_by(k: &dyn crate::feature::Kernel, body: Id, sides: crate::geom::EdgeFaces) -> Result<u32, crate::errors::CoreError> {
     k.edge_face_pairs(body)
@@ -1615,6 +1648,12 @@ impl Project {
         })
     }
 
+    /// A ROUNDING OR A CHAMFER MADE EXACT BESIDE THE PUSHED FACE KEEPS ITS SIZE: its face is taken off, the face pushed,
+    /// and the feature laid down again on the edge its two faces meet in, the size its own node holds now and under the
+    /// names that node gave it. Pushed with the face on, the blend's face follows the push as any face beside does.
+    /// Reported behaviour, measured: the side beside a chamfer of leg 2 pushed out by 10 stretched the chamfer's face
+    /// from 28.3 to 169.7 mm^2; on a mesh made a body the strips of a rounding run nearly along the face pushed, and a
+    /// push above the rounding drew them out past the face itself.
     fn prep_pushface(&mut self, p: &Pass, src: Id, face: &crate::refs::Ref, dist: f64, body: Id) -> crate::feature::KernelJob {
         let dist = eval_dim(p.dims, "dist", dist, p.vars);
         if p.kernel.body_is_sheet(src) {
@@ -1625,9 +1664,63 @@ impl Project {
             Ok(_) if dist.abs() < 1e-9 => crate::feature::KernelJob::refused(crate::errors::CoreError::ZeroPushDistance),
             Ok(c) => {
                 let desc = c.desc;
-                crate::feature::KernelJob::new(vec![src], move |k| k.push_face(body, src, desc, dist))
+                let carried = self.blends_beside(p, src, desc);
+                if carried.is_empty() {
+                    return crate::feature::KernelJob::new(vec![src], move |k| k.push_face(body, src, desc, dist));
+                }
+                crate::feature::KernelJob::new(vec![src], move |k| {
+                    let faces: Vec<u32> = carried.iter().map(|c| c.face).collect();
+                    k.remove_faces(body, src, &faces)?;
+                    let mut built = k.push_face(body, body, desc, dist)?;
+                    for c in &carried {
+                        let edge = parted_by(k, body, c.sides)?;
+                        let names = crate::feature::BlendNames { surfaces: &[c.face], corners: &[c.corner], all: &[] };
+                        built = match c.blend {
+                            Blend::Round(radius) => k.fillet(body, body, radius, &[edge], names)?,
+                            Blend::Chamfer(leg) => k.chamfer(body, body, leg, &[edge], names)?,
+                        };
+                    }
+                    Ok(built)
+                })
             }
         }
+    }
+
+    /// The roundings and chamfers made exact on the chain body `src` comes from that stand on face `pushed` and still
+    /// have their face on `src`. A blend names its two faces as they were on the body it was found on; a later body names
+    /// them anew, so they are found on `src` by their planes.
+    fn blends_beside(&mut self, p: &Pass, src: Id, pushed: u32) -> Vec<Carried> {
+        use crate::feature::FeatureKind;
+        let mut found: Vec<(Id, Id, Exact)> = Vec::new();
+        let mut cur = src;
+        while let Some(n) = self.timeline.iter().find(|n| n.kind.body() == Some(cur) && !n.suppressed) {
+            if let FeatureKind::Remade { src: made_on, exact, .. } = &n.kind {
+                found.push((n.id, *made_on, exact.clone()));
+            }
+            match n.kind.consumed_body() {
+                Some(below) if below != cur => cur = below,
+                _ => break,
+            }
+        }
+        let now = self.regen_faces.get(&src).cloned().unwrap_or_default();
+        let mut out = Vec::new();
+        for (node, made_on, exact) in found {
+            let dims = self.feat_dims.get(&node).cloned();
+            let (sides, blend) = match exact {
+                Exact::Round { sides, radius } => (sides, Blend::Round(eval_dim(dims.as_ref(), "radius", radius, p.vars))),
+                Exact::Chamfer { sides, leg } => (sides, Blend::Chamfer(eval_dim(dims.as_ref(), "dist", leg, p.vars))),
+                Exact::Hole { .. } => continue,
+            };
+            let then = self.regen_faces.get(&made_on).map(Vec::as_slice).unwrap_or_default();
+            let side = |id: u32| then.iter().find(|f| f.id == id).and_then(|f| in_plane_of(f, &now));
+            let (Some(one), Some(other)) = (side(sides.one), side(sides.other)) else { continue };
+            let face = self.intern_name(node, crate::names::Role::Blend, 0);
+            if (one == pushed || other == pushed) && now.iter().any(|f| f.id == face) {
+                let corner = self.intern_name(node, crate::names::Role::Corner, 0);
+                out.push(Carried { face, sides: crate::geom::EdgeFaces { one, other }, blend, corner });
+            }
+        }
+        out
     }
 
     fn prep_surfacereplace(&mut self, p: &Pass, src: Id, faces: &crate::refs::Ref, surface: Id, body: Id) -> crate::feature::KernelJob {
