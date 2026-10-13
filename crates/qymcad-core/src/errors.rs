@@ -249,6 +249,8 @@ pub enum CoreError {
     /// There is nothing to push a sheet face with: pushing is an operation for solids, and a sheet gets its
     /// thickness from thickening.
     PushFaceOnSheet,
+    /// A size between two faces asks for two flat faces standing parallel and apart, and a size above zero.
+    GapNotParallel,
     /// The surface did not match the opening; this many edges were left without a counterpart.
     SurfaceDoesNotClose { free: u32 },
     /// There is nothing to stitch: the selected surfaces share no edges and do not touch. This is common
@@ -458,6 +460,7 @@ impl CoreError {
             ThreadNotItsSize { .. } => "error-thread-not-its-size".into(),
             EdgesDropped { .. } => "warn-edges-dropped".into(),
             PushFaceOnSheet => "error-push-face-on-sheet".into(),
+            GapNotParallel => "error-gap-not-parallel".into(),
             NeedsSolidNotSheet => "error-needs-solid-not-sheet".into(),
             DraftFailed { .. } => "error-draft-failed".into(),
             EdgesNotFound { .. } => "error-edges-not-found".into(),
@@ -576,6 +579,7 @@ impl std::fmt::Display for CoreError {
             ThreadNotItsSize { face, nominal } => write!(f, "a thread of {nominal:.2} does not fit a face of {face:.2}"),
             EdgesDropped { asked, dropped } => write!(f, "{dropped} of the {asked} edges could not be taken"),
             PushFaceOnSheet => write!(f, "push face on a sheet"),
+            GapNotParallel => write!(f, "a size between faces that are not parallel planes apart"),
             NeedsSolidNotSheet => write!(f, "solid tool on a sheet"),
             DraftFailed { angle } => write!(f, "draft {angle:.1} failed"),
             RemoveFacesFailed { why } => write!(f, "cannot remove faces: {why}"),

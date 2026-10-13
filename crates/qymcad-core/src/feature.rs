@@ -35,6 +35,37 @@ pub struct FaceKey {
     pub id: u32,
 }
 
+/// Which face of a size between two faces moves when the size is changed: the first picked, the second, or both by
+/// half, the middle standing still.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GapMoves {
+    #[default]
+    One,
+    Other,
+    Both,
+}
+
+/// How far each face of a size between faces moves along its own normal, out of the body for more.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct GapShift {
+    pub one: f64,
+    pub other: f64,
+}
+
+impl GapMoves {
+    /// The moves that make two parallel flat faces `gap` apart: `apart` is how far the second stands from the first along
+    /// the normal of the first, `turn` the cosine between their normals (1 or -1). The first face moved by t along its
+    /// own normal leaves them `apart - t`; the second, `apart + t * turn`.
+    pub fn shifts(self, apart: f64, turn: f64, gap: f64) -> GapShift {
+        let want = apart.signum() * gap;
+        match self {
+            GapMoves::One => GapShift { one: apart - want, other: 0.0 },
+            GapMoves::Other => GapShift { one: 0.0, other: (want - apart) / turn },
+            GapMoves::Both => GapShift { one: (apart - want) / 2.0, other: (want - apart) / 2.0 / turn },
+        }
+    }
+}
+
 /// Placement of a sketch in 3D. The 2D geometry is lifted into the world through the plane frame.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 pub enum SketchPlane {
@@ -1427,6 +1458,9 @@ pub enum FeatureKind {
     /// neighbours closing over them - and a hole, a rounding or a chamfer laid down by its own tool on what is left,
     /// producing `body`. The sizes are the node's dimensions: `diameter` and `depth`, `radius`, `dist`.
     Remade { src: Id, faces: crate::refs::Ref, exact: crate::model::Exact, body: Id },
+    /// A SIZE BETWEEN TWO FLAT FACES OF A BODY standing parallel: they are made `gap` apart by pushing `one`, `other` or
+    /// both by half (`moves`), the faces beside following as a push carries them. The size stays a number in the tree.
+    FaceGap { src: Id, one: crate::refs::Ref, other: crate::refs::Ref, gap: f64, moves: GapMoves, body: Id },
     /// Split a body by a plane: `src` falls apart into pieces, each an independent body. `bodies` holds one id
     /// per piece, ordered from bottom to top along the normal, and the first of them also serves as the
     /// `body()` of the node.
@@ -2486,6 +2520,7 @@ impl FeatureKind {
                 crate::model::Exact::Round { radius, .. } => vec![("radius", radius)],
                 crate::model::Exact::Chamfer { leg, .. } => vec![("dist", leg)],
             },
+            FeatureKind::FaceGap { gap, .. } => vec![("gap", gap)],
             FeatureKind::Shell { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Thicken { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Draft { angle, .. } => vec![("angle", angle)],
@@ -2531,6 +2566,7 @@ impl FeatureKind {
             | FeatureKind::PushFace { body, .. }
             | FeatureKind::RemoveFace { body, .. }
             | FeatureKind::Remade { body, .. }
+            | FeatureKind::FaceGap { body, .. }
             | FeatureKind::Chamfer { body, .. }
             | FeatureKind::FaceCopy { body, .. }
             | FeatureKind::OffsetSurface { body, .. }
@@ -2693,6 +2729,7 @@ impl FeatureKind {
             | FeatureKind::PushFace { src, .. }
             | FeatureKind::RemoveFace { src, .. }
             | FeatureKind::Remade { src, .. }
+            | FeatureKind::FaceGap { src, .. }
             | FeatureKind::LinearArray { src, .. }
             | FeatureKind::CircularArray { src, .. }
             | FeatureKind::Mirror { src, .. }
@@ -2755,6 +2792,7 @@ impl FeatureKind {
             | FeatureKind::PushFace { src, .. }
             | FeatureKind::RemoveFace { src, .. }
             | FeatureKind::Remade { src, .. }
+            | FeatureKind::FaceGap { src, .. }
             | FeatureKind::FaceCopy { src, .. }
             | FeatureKind::OffsetSurface { src, .. }
             | FeatureKind::Patch { src, .. }
@@ -2823,7 +2861,7 @@ impl FeatureKind {
                 }
                 m(body);
             }
-            FeatureKind::RemoveFace { src, body, .. } | FeatureKind::Remade { src, body, .. } => {
+            FeatureKind::RemoveFace { src, body, .. } | FeatureKind::Remade { src, body, .. } | FeatureKind::FaceGap { src, body, .. } => {
                 m(src);
                 m(body);
             }
@@ -2959,6 +2997,10 @@ impl FeatureKind {
                 faces.remap_descs(&mut |d| m(d));
                 exact.remap_descs(&mut |d| m(d));
             }
+            FeatureKind::FaceGap { one, other, .. } => {
+                one.remap_descs(&mut |d| m(d));
+                other.remap_descs(&mut |d| m(d));
+            }
             // Surface features hold references of the same kind: without translation a cloned part and a
             // deleted node would break them exactly as they broke a thread.
             FeatureKind::FaceCopy { faces, .. } | FeatureKind::OffsetSurface { faces, .. } | FeatureKind::SurfaceReplace { faces, .. } => faces.remap_descs(&mut |d| m(d)),
@@ -3028,6 +3070,7 @@ impl FeatureKind {
             | FeatureKind::PushFace { src, .. }
             | FeatureKind::RemoveFace { src, .. }
             | FeatureKind::Remade { src, .. }
+            | FeatureKind::FaceGap { src, .. }
             | FeatureKind::LinearArray { src, .. }
             | FeatureKind::CircularArray { src, .. }
             | FeatureKind::Mirror { src, .. }

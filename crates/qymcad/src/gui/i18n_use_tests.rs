@@ -351,6 +351,7 @@ fn every_core_error_has_words_in_every_language() {
         E::ChamferTooBig { dist: 4.0 },
         E::SurfaceDoesNotClose { free: 4 },
         E::PushFaceOnSheet,
+        E::GapNotParallel,
         E::NeedsSolidNotSheet,
         E::DraftFailed { angle: 4.0 },
         E::AugerFlightFailed,

@@ -239,6 +239,15 @@ pub struct HoleTool {
     pub depth2: f64,
 }
 
+/// A SIZE BETWEEN TWO FLAT FACES TO LAY DOWN: the faces as they stand on the body, the size, and which of them moves.
+#[derive(Clone, Copy, Debug)]
+pub struct Gap {
+    pub one: crate::feature::FaceKey,
+    pub other: crate::feature::FaceKey,
+    pub size: f64,
+    pub moves: crate::feature::GapMoves,
+}
+
 /// A FEATURE FOUND ON A BODY, TO BE LAID DOWN EXACT: its faces as they stand on the body, and what it is made again as.
 #[derive(Clone, Debug)]
 pub struct Remake {
@@ -275,6 +284,48 @@ impl Exact {
             }
         }
     }
+}
+
+/// A face pushed: its name and how far along its own normal, out of the body for more.
+struct Shift {
+    face: u32,
+    by: f64,
+}
+
+/// The two faces a size between faces stands on, as the node holds them.
+struct GapRefs<'a> {
+    one: &'a crate::refs::Ref,
+    other: &'a crate::refs::Ref,
+}
+
+/// THE WORK OF A PUSH: the blends `carried` taken off body `src`, every face of `shifts` pushed in turn, the blends laid
+/// down again on the edges their faces meet in. Nothing to push leaves the body as it is.
+fn pushed_job(src: Id, body: Id, shifts: Vec<Shift>, carried: Vec<Carried>) -> crate::feature::KernelJob {
+    crate::feature::KernelJob::new(vec![src], move |k| {
+        let mut from = src;
+        if !carried.is_empty() {
+            let faces: Vec<u32> = carried.iter().map(|c| c.face).collect();
+            k.remove_faces(body, src, &faces)?;
+            from = body;
+        }
+        let mut built = None;
+        for s in &shifts {
+            built = Some(k.push_face(body, from, s.face, s.by)?);
+            from = body;
+        }
+        for c in &carried {
+            let edge = parted_by(k, body, c.sides)?;
+            let names = crate::feature::BlendNames { surfaces: &[c.face], corners: &[c.corner], all: &[] };
+            built = Some(match c.blend {
+                Blend::Round(radius) => k.fillet(body, body, radius, &[edge], names)?,
+                Blend::Chamfer(leg) => k.chamfer(body, body, leg, &[edge], names)?,
+            });
+        }
+        match built {
+            Some(b) => Ok(b),
+            None => k.transform_body(body, src, [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]),
+        }
+    })
 }
 
 /// A rounding or a chamfer made exact carried across a push: `face` is its face, taken off before the push and named
@@ -1663,27 +1714,38 @@ impl Project {
             Err(_) => crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound),
             Ok(_) if dist.abs() < 1e-9 => crate::feature::KernelJob::refused(crate::errors::CoreError::ZeroPushDistance),
             Ok(c) => {
-                let desc = c.desc;
-                let carried = self.blends_beside(p, src, desc);
-                if carried.is_empty() {
-                    return crate::feature::KernelJob::new(vec![src], move |k| k.push_face(body, src, desc, dist));
-                }
-                crate::feature::KernelJob::new(vec![src], move |k| {
-                    let faces: Vec<u32> = carried.iter().map(|c| c.face).collect();
-                    k.remove_faces(body, src, &faces)?;
-                    let mut built = k.push_face(body, body, desc, dist)?;
-                    for c in &carried {
-                        let edge = parted_by(k, body, c.sides)?;
-                        let names = crate::feature::BlendNames { surfaces: &[c.face], corners: &[c.corner], all: &[] };
-                        built = match c.blend {
-                            Blend::Round(radius) => k.fillet(body, body, radius, &[edge], names)?,
-                            Blend::Chamfer(leg) => k.chamfer(body, body, leg, &[edge], names)?,
-                        };
-                    }
-                    Ok(built)
-                })
+                let carried = self.blends_beside(p, src, c.desc);
+                pushed_job(src, body, vec![Shift { face: c.desc, by: dist }], carried)
             }
         }
+    }
+
+    /// A SIZE BETWEEN TWO FLAT FACES: the faces resolved, the distance between their planes measured along the normal
+    /// of the first, and the face or faces `moves` names pushed so the distance becomes `gap` - the rest as a push does
+    /// it, the roundings and chamfers made exact beside them carried across.
+    fn prep_facegap(&mut self, p: &Pass, src: Id, faces: GapRefs, gap: f64, moves: crate::feature::GapMoves, body: Id) -> crate::feature::KernelJob {
+        let gap = p.dim("gap", gap);
+        if p.kernel.body_is_sheet(src) {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PushFaceOnSheet);
+        }
+        let (Ok(a), Ok(b)) = (self.face_by_ref(p.node, src, faces.one, "ref-what-gap-face"), self.face_by_ref(p.node, src, faces.other, "ref-what-gap-face")) else {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound);
+        };
+        let n = a.normal;
+        let turn = n[0] * b.normal[0] + n[1] * b.normal[1] + n[2] * b.normal[2];
+        let apart = (0..3).map(|i| n[i] * (b.centroid[i] - a.centroid[i])).sum::<f64>();
+        if turn.abs() < 1.0 - PLANE_TURN || apart.abs() < PLANE_GAP || gap <= PLANE_GAP {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::GapNotParallel);
+        }
+        let by = moves.shifts(apart, turn, gap);
+        let shifts: Vec<Shift> = [Shift { face: a.desc, by: by.one }, Shift { face: b.desc, by: by.other }].into_iter().filter(|s| s.by.abs() > 1e-9).collect();
+        let mut carried = self.blends_beside(p, src, a.desc);
+        for c in self.blends_beside(p, src, b.desc) {
+            if !carried.iter().any(|k| k.face == c.face) {
+                carried.push(c);
+            }
+        }
+        pushed_job(src, body, shifts, carried)
     }
 
     /// The roundings and chamfers made exact on the chain body `src` comes from that stand on face `pushed` and still
@@ -2611,6 +2673,7 @@ impl Project {
             FeatureKind::RemoveFace { src, faces, body } => (*body, self.prep_removeface(p, *src, faces, *body)),
             FeatureKind::Remade { src, faces, exact, body } => (*body, self.prep_remade(p, *src, faces, exact, *body)),
             FeatureKind::PushFace { src, face, dist, body } => (*body, self.prep_pushface(p, *src, face, *dist, *body)),
+            FeatureKind::FaceGap { src, one, other, gap, moves, body } => (*body, self.prep_facegap(p, *src, GapRefs { one, other }, *gap, *moves, *body)),
             FeatureKind::Patch { src, edges, tangent, body } => (*body, self.prep_patch(p, *src, edges, *tangent, *body)),
             FeatureKind::SurfaceReplace { src, faces, surface, body } => (*body, self.prep_surfacereplace(p, *src, faces, *surface, *body)),
             FeatureKind::FaceCopy { src, faces, body } => (*body, self.prep_facecopy(p, *src, faces, *body)),

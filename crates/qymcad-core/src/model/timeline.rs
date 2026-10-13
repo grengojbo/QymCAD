@@ -1266,6 +1266,17 @@ impl Project {
         body
     }
 
+    /// A size between two flat parallel faces of body `src`, as one node (`FeatureKind::FaceGap`): the faces go by name,
+    /// as a pick does, the size lives as the `gap` dimension.
+    pub fn add_face_gap(&mut self, src: Id, gap: super::Gap) -> Id {
+        use crate::feature::{FeatureKind, FeatureNode};
+        let key = |f: crate::feature::FaceKey| crate::refs::Ref::one(f.id, crate::refs::Fingerprint { centroid: f.centroid, normal: f.normal });
+        let body = self.alloc_id();
+        let parent = Some(self.body_parent());
+        let kind = FeatureKind::FaceGap { src, one: key(gap.one), other: key(gap.other), gap: gap.size, moves: gap.moves, body };
+        self.push_timeline(FeatureNode { id: body, name: "feat-name-face-gap".into(), kind, parent, dirty: true, suppressed: false })
+    }
+
     /// Thicken a face: face `face` of body `src` becomes a plate of `thickness` as a separate body. The source
     /// stays — a skin is made from a face of the housing while the housing remains. The thickness is parametric
     /// (the `thickness` feature dimension).
