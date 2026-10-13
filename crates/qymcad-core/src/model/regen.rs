@@ -239,6 +239,14 @@ pub struct HoleTool {
     pub depth2: f64,
 }
 
+/// A HOLE TO MOVE: the hole found on the body, the flat face its axis is measured to, and the distance wanted.
+#[derive(Clone, Debug)]
+pub struct HoleMove {
+    pub hole: Remake,
+    pub face: crate::feature::FaceKey,
+    pub size: f64,
+}
+
 /// A SIZE BETWEEN TWO FLAT FACES TO LAY DOWN: the faces as they stand on the body, the size, and which of them moves.
 #[derive(Clone, Copy, Debug)]
 pub struct Gap {
@@ -290,6 +298,12 @@ impl Exact {
 struct Shift {
     face: u32,
     by: f64,
+}
+
+/// The faces of a hole moved and the flat face its distance is measured to, as the node holds them.
+struct HoleRefs<'a> {
+    faces: &'a crate::refs::Ref,
+    face: &'a crate::refs::Ref,
 }
 
 /// The two faces a size between faces stands on, as the node holds them.
@@ -348,6 +362,10 @@ enum Blend {
 /// made of a mesh lies on the mesh's vertices, read from the file in single precision: 40 mm comes back within 4e-6.
 const PLANE_TURN: f64 = 1e-6;
 const PLANE_GAP: f64 = 1e-3;
+
+/// How far the axis of a hole may lean to a face (the cosine between the face's normal and the hole's entry normal) and
+/// still stand parallel to it: a hole found on a mesh is square to its entry within its fit, 0.5 deg.
+const AXIS_TURN: f64 = 0.01;
 
 /// The face of `among` lying in the plane of flat face `f`, the nearest one when several do.
 fn in_plane_of(f: &crate::geom::MeshFace, among: &[crate::geom::MeshFace]) -> Option<u32> {
@@ -1748,6 +1766,27 @@ impl Project {
         pushed_job(src, body, shifts, carried)
     }
 
+    /// A HOLE MOVED: the plane of the face resolved, the axis of the hole - square into its entry face - found standing
+    /// parallel to it, and the hole made again exact with its axis `gap` from the plane, on the side it stood.
+    fn prep_holemoved(&mut self, p: &Pass, src: Id, refs: HoleRefs, exact: &Exact, gap: f64, body: Id) -> crate::feature::KernelJob {
+        let gap = p.dim("gap", gap);
+        let Exact::Hole { entry, at, diameter, depth, reach } = *exact else {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::GapNotParallel);
+        };
+        let Ok(c) = self.face_by_ref(p.node, src, refs.face, "ref-what-gap-face") else {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound);
+        };
+        let n = c.normal;
+        let across = (0..3).map(|i| n[i] * entry.normal[i]).sum::<f64>();
+        let s = (0..3).map(|i| n[i] * (at[i] - c.centroid[i])).sum::<f64>();
+        if across.abs() > AXIS_TURN || gap <= PLANE_GAP {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::GapNotParallel);
+        }
+        let want = if s < 0.0 { -gap } else { gap };
+        let at = [at[0] + n[0] * (want - s), at[1] + n[1] * (want - s), at[2] + n[2] * (want - s)];
+        self.prep_remade(p, src, refs.faces, &Exact::Hole { entry, at, diameter, depth, reach }, body)
+    }
+
     /// The roundings and chamfers made exact on the chain body `src` comes from that stand on face `pushed` and still
     /// have their face on `src`. A blend names its two faces as they were on the body it was found on; a later body names
     /// them anew, so they are found on `src` by their planes.
@@ -2673,6 +2712,7 @@ impl Project {
             FeatureKind::RemoveFace { src, faces, body } => (*body, self.prep_removeface(p, *src, faces, *body)),
             FeatureKind::Remade { src, faces, exact, body } => (*body, self.prep_remade(p, *src, faces, exact, *body)),
             FeatureKind::PushFace { src, face, dist, body } => (*body, self.prep_pushface(p, *src, face, *dist, *body)),
+            FeatureKind::HoleMoved { src, faces, exact, face, gap, body } => (*body, self.prep_holemoved(p, *src, HoleRefs { faces, face }, exact, *gap, *body)),
             FeatureKind::FaceGap { src, one, other, gap, moves, body } => (*body, self.prep_facegap(p, *src, GapRefs { one, other }, *gap, *moves, *body)),
             FeatureKind::Patch { src, edges, tangent, body } => (*body, self.prep_patch(p, *src, edges, *tangent, *body)),
             FeatureKind::SurfaceReplace { src, faces, surface, body } => (*body, self.prep_surfacereplace(p, *src, faces, *surface, *body)),

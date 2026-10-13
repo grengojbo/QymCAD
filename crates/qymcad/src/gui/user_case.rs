@@ -3433,6 +3433,31 @@ pub(crate) mod tests {
                 }
             }
             hand.key(egui::Key::Escape).frame(Vec::new());
+            // the hole moved 10 from the front side with "Size on body", as a person does it: its wall clicked, then the
+            // front side - 15 from the axis - 10 typed, Enter: the plate holds as much, the wall stands about y = 10
+            hand.tool(qymcad_part::FACE_GAP).frame(Vec::new());
+            hand.click([520.0, 18.0, 9.0]).frame(Vec::new());
+            hand.click([530.0, 0.0, 5.0]).frame(Vec::new());
+            let field = hand.app.tools.cmd.params.iter().find(|p| p.key == "gap").map(|p| p.val);
+            if field.is_none_or(|d| (d - 15.0).abs() > 0.05) {
+                problems.push(format!("\"Size on body\" on the printed hole and the front side stands at {field:?}, not 15: {}", hand.app.status));
+            }
+            let nodes = hand.app.project.timeline.len();
+            hand.set("gap", 10.0);
+            hand.enter();
+            at_rest(&mut hand);
+            check_all(hand.app, "the printed hole moved 10 from the front", &mut problems);
+            let moved = hand.app.project.timeline.last().filter(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::HoleMoved { .. })).map(|n| n.id);
+            let wall_y = moved
+                .and_then(|id| hand.app.project.regen_faces.get(&id))
+                .and_then(|fs| fs.iter().find(|f| f.normal[2].abs() < 0.1 && f.centroid.x > 515.0 && f.centroid.x < 525.0 && f.centroid.y > 1.0 && f.centroid.y < 29.0))
+                .map(|f| f.centroid.y);
+            let held = moved.and_then(|id| hand.app.live.shapes.get(&id)).map(|s| s.volume());
+            match (held, wall_y) {
+                (Some(v), Some(y)) if (v - (12000.0 - pi * 9.0 * 10.0)).abs() < 1.0 && (y - 10.0).abs() < 0.5 && hand.app.project.timeline.len() == nodes + 1 => {}
+                (v, y) => problems.push(format!("the printed hole moved 10 from the front: {v:?} mm^3, its wall about y = {y:?}, {} nodes more", hand.app.project.timeline.len() - nodes)),
+            }
+            hand.key(egui::Key::Escape).frame(Vec::new());
             // the hole taken off, as a person does it: the tool switched to "Take off" in its bar, the wall clicked, Enter -
             // the plate whole again, one node more
             hand.tool(qymcad_part::RECOGNISE_FEATURE).frame(Vec::new());
@@ -3440,8 +3465,8 @@ pub(crate) mod tests {
             if !hand.press_word(&off, egui::pos2(0.0, 0.0)) {
                 problems.push(format!("the bar of \"Recognise feature\" offers no {off:?}"));
             }
-            // the hole is 6 across now: its far wall is seen just under the top
-            hand.click([520.0, 18.0, 9.0]).frame(Vec::new());
+            // the hole is 6 across about (520, 10) now: its far wall is seen just under the top
+            hand.click([520.0, 13.0, 9.0]).frame(Vec::new());
             if hand.app.params.recognise.feature.is_none() {
                 problems.push(format!("a click on the wall of the printed hole made 6 across found no feature: {}", hand.app.status));
             }

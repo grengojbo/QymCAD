@@ -2760,6 +2760,7 @@ pub(crate) fn feat_icon(kind: &qymcad_core::feature::FeatureKind) -> &'static st
         FK::RemoveFace { .. } => ph::ERASER,
         FK::Remade { .. } => ph::SPARKLE,
         FK::FaceGap { .. } => ph::RULER,
+        FK::HoleMoved { .. } => ph::ARROWS_OUT_CARDINAL,
         FK::SplitBody { .. } => ph::SQUARE_SPLIT_HORIZONTAL,
         FK::PartInstance { .. } => ph::CUBE_TRANSPARENT, // NOT the assembly icon: there is nothing to enter here (see panels.rs)
         FK::Thicken { .. } => ph::STACK_SIMPLE,
@@ -2806,6 +2807,7 @@ pub(crate) fn feat_default_name(kind: &qymcad_core::feature::FeatureKind) -> Str
         FK::Remade { exact: qymcad_core::model::Exact::Round { .. }, .. } => "feat-name-remade-round".into(),
         FK::Remade { exact: qymcad_core::model::Exact::Chamfer { .. }, .. } => "feat-name-remade-chamfer".into(),
         FK::FaceGap { .. } => "feat-name-face-gap".into(),
+        FK::HoleMoved { .. } => "feat-name-hole-moved".into(),
         FK::SplitBody { .. } => "feat-name-split-body".into(),
         FK::PartInstance { .. } => "feat-name-instance".into(),
         // A MIRRORED PART WITH NO NAME. It had a row in the tree but no default name — so the node

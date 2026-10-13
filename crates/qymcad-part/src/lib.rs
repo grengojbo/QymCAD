@@ -7,7 +7,7 @@
 mod face_gap;
 mod recognise_feature;
 mod trial;
-pub use face_gap::{apply_face_gap_cmd, edit_face_gap, face_gap_at, face_gap_ready, gap_moves, open_face_gap, start_face_gap_cmd, FACE_GAP, MOVE_BOTH, MOVE_ONE, MOVE_OTHER};
+pub use face_gap::{apply_face_gap_cmd, edit_face_gap, edit_gap, face_gap_at, face_gap_holds_hole, face_gap_ready, gap_moves, open_face_gap, start_face_gap_cmd, FACE_GAP, MOVE_BOTH, MOVE_ONE, MOVE_OTHER};
 pub use recognise_feature::{
     apply_recognise_feature_cmd, edit_remade, hit_on_face, open_remade, recognise_feature_at, recognise_mode_changed, start_recognise_feature_cmd, MAKE_EXACT, RECOGNISE_FEATURE, TAKE_OFF,
 };
@@ -2958,6 +2958,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
             }
             FeatureKind::Remade { exact, .. } => edit_remade(&remade_cmd, exact),
             FeatureKind::FaceGap { gap, moves, .. } => edit_face_gap(&remade_cmd, gap_op, gap, moves),
+            FeatureKind::HoleMoved { gap, .. } => edit_gap(&remade_cmd, gap),
             FeatureKind::Thicken { face, thickness, .. } => {
                 *thickness = thickness_v;
                 if let Some(&id) = faces_set.first() {
@@ -3641,7 +3642,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         }
         FeatureKind::MeshSolid { src, .. } => open_recognise_on(pc, src, was_3d, 1),
         FeatureKind::Remade { src, ref faces, ref exact, .. } => open_remade(pc, fid, src, faces, exact, was_3d),
-        FeatureKind::FaceGap { .. } => open_face_gap(pc, fid, &node.kind, was_3d),
+        FeatureKind::FaceGap { .. } | FeatureKind::HoleMoved { .. } => open_face_gap(pc, fid, &node.kind, was_3d),
         FeatureKind::SplitFace { plane, datum, offset, face, .. } => {
             pc.cmd.open(pc.armed, 29, was_3d);
             qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
@@ -5167,10 +5168,15 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                 }
                 38 => {
                     // WHICH FACE THE SIZE MOVES: the first clicked, the second, or both by half with the middle standing
-                    ui.label(qymcad_i18n::tr("cmd-gap-moves"));
-                    ui.selectable_value(&mut pc.feat.op, MOVE_ONE, qymcad_i18n::tr("cmd-gap-one"));
-                    ui.selectable_value(&mut pc.feat.op, MOVE_OTHER, qymcad_i18n::tr("cmd-gap-other"));
-                    ui.selectable_value(&mut pc.feat.op, MOVE_BOTH, qymcad_i18n::tr("cmd-gap-both"));
+                    // a hole held moves itself: there is no face to choose
+                    if face_gap_holds_hole(pc) {
+                        ui.label(qymcad_i18n::tr("cmd-gap-hole-moves"));
+                    } else {
+                        ui.label(qymcad_i18n::tr("cmd-gap-moves"));
+                        ui.selectable_value(&mut pc.feat.op, MOVE_ONE, qymcad_i18n::tr("cmd-gap-one"));
+                        ui.selectable_value(&mut pc.feat.op, MOVE_OTHER, qymcad_i18n::tr("cmd-gap-other"));
+                        ui.selectable_value(&mut pc.feat.op, MOVE_BOTH, qymcad_i18n::tr("cmd-gap-both"));
+                    }
                     // the faces taken, counted where the tool is
                     ui.separator();
                     ui.label(egui::RichText::new(qymcad_i18n::tr1("cmd-gap-faces", "n", &pc.recognise.gap.len().to_string())).color(pc.scheme.pal.hint()));

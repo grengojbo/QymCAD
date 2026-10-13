@@ -319,6 +319,7 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::RemoveFace { ref faces, .. } => format!("{} {}", ph::ERASER, crate::i18n::tr1("feat-remove-face", "n", &faces.query.picked_descs().len().to_string())),
         // A SIZE ON THE BODY names its number, as a dimension does
         FeatureKind::FaceGap { gap, .. } => format!("{} {}", ph::RULER, crate::i18n::tr1("feat-face-gap", "d", &crate::i18n::num(at("gap", gap), 1))),
+        FeatureKind::HoleMoved { gap, .. } => format!("{} {}", ph::ARROWS_OUT_CARDINAL, crate::i18n::tr1("feat-hole-moved", "d", &crate::i18n::num(at("gap", gap), 1))),
         // A FEATURE MADE EXACT names what it is and its size, as the tool that made it does
         FeatureKind::Remade { ref exact, .. } => {
             use qymcad_core::model::{Exact, Reach};

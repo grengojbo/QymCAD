@@ -1461,6 +1461,10 @@ pub enum FeatureKind {
     /// A SIZE BETWEEN TWO FLAT FACES OF A BODY standing parallel: they are made `gap` apart by pushing `one`, `other` or
     /// both by half (`moves`), the faces beside following as a push carries them. The size stays a number in the tree.
     FaceGap { src: Id, one: crate::refs::Ref, other: crate::refs::Ref, gap: f64, moves: GapMoves, body: Id },
+    /// A HOLE MOVED BY ITS DISTANCE TO A FLAT FACE: the hole found on the body (`exact`, its faces `faces`) is taken off
+    /// and drilled again with its axis `gap` from the plane of `face`, the size, the depth and the entry face as they
+    /// were. The distance stays a number in the tree.
+    HoleMoved { src: Id, faces: crate::refs::Ref, exact: crate::model::Exact, face: crate::refs::Ref, gap: f64, body: Id },
     /// Split a body by a plane: `src` falls apart into pieces, each an independent body. `bodies` holds one id
     /// per piece, ordered from bottom to top along the normal, and the first of them also serves as the
     /// `body()` of the node.
@@ -2520,7 +2524,7 @@ impl FeatureKind {
                 crate::model::Exact::Round { radius, .. } => vec![("radius", radius)],
                 crate::model::Exact::Chamfer { leg, .. } => vec![("dist", leg)],
             },
-            FeatureKind::FaceGap { gap, .. } => vec![("gap", gap)],
+            FeatureKind::FaceGap { gap, .. } | FeatureKind::HoleMoved { gap, .. } => vec![("gap", gap)],
             FeatureKind::Shell { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Thicken { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Draft { angle, .. } => vec![("angle", angle)],
@@ -2567,6 +2571,7 @@ impl FeatureKind {
             | FeatureKind::RemoveFace { body, .. }
             | FeatureKind::Remade { body, .. }
             | FeatureKind::FaceGap { body, .. }
+            | FeatureKind::HoleMoved { body, .. }
             | FeatureKind::Chamfer { body, .. }
             | FeatureKind::FaceCopy { body, .. }
             | FeatureKind::OffsetSurface { body, .. }
@@ -2730,6 +2735,7 @@ impl FeatureKind {
             | FeatureKind::RemoveFace { src, .. }
             | FeatureKind::Remade { src, .. }
             | FeatureKind::FaceGap { src, .. }
+            | FeatureKind::HoleMoved { src, .. }
             | FeatureKind::LinearArray { src, .. }
             | FeatureKind::CircularArray { src, .. }
             | FeatureKind::Mirror { src, .. }
@@ -2793,6 +2799,7 @@ impl FeatureKind {
             | FeatureKind::RemoveFace { src, .. }
             | FeatureKind::Remade { src, .. }
             | FeatureKind::FaceGap { src, .. }
+            | FeatureKind::HoleMoved { src, .. }
             | FeatureKind::FaceCopy { src, .. }
             | FeatureKind::OffsetSurface { src, .. }
             | FeatureKind::Patch { src, .. }
@@ -2861,7 +2868,7 @@ impl FeatureKind {
                 }
                 m(body);
             }
-            FeatureKind::RemoveFace { src, body, .. } | FeatureKind::Remade { src, body, .. } | FeatureKind::FaceGap { src, body, .. } => {
+            FeatureKind::RemoveFace { src, body, .. } | FeatureKind::Remade { src, body, .. } | FeatureKind::FaceGap { src, body, .. } | FeatureKind::HoleMoved { src, body, .. } => {
                 m(src);
                 m(body);
             }
@@ -3001,6 +3008,11 @@ impl FeatureKind {
                 one.remap_descs(&mut |d| m(d));
                 other.remap_descs(&mut |d| m(d));
             }
+            FeatureKind::HoleMoved { faces, exact, face, .. } => {
+                faces.remap_descs(&mut |d| m(d));
+                exact.remap_descs(&mut |d| m(d));
+                face.remap_descs(&mut |d| m(d));
+            }
             // Surface features hold references of the same kind: without translation a cloned part and a
             // deleted node would break them exactly as they broke a thread.
             FeatureKind::FaceCopy { faces, .. } | FeatureKind::OffsetSurface { faces, .. } | FeatureKind::SurfaceReplace { faces, .. } => faces.remap_descs(&mut |d| m(d)),
@@ -3071,6 +3083,7 @@ impl FeatureKind {
             | FeatureKind::RemoveFace { src, .. }
             | FeatureKind::Remade { src, .. }
             | FeatureKind::FaceGap { src, .. }
+            | FeatureKind::HoleMoved { src, .. }
             | FeatureKind::LinearArray { src, .. }
             | FeatureKind::CircularArray { src, .. }
             | FeatureKind::Mirror { src, .. }

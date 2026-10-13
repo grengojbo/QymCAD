@@ -841,7 +841,7 @@ fn draw_open_borders(pn: &Painting, painter: &egui::Painter, scr: &qymcad_ui_sta
 /// circle it is drilled again with, at its mouth and - a blind one - at its bottom, in the "will be added" colour, its
 /// diameter and depth as the fields hold them now.
 /// SIZE ON BODY: the faces taken lit, and every face the size moves dashed by its rim where it will stand - the green of
-/// more material for a face going out, the colour of a cut for one going in.
+/// more material for a face going out, the colour of a cut for one going in; a hole moved, its rim where it will open.
 fn draw_gap_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {
     let Some(mi) = pn.gsel.faces_body.and_then(|b| pn.project.mesh_index(b)) else { return };
     let body = &pn.project.bodies[mi];
@@ -859,6 +859,43 @@ fn draw_gap_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr
     }
     if !hm.is_empty() {
         painter.add(egui::Shape::mesh(hm));
+    }
+    // A HOLE HELD: its faces lit, and where its rim will stand on the entry face dashed
+    if let Some(qymcad_ui_state::FeatureInHand { remake: qymcad_core::model::Remake { faces, exact: qymcad_core::model::Exact::Hole { entry, at, diameter, .. } }, .. }) = pn.recognise.feature.as_ref()
+    {
+        let mut hm = egui::Mesh::default();
+        for f in body.faces.iter().filter(|f| faces.iter().any(|k| k.id == f.id)) {
+            for &ti in &f.triangles {
+                let base = hm.vertices.len() as u32;
+                for v in &body.mesh.triangle(ti as usize) {
+                    hm.colored_vertex(scr.at([v.x, v.y, v.z]).0, qymcad_scheme::a(pn.scheme.pal.modify(), 110));
+                }
+                hm.add_triangle(base, base + 1, base + 2);
+            }
+        }
+        painter.add(egui::Shape::mesh(hm));
+        let [plane] = picked.as_slice() else { return };
+        if !pn.cmd.params.iter().any(|p| p.key == "gap") {
+            return;
+        }
+        let n = plane.normal;
+        let s = n[0] * (at[0] - plane.centroid.x) + n[1] * (at[1] - plane.centroid.y) + n[2] * (at[2] - plane.centroid.z);
+        let gap = qymcad_ui_state::cmd_val(pn.cmd, "gap");
+        let d = if s < 0.0 { -gap - s } else { gap - s };
+        let c = [at[0] + n[0] * d, at[1] + n[1] * d, at[2] + n[2] * d];
+        let (u, v) = qymcad_ui_state::perp_basis(entry.normal);
+        let r = diameter / 2.0;
+        let ring: Vec<egui::Pos2> = (0..=48)
+            .map(|k| {
+                let a = std::f64::consts::TAU * k as f64 / 48.0;
+                let (cs, sn) = (a.cos() * r, a.sin() * r);
+                scr.at([c[0] + u[0] * cs + v[0] * sn, c[1] + u[1] * cs + v[1] * sn, c[2] + u[2] * cs + v[2] * sn]).0
+            })
+            .collect();
+        for w in ring.windows(2) {
+            painter.add(egui::Shape::dashed_line(&[w[0], w[1]], Stroke::new(1.2, pn.scheme.pal.ok()), 5.0, 4.0));
+        }
+        return;
     }
     let [one, other] = picked.as_slice() else { return };
     if !pn.cmd.params.iter().any(|p| p.key == "gap") {

@@ -1277,6 +1277,19 @@ impl Project {
         self.push_timeline(FeatureNode { id: body, name: "feat-name-face-gap".into(), kind, parent, dirty: true, suppressed: false })
     }
 
+    /// A hole of body `src` moved to stand `size` from the plane of a flat face, as one node (`FeatureKind::HoleMoved`):
+    /// the faces go by name, as a pick does, the distance lives as the `gap` dimension.
+    pub fn add_hole_moved(&mut self, src: Id, mv: super::HoleMove) -> Id {
+        use crate::feature::{FeatureKind, FeatureNode};
+        let super::HoleMove { hole, face, size } = mv;
+        let body = self.alloc_id();
+        let parent = Some(self.body_parent());
+        let faces = crate::refs::Ref::picks(&hole.faces.iter().map(|f| f.id).collect::<Vec<_>>());
+        let face = crate::refs::Ref::one(face.id, crate::refs::Fingerprint { centroid: face.centroid, normal: face.normal });
+        let kind = FeatureKind::HoleMoved { src, faces, exact: hole.exact, face, gap: size, body };
+        self.push_timeline(FeatureNode { id: body, name: "feat-name-hole-moved".into(), kind, parent, dirty: true, suppressed: false })
+    }
+
     /// Thicken a face: face `face` of body `src` becomes a plate of `thickness` as a separate body. The source
     /// stays — a skin is made from a face of the housing while the housing remains. The thickness is parametric
     /// (the `thickness` feature dimension).

@@ -14,6 +14,12 @@ in.
 4. Type the size into the field at the geometry - a number or a formula. The preview shows the new faces.
 5. **Enter** applies, **Esc** cancels.
 
+## Hole position
+
+Click the round wall of a hole, then a flat face along its axis (a side wall, not the face the hole opens in). The field
+shows the distance from the axis to the face: **From the axis of the hole to the face now: 15.00**. Type another and
+press **Enter** - the hole moves, its diameter and depth as they were. The tree gets **Hole position 10**.
+
 ## What you get
 
 - One row in the tree: **Size 50**. A double click opens the same tool with the size in the field and the same face
