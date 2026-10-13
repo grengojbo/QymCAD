@@ -121,3 +121,18 @@ fn a_size_between_two_faces_moves_the_face_named() {
     let square = call(&mut ctx, "face_gap", json!({ "face": "top", "other": "right", "size": 5 }));
     assert_eq!(square["error"]["code"], "not-parallel", "{square}");
 }
+
+/// A HOLE MOVED BY ITS DISTANCE TO A SIDE: the block drilled 10 across at its middle, the hole moved to stand 8 from the
+/// right side - 20 from it before - the block holding as much; the top it opens in is refused.
+#[test]
+fn a_hole_is_moved_by_its_distance_to_a_side() {
+    let mut ctx = Ctx::blank();
+    let _ = block(&mut ctx);
+    let drilled = ok(call(&mut ctx, "hole", json!({ "face": "top", "diameter": 10, "depth": 20 })));
+    let before = volumes(&drilled);
+    let moved = ok(call(&mut ctx, "face_gap", json!({ "face": "right", "hole": [25, 15, 5], "size": 8 })));
+    assert_eq!(volumes(&moved), before, "{moved}");
+    assert!((moved["was"].as_f64().unwrap_or_default() - 20.0).abs() < 1e-6, "{moved}");
+    let across = call(&mut ctx, "face_gap", json!({ "face": "top", "hole": [37, 15, 5], "size": 5 }));
+    assert_eq!(across["error"]["code"], "not-parallel", "{across}");
+}

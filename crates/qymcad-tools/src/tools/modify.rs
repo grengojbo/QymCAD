@@ -506,7 +506,8 @@ enum MovesArg {
 struct FaceGapArgs {
     body: Option<BodyRef>,
     face: QueryArg,
-    other: QueryArg,
+    other: Option<QueryArg>,
+    hole: Option<[f64; 3]>,
     size: Amount,
     #[serde(default)]
     moves: MovesArg,
@@ -514,23 +515,28 @@ struct FaceGapArgs {
 
 pub const FACE_GAP: Tool = Tool {
     name: "face_gap",
-    description: "Set the distance between two parallel flat faces of a body - the thickness of a plate, the width of a block - where the body has no sketch to change it in (a STEP, a mesh made a body). face and other are queries finding one face each; size is the distance wanted, mm (a number or an expression). moves says which face moves: first (face, by default), second (other) or both by half, the middle standing still. One node; its size stays editable. Roundings and chamfers made exact beside a moved face keep their size.",
+    description: "Set the distance between two parallel flat faces of a body - the thickness of a plate, the width of a block - where the body has no sketch to change it in (a STEP, a mesh made a body). face and other are queries finding one face each; size is the distance wanted, mm (a number or an expression). moves says which face moves: first (face, by default), second (other) or both by half, the middle standing still. One node; its size stays editable. Roundings and chamfers made exact beside a moved face keep their size. With hole - a point on the wall of a hole - in place of other, size is the distance from the hole's axis to face, which must run along the axis, and the hole moves there: its size, depth and entry face as they were.",
     schema: || {
         json!({ "type": "object", "properties": {
             "body": body_field(),
             "face": args::query_schema(),
             "other": args::query_schema(),
+            "hole": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "A point on the wall of a hole, mm, in the part's frame: the hole is moved instead of a face." },
             "size": amount_schema("The distance between the faces, mm"),
             "moves": { "type": "string", "enum": ["first", "second", "both"], "description": "Which face moves; first by default." },
-        }, "required": ["face", "other", "size"], "additionalProperties": false })
+        }, "required": ["face", "size"], "additionalProperties": false })
     },
     call: |ctx: &mut Ctx, arguments: Value| {
         use qymcad_core::feature::GapMoves;
         let a: FaceGapArgs = tool::args(arguments)?;
         let project = ctx.doc.project();
         let src = target(project, a.body)?;
-        let (one, other) = (args::face_key(project, src, &a.face)?, args::face_key(project, src, &a.other)?);
+        let one = args::face_key(project, src, &a.face)?;
         let size = positive(project, &a.size, "size")?;
+        if let Some(at) = a.hole {
+            return move_hole(ctx, src, one, at, size);
+        }
+        let other = args::face_key(project, src, a.other.as_ref().ok_or_else(|| Refusal::new("missing", "Give other - the second face - or hole - a point on the wall of a hole.", Stage::Validate))?)?;
         let n = one.normal;
         let turn = n[0] * other.normal[0] + n[1] * other.normal[1] + n[2] * other.normal[2];
         let apart = ((0..3).map(|i| n[i] * (other.centroid[i] - one.centroid[i])).sum::<f64>()).abs();
@@ -645,6 +651,53 @@ pub const RECOGNISE_FEATURE: Tool = Tool {
         Ok(out)
     },
 };
+
+/// THE HOLE AT POINT `at` OF BODY `src` moved to stand `size` from the plane of face `face`.
+fn move_hole(ctx: &mut Ctx, src: qymcad_core::model::Id, face: qymcad_core::feature::FaceKey, at: [f64; 3], size: Read) -> Result<Answer, Refusal> {
+    use qymcad_core::model::Exact;
+    use qymcad_meshfit::feature::{feature_at, Found, Pick};
+    let project = ctx.doc.project();
+    let b = project.mesh_index(src).and_then(|mi| project.bodies.get(mi)).ok_or_else(|| Refusal::new("no-body", &format!("Body {src} is not built."), Stage::Resolve))?;
+    let near = |t: usize| {
+        let [p, q, r] = b.mesh.triangle(t);
+        let c = [(p.x + q.x + r.x) / 3.0, (p.y + q.y + r.y) / 3.0, (p.z + q.z + r.z) / 3.0];
+        (0..3).map(|i| (c[i] - at[i]).powi(2)).sum::<f64>()
+    };
+    let wall = b
+        .faces
+        .iter()
+        .filter_map(|f| f.triangles.iter().map(|&t| near(t as usize)).min_by(f64::total_cmp).map(|d| Nearest { id: f.id, d }))
+        .min_by(|x, y| x.d.total_cmp(&y.d))
+        .map(|n| n.id)
+        .ok_or_else(|| Refusal::new("no-face", "The body has no faces.", Stage::Resolve))?;
+    let found = feature_at(&b.mesh, &b.faces, Pick { face: wall, at }, 1.0).ok();
+    let hole = match found {
+        Some(f @ Found::Hole(_)) => f.remake(&b.faces).ok_or_else(|| Refusal::new("no-face", "The hole names faces the body does not have.", Stage::Resolve))?,
+        _ => return Err(Refusal::new("no-hole", "No hole there: give a point on the round wall of a hole.", Stage::Resolve)),
+    };
+    let Exact::Hole { entry, at: axis, .. } = hole.exact else { return Err(Refusal::new("no-hole", "No hole there.", Stage::Resolve)) };
+    let n = face.normal;
+    if (0..3).map(|i| n[i] * entry.normal[i]).sum::<f64>().abs() > 0.01 {
+        return Err(Refusal::new("not-parallel", "The axis of the hole runs into that face.", Stage::Validate).with_hint("Give a flat face lying along the axis."));
+    }
+    let was = (0..3).map(|i| n[i] * (axis[i] - face.centroid[i])).sum::<f64>().abs();
+    if (was - size.value).abs() < 1e-9 && size.expr.is_none() {
+        return Err(Refusal::new("bad-size", &format!("The axis already stands {was} from the face."), Stage::Validate));
+    }
+    let node = ctx
+        .doc
+        .edit("f-face-gap", |p| {
+            let part = p.body_owner(src);
+            p.set_active_component(part);
+            let node = p.add_hole_moved(src, qymcad_core::model::HoleMove { hole, face, size: size.value });
+            p.set_feat_dim(node, "gap", size.expr.clone().unwrap_or_default());
+            Ok(node)
+        })
+        .map_err(tool::doc_refusal)?;
+    let mut out = laid(ctx, node);
+    out.insert("was".into(), json!(was));
+    Ok(out)
+}
 
 /// A face and how far its nearest triangle stands from the point given.
 struct Nearest {
