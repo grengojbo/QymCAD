@@ -860,10 +860,19 @@ impl MeshEdge {
     }
 }
 
+/// A straight piece of a line in space, from one end to the other.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Segment3 {
+    pub from: Point3,
+    pub to: Point3,
+}
+
 impl Mesh {
-    /// The boundary of a face — the edges belonging to a single triangle of that face — stitched into closed
-    /// contours projected onto XY. Useful for the top and bottom planar faces.
-    pub fn face_outline_xy(&self, face: &MeshFace) -> Vec<Contour> {
+    /// The boundary of a face: the edges of its triangles that belong to one triangle of the face alone - its outer
+    /// rim and the rims of its holes, none of the diagonals a face is cut into. A flat face with a hole in it is cut
+    /// into a fan: the top of a plate drilled through, as a mesh of 24 strips, is 102 triangles and drawn whole read
+    /// as a star.
+    pub fn face_outline(&self, face: &MeshFace) -> Vec<Segment3> {
         use std::collections::HashMap;
         let mut edge_count: HashMap<(u32, u32), (u32, (u32, u32))> = HashMap::new();
         for &ti in &face.triangles {
@@ -874,14 +883,13 @@ impl Mesh {
                 ent.0 += 1;
             }
         }
-        let mut segs = Vec::new();
-        for (_, (cnt, (a, b))) in edge_count {
-            if cnt == 1 {
-                let pa = self.verts[a as usize];
-                let pb = self.verts[b as usize];
-                segs.push((Point2::new(pa.x, pa.y), Point2::new(pb.x, pb.y)));
-            }
-        }
+        edge_count.into_values().filter(|(cnt, _)| *cnt == 1).map(|(_, (a, b))| Segment3 { from: self.verts[a as usize], to: self.verts[b as usize] }).collect()
+    }
+
+    /// The boundary of a face stitched into closed contours projected onto XY. Useful for the top and bottom planar
+    /// faces.
+    pub fn face_outline_xy(&self, face: &MeshFace) -> Vec<Contour> {
+        let segs = self.face_outline(face).into_iter().map(|s| (Point2::new(s.from.x, s.from.y), Point2::new(s.to.x, s.to.y))).collect();
         stitch_segments(segs, 1e-3)
     }
 }

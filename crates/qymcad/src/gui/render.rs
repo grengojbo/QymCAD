@@ -577,21 +577,19 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             if !hm.is_empty() {
                 painter.add(egui::Shape::mesh(hm));
             }
-            // THE PREVIEW: the same face shifted along the normal by dist, dashed, plus posts at the corners
+            // THE PREVIEW: the outline of the face shifted along the normal by dist, dashed - its rim and the rims of its
+            // holes, none of the diagonals it is cut into. Reported behaviour: the top of a drilled plate, a fan of 102
+            // triangles drawn whole, read as a star left over from a recognition.
             if dist.abs() > 1e-9 {
                 let n = face.normal;
-                let off = |v: [f64; 3]| [v[0] + n[0] * dist, v[1] + n[1] * dist, v[2] + n[2] * dist];
+                let off = |v: qymcad_core::geom::Point3| [v.x + n[0] * dist, v.y + n[1] * dist, v.z + n[2] * dist];
                 let col = if dist > 0.0 { pn.scheme.pal.ok() } else { pn.scheme.pal.offset_in() };
-                for &ti in &face.triangles {
-                    let t = mesh.triangle(ti as usize);
-                    let p: Vec<Pos2> = t.iter().map(|v| scr.at(off([v.x, v.y, v.z])).0).collect();
-                    for k in 0..3 {
-                        painter.add(egui::Shape::dashed_line(&[p[k], p[(k + 1) % 3]], Stroke::new(1.2, col), 5.0, 4.0));
-                    }
+                for s in mesh.face_outline(face) {
+                    painter.add(egui::Shape::dashed_line(&[scr.at(off(s.from)).0, scr.at(off(s.to)).0], Stroke::new(1.2, col), 5.0, 4.0));
                 }
                 // the direction: an arrow from the face centre to the shifted centre
-                let c = [face.centroid.x, face.centroid.y, face.centroid.z];
-                let (a, b) = (scr.at(c).0, scr.at(off(c)).0);
+                let c = face.centroid;
+                let (a, b) = (scr.at([c.x, c.y, c.z]).0, scr.at(off(c)).0);
                 painter.add(egui::Shape::line_segment([a, b], Stroke::new(2.0, col)));
                 painter.circle_filled(b, 3.5, col);
             }
