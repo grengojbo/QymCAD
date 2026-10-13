@@ -491,6 +491,76 @@ pub const PUSH_FACE: Tool = Tool {
     },
 };
 
+/// Which face a size between faces moves, as a caller names it.
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum MovesArg {
+    #[default]
+    First,
+    Second,
+    Both,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FaceGapArgs {
+    body: Option<BodyRef>,
+    face: QueryArg,
+    other: QueryArg,
+    size: Amount,
+    #[serde(default)]
+    moves: MovesArg,
+}
+
+pub const FACE_GAP: Tool = Tool {
+    name: "face_gap",
+    description: "Set the distance between two parallel flat faces of a body - the thickness of a plate, the width of a block - where the body has no sketch to change it in (a STEP, a mesh made a body). face and other are queries finding one face each; size is the distance wanted, mm (a number or an expression). moves says which face moves: first (face, by default), second (other) or both by half, the middle standing still. One node; its size stays editable. Roundings and chamfers made exact beside a moved face keep their size.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": body_field(),
+            "face": args::query_schema(),
+            "other": args::query_schema(),
+            "size": amount_schema("The distance between the faces, mm"),
+            "moves": { "type": "string", "enum": ["first", "second", "both"], "description": "Which face moves; first by default." },
+        }, "required": ["face", "other", "size"], "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        use qymcad_core::feature::GapMoves;
+        let a: FaceGapArgs = tool::args(arguments)?;
+        let project = ctx.doc.project();
+        let src = target(project, a.body)?;
+        let (one, other) = (args::face_key(project, src, &a.face)?, args::face_key(project, src, &a.other)?);
+        let size = positive(project, &a.size, "size")?;
+        let n = one.normal;
+        let turn = n[0] * other.normal[0] + n[1] * other.normal[1] + n[2] * other.normal[2];
+        let apart = ((0..3).map(|i| n[i] * (other.centroid[i] - one.centroid[i])).sum::<f64>()).abs();
+        if turn.abs() < 1.0 - 1e-6 || apart < 1e-3 {
+            return Err(Refusal::new("not-parallel", "The two faces are not parallel planes standing apart.", Stage::Validate).with_hint("Give two flat faces facing each other or turned the same way."));
+        }
+        if (apart - size.value).abs() < 1e-9 && size.expr.is_none() {
+            return Err(Refusal::new("bad-size", &format!("The faces already stand {apart} apart."), Stage::Validate));
+        }
+        let moves = match a.moves {
+            MovesArg::First => GapMoves::One,
+            MovesArg::Second => GapMoves::Other,
+            MovesArg::Both => GapMoves::Both,
+        };
+        let node = ctx
+            .doc
+            .edit("f-face-gap", |p| {
+                let part = p.body_owner(src);
+                p.set_active_component(part);
+                let node = p.add_face_gap(src, qymcad_core::model::Gap { one, other, size: size.value, moves });
+                p.set_feat_dim(node, "gap", size.expr.clone().unwrap_or_default());
+                Ok(node)
+            })
+            .map_err(tool::doc_refusal)?;
+        let mut out = laid(ctx, node);
+        out.insert("was".into(), json!(apart));
+        Ok(out)
+    },
+};
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct RecogniseFeatureArgs {

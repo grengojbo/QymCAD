@@ -101,3 +101,23 @@ fn a_pushed_face_follows_its_parameter() {
     let zero = call(&mut ctx, "push_face", json!({ "face": "bottom", "distance": 0 }));
     assert_eq!(zero["error"]["code"], "bad-size", "{zero}");
 }
+
+/// A SIZE BETWEEN TWO FACES: the top and the bottom of the block made 15 apart by moving the top, then by moving both by
+/// half; it follows the parameter it is given; two sides square to each other are refused.
+#[test]
+fn a_size_between_two_faces_moves_the_face_named() {
+    let mut ctx = Ctx::blank();
+    let _ = block(&mut ctx);
+    let top = ok(call(&mut ctx, "face_gap", json!({ "face": "top", "other": "bottom", "size": 15 })));
+    assert_eq!(volumes(&top), [18000], "{top}");
+    assert_eq!((top["bodies"][0]["min"][2].clone(), top["bodies"][0]["max"][2].clone()), (json!(0.0), json!(15.0)), "the top did not move alone: {top}");
+    assert_eq!(top["was"], json!(10.0), "{top}");
+    let _ = ok(call(&mut ctx, "set_parameter", json!({ "name": "thick", "expr": "20" })));
+    let both = ok(call(&mut ctx, "face_gap", json!({ "face": "top", "other": "bottom", "size": "thick", "moves": "both" })));
+    assert_eq!(volumes(&both), [24000], "{both}");
+    assert_eq!((both["bodies"][0]["min"][2].clone(), both["bodies"][0]["max"][2].clone()), (json!(-2.5), json!(17.5)), "both did not move by half: {both}");
+    let more = ok(call(&mut ctx, "set_parameter", json!({ "name": "thick", "expr": "30" })));
+    assert_eq!(volumes(&more), [36000], "the size did not follow thick: {more}");
+    let square = call(&mut ctx, "face_gap", json!({ "face": "top", "other": "right", "size": 5 }));
+    assert_eq!(square["error"]["code"], "not-parallel", "{square}");
+}
