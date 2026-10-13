@@ -96,9 +96,7 @@ fn cases() -> Vec<Case> {
             dist: 5.0,
             grows: (40.0 * 30.0 - pi * 25.0) * 5.0,
             edited: None,
-            // recognised, the top holding the hole comes out a free-form surface, and a push refuses a free-form face
-            // beside a curved one
-            modes: &[Mode::Polyhedron],
+            modes: BOTH,
         },
     ]
 }

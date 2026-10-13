@@ -837,6 +837,30 @@ extern "C" QymShape* qym_shape_from_faces(size_t ns, const int* skind, const dou
                 if (whole) W.push_back(out ? mw.Wire() : TopoDS::Wire(mw.Wire().Reversed()));
             }
             if (!whole || W.empty()) continue;
+            // THE OUTER LOOP GOES FIRST: the face is begun on the first wire turned to bound a finite piece, and the rest
+            // are added as they come. The loops arrive in no set order; begun on a hole's, the face was the disc of the
+            // hole with the outer loop added to it - measured on a plate 40 x 30 drilled 10 across, 1278.5 mm^2 for a top
+            // of 1121.5, and the top went back as a free form. The outer loop is the one whose box holds every other's.
+            if (W.size() > 1) {
+                std::vector<Bnd_Box> box(W.size());
+                for (size_t i = 0; i < W.size(); ++i) {
+                    BRepBndLib::Add(W[i], box[i]);
+                    box[i].Enlarge(step);
+                }
+                for (size_t i = 1; i < W.size(); ++i) {
+                    bool holds_all = true;
+                    for (size_t j = 0; j < W.size() && holds_all; ++j) {
+                        if (j == i) continue;
+                        double x0 = 0.0, y0 = 0.0, z0 = 0.0, x1 = 0.0, y1 = 0.0, z1 = 0.0;
+                        box[j].Get(x0, y0, z0, x1, y1, z1);
+                        holds_all = !box[i].IsOut(gp_Pnt(x0, y0, z0)) && !box[i].IsOut(gp_Pnt(x1, y1, z1));
+                    }
+                    if (holds_all) {
+                        std::swap(W[0], W[i]);
+                        break;
+                    }
+                }
+            }
             const Handle(Geom_Surface)& surf = S[(size_t)fsurface[f]];
             // A LOOP ON A CLOSED SURFACE BOUNDS TWO PIECES OF IT, and ShapeFix_Face keeps the one the loop's turn in the
             // surface's parameters points to - where a pole or the seam folds those parameters, it keeps the other.
