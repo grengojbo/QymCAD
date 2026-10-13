@@ -285,29 +285,9 @@ pub fn regions_until(p: &Prepared, tol: &Tolerance, stop: &dyn Fn() -> bool) -> 
         if stop() {
             return None;
         }
-        let mut best: Option<(f64, Vec<u32>, Surface)> = None;
-        for kind in [Kind::Plane, Kind::Cylinder, Kind::Cone, Kind::Sphere] {
-            let mut widest: Option<(f64, Vec<u32>, Surface)> = None;
-            for s in g.guesses(seed, kind, &owner) {
-                let Some((tris, s)) = g.grow(seed, s, kind, &owner) else { continue };
-                let covered: f64 = tris.iter().map(|&t| area[t as usize]).sum();
-                if widest.as_ref().is_none_or(|w| covered > w.0 * (1.0 + 1e-9)) {
-                    widest = Some((covered, tris, s));
-                }
-            }
-            // A MORE INVOLVED SURFACE HAS TO EARN ITS PLACE. Corners are all that is checked, and a plane face of
-            // two triangles has only four: measured on the rounded bar, a 114 mm cylinder through them and the two
-            // tangent strips beside them covered 3% more than the face itself and took it. A rounding's cylinder
-            // covers eleven times the plane of one of its strips.
-            if let Some(w) = widest {
-                if best.as_ref().is_none_or(|b| w.0 > b.0 * SIMPLER_WINS) {
-                    best = Some(w);
-                }
-            }
-        }
         let r = out.len() as u32;
-        match best {
-            Some((_, tris, s)) => {
+        match g.widest_at(seed, &owner, &area) {
+            Some(Grown { tris, surface: s, .. }) => {
                 for &t in &tris {
                     owner[t as usize] = r;
                 }
@@ -358,6 +338,32 @@ pub fn regions_until(p: &Prepared, tol: &Tolerance, stop: &dyn Fn() -> bool) -> 
     free_walls(&g, &mut out, &mut owner);
     out.retain(|r| !r.tris.is_empty());
     Some(apart(&g, out))
+}
+
+/// THE REGION GROWN FROM ONE TRIANGLE, as `regions` grows each of its own from a seed: the surfaces of every kind tried
+/// at `seed`, each grown over the neighbours lying on it, and the one covering most kept. Where a person points at one
+/// place of a body - a hole, a rounding - only the surface there is asked, and the rest of the mesh is not split. `None`
+/// where no surface holds the seed.
+pub fn region_at(p: &Prepared, tol: &Tolerance, seed: usize) -> Option<Region> {
+    let n = p.mesh.tris.len();
+    if seed >= n {
+        return None;
+    }
+    let mut sliver = vec![false; n];
+    for &s in &p.slivers {
+        sliver[s as usize] = true;
+    }
+    let g = Grower { p, tol, cos_sharp: tol.sharp_deg.to_radians().cos(), cos_angle: tol.angle_deg.to_radians().cos(), sliver: &sliver };
+    let area: Vec<f64> = (0..n).map(|t| g.area(t)).collect();
+    let owner = vec![NONE; n];
+    g.widest_at(seed, &owner, &area).map(|w| Region { tris: w.tris, surface: Some(w.surface) })
+}
+
+/// A region grown from a seed: its triangles, the surface they lie on, and the area they cover.
+struct Grown {
+    area: f64,
+    tris: Vec<u32>,
+    surface: Surface,
 }
 
 /// EVERY REGION IN ONE PIECE: a region whose triangles fall apart - the pieces of one cylinder joined across a slot, the
@@ -1808,6 +1814,32 @@ impl Grower<'_> {
             }
         }
         out
+    }
+
+    /// The surface of every kind tried at `seed`, each grown over the free neighbours lying on it, and the one that
+    /// covers the most area kept; `None` where none holds the seed. `area` is the area of every triangle.
+    fn widest_at(&self, seed: usize, owner: &[u32], area: &[f64]) -> Option<Grown> {
+        let mut best: Option<Grown> = None;
+        for kind in [Kind::Plane, Kind::Cylinder, Kind::Cone, Kind::Sphere] {
+            let mut widest: Option<Grown> = None;
+            for s in self.guesses(seed, kind, owner) {
+                let Some((tris, s)) = self.grow(seed, s, kind, owner) else { continue };
+                let covered: f64 = tris.iter().map(|&t| area[t as usize]).sum();
+                if widest.as_ref().is_none_or(|w| covered > w.area * (1.0 + 1e-9)) {
+                    widest = Some(Grown { area: covered, tris, surface: s });
+                }
+            }
+            // A MORE INVOLVED SURFACE HAS TO EARN ITS PLACE. Corners are all that is checked, and a plane face of
+            // two triangles has only four: measured on the rounded bar, a 114 mm cylinder through them and the two
+            // tangent strips beside them covered 3% more than the face itself and took it. A rounding's cylinder
+            // covers eleven times the plane of one of its strips.
+            if let Some(w) = widest {
+                if best.as_ref().is_none_or(|b| w.area > b.area * SIMPLER_WINS) {
+                    best = Some(w);
+                }
+            }
+        }
+        best
     }
 
     /// Every corner of `tris` with its normal: the area-weighted mean of the normals of the triangles of `tris` round it.

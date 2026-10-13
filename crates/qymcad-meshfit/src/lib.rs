@@ -7,13 +7,14 @@
 pub mod boundary;
 pub mod bspline;
 pub mod curve;
+pub mod feature;
 pub mod prep;
 pub mod regions;
 
 pub use boundary::{boundaries, Boundaries, Edge, OPEN};
 pub use curve::{curves, Curve};
 pub use prep::{chord_deflection, prepare, weld_tolerance, Prepared, NO_NEIGHBOUR};
-pub use regions::{free_form_of, regions, regions_until, Region, Surface, Tolerance};
+pub use regions::{free_form_of, region_at, regions, regions_until, Region, Surface, Tolerance};
 
 /// WHAT A MESH IS FOUND TO BE, triangle by triangle, for a person to see before a body is built: the kind of surface the
 /// region of each triangle lies on - 0 plane, 1 cylinder, 2 cone, 3 sphere, 4 torus, 5 none, 6 a free form, 7 a helix or a coil - and how many regions of
