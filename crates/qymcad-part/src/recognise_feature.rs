@@ -1,14 +1,20 @@
 //! RECOGNISE FEATURE: a click on a hole, a rounding or a chamfer of a body takes it - the faces it is made of lit, its
 //! size in a field at the geometry, brought to what was drawn - and Enter makes it again exact: its faces removed and
-//! the feature laid down by its own tool (`Project::add_remade_feature`). What it is is told by `qymcad_meshfit::feature`
-//! from the body's own faces, so a polyhedron made of a mesh, a recognised body and a STEP are clicked alike. The tool
-//! stays in hand for the next feature.
+//! the feature laid down by its own tool (`Project::add_remade_feature`). Switched in the bar to "Take off", Enter only
+//! removes its faces (`Project::add_remove_face`): the corner sharp again, the wall whole. What it is is told by
+//! `qymcad_meshfit::feature` from the body's own faces, so a polyhedron made of a mesh, a recognised body and a STEP are
+//! clicked alike. The tool stays in hand for the next feature.
 use qymcad_core::model::{Exact, Id, Remake};
 use qymcad_meshfit::feature::{feature_at, Found, Pick, Reach, Unfound};
 use qymcad_ui_state::{CmdParam, FeatureInHand, PartCtx};
 
 /// The code of the command.
 pub const RECOGNISE_FEATURE: u8 = 37;
+
+/// What Enter does with the feature taken (the operation of the bar, `FeatParams::op`): makes it again exact, or takes it
+/// off the body.
+pub const MAKE_EXACT: u8 = 0;
+pub const TAKE_OFF: u8 = 1;
 
 /// The tolerance field: how far the body's corners may lie off the surface, as a multiple of the body's own.
 fn tolerance_field() -> CmdParam {
@@ -23,6 +29,7 @@ pub fn start_recognise_feature_cmd(pc: &mut PartCtx) {
     pc.gsel.faces.clear();
     pc.gsel.faces_body = None;
     pc.recognise.feature = None;
+    pc.feat.op = MAKE_EXACT;
     pc.cmd.params = vec![tolerance_field()];
     // NO FIELD TAKES THE KEYS until a feature is found: the tool waits for a click, and a field in focus kept Ctrl+Z for
     // its own text - the feature just made exact, the tool taken again, could not be undone
@@ -55,11 +62,9 @@ pub fn recognise_feature_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>, 
         Ok(Taken { found, remake }) => {
             pc.gsel.faces.extend(remake.faces.iter().map(|k| k.id));
             pc.gsel.faces_body = Some(body);
-            // the size first: it is what a person types next, and it takes the keys
-            pc.cmd.params = size_fields(&remake).into_iter().chain(std::iter::once(tol_field)).collect();
-            pc.cmd.focus = true;
-            *pc.status = said(&found, &remake);
-            pc.recognise.feature = Some(FeatureInHand { body, remake });
+            let told = said(&found, &remake);
+            pc.recognise.feature = Some(FeatureInHand { body, remake, told });
+            fields_for_mode(pc, tol_field);
         }
         Err(why) => {
             pc.cmd.params = vec![tol_field];
@@ -67,6 +72,28 @@ pub fn recognise_feature_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>, 
             *pc.status = qymcad_i18n::tr(unfound_key(why));
         }
     }
+}
+
+/// THE OPERATION OF THE BAR CHANGED: the fields and the status line follow it.
+pub fn recognise_mode_changed(pc: &mut PartCtx) {
+    let tol_field = pc.cmd.params.iter().find(|p| p.key == "tol").cloned().unwrap_or_else(tolerance_field);
+    fields_for_mode(pc, tol_field);
+}
+
+/// The fields of the feature held as the operation of the bar wants them - its sizes first when it is made exact, since
+/// a size is what a person types next and it takes the keys; none when it is taken off - and the status line saying
+/// what Enter does.
+fn fields_for_mode(pc: &mut PartCtx, tol_field: CmdParam) {
+    let Some(held) = pc.recognise.feature.as_ref() else {
+        pc.cmd.params = vec![tol_field];
+        return;
+    };
+    let exact = pc.feat.op != TAKE_OFF;
+    let sizes = if exact { size_fields(&held.remake) } else { Vec::new() };
+    pc.cmd.focus = !sizes.is_empty();
+    pc.cmd.params = sizes.into_iter().chain(std::iter::once(tol_field)).collect();
+    let then = if exact { "msg-found-then-exact" } else { "msg-found-then-off" };
+    *pc.status = format!("{}. {}", held.told, qymcad_i18n::tr(then));
 }
 
 /// A feature found and what the core is to lay down for it.
@@ -159,12 +186,16 @@ fn unfound_key(why: Unfound) -> &'static str {
     }
 }
 
-/// APPLY: the feature held laid down exact, with the sizes of the fields - a number, or an expression kept on the node.
+/// APPLY: the feature held laid down exact, with the sizes of the fields - a number, or an expression kept on the node;
+/// or, taken off, its faces removed.
 pub fn apply_recognise_feature_cmd(pc: &mut PartCtx) -> Option<Id> {
-    let Some(FeatureInHand { body, mut remake }) = pc.recognise.feature.clone() else {
+    let Some(FeatureInHand { body, mut remake, .. }) = pc.recognise.feature.clone() else {
         *pc.status = qymcad_i18n::tr("msg-recognise-feature");
         return None;
     };
+    if pc.feat.op == TAKE_OFF {
+        return Some(pc.project.add_remove_face(body, remake.faces));
+    }
     edit_remade(pc.cmd, &mut remake.exact);
     let node = pc.project.add_remade_feature(body, remake);
     super::store_cmd_exprs(pc.cmd, pc.project, node);

@@ -3433,6 +3433,36 @@ pub(crate) mod tests {
                 }
             }
             hand.key(egui::Key::Escape).frame(Vec::new());
+            // the hole taken off, as a person does it: the tool switched to "Take off" in its bar, the wall clicked, Enter -
+            // the plate whole again, one node more
+            hand.tool(qymcad_part::RECOGNISE_FEATURE).frame(Vec::new());
+            let off = crate::i18n::tr("cmd-remade-off");
+            if !hand.press_word(&off, egui::pos2(0.0, 0.0)) {
+                problems.push(format!("the bar of \"Recognise feature\" offers no {off:?}"));
+            }
+            // the hole is 6 across now: its far wall is seen just under the top
+            hand.click([520.0, 18.0, 9.0]).frame(Vec::new());
+            if hand.app.params.recognise.feature.is_none() {
+                problems.push(format!("a click on the wall of the printed hole made 6 across found no feature: {}", hand.app.status));
+            }
+            let nodes = hand.app.project.timeline.len();
+            hand.enter();
+            at_rest(&mut hand);
+            check_all(hand.app, "the printed hole taken off", &mut problems);
+            let whole = hand
+                .app
+                .project
+                .timeline
+                .last()
+                .filter(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::RemoveFace { .. }))
+                .and_then(|n| n.kind.body())
+                .and_then(|b| hand.app.live.shapes.get(&b))
+                .map(|s| s.volume());
+            match whole {
+                Some(v) if (v - 12000.0).abs() < 1.0 && hand.app.project.timeline.len() == nodes + 1 => {}
+                v => problems.push(format!("the printed hole taken off: the plate holds {v:?} mm^3 in {} nodes more, not 12000 in one", hand.app.project.timeline.len() - nodes)),
+            }
+            hand.key(egui::Key::Escape).frame(Vec::new());
             hand.app.enter_component(was);
             (hand.app.viewing.mode_3d, hand.app.viewing.cam) = view;
         }

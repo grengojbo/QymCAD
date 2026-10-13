@@ -6,7 +6,9 @@
 
 mod recognise_feature;
 mod trial;
-pub use recognise_feature::{apply_recognise_feature_cmd, edit_remade, hit_on_face, open_remade, recognise_feature_at, start_recognise_feature_cmd, RECOGNISE_FEATURE};
+pub use recognise_feature::{
+    apply_recognise_feature_cmd, edit_remade, hit_on_face, open_remade, recognise_feature_at, recognise_mode_changed, start_recognise_feature_cmd, MAKE_EXACT, RECOGNISE_FEATURE, TAKE_OFF,
+};
 pub use trial::{trial_refusal, Trial};
 
 use egui::{Pos2, Rect};
@@ -5148,6 +5150,24 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     if ui.selectable_label(pc.feat.flip, format!("{} {}", ph::ARROWS_DOWN_UP, qymcad_i18n::tr("cmd-flip-btn"))).on_hover_text(qymcad_i18n::tr("cmd-reverse-hint")).clicked() {
                         let f = !pc.feat.flip;
                         pc.feat.set_flip(f); // the direction was set by hand
+                    }
+                }
+                37 => {
+                    // WHAT ENTER DOES WITH THE FEATURE: makes it again exact, or takes it off the body - the corner sharp
+                    // again, the wall whole. Reported behaviour: a chamfer made exact could be changed and not removed.
+                    if pc.cmd.edit.is_none() {
+                        let was = pc.feat.op;
+                        ui.label(qymcad_i18n::tr("cmd-operation"));
+                        ui.selectable_value(&mut pc.feat.op, MAKE_EXACT, qymcad_i18n::tr("cmd-remade-exact"));
+                        ui.selectable_value(&mut pc.feat.op, TAKE_OFF, qymcad_i18n::tr("cmd-remade-off"));
+                        if pc.feat.op != was {
+                            recognise_mode_changed(pc);
+                        }
+                    }
+                    // what was taken, named where the tool is
+                    if let Some(held) = pc.recognise.feature.as_ref() {
+                        ui.separator();
+                        ui.label(egui::RichText::new(held.told.as_str()).color(pc.scheme.pal.hint()));
                     }
                 }
                 35 => {

@@ -861,6 +861,10 @@ fn draw_remade_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, 
     else {
         return;
     };
+    // a hole taken off is drawn by its faces alone: there is no diameter to lay down
+    if !pn.cmd.params.iter().any(|p| p.key == "diameter") {
+        return;
+    }
     let field = |key: &str, was: f64| if pn.cmd.params.iter().any(|p| p.key == key) { qymcad_ui_state::cmd_val(pn.cmd, key) } else { was };
     let r = field("diameter", *diameter) / 2.0;
     let n = entry.normal;

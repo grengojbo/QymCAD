@@ -7197,12 +7197,13 @@ pub struct RecogniseTool {
     pub feature: Option<FeatureInHand>,
 }
 
-/// A FEATURE FOUND ON A BODY AND HELD BY THE TOOL until Enter: the body it stands on and what the core is to lay down
-/// for it, its sizes the ones the fields started from.
+/// A FEATURE FOUND ON A BODY AND HELD BY THE TOOL until Enter: the body it stands on, what the core is to lay down for
+/// it, its sizes the ones the fields started from, and what was found in words, for the status line.
 #[derive(Clone, Debug)]
 pub struct FeatureInHand {
     pub body: Id,
     pub remake: qymcad_core::model::Remake,
+    pub told: String,
 }
 
 /// What a count of a mesh found: the kind of surface under each triangle (0 plane, 1 cylinder, 2 cone, 3 sphere,

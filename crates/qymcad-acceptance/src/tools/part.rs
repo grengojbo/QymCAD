@@ -1501,8 +1501,8 @@ const fn drilled_again(d: f64) -> Outcome {
 
 /// RECOGNISE FEATURE: a block with a hole of 20, come in as a mesh and made a polyhedron, the wall of its hole a ring of
 /// flat strips. A strip of the wall clicked - the hole found through, its diameter brought to 20 in the field - and
-/// Enter makes it again exact as one node: the same block, its hole round, its diameter driving it. The tool stays in
-/// hand for the next feature.
+/// Enter makes it again exact as one node: the same block, its hole round, its diameter driving it. Switched to "Take
+/// off", Enter closes the hole: the block whole. The tool stays in hand for the next feature.
 pub static RECOGNISE_FEATURE: Tool = Tool {
     id: "part.recognise-feature",
     flow: Flow::Command,
@@ -1515,7 +1515,10 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     wrong_picks: &[],
     words: &[],
     fields: &[Field { caption: "f-diameter", by_placeholder: false, when: When::Before, class: Class::Length, typical: 20.0, lo: 0.1, hi: 29.0, zero: false, negative: false, outcome: drilled_again }],
-    modes: &[],
+    modes: &[&[
+        Mode { word: "cmd-remade-exact", clicks: None, outcome: Some(drilled_again(20.0)) },
+        Mode { word: "cmd-remade-off", clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 }) },
+    ]],
     result: drilled_again(20.0),
     node: "Remade",
     undo: "f-recognise-feature",
@@ -1528,7 +1531,6 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     budget: (30, 2000),
     help: "part/28-recognise-feature",
     not_applicable: &[
-        (2, "the bar of the tool holds no modes: what it makes is the feature the click found"),
         (14, "nothing of a timeline stands above an imported mesh"),
         (16, "the fixture builds its own project from the start: there is no second part to take it in"),
         (17, "a hole wider than the block is refused by the bounds of the field; the kernel has nothing else to refuse here"),

@@ -15,6 +15,11 @@ STEP alike.
    through goes through and has none.
 5. **Enter** makes the feature exact; **Esc** cancels. The tool stays in hand: click the next feature.
 
+## Take a feature off
+
+For no chamfer or rounding at all, or a hole closed up, switch **Operation** in the bar to **Take off** and click the
+feature. **Enter** removes its faces: the corner turns sharp, the wall whole. The tree gets a **Remove face** row.
+
 ## What you get
 
 - One row in the timeline: **Recognised hole Ø5 through**, **Recognised rounding R2**, **Recognised chamfer 1**. The
