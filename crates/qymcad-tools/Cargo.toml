@@ -13,6 +13,7 @@ qymcad-core.workspace = true
 qymcad-doc.workspace = true
 qymcad-io.workspace = true
 qymcad-kernel.workspace = true
+qymcad-meshfit.workspace = true # what a face picked belongs to: a hole, a rounding, a chamfer
 qymcad-i18n = { path = "../qymcad-i18n" }
 qymcad-paths = { path = "../qymcad-paths" }
 ron.workspace = true

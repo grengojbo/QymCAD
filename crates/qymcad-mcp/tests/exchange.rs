@@ -144,3 +144,36 @@ fn a_mesh_is_refused_by_an_exact_file() {
     let bad = call(&mut ctx, "export_mesh", json!({ "path": file(&dir, "cube.3mf"), "overwrite": true, "quality": { "deflection": 0 } }));
     assert_eq!(bad["error"]["code"], "bad-deflection", "{bad}");
 }
+
+/// A HOLE OF A STEP MADE EDITABLE: a block drilled 10 across, written out as a STEP and brought back - a body with no
+/// history, its hole only a round face - is given a point on the wall of the hole: one node makes the hole a feature
+/// again, of the same block, and the diameter edited drives it. A point on a plain face finds no feature and says so.
+#[test]
+fn a_hole_of_a_step_is_made_editable() {
+    let dir = out_dir("recognise-feature");
+    let mut ctx = Ctx::blank();
+    let _ = ctx.doc.edit("cmd-box", |p| Ok(p.add_box(40.0, 30.0, 10.0))).expect("the block is laid");
+    let drilled = call(&mut ctx, "hole", json!({ "face": "top", "diameter": 10, "depth": 20 }));
+    assert_eq!(drilled["ok"], json!(true), "{drilled}");
+    let step = file(&dir, "drilled.step");
+    let out = call(&mut ctx, "export_cad", json!({ "path": step }));
+    assert_eq!(out["ok"], json!(true), "{out}");
+    let _ = call(&mut ctx, "new_project", json!({}));
+    let back = call(&mut ctx, "import_cad", json!({ "path": step }));
+    let hole = |d: f64| (12000.0 - std::f64::consts::PI * d * d / 4.0 * 10.0).round() as i64;
+    assert_eq!(volumes(&back), [hole(10.0)], "{back}");
+
+    // the import stands the block about the origin: the hole is about the Z axis
+    let body = json!({ "body": back["bodies"][0]["id"] });
+    let made = call(&mut ctx, "recognise_feature", json!({ "body": body, "at": [0.0, 5.0, 5.0] }));
+    assert_eq!(made["ok"], json!(true), "{made}");
+    assert_eq!(made["found"]["kind"], "hole", "{made}");
+    assert_eq!(made["found"]["through"], json!(true), "{made}");
+    assert_eq!(volumes(&made), [hole(10.0)], "the hole made exact is not the hole it was: {made}");
+    let wider = call(&mut ctx, "edit_feature", json!({ "feature": made["feature"], "values": { "diameter": 6 } }));
+    assert_eq!(volumes(&wider), [hole(6.0)], "the diameter does not drive the hole: {wider}");
+
+    let made_body = json!({ "body": wider["bodies"][0]["id"] });
+    let plain = call(&mut ctx, "recognise_feature", json!({ "body": made_body, "at": [-15.0, -10.0, 10.0] }));
+    assert_eq!(plain["error"]["code"], "no-feature", "a plain face was taken for a feature: {plain}");
+}

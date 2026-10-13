@@ -178,6 +178,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::modify::MOVE,
     crate::tools::modify::SPLIT_BODY,
     crate::tools::modify::PUSH_FACE,
+    crate::tools::modify::RECOGNISE_FEATURE,
     crate::tools::timeline::ADD_PART,
     crate::tools::timeline::SET_ACTIVE_PART,
     crate::tools::timeline::DELETE_FEATURE,
