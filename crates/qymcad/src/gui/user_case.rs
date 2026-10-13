@@ -3463,6 +3463,36 @@ pub(crate) mod tests {
                 v => problems.push(format!("the printed hole taken off: the plate holds {v:?} mm^3 in {} nodes more, not 12000 in one", hand.app.project.timeline.len() - nodes)),
             }
             hand.key(egui::Key::Escape).frame(Vec::new());
+            // the plate made 12 thick with "Size on body", as a person does it: its top clicked, the view turned, its
+            // bottom clicked, 12 typed, Enter - the top moves, one node more
+            hand.tool(qymcad_part::FACE_GAP).frame(Vec::new());
+            hand.click([505.0, 5.0, 10.0]).frame(Vec::new());
+            let seen = (hand.app.viewing.cam.yaw, hand.app.viewing.cam.pitch);
+            hand.look_from_below();
+            hand.click([505.0, 5.0, 0.0]).frame(Vec::new());
+            (hand.app.viewing.cam.yaw, hand.app.viewing.cam.pitch) = seen;
+            if hand.app.params.recognise.gap.len() != 2 {
+                problems.push(format!("\"Size on body\" did not take the top and the bottom of the printed plate: {}", hand.app.status));
+            }
+            let nodes = hand.app.project.timeline.len();
+            hand.set("gap", 12.0);
+            hand.enter();
+            at_rest(&mut hand);
+            check_all(hand.app, "the printed plate made 12 thick", &mut problems);
+            let thick = hand
+                .app
+                .project
+                .timeline
+                .last()
+                .filter(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::FaceGap { .. }))
+                .and_then(|n| n.kind.body())
+                .and_then(|b| hand.app.live.shapes.get(&b))
+                .map(|s| s.volume());
+            match thick {
+                Some(v) if (v - 14400.0).abs() < 1.0 && hand.app.project.timeline.len() == nodes + 1 => {}
+                v => problems.push(format!("the printed plate made 12 thick holds {v:?} mm^3 in {} nodes more, not 14400 in one", hand.app.project.timeline.len() - nodes)),
+            }
+            hand.key(egui::Key::Escape).frame(Vec::new());
             hand.app.enter_component(was);
             (hand.app.viewing.mode_3d, hand.app.viewing.cam) = view;
         }

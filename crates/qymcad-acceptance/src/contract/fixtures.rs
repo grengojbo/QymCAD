@@ -70,6 +70,9 @@ pub enum Fixture {
     /// and made a body as it is (Recognise, As it is): a polyhedron of flat faces, the wall of the hole a ring of flat
     /// strips - a part come from a printer's file.
     PolyhedronWithHole,
+    /// The block with a step: a rectangle from (20, 0) to (40, 30) on the plane under it extruded 15 into it - one body
+    /// of 15000 mm^3, its tops at 10 over x 0..20 and at 15 over x 20..40, both seen from where the view stands.
+    SteppedBlock,
     /// A square of 10 on the table and a straight line of 40 up the front plane, in two sketches of the first part, the
     /// square's sketch picked in the tree: a profile and a path to sweep it along.
     SweepStraight,
@@ -148,6 +151,19 @@ impl Fixture {
                 s.click(at);
                 let diameter = s.word("f-diameter");
                 s.fill(&diameter, "20");
+                s.key(qymcad::Key::Enter);
+            }
+            Fixture::SteppedBlock => {
+                Fixture::Block.build_here(s);
+                let xy = s.word("plane-xy-table");
+                s.press_word(&xy);
+                draw(s, "tb-rect-hint", &[(20.0, 0.0), (40.0, 30.0)]);
+                let finish = s.word("wb-finish");
+                s.press_word_near(&finish, qymcad::pos2(0.0, 0.0));
+                let extrude = s.word("tb-extrude-hint");
+                s.press_hint(&extrude);
+                let length = s.word("f-length");
+                s.fill(&length, "15");
                 s.key(qymcad::Key::Enter);
             }
             Fixture::BlockZoomedIn => {

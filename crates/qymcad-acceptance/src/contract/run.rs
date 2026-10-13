@@ -1368,6 +1368,16 @@ fn apply(tool: &Tool) {
                 "the way in"
             }
         };
+        // A COMMAND THAT ASKS ITS VALUE ONCE APPLIED - a size between two faces stands at the distance they are apart, and
+        // lays nothing until another is typed - is given it then, as a person gives it
+        if matches!(tool.flow, Flow::Command) {
+            for f in tool.fields.iter().filter(|f| f.when == When::After) {
+                if field_if_there(&mut s, f).is_some() {
+                    type_into_field(&mut s, f, &fmt(f.typical));
+                    enter_key(&mut s);
+                }
+            }
+        }
         let doc = s.document();
         let new: Vec<&str> = doc.features.iter().skip(before).map(|f| f.kind.as_str()).collect();
         // a command that changes the assembly rather than a part's timeline (grounding) names no node, and adds none

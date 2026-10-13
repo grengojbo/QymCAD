@@ -296,6 +296,7 @@ Below is the complete dictionary of icons recognized across the 5 categories:
 | `part/trim_surface.svg` | **Trim Surface:** Trim away surface sheet segments using cutting curves or intersecting faces. |
 | `part/recognise.svg` | **Recognize Shapes:** Feature recognition: detect planes, cylinders, and primitives on imported mesh/BREP data. |
 | `part/recognise_feature.svg` | **Recognise Feature:** A hole, a rounding or a chamfer clicked on a body made again exact, its size editable in the tree. |
+| `part/face_gap.svg` | **Size on Body:** The distance between two parallel flat faces of a body set by a number, one face or both moved, the size editable in the tree. |
 | `part/array_linear.svg` | **3D Linear Pattern:** Replicate 3D features or solid bodies along linear directions. |
 | `part/array_circular.svg` | **3D Circular Pattern:** Replicate 3D features or solid bodies rotationally around an axis. |
 | `part/mirror.svg` | **3D Mirror:** Mirror 3D features or bodies across a planar symmetry datum. |

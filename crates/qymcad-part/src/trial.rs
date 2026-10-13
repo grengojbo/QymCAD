@@ -19,10 +19,10 @@ use std::sync::{Arc, Mutex};
 
 /// The commands whose values the geometry bounds and a trial build answers: fillet, chamfer, shell, hole, torus, draft,
 /// split body, thicken, split faces, offset surface - a curved face moved in past its radius turns inside out - and a
-/// feature made again exact, a rounding of it as wide as its faces allow. A thread
+/// feature made again exact, a rounding of it as wide as its faces allow, and a size between faces. A thread
 /// is judged by the checks the rebuild makes before the kernel instead: a trial of a good thread sweeps its turns, 3 s
 /// and more a frame in a debug build.
-const TRIED: [u8; 11] = [4, 5, 6, 7, 14, 23, 27, 28, 29, 36, 37];
+const TRIED: [u8; 12] = [4, 5, 6, 7, 14, 23, 27, 28, 29, 36, 37, 38];
 
 pub use qymcad_ui_state::Trial;
 
@@ -96,6 +96,7 @@ fn state_key(pc: &PartCtx) -> u64 {
     let mut picks: Vec<String> = pc.gsel.edges.iter().map(|e| format!("{e:?}")).chain(pc.gsel.faces.iter().map(|f| format!("{f:?}"))).collect();
     picks.sort();
     picks.hash(&mut h);
+    pc.recognise.gap.hash(&mut h); // the order the faces of a size were taken in: which is the first
     format!("{:?}", (pc.cmd.edit, pc.split.plane, pc.chamfer.mode, *pc.feat, *pc.draft, *pc.hole, *pc.thread, *pc.prim)).hash(&mut h);
     pc.project.state_key().hash(&mut h);
     h.finish()
@@ -142,8 +143,10 @@ struct TrialJob {
     joint: qymcad_ui_state::JointCommand,
     workbench: qymcad_ui_state::Workbench,
     sketch_ses: qymcad_ui_state::SketchSession,
-    /// The feature a "Recognise feature" holds, the one thing of the recognition tools a trial applies.
+    /// The feature a "Recognise feature" holds and the faces a "Size on body" took, what of the recognition tools a
+    /// trial applies.
     feature: Option<qymcad_ui_state::FeatureInHand>,
+    gap: Vec<u32>,
 }
 
 /// Copies of what the command works on, gathered on the frame thread.
@@ -197,6 +200,7 @@ fn gather(pc: &PartCtx) -> TrialJob {
         workbench: pc.workbench,
         sketch_ses: *pc.sketch_ses,
         feature: pc.recognise.feature.clone(),
+        gap: pc.recognise.gap.clone(),
     }
 }
 
@@ -244,6 +248,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         workbench,
         mut sketch_ses,
         feature,
+        gap,
     } = job;
     let before: std::collections::HashSet<Id> = project.timeline.iter().map(|n| n.id).collect();
     let mut live = qymcad_ui_state::LiveGeom { ready: true, ..Default::default() };
@@ -258,7 +263,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     // a rebuild outside a running window happens at once, here, rather than being handed to a thread of its own
     let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), String::new(), false);
     let (mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default());
-    let mut recognise = qymcad_ui_state::RecogniseTool { feature, ..Default::default() };
+    let mut recognise = qymcad_ui_state::RecogniseTool { feature, gap, ..Default::default() };
     let scheme = qymcad_ui_state::SchemeUi::default();
     let edited = cmd.edit;
     let mut trial = PartCtx {

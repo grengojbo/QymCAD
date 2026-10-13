@@ -4,8 +4,10 @@
 //! their option bars, their popups at the geometry, their previews and what they do to the document. Every
 //! function here works over `qymcad_ui_state::PartCtx` and asks the application for nothing.
 
+mod face_gap;
 mod recognise_feature;
 mod trial;
+pub use face_gap::{apply_face_gap_cmd, edit_face_gap, face_gap_at, face_gap_ready, gap_moves, open_face_gap, start_face_gap_cmd, FACE_GAP, MOVE_BOTH, MOVE_ONE, MOVE_OTHER};
 pub use recognise_feature::{
     apply_recognise_feature_cmd, edit_remade, hit_on_face, open_remade, recognise_feature_at, recognise_mode_changed, start_recognise_feature_cmd, MAKE_EXACT, RECOGNISE_FEATURE, TAKE_OFF,
 };
@@ -186,6 +188,7 @@ pub fn feat_cmd_name(armed: &qymcad_ui_state::Armed, feat: qymcad_ui_state::Feat
         24 => qymcad_i18n::tr("f-thread"),
         35 => qymcad_i18n::tr("f-recognise"),
         37 => qymcad_i18n::tr("f-recognise-feature"),
+        38 => qymcad_i18n::tr("f-face-gap"),
         _ => qymcad_i18n::tr("f-operation"),
     }
 }
@@ -481,6 +484,7 @@ pub fn cmd_hint(armed: &qymcad_ui_state::Armed, gsel: &qymcad_ui_state::GeomSele
         33 => qymcad_i18n::tr("hint-stitch"),
         35 => qymcad_i18n::tr("hint-recognise"),
         37 => qymcad_i18n::tr("hint-recognise-feature"),
+        38 => qymcad_i18n::tr("hint-face-gap"),
         34 => qymcad_i18n::tr(if trim.keep.is_none() { "hint-trim" } else { "hint-trim-tool" }),
         31 => qymcad_i18n::tr(if gsel.faces.is_empty() { "hint-surface-replace" } else { "hint-surface-replace-pick" }),
         27 => qymcad_i18n::tr("hint-cut-plane"),
@@ -1435,6 +1439,7 @@ pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
         33 => pc.stitch_parts.len() >= 2,                                                // stitch: at least two sheets
         35 => pc.recognise.src.is_some(),                                                // recognise: one mesh piece is picked
         37 => pc.recognise.feature.is_some(),                                            // recognise a feature: one is found where it was clicked
+        38 => face_gap_ready(pc),                                                        // a size on the body: two faces
         34 => pc.trim.keep.is_some() && pc.trim.tool.is_some(),                          // trim: what is cut and what cuts it
         24 => pc.thread.edge != 0,                                                       // thread: the rim of a cylinder or a hole is picked
 
@@ -1517,7 +1522,7 @@ pub fn cmd_anchor_screen(pc: &mut qymcad_ui_state::PartCtx, rect: Rect) -> Optio
         //
         // The shell, the draft, pushing and removing a face, thickening - all belong here. What helps
         // with aiming is not the popup but THE HANDLE: it sits on the geometry and covers nothing.
-        4 | 5 | 6 | 7 | 17 | 18 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 => {
+        4 | 5 | 6 | 7 | 17 | 18 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 => {
             let b =
                 pc.recognise.src.or_else(|| pc.stitch_parts.first().copied()).or(pc.trim.keep.map(|(b, _)| b)).or(pc.gsel.faces_body).or_else(|| {
                     qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel)
@@ -2331,6 +2336,7 @@ pub fn start_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
         33 => start_stitch_cmd(pc),
         35 => start_recognise_cmd(pc),
         RECOGNISE_FEATURE => start_recognise_feature_cmd(pc),
+        FACE_GAP => start_face_gap_cmd(pc),
         34 => start_trim_cmd(pc),
         27 => start_split_cmd(pc),
         28 => start_thicken_cmd(pc),
@@ -2346,13 +2352,13 @@ pub fn start_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
 /// seen was "I clicked the face of the part and it does not work". The tools for which a sheet is lawful (thicken,
 /// replace a face, stitch, trim, patch, copy a face) are not included here - a surface is what they want.
 pub fn solid_only(armed: &qymcad_ui_state::Armed) -> bool {
-    matches!(armed.cmd_kind(), 4 | 5 | 6 | 7 | 23 | 25 | 26 | 27 | 29 | RECOGNISE_FEATURE)
+    matches!(armed.cmd_kind(), 4 | 5 | 6 | 7 | 23 | 25 | 26 | 27 | 29 | RECOGNISE_FEATURE | FACE_GAP)
 }
 
 /// A face is selected under a command that asks for one (the shell, the hole, a feature to recognise) and with nothing
 /// in hand - where a corner or an edge under the cursor goes first; other commands take THE BODY.
 pub fn wants_face(armed: &qymcad_ui_state::Armed) -> bool {
-    matches!(armed.cmd_kind(), 6 | 7 | 23 | 25 | 26 | 28 | 30 | 31 | 36 | RECOGNISE_FEATURE) || !armed.commanding()
+    matches!(armed.cmd_kind(), 6 | 7 | 23 | 25 | 26 | 28 | 30 | 31 | 36 | RECOGNISE_FEATURE | FACE_GAP) || !armed.commanding()
 }
 
 /// A CLICK ON FACE `face` OF BODY `mesh` for the tools that take one face at a click.
@@ -2370,6 +2376,8 @@ pub fn face_clicked(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Option
     } else if kind == RECOGNISE_FEATURE {
         let at = hit_on_face(pc, mesh, face, rect, screen);
         recognise_feature_at(pc, mesh, face, at);
+    } else if kind == FACE_GAP {
+        face_gap_at(pc, mesh, face);
     }
 }
 
@@ -2740,6 +2748,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
     let dist_v = qymcad_ui_state::cmd_val(pc.cmd, "dist"); // "push a face": the offset, which may be an expression
     let (rec_tol, rec_sharp) = (qymcad_ui_state::cmd_val(pc.cmd, "tol"), qymcad_ui_state::cmd_val(pc.cmd, "sharp")); // the recognition's tolerance and sharp edge
     let remade_cmd = pc.cmd.clone(); // a feature made exact: its sizes, by the fields the tool shows
+    let gap_op = pc.feat.op; // a size on the body: the face it moves
     let ch_d2 = qymcad_ui_state::cmd_val(pc.cmd, "d2"); // the second leg or the angle of the chamfer, in degrees
     let (ch_mode, ch_flip) = (pc.chamfer.mode, pc.chamfer.flip); // the mode plus the side of the reference face
     let patch_tangent = pc.opts.patch_tangent; // a patch by position or smooth
@@ -2948,6 +2957,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
                 *sharp = rec_sharp;
             }
             FeatureKind::Remade { exact, .. } => edit_remade(&remade_cmd, exact),
+            FeatureKind::FaceGap { gap, moves, .. } => edit_face_gap(&remade_cmd, gap_op, gap, moves),
             FeatureKind::Thicken { face, thickness, .. } => {
                 *thickness = thickness_v;
                 if let Some(&id) = faces_set.first() {
@@ -3225,6 +3235,7 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) {
             33 => apply_stitch_cmd(pc.cmd, pc.project, pc.status, pc.stitch_parts),
             35 => apply_recognise_cmd(pc),
             37 => apply_recognise_feature_cmd(pc),
+            38 => apply_face_gap_cmd(pc),
             34 => apply_trim_cmd(pc.project, pc.status, pc.trim),
             27 => apply_split_cmd(pc),
             28 => apply_thicken_cmd(pc),
@@ -3630,6 +3641,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
         }
         FeatureKind::MeshSolid { src, .. } => open_recognise_on(pc, src, was_3d, 1),
         FeatureKind::Remade { src, ref faces, ref exact, .. } => open_remade(pc, fid, src, faces, exact, was_3d),
+        FeatureKind::FaceGap { .. } => open_face_gap(pc, fid, &node.kind, was_3d),
         FeatureKind::SplitFace { plane, datum, offset, face, .. } => {
             pc.cmd.open(pc.armed, 29, was_3d);
             qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
@@ -5106,6 +5118,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
             34 => &qymcad_i18n::tr("feat-name-trim"),
             35 => &qymcad_i18n::tr("f-recognise"),
             37 => &qymcad_i18n::tr("f-recognise-feature"),
+            38 => &qymcad_i18n::tr("f-face-gap"),
             _ => &qymcad_i18n::tr("cmd-command"),
         };
         let (mut apply, mut cancel, mut reselect) = (false, false, false);
@@ -5151,6 +5164,16 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                         let f = !pc.feat.flip;
                         pc.feat.set_flip(f); // the direction was set by hand
                     }
+                }
+                38 => {
+                    // WHICH FACE THE SIZE MOVES: the first clicked, the second, or both by half with the middle standing
+                    ui.label(qymcad_i18n::tr("cmd-gap-moves"));
+                    ui.selectable_value(&mut pc.feat.op, MOVE_ONE, qymcad_i18n::tr("cmd-gap-one"));
+                    ui.selectable_value(&mut pc.feat.op, MOVE_OTHER, qymcad_i18n::tr("cmd-gap-other"));
+                    ui.selectable_value(&mut pc.feat.op, MOVE_BOTH, qymcad_i18n::tr("cmd-gap-both"));
+                    // the faces taken, counted where the tool is
+                    ui.separator();
+                    ui.label(egui::RichText::new(qymcad_i18n::tr1("cmd-gap-faces", "n", &pc.recognise.gap.len().to_string())).color(pc.scheme.pal.hint()));
                 }
                 37 => {
                     // WHAT ENTER DOES WITH THE FEATURE: makes it again exact, or takes it off the body - the corner sharp
@@ -6369,6 +6392,10 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     // the hole, the rounding or the chamfer clicked on a body made again exact, its size in the tree
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartRecogniseFeature, &qymcad_i18n::tr("tb-recognise-feature-hint"), bc.armed.cmd_kind() == 37) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 37, qymcad_ui_state::BarAsk::FeatCmd(37)));
+                    }
+                    // a size of a body come from a file, set between two of its faces where it has no sketch to change it in
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartFaceGap, &qymcad_i18n::tr("tb-face-gap-hint"), bc.armed.cmd_kind() == 38) {
+                        bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 38, qymcad_ui_state::BarAsk::FeatCmd(38)));
                     }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSplitBody, &qymcad_i18n::tr("tb-split-body-hint"), bc.armed.cmd_kind() == 27) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 27, qymcad_ui_state::BarAsk::FeatCmd(27)));

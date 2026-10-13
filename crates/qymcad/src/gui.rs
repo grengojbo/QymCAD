@@ -2759,6 +2759,7 @@ pub(crate) fn feat_icon(kind: &qymcad_core::feature::FeatureKind) -> &'static st
         FK::PushFace { .. } => ph::ARROWS_OUT_LINE_VERTICAL,
         FK::RemoveFace { .. } => ph::ERASER,
         FK::Remade { .. } => ph::SPARKLE,
+        FK::FaceGap { .. } => ph::RULER,
         FK::SplitBody { .. } => ph::SQUARE_SPLIT_HORIZONTAL,
         FK::PartInstance { .. } => ph::CUBE_TRANSPARENT, // NOT the assembly icon: there is nothing to enter here (see panels.rs)
         FK::Thicken { .. } => ph::STACK_SIMPLE,
@@ -2804,6 +2805,7 @@ pub(crate) fn feat_default_name(kind: &qymcad_core::feature::FeatureKind) -> Str
         FK::Remade { exact: qymcad_core::model::Exact::Hole { .. }, .. } => "feat-name-remade-hole".into(),
         FK::Remade { exact: qymcad_core::model::Exact::Round { .. }, .. } => "feat-name-remade-round".into(),
         FK::Remade { exact: qymcad_core::model::Exact::Chamfer { .. }, .. } => "feat-name-remade-chamfer".into(),
+        FK::FaceGap { .. } => "feat-name-face-gap".into(),
         FK::SplitBody { .. } => "feat-name-split-body".into(),
         FK::PartInstance { .. } => "feat-name-instance".into(),
         // A MIRRORED PART WITH NO NAME. It had a row in the tree but no default name — so the node
@@ -3870,6 +3872,7 @@ mod the_sketch_says_what_it_did_not_solve_in_time;
 mod a_big_drawing_stays_live;
 mod a_pattern_across_a_pattern_is_laid_by_hand;
 mod a_pushed_face_is_previewed_by_its_rim;
+mod a_size_is_set_between_two_faces;
 mod the_sketch_of_the_report_takes_a_line;
 mod a_big_sketch_selected_keeps_the_3d_frame;
 mod a_dimension_past_its_field_is_left_as_it_stands;

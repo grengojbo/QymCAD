@@ -317,6 +317,8 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::FaceCopy { ref faces, .. } => format!("{} {}", ph::COPY_SIMPLE, crate::i18n::tr1("feat-face-copy", "n", &faces.query.picked_descs().len().to_string())),
         FeatureKind::OffsetSurface { dist, .. } => format!("{} {}", ph::SELECTION_FOREGROUND, crate::i18n::tr1("feat-offset-surface", "d", &crate::i18n::num(at("dist", dist), 1))),
         FeatureKind::RemoveFace { ref faces, .. } => format!("{} {}", ph::ERASER, crate::i18n::tr1("feat-remove-face", "n", &faces.query.picked_descs().len().to_string())),
+        // A SIZE ON THE BODY names its number, as a dimension does
+        FeatureKind::FaceGap { gap, .. } => format!("{} {}", ph::RULER, crate::i18n::tr1("feat-face-gap", "d", &crate::i18n::num(at("gap", gap), 1))),
         // A FEATURE MADE EXACT names what it is and its size, as the tool that made it does
         FeatureKind::Remade { ref exact, .. } => {
             use qymcad_core::model::{Exact, Reach};

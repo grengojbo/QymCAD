@@ -388,6 +388,8 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         }
     } else if pn.armed.cmd_kind() == 37 {
         draw_remade_preview(pn, painter, &scr);
+    } else if pn.armed.cmd_kind() == 38 {
+        draw_gap_preview(pn, painter, &scr);
     } else if matches!(pn.armed.cmd_kind(), 30 | 31 | 36) {
         // COPY FACE (30) and REPLACE FACE (31): show the selection TO THE EYE, not only in the model.
         //
@@ -838,6 +840,48 @@ fn draw_open_borders(pn: &Painting, painter: &egui::Painter, scr: &qymcad_ui_sta
 /// RECOGNISE FEATURE BEFORE ENTER: the faces the feature found is made of in the "will go" colour, and for a hole the
 /// circle it is drilled again with, at its mouth and - a blind one - at its bottom, in the "will be added" colour, its
 /// diameter and depth as the fields hold them now.
+/// SIZE ON BODY: the faces taken lit, and every face the size moves dashed by its rim where it will stand - the green of
+/// more material for a face going out, the colour of a cut for one going in.
+fn draw_gap_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {
+    let Some(mi) = pn.gsel.faces_body.and_then(|b| pn.project.mesh_index(b)) else { return };
+    let body = &pn.project.bodies[mi];
+    let face = |id: Option<&u32>| id.and_then(|id| body.faces.iter().find(|f| f.id == *id));
+    let picked: Vec<&qymcad_core::geom::MeshFace> = pn.recognise.gap.iter().filter_map(|id| face(Some(id))).collect();
+    let mut hm = egui::Mesh::default();
+    for f in &picked {
+        for &ti in &f.triangles {
+            let base = hm.vertices.len() as u32;
+            for v in &body.mesh.triangle(ti as usize) {
+                hm.colored_vertex(scr.at([v.x, v.y, v.z]).0, qymcad_scheme::a(pn.scheme.pal.modify(), 110));
+            }
+            hm.add_triangle(base, base + 1, base + 2);
+        }
+    }
+    if !hm.is_empty() {
+        painter.add(egui::Shape::mesh(hm));
+    }
+    let [one, other] = picked.as_slice() else { return };
+    if !pn.cmd.params.iter().any(|p| p.key == "gap") {
+        return;
+    }
+    let n = one.normal;
+    let turn = n[0] * other.normal[0] + n[1] * other.normal[1] + n[2] * other.normal[2];
+    let apart = n[0] * (other.centroid.x - one.centroid.x) + n[1] * (other.centroid.y - one.centroid.y) + n[2] * (other.centroid.z - one.centroid.z);
+    let by = qymcad_part::gap_moves(pn.feat.op).shifts(apart, turn, qymcad_ui_state::cmd_val(pn.cmd, "gap"));
+    let dash = |f: &qymcad_core::geom::MeshFace, d: f64| {
+        if d.abs() < 1e-9 {
+            return;
+        }
+        let col = if d > 0.0 { pn.scheme.pal.ok() } else { pn.scheme.pal.offset_in() };
+        let off = |v: qymcad_core::geom::Point3| [v.x + f.normal[0] * d, v.y + f.normal[1] * d, v.z + f.normal[2] * d];
+        for s in body.mesh.face_outline(f) {
+            painter.add(egui::Shape::dashed_line(&[scr.at(off(s.from)).0, scr.at(off(s.to)).0], Stroke::new(1.2, col), 5.0, 4.0));
+        }
+    };
+    dash(one, by.one);
+    dash(other, by.other);
+}
+
 fn draw_remade_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {
     let Some(mi) = pn.gsel.faces_body.and_then(|b| pn.project.mesh_index(b)) else { return };
     let body = &pn.project.bodies[mi];

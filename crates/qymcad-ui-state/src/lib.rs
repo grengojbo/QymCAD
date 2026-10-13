@@ -7195,6 +7195,8 @@ pub struct RecogniseTool {
     pub found: std::sync::Arc<std::sync::Mutex<Option<RecogniseFound>>>,
     /// The hole, rounding or chamfer the "Recognise feature" tool found at its last click.
     pub feature: Option<FeatureInHand>,
+    /// The faces "Size on body" took, in the order they were clicked: the first, then the second.
+    pub gap: Vec<u32>,
 }
 
 /// A FEATURE FOUND ON A BODY AND HELD BY THE TOOL until Enter: the body it stands on, what the core is to lay down for
@@ -15213,6 +15215,7 @@ pub fn clear_feat_picks(p: FeatPicks) {
     p.stitch_parts.clear(); // the sheets picked for stitching are a pick like everything above
     p.recognise.src = None;
     p.recognise.feature = None;
+    p.recognise.gap.clear();
     p.trim.keep = None;
     p.trim.tool = None;
 }

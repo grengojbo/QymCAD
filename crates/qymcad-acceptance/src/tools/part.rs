@@ -1537,6 +1537,50 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     ],
 };
 
+/// The stepped block with its upper top, the first face picked, moved to stand `d` above its lower top at 10.
+const fn gapped(d: f64) -> Outcome {
+    Outcome::Body { volume: 6000.0 + 600.0 * (10.0 + d), faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0 + d] }
+}
+
+/// SIZE ON BODY: the upper top of the stepped block picked, then its lower top - 5 apart - and Enter: the field stands
+/// at the 5 they are apart and lays nothing until another size is typed. 8 typed: the upper top moves up 3. Moving the second face takes the lower top down 3 instead, both by half each of them 1.5.
+pub static FACE_GAP: Tool = Tool {
+    id: "part.face-gap",
+    flow: Flow::Command,
+    title: "f-face-gap",
+    entries: &[Entry::Button("tb-face-gap-hint"), Entry::SearchByArticle],
+    other: (Entry::Button("tb-mirror-body-hint"), "cmd-mirror"),
+    fixture: Fixture::SteppedBlock,
+    picks: &[Pick::Face([30.0, 15.0, 15.0]), Pick::Face([10.0, 15.0, 10.0])],
+    pick_trial: &[Pick::Face([30.0, 15.0, 15.0])],
+    wrong_picks: &[],
+    words: &[],
+    fields: &[Field { caption: "f-gap", by_placeholder: false, when: When::After, class: Class::Length, typical: 8.0, lo: 0.01, hi: 100000.0, zero: false, negative: false, outcome: gapped }],
+    modes: &[&[
+        Mode { word: "cmd-gap-one", clicks: None, outcome: Some(gapped(8.0)) },
+        Mode { word: "cmd-gap-other", clicks: None, outcome: Some(Outcome::Body { volume: 13200.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 15.0] }) },
+        Mode { word: "cmd-gap-both", clicks: None, outcome: Some(Outcome::Body { volume: 15000.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 16.5] }) },
+    ]],
+    result: gapped(8.0),
+    node: "FaceGap",
+    undo: "f-face-gap",
+    undo_steps: 1,
+    stays: false,
+    // the block made 12 tall: its top stands 3 under the upper top, and the size of 8 takes the upper top to 20
+    upstream: Some(Upstream::Reopen {
+        node: Node { kind: "Extrude", row: Some("cmd-extrude") },
+        caption: "f-length",
+        value: 12.0,
+        then: Outcome::Body { volume: 7200.0 + 600.0 * 20.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 20.0] },
+    }),
+    dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
+    contexts: &[Context::SecondPart],
+    refusal: None,
+    budget: (30, 2000),
+    help: "part/29-face-gap",
+    not_applicable: &[(17, "a size the faces cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse")],
+};
+
 /// Any name is two parts: the block split 5 below its top, and the upper piece taken into a part of its own.
 fn two_parts(_: &str) -> Outcome {
     Outcome::Parts { parts: 2, grounded: 0, joints: 0, assemblies: 0 }
