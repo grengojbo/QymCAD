@@ -98,6 +98,7 @@ fn test_packager_dialog_state_defaults() {
 
 #[test]
 fn default_theme_card_uses_the_bundle_translation() {
+    let _lock = lock_theme_test();
     use crate::gui::App;
 
     let previous_language = crate::i18n::language();
@@ -176,6 +177,7 @@ fn test_bundled_default_pack_discovered() {
 
 #[test]
 fn test_all_bundled_themes_are_embedded_in_manager() {
+    let _lock = lock_theme_test();
     let packs = discover_all_theme_packs(&all_theme_dirs()).packs;
     let default_pack = packs.iter().find(|p| p.manifest.id == DEFAULT_THEME_ID && !p.has_id_conflict()).expect("default theme must be present");
     assert_eq!(default_pack.format(), BundleFormat::Embedded, "Default theme must be marked Embedded in manager");
@@ -1267,6 +1269,7 @@ fn gallery_icon_uri_reflects_palette_and_evicts_on_scheme_switch() {
 
 #[test]
 fn duplicate_theme_id_marks_subsequent_pack_with_conflict_and_prevents_activation() {
+    let _lock = lock_theme_test();
     let temp_root = std::env::temp_dir().join(format!("qymcad_dup_test_{}", std::process::id()));
     let dir1 = temp_root.join("dir1");
     let dir2 = temp_root.join("dir2");
@@ -1333,6 +1336,7 @@ fn duplicate_theme_id_marks_subsequent_pack_with_conflict_and_prevents_activatio
 
 #[test]
 fn custom_theme_with_default_theme_id_is_marked_as_conflict() {
+    let _lock = lock_theme_test();
     let temp_root = std::env::temp_dir().join(format!("qymcad_default_override_test_{}", std::process::id()));
     let pack_dir = temp_root.join("rogue-default");
     std::fs::create_dir_all(pack_dir.join("icons/sketch")).unwrap();
@@ -1400,4 +1404,34 @@ fn discover_all_theme_packs_serves_cached_builtin_and_disk_packs_on_subsequent_c
     }
 
     let _ = std::fs::remove_dir_all(&temp_root);
+}
+
+/// Every check here that reads or writes the process-wide discovery cache holds `lock_theme_test`.
+///
+/// `clear_discovery_cache_for_test` empties the whole cache, not one key. A check that polls its own
+/// directories and draws the manager without the lock lets a sibling empty the cache between the two.
+/// The window's watcher thread polls once at start and then every 1000 ms, so a frame drawn before it
+/// refills the cache sees only the built-in themes and draws no pack of the check's directories.
+/// Reported behaviour: the duplicate-id check drew no conflict badge on one CI run, green on another.
+#[test]
+fn every_check_on_the_discovery_cache_holds_the_theme_lock() {
+    let doors = [
+        "poll_theme_discovery",
+        "discover_all_theme_packs",
+        "discover_theme_packs_in_dirs",
+        "clear_discovery_cache_for_test",
+        "draw_icon_manager_window",
+        "draw_icon_manager_window_in_dirs",
+        "prepare_directory_theme_preview",
+    ];
+    let source = include_str!("tests.rs");
+    let mut unlocked = Vec::new();
+    for check in source.split("#[test]\nfn ").skip(1) {
+        let name = check.split('(').next().unwrap_or_default();
+        let touches_cache = doors.iter().any(|door| check.contains(&format!("{door}(")));
+        if touches_cache && !check.contains("lock_theme_test()") {
+            unlocked.push(name.to_string());
+        }
+    }
+    assert!(unlocked.is_empty(), "checks reach the discovery cache without lock_theme_test: {unlocked:?}");
 }
