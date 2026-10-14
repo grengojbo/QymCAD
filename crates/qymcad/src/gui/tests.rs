@@ -225,3 +225,6 @@ mod the_author_is_supported;
 
 #[cfg(test)]
 mod tutorial_shots;
+
+#[cfg(test)]
+mod an_old_formula_is_named_on_opening;
