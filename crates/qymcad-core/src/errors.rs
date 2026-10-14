@@ -253,8 +253,14 @@ pub enum CoreError {
     /// There is nothing to push a sheet face with: pushing is an operation for solids, and a sheet gets its
     /// thickness from thickening.
     PushFaceOnSheet,
-    /// A size between two faces asks for two flat faces standing parallel and apart, and a size above zero.
+    /// A size between two faces asks for two flat faces standing parallel and apart.
     GapNotParallel,
+    /// A size between two faces asks for a size above zero: the faces cannot stand in one plane.
+    GapNotAboveZero,
+    /// A hole moved to stand from a face asks for a distance above zero: its axis cannot lie in the face's plane.
+    HoleGapNotAboveZero,
+    /// A hole moved to stand from a face asks for a face lying along its axis; this one the axis runs into.
+    HoleAxisAcrossFace,
     /// The surface did not match the opening; this many edges were left without a counterpart.
     SurfaceDoesNotClose { free: u32 },
     /// There is nothing to stitch: the selected surfaces share no edges and do not touch. This is common
@@ -480,6 +486,9 @@ impl CoreError {
             ImportKeptAsItCame => "warn-import-kept-as-it-came".into(),
             PushFaceOnSheet => "error-push-face-on-sheet".into(),
             GapNotParallel => "error-gap-not-parallel".into(),
+            GapNotAboveZero => "error-gap-not-above-zero".into(),
+            HoleGapNotAboveZero => "error-hole-gap-not-above-zero".into(),
+            HoleAxisAcrossFace => "error-hole-axis-across-face".into(),
             NeedsSolidNotSheet => "error-needs-solid-not-sheet".into(),
             DraftFailed { .. } => "error-draft-failed".into(),
             EdgesNotFound { .. } => "error-edges-not-found".into(),
@@ -605,6 +614,9 @@ impl std::fmt::Display for CoreError {
             ImportKeptAsItCame => write!(f, "the body brought in failed the checks and is kept as it came"),
             PushFaceOnSheet => write!(f, "push face on a sheet"),
             GapNotParallel => write!(f, "a size between faces that are not parallel planes apart"),
+            GapNotAboveZero => write!(f, "a size of no distance between faces"),
+            HoleGapNotAboveZero => write!(f, "a hole moved to stand no distance from the face"),
+            HoleAxisAcrossFace => write!(f, "the axis of the hole runs into the face"),
             NeedsSolidNotSheet => write!(f, "solid tool on a sheet"),
             DraftFailed { angle } => write!(f, "draft {angle:.1} failed"),
             RemoveFacesFailed { why } => write!(f, "cannot remove faces: {why}"),

@@ -31,5 +31,11 @@ press **Enter** - the hole moves, its diameter and depth as they were. The tree 
 
 - **This face is not parallel to the first** - click a flat face parallel to the first one.
 - **The size is as it stands** - type another number.
+- **The size between the faces is above zero** - the size, or the parameter it is typed as, came to 0: type a larger
+  number or change the parameter.
+- **The axis of the hole runs into this face** - click a flat face lying along the axis, a side wall rather than the face
+  the hole opens in.
+- **The distance from the axis of the hole to the face is above zero** - the distance, or the parameter it is typed
+  as, came to 0: type a larger number or change the parameter.
 - A face beside a curved one (the top with a hole on a body of exact surfaces, say) may not move: try moving the
   second face.

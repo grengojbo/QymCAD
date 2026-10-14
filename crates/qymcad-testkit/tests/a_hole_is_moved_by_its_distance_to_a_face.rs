@@ -151,5 +151,26 @@ fn a_hole_measured_to_the_face_it_opens_in_is_refused() {
     let node = p.add_hole_moved(body, HoleMove { hole, face: top, size: 5.0 });
     let (report, _) = qymcad_testkit::regenerate(&mut p);
     let said = report.errors.iter().find(|(id, _)| *id == node).map(|(_, e)| format!("{e:?}"));
-    assert_eq!(said.as_deref(), Some("GapNotParallel"), "{:?}", report.errors);
+    assert_eq!(said.as_deref(), Some("HoleAxisAcrossFace"), "{:?}", report.errors);
+}
+
+/// A HOLE MOVED TO NO DISTANCE says that the distance is the fault, not the faces picked: the distance kept as an
+/// expression that comes to 0 leaves the node red with words about the number. Reported behaviour: the words asked to
+/// pick two parallel faces, and the faces picked were the right ones.
+#[test]
+fn a_hole_moved_to_no_distance_says_the_distance_is_wrong() {
+    let mut p = Project::default();
+    let body = plate(&mut p, Plate::Polyhedron);
+    let (_, shapes) = qymcad_testkit::regenerate(&mut p);
+    let built = shapes.get(&body).and_then(|s| qymcad_kernel::specimen::mesh_merged(s, 0.01)).expect("built");
+    let wall = built.faces.iter().find(|f| f.normal[2].abs() < 0.1 && ((f.centroid.x - 20.0).powi(2) + (f.centroid.y - 15.0).powi(2)).sqrt() < 5.01).expect("wall");
+    let found = feature_at(&built.mesh, &built.faces, Pick { face: wall.id, at: [wall.centroid.x, wall.centroid.y, wall.centroid.z] }, 1.0).expect("found");
+    let faces = p.regen_faces.get(&body).cloned().unwrap_or_default();
+    let hole = found.remake(&faces).expect("its faces");
+    let front = faces.iter().filter(|f| f.normal[1] < -0.999).max_by(|a, b| a.area.total_cmp(&b.area)).map(key).expect("the front");
+    let node = p.add_hole_moved(body, HoleMove { hole, face: front, size: 10.0 });
+    p.set_feat_dim(node, "gap", "10 - 10".into());
+    let (report, _) = qymcad_testkit::regenerate(&mut p);
+    let said = report.errors.iter().find(|(id, _)| *id == node).map(|(_, e)| format!("{e:?}"));
+    assert_eq!(said.as_deref(), Some("HoleGapNotAboveZero"), "{:?}", report.errors);
 }

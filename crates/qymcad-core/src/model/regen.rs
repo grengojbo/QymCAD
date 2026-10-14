@@ -1698,8 +1698,12 @@ impl Project {
         let n = a.normal;
         let turn = n[0] * b.normal[0] + n[1] * b.normal[1] + n[2] * b.normal[2];
         let apart = (0..3).map(|i| n[i] * (b.centroid[i] - a.centroid[i])).sum::<f64>();
-        if turn.abs() < 1.0 - PLANE_TURN || apart.abs() < PLANE_GAP || gap <= PLANE_GAP {
+        // the faces and the number refused apart, as for a hole moved
+        if turn.abs() < 1.0 - PLANE_TURN || apart.abs() < PLANE_GAP {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::GapNotParallel);
+        }
+        if gap <= PLANE_GAP {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::GapNotAboveZero);
         }
         let by = moves.shifts(apart, turn, gap);
         let shifts: Vec<Shift> = [Shift { face: a.desc, by: by.one }, Shift { face: b.desc, by: by.other }].into_iter().filter(|s| s.by.abs() > 1e-9).collect();
@@ -1725,8 +1729,13 @@ impl Project {
         let n = c.normal;
         let across = (0..3).map(|i| n[i] * entry.normal[i]).sum::<f64>();
         let s = (0..3).map(|i| n[i] * (at[i] - c.centroid[i])).sum::<f64>();
-        if across.abs() > AXIS_TURN || gap <= PLANE_GAP {
-            return crate::feature::KernelJob::refused(crate::errors::CoreError::GapNotParallel);
+        // THE FACE AND THE NUMBER REFUSED APART: the faces picked are right when only the number is wrong, and words
+        // asking for other faces sent the person to pick the same two again
+        if across.abs() > AXIS_TURN {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::HoleAxisAcrossFace);
+        }
+        if gap <= PLANE_GAP {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::HoleGapNotAboveZero);
         }
         let want = if s < 0.0 { -gap } else { gap };
         let at = [at[0] + n[0] * (want - s), at[1] + n[1] * (want - s), at[2] + n[2] * (want - s)];

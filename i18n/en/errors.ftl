@@ -159,7 +159,10 @@ error-fillet-edges-one-by-one = Fillet R{ $radius }: these edges only take one a
 error-chamfer-too-big = Chamfer { $dist } mm failed — the leg is larger than the side
 error-surface-does-not-close = The surface does not match the opening: { $n } edges are left unpaired. The boundaries differ — build the patch on the same edges that bound the face being replaced
 error-push-face-on-sheet = A surface face cannot be pushed: this is a solid operation. To give a surface thickness, use "Thicken"
-error-gap-not-parallel = A size is set between two flat faces standing parallel, apart, and it is above zero: pick two such faces
+error-gap-not-parallel = A size is set between two flat faces standing parallel and apart: pick two such faces
+error-gap-not-above-zero = The size between the faces is above zero: type a larger number
+error-hole-gap-not-above-zero = The distance from the axis of the hole to the face is above zero: type a larger number
+error-hole-axis-across-face = The axis of the hole runs into this face: pick a flat face lying along the axis
 error-needs-solid-not-sheet = This is a solid tool: it does not apply to a surface. Give the surface a thickness and work with it as an ordinary body
 error-draft-failed = A draft of { $angle }° will not take on these faces. Usually a thin wall is in the way: after a shell there is little left to slope — apply the draft before the shell, or use a smaller angle
 

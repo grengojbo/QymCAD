@@ -95,6 +95,23 @@ fn a_size_between_faces_not_parallel_is_refused_in_words() {
     assert_eq!(said.as_deref(), Some("GapNotParallel"), "two sides square to each other: {:?}", report.errors);
 }
 
+/// A SIZE OF NO DISTANCE says that the size is the fault, not the faces picked: kept as an expression that comes to 0,
+/// it leaves the node red with words about the number. Reported behaviour: the words asked to pick two parallel faces,
+/// and the faces picked were the right ones.
+#[test]
+fn a_size_of_no_distance_says_the_size_is_wrong() {
+    let mut p = Project::default();
+    p.new_document();
+    let block = p.add_box(40.0, 30.0, 10.0);
+    let _ = qymcad_testkit::regenerate(&mut p);
+    let (one, other) = (face(&p, block, |f| f.normal[0] < -0.999).expect("a side"), face(&p, block, |f| f.normal[0] > 0.999).expect("the side across"));
+    let node = p.add_face_gap(block, Gap { one, other, size: 50.0, moves: GapMoves::One });
+    p.set_feat_dim(node, "gap", "5 - 5".into());
+    let (report, _) = qymcad_testkit::regenerate(&mut p);
+    let said = report.errors.iter().find(|(id, _)| *id == node).map(|(_, e)| format!("{e:?}"));
+    assert_eq!(said.as_deref(), Some("GapNotAboveZero"), "{:?}", report.errors);
+}
+
 /// The plate of a mesh made a polyhedron, its chamfer of 3 at x = 40, y = 30 made exact; its sides at x = 0 and x = 40
 /// made 50 apart by moving the side beside the chamfer. The chamfer keeps its leg: the plate grows by 30 x 10 x 10.
 #[test]

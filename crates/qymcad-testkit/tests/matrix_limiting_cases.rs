@@ -300,7 +300,7 @@ fn top_rim(p: &mut Project, body: u64) -> u32 {
     rims.max_by(|a, b| a.mid[2].total_cmp(&b.mid[2])).map(|e| e.id).expect("a round edge")
 }
 
-const ON_THE_BLOCK: [OnTheBlock; 41] = [
+const ON_THE_BLOCK: [OnTheBlock; 42] = [
     // a hole 10 across exactly as deep as the block: through, no cap of the bottom left in it
     OnTheBlock {
         name: "a hole exactly as deep as the block",
@@ -639,7 +639,7 @@ const ON_THE_BLOCK: [OnTheBlock; 41] = [
         },
         expect: Expect::Refused,
     },
-    // the front and the back made no distance apart: nothing is left between them
+    // the front and the back made no distance apart: nothing is left between them, refused for the number
     OnTheBlock {
         name: "the front and the back made no distance apart",
         kind: "FaceGap",
@@ -647,7 +647,7 @@ const ON_THE_BLOCK: [OnTheBlock; 41] = [
             let (one, other) = (face_key(p, b, [0.0, -1.0, 0.0]), face_key(p, b, [0.0, 1.0, 0.0]));
             p.add_face_gap(b, qymcad_core::model::Gap { one, other, size: 0.0, moves: qymcad_core::feature::GapMoves::Both })
         },
-        expect: Expect::Refused,
+        expect: Expect::Says(qymcad_core::errors::CoreError::GapNotAboveZero),
     },
     // a rounding of the front right corner found under a click and laid down again as wide as the right side, 30: the
     // side is taken whole and the rounding runs into the back tangent
@@ -667,6 +667,25 @@ const ON_THE_BLOCK: [OnTheBlock; 41] = [
             p.add_remade_feature(f, remake)
         },
         expect: Expect::Builds { volume: BLOCK_VOLUME - (900.0 - 225.0 * std::f64::consts::PI) * 10.0, faces: Some(6) },
+    },
+    // a hole in the top moved to no distance from the front: refused for the number, not for the faces
+    OnTheBlock {
+        name: "a hole moved to no distance from the front",
+        kind: "HoleMoved",
+        apply: |p, b| {
+            let key = face_key(p, b, UP);
+            let h = p.add_hole(b, key, 6.0, 5.0);
+            let _ = qymcad_testkit::regenerate(p);
+            let wall = p.regen_faces[&h]
+                .iter()
+                .find(|x| x.normal[2].abs() < 0.1 && x.centroid.z > 5.0 + 1e-6 && x.centroid.x.abs() < 19.0 && x.centroid.y.abs() < 14.0)
+                .cloned()
+                .expect("the wall of the hole");
+            let hole = qymcad_testkit::found_on(p, h, |x| x.id == wall.id, [wall.centroid.x + 3.0, wall.centroid.y, wall.centroid.z]).expect("the hole under the click");
+            let front = face_key(p, h, [0.0, -1.0, 0.0]);
+            p.add_hole_moved(h, qymcad_core::model::HoleMove { hole, face: front, size: 0.0 })
+        },
+        expect: Expect::Says(qymcad_core::errors::CoreError::HoleGapNotAboveZero),
     },
     // a hole in the top moved to stand its radius from the front: its wall touches the front along a line
     OnTheBlock {
