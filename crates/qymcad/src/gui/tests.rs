@@ -1049,11 +1049,29 @@ mod command_flow_tests {
         });
         app.disk.project_path = Some(proj_path.clone());
 
+        // THE KERNEL'S LOCK IS HELD ELSEWHERE for 1 s, as a neighbouring check's rebuild holds it in a full run: the
+        // raising of the import waits for it, and the B-rep comes later than the 300 ms `wait_bg` gives a fetch
+        let (held_tx, held_rx) = std::sync::mpsc::channel();
+        let holder = std::thread::spawn(move || {
+            let _gate = qymcad_kernel::kernel_gate();
+            let _ = held_tx.send(());
+            std::thread::sleep(std::time::Duration::from_secs(1));
+        });
+        held_rx.recv().expect("the kernel's lock is held");
+
         // BOTH tasks at once: topping up the import's B-rep and writing the project
         app.spawn_import_shapes(false);
         app.save_project();
         assert_eq!(app.regen.bg.len(), 2, "two background tasks live at once (the second used to overwrite the first)");
-        app.wait_bg();
+        // EVERY TASK TO ITS END, not `wait_bg`: its 300 ms for a fetch is the patience of a closing window, and a
+        // fetch past it is dropped on purpose - the check would then measure the load, not the two channels
+        while !app.regen.bg.is_empty() {
+            for bg in std::mem::take(&mut app.regen.bg) {
+                let res = bg.rx.recv_timeout(std::time::Duration::from_secs(120)).expect("the background task reported back");
+                app.apply_job_result(res);
+            }
+        }
+        holder.join().expect("the lock holder ended");
 
         assert!(app.live.shapes.contains_key(&body), "the import's B-rep was restored rather than lost in a closed channel");
         assert!(std::path::Path::new(&proj_path).exists(), "the project was written: {}", app.status);
