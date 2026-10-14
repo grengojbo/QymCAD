@@ -7,6 +7,7 @@
 //! push stood below the chamfer and carried its face along, 28.3 -> 169.7 mm^2.
 //!
 //! Feature x mode the mesh is made a body in: failures are gathered and told together.
+use qymcad_kernel::specimen::Specimen;
 use qymcad_core::feature::FaceKey;
 use qymcad_core::geom::MeshFace;
 use qymcad_core::model::{Id, ImportNode, Project};
@@ -14,13 +15,13 @@ use qymcad_kernel::Shape;
 use qymcad_meshfit::feature::{feature_at, Pick};
 
 fn plate() -> Shape {
-    Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate")
+    qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate")
 }
 
 /// A cylinder of `r` round (20, 15), from z = `from` up `h`.
 fn bore(r: f64, from: f64, h: f64) -> Shape {
     let at = [1.0, 0.0, 0.0, 20.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 1.0, from];
-    Shape::cylinder(r, h).expect("a cylinder").transformed(&at).expect("placed")
+    qymcad_kernel::specimen::cylinder(r, h).expect("a cylinder").moved(&at).expect("placed")
 }
 
 /// The edge of the plate at x = 40, y = 30, by its id.
@@ -66,7 +67,7 @@ fn cases() -> Vec<Case> {
             name: "chamfer, the side beside it",
             exact: || {
                 let p = plate();
-                p.chamfer_edges(3.0, &[corner_edge(&p)], &[], &[], &[]).expect("cut")
+                p.chamfered(3.0, &[corner_edge(&p)]).expect("cut")
             },
             clicked: |f| f.normal[0] > 0.1 && f.normal[1] > 0.1,
             pushed: |f| f.normal[0] > 0.999,
@@ -79,7 +80,7 @@ fn cases() -> Vec<Case> {
             name: "rounding, the side beside it",
             exact: || {
                 let p = plate();
-                p.fillet_edges(4.0, &[corner_edge(&p)]).expect("rounded")
+                p.filleted(4.0, &[corner_edge(&p)]).expect("rounded")
             },
             clicked: corner,
             pushed: |f| f.normal[1] > 0.999,
@@ -90,7 +91,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "hole through, the top it opens in",
-            exact: || plate().boolean(&bore(5.0, -1.0, 12.0), 0).expect("drilled"),
+            exact: || plate().combined(&bore(5.0, -1.0, 12.0), 0).expect("drilled"),
             clicked: wall,
             pushed: |f| f.normal[2] > 0.999,
             dist: 5.0,
@@ -111,7 +112,7 @@ fn run(case: &Case, mode: Mode) -> Result<(), String> {
     let mut p = Project::default();
     p.new_document();
     let source = p.add_source("plate.stl", vec![1]);
-    let src = p.add_mesh(exact.tessellate_merged(0.1).ok_or("no mesh")?.mesh);
+    let src = p.add_mesh(qymcad_kernel::specimen::mesh_merged(&exact, 0.1).ok_or("no mesh")?.mesh);
     p.import_tree_as_parts(vec![ImportNode { name: "plate".into(), body: Some(src), mesh: true, ..Default::default() }], source, "plate").ok_or("the mesh did not come in")?;
     let part = p.timeline.iter().find(|n| n.kind.owns_body(src)).and_then(|n| n.parent);
     p.set_active_component(part);
@@ -120,7 +121,7 @@ fn run(case: &Case, mode: Mode) -> Result<(), String> {
         Mode::Recognised => p.add_mesh_recognised(src, 1.0, 30.0, 0.0),
     };
     let (_, shapes) = qymcad_testkit::regenerate(&mut p);
-    let built = shapes.get(&body).and_then(|s| s.tessellate_merged(0.01)).ok_or("the body is not built")?;
+    let built = shapes.get(&body).and_then(|s| qymcad_kernel::specimen::mesh_merged(s, 0.01)).ok_or("the body is not built")?;
     let face = built.faces.iter().find(|f| (case.clicked)(f)).ok_or("no face to click")?;
     let found = feature_at(&built.mesh, &built.faces, Pick { face: face.id, at: [face.centroid.x, face.centroid.y, face.centroid.z] }, 1.0).map_err(|u| format!("nothing found: {u:?}"))?;
     let faces = p.regen_faces.get(&body).cloned().unwrap_or_default();

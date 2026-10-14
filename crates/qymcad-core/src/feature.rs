@@ -971,6 +971,46 @@ pub enum ChamferMode {
     DistAngle,
 }
 
+/// THE MOST INSTANCES ONE PATTERN MAY HOLD, the source counted, fixed when the program is built: a linear or circular
+/// pattern of a body, or a pattern of components. A pattern past it is refused with a message.
+///
+/// Why a limit at all. The input box takes up to 512 per direction, but a formula or a file is not held by the box, and
+/// nothing limited the product: it was multiplied in 32 bits, so a 65,536 x 65,536 component grid wrapped to a total of
+/// 0 and the next rebuild divided by it, and a feature pattern reserved room for every copy before anything checked it
+/// (a circular count of 4,000,000,000 asked for 384,000,000,000 bytes and the program died).
+///
+/// Why this number. The rebuild of a pattern grows with its size. Measured on a grid of separate 5 mm boxes (`cargo
+/// test` build, 4 cores, two runs each): 1,000 instances rebuilt in 3.1-3.5 s with 0.22 GB at the peak, 2,000 in
+/// 6.4-7.5 s (0.41 GB), 5,000 in 16 s (0.95 GB), 10,000 in 33-34 s (1.8 GB). Real patterns hold tens to a few hundred
+/// copies; at 10,000 a count typed or computed past real use costs half a minute and memory an ordinary machine has,
+/// not the program. The time grows with the size and no faster, which is what lets the limit sit this high.
+pub const MAX_PATTERN_INSTANCES: u32 = 10_000;
+
+/// THE MOST STARTS (separate helices) A THREAD OR AN AUGER MAY HAVE, fixed when the program is built.
+///
+/// Why this number. A multi-start thread or an auger has a handful of starts; 64 leaves room for any special case while
+/// closing the hole an unlimited count opened: every start is a groove whose faces are named up front,
+/// `edges x starts` names reserved before any check, so a thread or an auger with a billion starts was still running
+/// after five minutes (measured) before anything was built. The turns of a thread already have their own limit (`ThreadTooManyTurns`, 400).
+pub const MAX_HELIX_STARTS: u32 = 64;
+
+/// How many instances a pattern of these per-direction counts asks for, each count taken as at least one: multiplied
+/// in 64 bits and saturating, so no layout can wrap round to a small total.
+pub fn pattern_asked(counts: &[u32]) -> u64 {
+    counts.iter().fold(1u64, |total, &c| total.saturating_mul(c.max(1) as u64))
+}
+
+/// How many instances a pattern of these per-direction counts holds: `None` when that is past `MAX_PATTERN_INSTANCES`.
+pub fn pattern_instances(counts: &[u32]) -> Option<u32> {
+    let total = pattern_asked(counts);
+    (total <= MAX_PATTERN_INSTANCES as u64).then_some(total as u32)
+}
+
+/// The refusal of a pattern of these counts, past `MAX_PATTERN_INSTANCES`.
+pub fn pattern_too_large(counts: &[u32]) -> crate::errors::CoreError {
+    crate::errors::CoreError::PatternTooLarge { asked: pattern_asked(counts), limit: MAX_PATTERN_INSTANCES }
+}
+
 /// Kind of a timeline node. The parameters of part features live here.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum FeatureKind {
@@ -1830,10 +1870,8 @@ pub struct Helical<'a> {
     pub lead_in: f64,
     /// the run-out at the end
     pub lead_out: f64,
-    /// the names for the faces the groove produces
-    pub gnames: &'a [u32],
-    /// the names for the faces the run-out produces
-    pub rnames: &'a [u32],
+    /// the node: the faces of the groove and of the run-out are named after it
+    pub feature: Id,
     /// how far the whole profile is moved in radially, to take up the clearance the groove could not
     pub crest_relief: f64,
 }
@@ -1867,20 +1905,33 @@ pub struct RevolveAbout {
     pub line: Option<AxisLine>,
 }
 
-/// THE NAMES THE NEW SURFACES OF A BLEND WILL GET.
-///
-/// A fillet or a chamfer makes surfaces that did not exist before it, and each has to be named, or what
-/// refers to it does not survive the next rebuild. Three sets, and they are not interchangeable: one
-/// name per rounded edge, one per corner patch where blends meet, and the whole set for the "every edge"
-/// form, where the list of edges is not known before the kernel has looked.
-#[derive(Clone, Copy)]
-pub struct BlendNames<'a> {
-    /// One per edge being blended: the surface it turns into.
-    pub surfaces: &'a [u32],
-    /// One per vertex where blends meet: the patch that closes the corner.
-    pub corners: &'a [u32],
-    /// Every edge of the body, for the form that blends them all.
-    pub all: &'a [u32],
+/// WHETHER THE FACES A BLEND MAKES ARE NAMED, and after which node: the rule of the names - a surface after its edge, a
+/// corner patch after the edge too - is the bridge's; the model says only which node the blend is.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlendRoles {
+    Named { feature: Id },
+    Unnamed,
+}
+
+/// A BODY BROUGHT IN, AS THE DOOR LANDED IT: its mesh and faces, and why it was kept as it came when the door could not
+/// clean it (`None`: it passed).
+pub struct ImportLanded {
+    pub built: Built,
+    pub kept: Option<crate::errors::CoreError>,
+}
+
+/// A RADIUS SET AT A VERTEX of a fillet: where the vertex stands and the radius there.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct RadiusAt {
+    pub at: [f64; 3],
+    pub radius: f64,
+}
+
+/// HOW MANY OF THE EDGES ASKED A BLEND LEFT OUT, said in yellow on its node.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct DroppedEdges {
+    pub asked: usize,
+    pub dropped: usize,
 }
 
 /// HOW FAR A DRAFT LEANS AND WHICH WAY THE MOULD COMES OUT.
@@ -1895,22 +1946,33 @@ pub struct DraftPull {
     pub dir: [f64; 3],
 }
 
+/// WHAT A MIRROR MAKES: what it keeps, and what its image is called.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Mirrored {
+    pub keeps: MirrorKeeps,
+    pub names: ImageNames,
+}
+
+/// WHAT A MIRROR KEEPS: the image alone, or the image united with the body it reflects.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum MirrorKeeps {
+    Image,
+    Both,
+}
+
+/// WHAT THE IMAGE OF A MIRROR IS CALLED: the names of the faces it reflects - a mirrored part is a body of its own,
+/// nothing to tell it from - or the names of an instance of the node.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ImageNames {
+    Source,
+    Instance { feature: Id },
+}
+
 /// A PLANE GIVEN BY A POINT ON IT AND ITS NORMAL.
 #[derive(Clone, Copy)]
 pub struct PlaneAt {
     pub origin: [f64; 3],
     pub normal: [f64; 3],
-}
-
-/// THE NAMES THE NEW SURFACES OF A THICKENING WILL GET: one per offset face, one per side wall.
-///
-/// They come from the recipe - the offset side is produced by its face, each wall by its boundary edge -
-/// and are prepared in advance, because interning a name mutates the name table while the kernel needs
-/// the finished substitution.
-#[derive(Clone, Copy)]
-pub struct NameMaps<'a> {
-    pub faces: &'a [u32],
-    pub edges: &'a [u32],
 }
 
 /// THE SECTIONS OF A LOFT: the encoded contours, where each begins, and where each is placed.
@@ -1969,6 +2031,118 @@ impl KernelJob {
     }
 }
 
+/// A NAME GIVEN IN PLACE OF ANOTHER: the element that was `was` is `now`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Rename {
+    pub was: u32,
+    pub now: u32,
+}
+
+/// AN EDGE AND THE TWO FACES IT RUNS BETWEEN, by name - for a free edge of a sheet, its face and the face that stood
+/// beside it in the body it was cut from.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EdgeFaces {
+    pub edge: u32,
+    pub faces: [u32; 2],
+}
+
+/// AN EDGE AND THE TWO SMALLEST NAMED FACES MEETING AT ITS ENDS, apart from its own two (0 where there is none): what
+/// tells two edges between the same pair of faces apart by the recipe.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct EdgeEnds {
+    pub edge: u32,
+    pub around: [u32; 2],
+}
+
+/// A PIECE OF A FACE AN OPERATION CUT IN SEVERAL: the piece, the face it was cut from, and its number among the
+/// pieces as the history gave them.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FaceSplit {
+    pub piece: u32,
+    pub origin: u32,
+    pub index: u32,
+}
+
+/// WHAT A RESULT IS NAMED BY WHERE ITS HISTORY WAS SILENT: the body, the node that made it, the faces the document
+/// lists for it (none for a body raised again from its file, whose faces are asked of the kernel), the factor it was
+/// brought in at, and the table the names are given by.
+pub struct SilentNaming<'a> {
+    pub body: Id,
+    pub feature: Id,
+    pub listed: Option<&'a [u32]>,
+    pub scale: f64,
+    pub names: &'a mut dyn crate::names::NameMint,
+}
+
+/// THE NAMES GIVEN: the faces and the edges renamed, and the names the faces merged into one yielded.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct NamedAfter {
+    pub faces: Vec<Rename>,
+    pub edges: Vec<Rename>,
+    pub absorbed: Vec<Absorbed>,
+}
+
+/// A NAME YIELDED: two faces merged into one (coplanar faces of a union), `loser` gave way to `winner`, and a reference
+/// to the former finds the merged face.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Absorbed {
+    pub loser: u32,
+    pub winner: u32,
+}
+
+/// HOW FAR THE TOOL OF A PROFILE OPERATION REACHES along the normal of its sketch: from `start` for `length`, and
+/// whether its ends meet the body it cuts as a person drew them - a one-sided cut, whose end on a face of the body the
+/// bridge breaks (OCCT leaves a cap over a coincident end), or ends kept as they are.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ToolSpan {
+    pub start: f64,
+    pub length: f64,
+    pub ends: ToolEnds,
+}
+
+/// WHAT BECOMES OF THE ENDS OF A TOOL.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ToolEnds {
+    /// As drawn.
+    Kept,
+    /// A one-sided cut: an end on a face of the body it crosses is carried past it, an end on the sketch plane is set
+    /// back by a micrometre.
+    OneSidedCut,
+}
+
+/// WHERE A SIDE FACE OF A PROFILE OPERATION COMES FROM: the sketch entity its edge was cut from, and the number of
+/// that piece along the entity (an entity cut by its neighbours gives several pieces, each a face of its own).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SideSource {
+    pub src: Id,
+    pub split: u16,
+}
+
+/// THE RECIPE OF THE SIDE FACES OF A PROFILE OPERATION: the node, and the sources of its sides. A profile carries in
+/// the slot of the name of each edge the place of its source in `sources`, counted from 1 (0 - an edge with no
+/// source). What a side face is called from that - and what the caps are - is the bridge's rule.
+#[derive(Clone, Copy, Debug)]
+pub struct Sides<'a> {
+    pub feature: Id,
+    pub sources: &'a [SideSource],
+}
+
+/// PROFILES WITH THE SOURCES OF THEIR SIDES, as the model encodes them for a profile operation.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct SourcedProfiles {
+    pub profiles: Vec<Vec<f64>>,
+    pub sources: Vec<SideSource>,
+}
+
+/// WHERE A FACE LIES: the point of its surface at the middle of its parametric bounds and the normal there. What a face
+/// is named by when nothing else about it is known - a face of a body brought in from a file or made of a mesh.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FacePlace {
+    pub id: u32,
+    pub at: [f64; 3],
+    pub normal: [f64; 3],
+}
+
 pub trait Kernel {
     fn extrude(&self, body: Id, profile: &[f64], height: f64, place: [f64; 12]) -> Result<Built, crate::errors::CoreError>;
     fn revolve(&self, body: Id, profile: &[f64], axis: u8, angle_deg: f64, place: [f64; 12]) -> Result<Built, crate::errors::CoreError>;
@@ -1990,7 +2164,7 @@ pub trait Kernel {
     /// `caps` holds the name descriptors of the start and end caps from the document name table: a cap is not
     /// produced by a profile edge, so its name arrives as a separate parameter rather than inside the
     /// encoding.
-    fn combine_region_multi(&self, bo: crate::model::BodyOp, profiles: &[Vec<f64>], height: f64, place: [f64; 12], caps: &[u32]) -> Result<Built, crate::errors::CoreError>;
+    fn combine_region_multi(&self, bo: crate::model::BodyOp, profiles: &[Vec<f64>], span: ToolSpan, place: [f64; 12], sides: Sides<'_>) -> Result<Built, crate::errors::CoreError>;
     /// Revolve the exact profile `profile` about an axis (0 for X, 1 for Y) by an angle, giving a body with
     /// exact faces.
     fn revolve_region(&self, body: Id, profile: &[f64], axis: u8, angle_deg: f64, place: [f64; 12], caps: [u32; 2]) -> Result<Built, crate::errors::CoreError>;
@@ -2008,7 +2182,15 @@ pub trait Kernel {
     /// The default implementation is a fallback for the mock and for builds without OCCT: the profiles are
     /// revolved one at a time and added together with booleans. The shape comes out the same; what is missing
     /// is merging touching contours into one face.
-    fn revolve_region_multi(&self, bo: crate::model::BodyOp, profiles: &[Vec<f64>], about: RevolveAbout, angle_deg: f64, place: [f64; 12], caps: &[u32]) -> Result<Built, crate::errors::CoreError> {
+    fn revolve_region_multi(
+        &self,
+        bo: crate::model::BodyOp,
+        profiles: &[Vec<f64>],
+        about: RevolveAbout,
+        angle_deg: f64,
+        place: [f64; 12],
+        _sides: Sides<'_>,
+    ) -> Result<Built, crate::errors::CoreError> {
         let crate::model::BodyOp { src, op, body } = bo;
         // The fallback is honest: a single profile without a boolean is reproduced exactly, arbitrary axis
         // included. Merging several profiles or combining with a body needs a real kernel, and silently
@@ -2018,7 +2200,8 @@ pub trait Kernel {
         }
         let _ = op;
         let first = profiles.first().ok_or(crate::errors::CoreError::NoContours)?;
-        let cap2 = [caps.get(1).copied().unwrap_or(0), caps.get(2).copied().unwrap_or(0)];
+        // the fallback names nothing: the names of the sides and caps are the bridge's rule
+        let cap2 = [0, 0];
         match about.line {
             Some(line) => self.revolve_region_axis(body, first, line, angle_deg, place, cap2),
             None => self.revolve_region(body, first, about.axis, angle_deg, place, cap2),
@@ -2027,15 +2210,22 @@ pub trait Kernel {
 
     /// Sweep several profiles along one path, merge them and apply a single boolean against body `src`. See
     /// [`Kernel::revolve_region_multi`].
-    fn sweep_multi(&self, bo: crate::model::BodyOp, profiles: &[Vec<f64>], profile_place: [f64; 12], path: &[f64], path_place: [f64; 12], caps: &[u32]) -> Result<Built, crate::errors::CoreError> {
+    fn sweep_multi(
+        &self,
+        bo: crate::model::BodyOp,
+        profiles: &[Vec<f64>],
+        profile_place: [f64; 12],
+        path: &[f64],
+        path_place: [f64; 12],
+        _sides: Sides<'_>,
+    ) -> Result<Built, crate::errors::CoreError> {
         let crate::model::BodyOp { src, op, body } = bo;
         if src != 0 || profiles.len() > 1 {
             return Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Sweep));
         }
         let _ = op;
         let first = profiles.first().ok_or(crate::errors::CoreError::NoContours)?;
-        let cap2 = [caps.get(1).copied().unwrap_or(0), caps.get(2).copied().unwrap_or(0)];
-        self.sweep(body, first, profile_place, path, path_place, cap2)
+        self.sweep(body, first, profile_place, path, path_place, [0, 0])
     }
     /// Sweep: the exact profile `profile` (`encode_profile`), placed by `profile_place`, is swept along the
     /// path `path` (`[1.0, loop_block]`, one open or closed contour) placed by `path_place`, giving a body
@@ -2049,30 +2239,32 @@ pub trait Kernel {
     /// placement per section (length nsec * 12). `ruled` gives straight faces and `solid` closes the result
     /// into a body. The default implementation is a fallback.
     #[allow(clippy::too_many_arguments)]
-    fn loft(&self, _body: Id, _sections: LoftSections, _walls: LoftWalls, _kind: LoftBody, _caps: [u32; 2]) -> Result<Built, crate::errors::CoreError> {
+    fn loft(&self, _body: Id, _sections: LoftSections, _walls: LoftWalls, _kind: LoftBody, _sides: Sides<'_>) -> Result<Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Loft))
     }
     /// Lofted boolean: the lofted solid acts as a tool and is combined with body `src` (`op`: 0 cut, 1 union,
     /// 2 intersection). The section parameters are as in `loft`. The default implementation is a fallback.
     #[allow(clippy::too_many_arguments)]
-    fn loft_combine(&self, _bo: crate::model::BodyOp, _sections: &[f64], _offsets: &[usize], _places: &[f64], _walls: LoftWalls, _caps: [u32; 2]) -> Result<Built, crate::errors::CoreError> {
+    fn loft_combine(&self, _bo: crate::model::BodyOp, _sections: &[f64], _offsets: &[usize], _places: &[f64], _walls: LoftWalls, _sides: Sides<'_>) -> Result<Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::LoftBoolean))
     }
     /// Stepped hole: the tool (a cylinder plus a counterbore or countersink) in frame `pl`. What drills it
     /// travels as one record - see `HoleTool` - because the five numbers describing it are one thing, and
     /// the same record is what the timeline stores. The mock default cuts a plain cylinder through
-    /// `combine_region`.
-    fn hole(&self, body: Id, src: Id, tool: crate::model::HoleTool, pl: [f64; 12], _bore: u32, _extra: &[u32]) -> Result<Built, crate::errors::CoreError> {
+    /// `combine_region`. The faces it makes are named after node `feature`.
+    fn hole(&self, body: Id, src: Id, tool: crate::model::HoleTool, pl: [f64; 12], _feature: Id) -> Result<Built, crate::errors::CoreError> {
         let prof = crate::geom::encode_profile(&crate::geom::circle_contour(0.0, 0.0, tool.diameter / 2.0, 0.05), &[]);
         self.combine_region(body, src, &prof, -tool.depth.abs(), 0, pl)
     }
     /// Many holes at once (at the points of a sketch): one cutting tool per frame in `pls`, all merged and
-    /// subtracted by a single boolean. The default implementation applies `hole` for each point in turn.
-    fn holes(&self, body: Id, src: Id, tool: crate::model::HoleTool, pls: &[[f64; 12]], bores: &[u32], extra: &[u32]) -> Result<Built, crate::errors::CoreError> {
+    /// subtracted by a single boolean. `sites[k]` is the sketch point that placed hole k: its wall is named after it,
+    /// so adding a point does not rename the neighbouring holes. The default implementation applies `hole` for each
+    /// point in turn.
+    fn holes(&self, body: Id, src: Id, tool: crate::model::HoleTool, pls: &[[f64; 12]], _sites: &[Id], feature: Id) -> Result<Built, crate::errors::CoreError> {
         let mut cur = src;
         let mut out: Result<Built, crate::errors::CoreError> = Err(crate::errors::CoreError::NoPointsForHoles);
-        for (i, pl) in pls.iter().enumerate() {
-            out = self.hole(body, cur, tool, *pl, bores.get(i).copied().unwrap_or(0), extra);
+        for pl in pls {
+            out = self.hole(body, cur, tool, *pl, feature);
             // NOT `out.as_ref()?`: that hands back a BORROWED error, which this signature cannot convert.
             #[allow(clippy::question_mark)]
             if out.is_err() {
@@ -2092,39 +2284,40 @@ pub trait Kernel {
     fn helical(&self, _h: Helical<'_>) -> Result<Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Helix))
     }
-    /// Exact cylinder primitive (axis Z, base at z = 0): a native kernel solid with three faces.
-    fn cylinder(&self, body: Id, r: f64, h: f64, names: [u32; 3]) -> Result<Built, crate::errors::CoreError>;
+    /// Exact cylinder primitive (axis Z, base at z = 0): a native kernel solid with three faces, named after node
+    /// `feature` - the same for the sphere, the cone and the torus.
+    fn cylinder(&self, body: Id, r: f64, h: f64, feature: Id) -> Result<Built, crate::errors::CoreError>;
     /// Exact sphere (centred at the origin): one face.
-    fn sphere(&self, body: Id, r: f64, names: [u32; 3]) -> Result<Built, crate::errors::CoreError>;
+    fn sphere(&self, body: Id, r: f64, feature: Id) -> Result<Built, crate::errors::CoreError>;
     /// Exact cone (r1 at z = 0 to r2 at z = h, axis Z).
-    fn cone(&self, body: Id, r1: f64, r2: f64, h: f64, names: [u32; 3]) -> Result<Built, crate::errors::CoreError>;
+    fn cone(&self, body: Id, r1: f64, r2: f64, h: f64, feature: Id) -> Result<Built, crate::errors::CoreError>;
     /// Exact torus (in the XY plane, axis Z).
-    fn torus(&self, body: Id, major: f64, minor: f64, names: [u32; 3]) -> Result<Built, crate::errors::CoreError>;
+    fn torus(&self, body: Id, major: f64, minor: f64, feature: Id) -> Result<Built, crate::errors::CoreError>;
     /// Fillet the edges of body `src` with radius `radius` (an empty `edges` means every edge).
-    fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], names: BlendNames) -> Result<Built, crate::errors::CoreError>;
+    fn fillet(&self, body: Id, src: Id, radius: f64, edges: &[u32], roles: BlendRoles) -> Result<Built, crate::errors::CoreError>;
     /// Variable fillet specified at vertices: `verts` holds a vertex point and the radius there, and the
     /// kernel interpolates along the edge itself. A shared vertex has one radius for both neighbours, so a
     /// chain meets without a step — a property of the way it is specified rather than of any check. An
     /// endpoint without an entry uses `radius`. The mock default produces a constant fillet.
-    fn fillet_at_vertices(&self, body: Id, src: Id, radius: f64, edges: &[u32], _verts: &[([f64; 3], f64)]) -> Result<Built, crate::errors::CoreError> {
-        self.fillet(body, src, radius, edges, BlendNames { surfaces: &[], corners: &[], all: &[] })
+    fn fillet_at_vertices(&self, body: Id, src: Id, radius: f64, edges: &[u32], _verts: &[RadiusAt], roles: BlendRoles) -> Result<Built, crate::errors::CoreError> {
+        self.fillet(body, src, radius, edges, roles)
     }
     /// Copy faces into a separate sheet: the bridge from the parametric model into the surface layer. `names`
     /// holds the names of the copies, whose provenance the model knows. The default is an honest refusal:
     /// there is nothing to fake a surface with, and silently reporting success would take the timeline into a
     /// state that does not exist.
-    fn copy_faces(&self, _body: Id, _src: Id, _faces: &[u32], _names: &[u32]) -> Result<Built, crate::errors::CoreError> {
+    fn copy_faces(&self, _body: Id, _src: Id, _faces: &[u32], _feature: Id) -> Result<Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::OpFailed(crate::errors::Op::CopyFaces))
     }
 
     /// Offset sheet: the faces `faces` of body `src` moved `dist` along their normals as body `body`, each named by
     /// `names`. The default refuses: the mock has no surfaces to move.
-    fn offset_faces(&self, _body: Id, _src: Id, _faces: &[u32], _names: &[u32], _dist: f64) -> Result<Built, crate::errors::CoreError> {
+    fn offset_faces(&self, _body: Id, _src: Id, _faces: &[u32], _feature: Id, _dist: f64) -> Result<Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::OffsetSurface))
     }
 
     /// Patch: span a surface over a chain of edges. The default is a refusal.
-    fn patch(&self, _body: Id, _src: Id, _edges: &[u32], _tangent: bool, _name: u32) -> Result<Built, crate::errors::CoreError> {
+    fn patch(&self, _body: Id, _src: Id, _edges: &[u32], _tangent: bool, _feature: Id) -> Result<Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::OpFailed(crate::errors::Op::Patch))
     }
 
@@ -2172,7 +2365,7 @@ pub trait Kernel {
 
     /// The edges the last blend of `body` left out, taken once: (edges asked, edges left out). `None` when it
     /// took every edge.
-    fn take_dropped_edges(&self, _body: Id) -> Option<(usize, usize)> {
+    fn take_dropped_edges(&self, _body: Id) -> Option<DroppedEdges> {
         None
     }
 
@@ -2189,15 +2382,15 @@ pub trait Kernel {
     }
 
     /// Chamfer the edges of body `src` by `dist` (an empty `edges` means every edge).
-    fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], names: BlendNames) -> Result<Built, crate::errors::CoreError>;
+    fn chamfer(&self, body: Id, src: Id, dist: f64, edges: &[u32], roles: BlendRoles) -> Result<Built, crate::errors::CoreError>;
     /// Asymmetric chamfer. `TwoDist` uses setbacks `d1` on the reference face and `d2` on the adjacent one;
     /// `DistAngle` uses setback `d1` plus angle `d2` in degrees; `flip` selects which face is the reference.
     /// `ref_face` is the persistent id of a manually chosen reference face (0 selects it automatically from
     /// `flip`). `Symmetric` falls through to a plain `chamfer(d1)`. It requires an explicit edge selection,
     /// since asymmetry is not defined for "every edge". The mock default is a symmetric `chamfer(d1)`.
     #[allow(clippy::too_many_arguments)]
-    fn chamfer_ex(&self, body: Id, src: Id, d1: f64, _shape: crate::model::ChamferShape, edges: &[u32]) -> Result<Built, crate::errors::CoreError> {
-        self.chamfer(body, src, d1, edges, BlendNames { surfaces: &[], corners: &[], all: &[] })
+    fn chamfer_ex(&self, body: Id, src: Id, d1: f64, _shape: crate::model::ChamferShape, edges: &[u32], roles: BlendRoles) -> Result<Built, crate::errors::CoreError> {
+        self.chamfer(body, src, d1, edges, roles)
     }
     /// Shell body `src`: open the faces named by `face_ids` (persistent ids) and leave walls of `thickness`.
     /// `outward` puts the wall outside instead of inside.
@@ -2207,7 +2400,7 @@ pub trait Kernel {
     ///
     /// A wall is produced by offsetting a face rather than by copying it, so the names have to be seeded
     /// during construction: in the finished body an outer face and its wall are indistinguishable.
-    fn shell_named(&self, body: Id, src: Id, thickness: f64, outward: bool, face_ids: &[u32], _walls: &[(u32, u32)]) -> Result<Built, crate::errors::CoreError> {
+    fn shell_named(&self, body: Id, src: Id, thickness: f64, outward: bool, face_ids: &[u32], _feature: Id) -> Result<Built, crate::errors::CoreError> {
         self.shell(body, src, thickness, outward, face_ids)
     }
     /// Centred shell: a wall of `thickness` centred on the surface. The mock default shells inwards as
@@ -2229,7 +2422,7 @@ pub trait Kernel {
     }
     /// Thicken a face: face `face` of body `src` becomes a plate of `thickness` as a new body `body`. The
     /// source stays alive — the plate is a separate part rather than a reworking of the original.
-    fn thicken_face(&self, _body: Id, _src: Id, _face: u32, _thickness: f64, _join: Id, _names: NameMaps) -> Result<crate::geom::Built, crate::errors::CoreError> {
+    fn thicken_face(&self, _body: Id, _src: Id, _face: u32, _thickness: f64, _join: Id, _feature: Id) -> Result<crate::geom::Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Thicken))
     }
     /// Split faces by a plane without cutting the body: the body stays one, and the faces the plane crosses
@@ -2243,44 +2436,34 @@ pub trait Kernel {
     ///
     /// `bodies` holds pre-allocated ids, one per piece. If the number of pieces differs, an error is
     /// returned: silently losing a piece is worse than refusing.
-    fn split_body(&self, _bodies: &[Id], _src: Id, _origin: [f64; 3], _normal: [f64; 3], _section: u32) -> Result<Vec<crate::geom::Built>, crate::errors::CoreError> {
+    fn split_body(&self, _bodies: &[Id], _src: Id, _origin: [f64; 3], _normal: [f64; 3], _feature: Id) -> Result<Vec<crate::geom::Built>, crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::SplitBody))
     }
     /// Draft: tilt the faces named by `face_ids` on body `src` by `angle` degrees relative to the neutral
     /// plane (`np_origin`, `np_normal`) along the pull direction `pull`. Requires a real kernel; the mock is a
     /// stub.
     #[allow(clippy::too_many_arguments)]
-    fn draft(&self, _body: Id, _src: Id, _face_ids: &[u32], _pull: DraftPull, _neutral: PlaneAt, _sides: &[u32]) -> Result<Built, crate::errors::CoreError> {
+    fn draft(&self, _body: Id, _src: Id, _face_ids: &[u32], _pull: DraftPull, _neutral: PlaneAt, _feature: Id) -> Result<Built, crate::errors::CoreError> {
         Err(crate::errors::CoreError::KernelRequired(crate::errors::Op::Draft))
     }
-    /// Pattern of body `src`: unite its copies placed by the transforms in `transforms`.
-    fn pattern(&self, body: Id, src: Id, transforms: &[[f64; 12]]) -> Result<Built, crate::errors::CoreError>;
+    /// Pattern of body `src`: unite its copies placed by the transforms in `transforms`. Every copy but the first is
+    /// named as an instance of node `feature`.
+    fn pattern(&self, body: Id, src: Id, transforms: &[[f64; 12]], feature: Id) -> Result<Built, crate::errors::CoreError>;
 
-    /// Pattern with named instances: `seeds[k]` holds pairs of "source face id to its name in copy k".
-    ///
-    /// Within one copy the ids are unique, so renaming by pairs is expressible here, unlike in the assembled
-    /// result where every copy carries the same source number.
-    fn pattern_named(&self, body: Id, src: Id, transforms: &[[f64; 12]], _seeds: &[Vec<(u32, u32)>]) -> Result<Built, crate::errors::CoreError> {
-        self.pattern(body, src, transforms)
-    }
-    /// Mirror body `src` about plane `plane`; `keep` unites the result with the original.
-    fn mirror(&self, body: Id, src: Id, plane: u8, keep: bool) -> Result<Built, crate::errors::CoreError>;
+    /// Mirror body `src` about world plane `plane`; `made` says what is kept and what the image is called.
+    fn mirror(&self, body: Id, src: Id, plane: u8, made: Mirrored) -> Result<Built, crate::errors::CoreError>;
 
-    /// Mirror with named images: `seed` holds pairs of "source face to its name in the reflection". The copy
-    /// has to receive its names before being united with the original, since afterwards both halves carry the
-    /// same number.
-    fn mirror_named(&self, body: Id, src: Id, plane: u8, keep: bool, _seed: &[(u32, u32)]) -> Result<Built, crate::errors::CoreError> {
-        self.mirror(body, src, plane, keep)
-    }
-
-    fn mirror_plane_named(&self, body: Id, src: Id, origin: [f64; 3], normal: [f64; 3], keep: bool, _seed: &[(u32, u32)]) -> Result<Built, crate::errors::CoreError> {
-        self.mirror_plane(body, src, origin, normal, keep)
-    }
-    /// Mirror about an arbitrary plane (origin and normal), that is, a datum or a face. `keep` unites the
-    /// result with the original.
-    fn mirror_plane(&self, body: Id, src: Id, origin: [f64; 3], normal: [f64; 3], keep: bool) -> Result<Built, crate::errors::CoreError>;
+    /// Mirror about an arbitrary plane, that is, a datum or a face; `made` says what is kept and what the image is
+    /// called.
+    fn mirror_plane(&self, body: Id, src: Id, at: PlaneAt, made: Mirrored) -> Result<Built, crate::errors::CoreError>;
     /// Rigid translation and rotation of the B-rep of body `src` by matrix `mat` (3x4), producing `body`.
     fn transform_body(&self, body: Id, src: Id, mat: [f64; 12]) -> Result<Built, crate::errors::CoreError>;
+    /// A BODY BROUGHT IN FROM A FILE, landed through the door without losing it: the shape the kernel holds, cleaned and
+    /// checked as every result is when it passes, kept as it came - and said - when it does not. `None` means the kernel
+    /// does not hold that body.
+    fn land_import(&self, _body: Id) -> Option<ImportLanded> {
+        None
+    }
     /// Re-tessellate the already built or imported shape of body `body` from the kernel cache (an external
     /// STEP solid has no recipe). `None` means the kernel does not hold that body.
     fn tessellate(&self, _body: Id) -> Option<Built> {
@@ -2289,22 +2472,6 @@ pub trait Kernel {
     /// Body-to-body boolean: `op` applied to the B-reps of bodies `a` and `b`, producing `body`. `op` is 0 for
     /// a cut (a minus b), 1 for a union and 2 for an intersection. Both operands have to be built.
     fn body_boolean(&self, body: Id, a: Id, b: Id, op: u8) -> Result<Built, crate::errors::CoreError>;
-    /// Edges of the built body `body`: a persistent id plus the midpoint and tangent, in body local space.
-    /// Used to resolve axis connectors by id. The default is empty, since a mock supplies no edges.
-    fn face_splits(&self, _body: Id) -> Vec<(u32, u32, u32)> {
-        Vec::new()
-    }
-
-    /// Clear the split records once names have been handed out from them: the record is single-use.
-    fn clear_face_splits(&self, _body: Id) {}
-
-    /// Absorbed names: pairs of "former face name to the name of the merged face". Merging coplanar faces
-    /// collapses two named faces into one and one name yields; the pair tells the model which name it yielded
-    /// to, so a reference to the former name finds the merged face instead of getting lost. The default is
-    /// empty.
-    fn absorbed_names(&self, _body: Id) -> Vec<(u32, u32)> {
-        Vec::new()
-    }
 
     /// HOW MANY THREADS THE KERNEL IS WILLING TO BE DIVIDED INTO. One means "compute in this thread", which is
     /// what a mock says and what a person asking for a single-threaded rebuild gets.
@@ -2332,24 +2499,18 @@ pub trait Kernel {
     /// The bodies come home: the shapes the worker was given, plus whatever it built.
     fn absorb(&self, _worker: Box<dyn KernelWorker>) {}
 
-    /// What distinguishes two edges sharing one pair of faces: `(edge, name1, name2)`, the lowest names of the
-    /// faces meeting at its endpoints. The ordinal within a pair has to follow the recipe rather than the
-    /// traversal order.
-    fn edge_end_faces(&self, _body: Id) -> Vec<(u32, u32, u32)> {
-        Vec::new()
-    }
-
-    /// Rewrite the face names of a body (pairs of old to new).
-    fn rename_faces(&self, _body: Id, _pairs: &[(u32, u32)]) {}
-
     /// Edge names: pairs of "edge to its two faces", by face name. Empty when the kernel does not supply
     /// them.
-    fn edge_face_pairs(&self, _body: Id) -> Vec<(u32, u32, u32)> {
+    fn edge_face_pairs(&self, _body: Id) -> Vec<EdgeFaces> {
         Vec::new()
     }
 
-    /// Rewrite the edge names of a body (pairs of old to new).
-    fn rename_edges(&self, _body: Id, _pairs: &[(u32, u32)]) {}
+    /// NAME WHAT THE HISTORY OF AN OPERATION WAS SILENT ABOUT: the pieces of a split face, the seams by their named
+    /// neighbours, then the faces by where they lie, then the edges by the pair of their faces. The rules live in the
+    /// bridge; the names are given by the table the request carries. A kernel with no naming names nothing.
+    fn name_silent(&self, _ask: SilentNaming<'_>) -> NamedAfter {
+        NamedAfter::default()
+    }
 
     /// Edge geometry of a body: for each edge, its persistent name, a polyline in body local space and, for a
     /// circular edge, its exact centre, axis and radius. Needed by projection into a sketch: a circle has to

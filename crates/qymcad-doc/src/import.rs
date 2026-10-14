@@ -8,8 +8,7 @@
 //!
 //! The words of the window - the question asked, the status line, the camera sent to what came in - are not here; the
 //! window asks and says, this lays in and scales.
-use crate::brep::scale_matrix;
-use qymcad_core::geom::{Built, Mesh, MeshFace, Point3};
+use qymcad_core::geom::{Built, Mesh, MeshFace};
 use qymcad_core::model::{FileGroup, Id, ImportNode, Project};
 use qymcad_kernel::Shape;
 use std::collections::HashMap;
@@ -91,7 +90,7 @@ pub fn read_mesh(path: &str, format: MeshFormat) -> Result<Vec<MeshPiece>, Strin
     Ok(read
         .into_iter()
         .map(|n| {
-            let faces = n.mesh.detect_faces(8.0);
+            let faces = qymcad_meshfit::raw_faces(&n.mesh);
             MeshPiece { name: n.name, mesh: n.mesh, faces, color: n.color, place: n.place, tri_colors: n.tri_colors, within: n.within }
         })
         .collect())
@@ -124,8 +123,8 @@ pub struct Landed {
     pub unitless: bool,
     /// The sides of the box of everything that came in, as the file has it.
     pub span: [f64; 3],
-    /// Every mesh that came in: its body, and the mesh and faces as read.
-    pub meshes: Vec<(Id, Mesh, Vec<MeshFace>)>,
+    /// Every piece of a mesh that came in, by its body: the document scales it from the factor it stands at.
+    pub meshes: Vec<Id>,
     /// Every solid that came in: its body, and the shape as read.
     pub solids: Vec<(Id, Shape)>,
     /// Every component that came in with the file's tree: its id, and where the file places it.
@@ -139,7 +138,6 @@ pub struct Landed {
 /// `shown` is how a name reads to a person, so a part of the file that reads as one already here is numbered apart.
 pub fn land_mesh(project: &mut Project, path: &str, format: MeshFormat, pieces: Vec<MeshPiece>, shown: &dyn Fn(&str) -> String) -> Landed {
     let span = span_of(pieces.iter().map(|p| &p.mesh));
-    let read: Vec<Built> = pieces.iter().map(|p| Built { mesh: p.mesh.clone(), faces: p.faces.clone() }).collect();
     let source = embed_source(project, path).unwrap_or(0);
     let stem = stem_of(path);
     let many = pieces.len() > 1;
@@ -164,8 +162,7 @@ pub fn land_mesh(project: &mut Project, path: &str, format: MeshFormat, pieces: 
     let nodes = tops.into_iter().map(|e| e.node(&stem)).collect();
     let root = project.import_tree_as_parts(nodes, source, &stem);
     let places = settle_names(project, root, shown);
-    let meshes = bodies.iter().copied().zip(read).map(|(id, Built { mesh, faces })| (id, mesh, faces)).collect();
-    Landed { root, bodies, unitless: format.unitless(), span, meshes, solids: Vec::new(), places }
+    Landed { root, bodies: bodies.clone(), unitless: format.unitless(), span, meshes: bodies, solids: Vec::new(), places }
 }
 
 /// LAY IN THE SOLIDS read from `path` as the file's tree of subassemblies and parts, each in the coordinates of its
@@ -182,7 +179,7 @@ pub fn land_exact(project: &mut Project, shapes: &mut HashMap<Id, Shape>, path: 
         let body = project.add_mesh(mesh);
         project.set_body_faces(body, faces);
         if let Some(s) = solids.next() {
-            if let Some(copy) = s.transformed(&scale_matrix(1.0)) {
+            if let Some(copy) = qymcad_kernel::imports::scaled(&s, 1.0) {
                 read.push((body, copy)); // the shape as read, which every factor is taken from
             }
             shapes.insert(body, s);
@@ -205,12 +202,12 @@ fn settle_names(project: &mut Project, root: Option<Id>, shown: &dyn Fn(&str) ->
     came.into_iter().map(|c| (c, project.component_transform(c))).collect()
 }
 
-/// WHAT A FACTOR IS TAKEN FROM, borrowed: the meshes and shapes as the file has them, and where the file places the
+/// WHAT A FACTOR IS TAKEN FROM, borrowed: the pieces of a mesh, the shapes as the file has them, and where the file places the
 /// components. A file just landed lends its [`Landed`]; an import asked about again from its node lends what it stands
 /// at now divided by its factor.
 #[derive(Clone, Copy)]
 pub struct AsRead<'a> {
-    pub meshes: &'a [(Id, Mesh, Vec<MeshFace>)],
+    pub meshes: &'a [Id],
     pub solids: &'a [(Id, Shape)],
     pub places: &'a [(Id, [f64; 12])],
 }
@@ -222,21 +219,17 @@ impl Landed {
     }
 }
 
-/// PUT EVERYTHING THAT CAME IN AT `factor` from the file's own numbers: a mesh from its copy as read, a solid from its
-/// shape as read, with the factor kept by its import node; every component that came in stands at the factor too,
+/// PUT EVERYTHING THAT CAME IN AT `factor` from the file's own numbers: a piece of a mesh scaled by the document from
+/// the factor it stands at, a solid from its shape as read, with the factor kept by its import node; every component that came in stands at the factor too,
 /// about the file's zero. Returns whether solids changed, which then need a rebuild to be shown.
 pub fn apply_scale(project: &mut Project, shapes: &mut HashMap<Id, Shape>, read: AsRead, factor: f64) -> bool {
     let f = factor;
-    for (id, mesh, faces) in read.meshes {
-        project.set_import_scale(*id, f); // the mesh piece keeps the factor its mesh stands at
-        let Some(i) = project.bodies.iter().position(|b| b.id == *id) else { continue };
-        let mut m = mesh.clone();
-        m.scale(0.0, 0.0, 0.0, f);
-        project.bodies[i].mesh = m;
-        project.set_body_faces(*id, scaled_faces(faces, f));
+    for id in read.meshes {
+        // the document scales the piece, its mesh and faces together, from the factor it stood at
+        project.set_import_scale(*id, f);
     }
     for (id, shape) in read.solids {
-        if let Some(s) = shape.transformed(&scale_matrix(f)) {
+        if let Some(s) = qymcad_kernel::imports::scaled(shape, f) {
             shapes.insert(*id, s);
         }
         project.set_import_scale(*id, f);
@@ -255,11 +248,6 @@ pub fn apply_scale(project: &mut Project, shapes: &mut HashMap<Id, Shape>, read:
 pub fn out_of_size(span: [f64; 3]) -> bool {
     let largest = span.iter().copied().fold(0.0, f64::max);
     !(SMALLEST_MM..=LARGEST_MM).contains(&largest)
-}
-
-/// Faces at factor `f` about the origin: a centroid moves with it, an area grows as its square.
-pub fn scaled_faces(faces: &[MeshFace], f: f64) -> Vec<MeshFace> {
-    faces.iter().map(|x| MeshFace { centroid: Point3::new(x.centroid.x * f, x.centroid.y * f, x.centroid.z * f), area: x.area * f * f, ..x.clone() }).collect()
 }
 
 /// The sides of the box of `bodies` as they stand in the world, each placed by its part.

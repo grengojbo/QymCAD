@@ -4,11 +4,12 @@
 //! of the feature, at its centre, as the window gives it.
 
 use qymcad_core::geom::{Built, MeshFace};
+use qymcad_kernel::specimen::{self, Specimen};
 use qymcad_kernel::Shape;
 use qymcad_meshfit::feature::{feature_at, rounded, rounded_bore, Found, Pick, Reach, Unfound};
 
 fn plate() -> Shape {
-    Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate")
+    specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate")
 }
 
 /// A prism of `sides` round (20, 15), its corners `r` from the axis, from z = `from` to z = `from + h`.
@@ -20,17 +21,17 @@ fn prism(sides: usize, r: f64, from: f64, h: f64) -> Shape {
         })
         .collect();
     let up = [1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, from];
-    Shape::extrude(&xy, h).expect("a prism").transformed(&up).expect("lifted")
+    specimen::placed(&specimen::extrude(&xy, h).expect("a prism"), &up).expect("lifted")
 }
 
 /// A cylinder of `r` round (20, 15), from z = `from` up `h`.
 fn bore(r: f64, from: f64, h: f64) -> Shape {
     let at = [1.0, 0.0, 0.0, 20.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 1.0, from];
-    Shape::cylinder(r, h).expect("a cylinder").transformed(&at).expect("placed")
+    specimen::placed(&specimen::cylinder(r, h).expect("a cylinder"), &at).expect("placed")
 }
 
 fn built(s: &Shape) -> Built {
-    s.tessellate_merged(0.01).expect("a body")
+    specimen::mesh_merged(s, 0.01).expect("a body")
 }
 
 /// The face of `b` that `wanted` picks, clicked at its centre.
@@ -50,7 +51,7 @@ fn id_of(b: &Built, wanted: impl Fn(&MeshFace) -> bool) -> u32 {
 
 #[test]
 fn a_drilled_hole_is_a_hole_through_of_its_diameter() {
-    let body = plate().boolean(&bore(5.0, -1.0, 12.0), 0).expect("drilled");
+    let body = plate().combined(&bore(5.0, -1.0, 12.0), 0).expect("drilled");
     let b = built(&body);
     let top = id_of(&b, |f| f.normal[2] > 0.99);
     // clicked on the upper half of the wall: drilled from the top
@@ -70,7 +71,7 @@ fn a_drilled_hole_is_a_hole_through_of_its_diameter() {
 fn a_hole_of_flat_strips_is_one_hole_of_its_circle() {
     let mut wrong = Vec::new();
     for sides in [8, 12, 24, 64] {
-        let body = plate().boolean(&prism(sides, 5.0, -1.0, 12.0), 0).expect("cut");
+        let body = plate().combined(&prism(sides, 5.0, -1.0, 12.0), 0).expect("cut");
         let b = built(&body);
         match feature_at(&b.mesh, &b.faces, click(&b, wall_of(5.0)), 1.0) {
             // the corners of the strips lie on the circle of 5
@@ -83,7 +84,7 @@ fn a_hole_of_flat_strips_is_one_hole_of_its_circle() {
 
 #[test]
 fn a_blind_hole_takes_its_bottom_and_its_depth() {
-    let body = plate().boolean(&bore(3.0, 4.0, 7.0), 0).expect("drilled 6 deep");
+    let body = plate().combined(&bore(3.0, 4.0, 7.0), 0).expect("drilled 6 deep");
     let b = built(&body);
     let top = id_of(&b, |f| f.normal[2] > 0.99 && f.centroid.z > 9.9);
     let bottom = id_of(&b, |f| f.normal[2] > 0.99 && (f.centroid.z - 4.0).abs() < 1e-6);
@@ -106,7 +107,7 @@ fn corner_edge(s: &Shape) -> u32 {
 #[test]
 fn a_rounded_edge_is_a_rounding_between_its_two_faces() {
     let p = plate();
-    let body = p.fillet_edges(4.0, &[corner_edge(&p)]).expect("rounded");
+    let body = p.filleted(4.0, &[corner_edge(&p)]).expect("rounded");
     let b = built(&body);
     let (x, y) = (id_of(&b, |f| f.normal[0] > 0.999), id_of(&b, |f| f.normal[1] > 0.999));
     // the rounding is the face round the corner: neither a side nor a cap
@@ -126,7 +127,7 @@ fn a_rounded_edge_is_a_rounding_between_its_two_faces() {
 #[test]
 fn a_cut_edge_is_a_chamfer_of_its_leg() {
     let p = plate();
-    let body = p.chamfer_edges(3.0, &[corner_edge(&p)], &[], &[], &[]).expect("cut");
+    let body = p.chamfered(3.0, &[corner_edge(&p)]).expect("cut");
     let b = built(&body);
     match feature_at(&b.mesh, &b.faces, click(&b, |f| f.normal[0] > 0.1 && f.normal[1] > 0.1), 1.0) {
         Ok(Found::Chamfer(c)) => assert!((c.leg - 3.0).abs() < 1e-3, "cut back {}, not 3", c.leg),
@@ -136,7 +137,7 @@ fn a_cut_edge_is_a_chamfer_of_its_leg() {
 
 #[test]
 fn a_boss_and_a_flat_face_are_no_feature() {
-    let body = plate().boolean(&bore(4.0, 10.0, 5.0), 1).expect("a boss on top");
+    let body = plate().combined(&bore(4.0, 10.0, 5.0), 1).expect("a boss on top");
     let b = built(&body);
     let boss = feature_at(&b.mesh, &b.faces, click(&b, |f| f.normal[2].abs() < 0.1 && f.centroid.z > 10.0), 1.0);
     assert_eq!(boss, Err(Unfound::NoEntry), "a boss is not a hole");
@@ -158,9 +159,9 @@ fn a_measured_size_is_brought_to_what_was_drawn() {
 #[test]
 fn a_rounding_of_flat_strips_is_one_rounding() {
     let p = plate();
-    let exact = p.fillet_edges(4.0, &[corner_edge(&p)]).expect("rounded").boolean(&bore(5.0, -1.0, 12.0), 0).expect("drilled");
-    let mesh = exact.tessellate_merged(0.05).expect("a mesh").mesh;
-    let body = Shape::from_mesh(&mesh).expect("a polyhedron");
+    let exact = p.filleted(4.0, &[corner_edge(&p)]).expect("rounded").combined(&bore(5.0, -1.0, 12.0), 0).expect("drilled");
+    let mesh = qymcad_kernel::specimen::mesh_merged(&exact, 0.05).expect("a mesh").mesh;
+    let body = specimen::from_mesh(&mesh).expect("a polyhedron");
     let b = built(&body);
     let strip = click(&b, |f| f.centroid.x > 36.0 && f.centroid.y > 26.0 && f.normal[2].abs() < 0.1 && f.normal[0] < 0.999 && f.normal[1] < 0.999);
     match feature_at(&b.mesh, &b.faces, strip, 1.0) {

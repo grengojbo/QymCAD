@@ -1427,6 +1427,40 @@ pub(crate) mod tests {
             problems.push(format!("[riser] the top replaced by the sheet 5 above: the solid is {solid:?} mm^3, 40 x 30 x 15 = 18000; status {}", app.status));
         }
 
+        // --- A STEP AND A CHAMFER REACHING EXACTLY TO IT: a plate 30 x 20 x 6 and a rib 4 wide on it, 10 tall; the outer
+        // top edge of the rib chamfered 4 - its leg on the top of the rib ends exactly on the edge of the step. OCCT
+        // degenerates exactly there (a chamfer of 4 on an edge 4 from a step was refused while 3.99999 built), and a
+        // person drawing to a dimension lands there on purpose.
+        app.exit_context();
+        let stepped = app.project.add_part("Step");
+        app.enter_component(stepped);
+        let si9 = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        let mut hand = Hand::new(&mut app);
+        hand.sk_tool(2).click2d(0.0, 0.0).click2d(30.0, 20.0);
+        app.finish_sketch_edit();
+        app.chosen.sel = super::super::Sel::Sketch(si9);
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([15.0, 10.0, 3.0], 8.0).tool(1).op(0).set("height", 6.0).enter();
+        let si10 = app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        let mut hand = Hand::new(&mut app);
+        hand.sk_tool(2).click2d(0.0, 0.0).click2d(4.0, 20.0);
+        app.finish_sketch_edit();
+        app.chosen.sel = super::super::Sel::Sketch(si10);
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([15.0, 10.0, 5.0], 8.0).tool(1).op(1).set("height", 10.0).enter();
+        check_all(&mut app, "a rib 4 wide raised on the plate", &mut problems);
+        let b = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body of the step");
+        qymcad_ui_state::select_body(&mut app.project, &mut app.chosen.sel, &mut app.viewing.view, b);
+        let mut hand = Hand::new(&mut app);
+        hand.look_at([2.0, 10.0, 10.0], 8.0).tool(5).click([0.0, 10.0, 10.0]).set("dist", 4.0).enter();
+        check_all(&mut app, "the top edge of the rib chamfered exactly to the step", &mut problems);
+        let consumed = app.project.consumed_bodies();
+        let solid = app.project.component_bodies(stepped).into_iter().filter(|b| !consumed.contains(b)).filter_map(|b| app.project.bodies.iter().find(|x| x.id == b)).map(|b| b.mesh.volume()).next();
+        // 30 x 20 x 6 + 4 x 20 x 4 less the chamfer, half of 4 x 4 along 20: 3600 + 320 - 160
+        if solid.is_none_or(|v| (v - 3760.0).abs() > 1.0) {
+            problems.push(format!("[step] the chamfer of 4 exactly to the step: the solid is {solid:?} mm^3, 3760 expected; status {}", app.status));
+        }
+
         // --- PARTS WITH THE SAME SET OF TOOLS IN A DIFFERENT ORDER ---
         //
         // Exactly what was asked for: whichever part is entered, all of the operations are there while the
@@ -3361,12 +3395,13 @@ pub(crate) mod tests {
         {
             use super::super::hand::Hand;
             let pi = std::f64::consts::PI;
-            let plate = qymcad_kernel::Shape::extrude(&[500.0, 0.0, 540.0, 0.0, 540.0, 30.0, 500.0, 30.0], 10.0).expect("a plate");
+            use qymcad_kernel::specimen::Specimen;
+            let plate = qymcad_kernel::specimen::extrude(&[500.0, 0.0, 540.0, 0.0, 540.0, 30.0, 500.0, 30.0], 10.0).expect("a plate");
             let at = [1.0, 0.0, 0.0, 520.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 1.0, -1.0];
-            let drilled = plate.boolean(&qymcad_kernel::Shape::cylinder(5.0, 12.0).expect("a drill").transformed(&at).expect("placed"), 0).expect("drilled");
+            let drilled = plate.combined(&qymcad_kernel::specimen::cylinder(5.0, 12.0).expect("a drill").moved(&at).expect("placed"), 0).expect("drilled");
             let folder = crate::gui::check_folder::tests::CheckFolder::new("user-case-print");
             let file = folder.file("printed.3mf").to_string_lossy().into_owned();
-            qymcad_io::export_3mf(&[drilled.tessellate_merged(0.1).expect("a mesh").mesh], &file).expect("the printer's file is written");
+            qymcad_io::export_3mf(&[qymcad_kernel::specimen::mesh_merged(&drilled, 0.1).expect("a mesh").mesh], &file).expect("the printer's file is written");
             // THE WINDOW REBUILDS IN THE BACKGROUND: frames run, as they do by themselves, until nothing is being built
             let at_rest = |h: &mut Hand| {
                 for _ in 0..600 {

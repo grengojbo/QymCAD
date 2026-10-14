@@ -4,15 +4,16 @@
 //!
 //! Reported behaviour: the top and bottom came out free-form surfaces, [4 planes, 1 cylinder, 2 free-form], and the
 //! top pushed up went red: a push refuses a free-form face beside a curved one.
+use qymcad_kernel::specimen::Specimen;
 use qymcad_core::feature::FaceKey;
 use qymcad_core::model::{Id, ImportNode, Project};
 use qymcad_kernel::Shape;
 
 fn drilled() -> Shape {
-    let plate = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate");
+    let plate = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate");
     let at = [1.0, 0.0, 0.0, 20.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 1.0, -1.0];
-    let bore = Shape::cylinder(5.0, 12.0).expect("a cylinder").transformed(&at).expect("placed");
-    plate.boolean(&bore, 0).expect("drilled")
+    let bore = qymcad_kernel::specimen::cylinder(5.0, 12.0).expect("a cylinder").moved(&at).expect("placed");
+    plate.combined(&bore, 0).expect("drilled")
 }
 
 /// The drilled plate come in as a mesh and recognised, with the node of the recognised body.
@@ -20,7 +21,7 @@ fn recognised() -> (Project, Id) {
     let mut p = Project::default();
     p.new_document();
     let source = p.add_source("plate.stl", vec![1]);
-    let src = p.add_mesh(drilled().tessellate_merged(0.1).expect("a mesh").mesh);
+    let src = p.add_mesh(qymcad_kernel::specimen::mesh_merged(&drilled(), 0.1).expect("a mesh").mesh);
     p.import_tree_as_parts(vec![ImportNode { name: "plate".into(), body: Some(src), mesh: true, ..Default::default() }], source, "plate").expect("came in");
     let part = p.timeline.iter().find(|n| n.kind.owns_body(src)).and_then(|n| n.parent);
     p.set_active_component(part);

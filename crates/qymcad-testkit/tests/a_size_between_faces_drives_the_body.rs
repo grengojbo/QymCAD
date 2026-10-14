@@ -3,10 +3,10 @@
 //! drives the body when edited. A chamfer made exact beside a moved face keeps its size. Built with the live kernel.
 //!
 //! Body x which face moves x size: failures are gathered and told together.
+use qymcad_kernel::specimen::Specimen;
 use qymcad_core::feature::{FaceKey, GapMoves};
 use qymcad_core::geom::MeshFace;
 use qymcad_core::model::{Gap, Id, ImportNode, Project};
-use qymcad_kernel::Shape;
 use qymcad_meshfit::feature::{feature_at, Pick};
 
 fn key(f: &MeshFace) -> FaceKey {
@@ -99,19 +99,19 @@ fn a_size_between_faces_not_parallel_is_refused_in_words() {
 /// made 50 apart by moving the side beside the chamfer. The chamfer keeps its leg: the plate grows by 30 x 10 x 10.
 #[test]
 fn a_size_beside_a_chamfer_made_exact_keeps_the_chamfer() {
-    let plate = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate");
+    let plate = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate");
     let edge = plate.edges_info().into_iter().find(|e| e.poly.iter().all(|q| (q[0] as f64 - 40.0).abs() < 1e-6 && (q[1] as f64 - 30.0).abs() < 1e-6)).map(|e| e.id).expect("the corner edge");
-    let exact = plate.chamfer_edges(3.0, &[edge], &[], &[], &[]).expect("cut");
+    let exact = plate.chamfered(3.0, &[edge]).expect("cut");
     let mut p = Project::default();
     p.new_document();
     let source = p.add_source("plate.stl", vec![1]);
-    let src = p.add_mesh(exact.tessellate_merged(0.1).expect("a mesh").mesh);
+    let src = p.add_mesh(qymcad_kernel::specimen::mesh_merged(&exact, 0.1).expect("a mesh").mesh);
     p.import_tree_as_parts(vec![ImportNode { name: "plate".into(), body: Some(src), mesh: true, ..Default::default() }], source, "plate").expect("the mesh came in");
     let part = p.timeline.iter().find(|n| n.kind.owns_body(src)).and_then(|n| n.parent);
     p.set_active_component(part);
     let body = p.add_mesh_solid(src, 0.0);
     let (_, shapes) = qymcad_testkit::regenerate(&mut p);
-    let built = shapes.get(&body).and_then(|s| s.tessellate_merged(0.01)).expect("the body is built");
+    let built = shapes.get(&body).and_then(|s| qymcad_kernel::specimen::mesh_merged(s, 0.01)).expect("the body is built");
     let f = built.faces.iter().find(|f| f.normal[0] > 0.1 && f.normal[1] > 0.1).expect("the face of the chamfer");
     let found = feature_at(&built.mesh, &built.faces, Pick { face: f.id, at: [f.centroid.x, f.centroid.y, f.centroid.z] }, 1.0).expect("the chamfer found");
     let faces = p.regen_faces.get(&body).cloned().unwrap_or_default();

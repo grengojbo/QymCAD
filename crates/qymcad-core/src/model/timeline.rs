@@ -90,7 +90,9 @@ impl Project {
                 break;
             }
         }
-        let bodies: Vec<Id> = doomed.iter().copied().filter(|id| *id != sid).collect();
+        // by id: a set's order is chosen at random for every set, and this list is returned and its bodies remembered
+        let mut bodies: Vec<Id> = doomed.iter().copied().filter(|id| *id != sid).collect();
+        bodies.sort_unstable();
         // Owners of the doomed bodies, captured before the deletion: they are used to mark whoever copies
         // those parts.
         let orphaned: std::collections::HashSet<Id> = bodies.iter().filter_map(|b| self.body_owner(*b)).collect();
@@ -260,11 +262,14 @@ impl Project {
         // What is remembered is the bodies rather than the connectors: a body disappears once and for all, and
         // from it one can both say which anchor died and avoid confusing that with a body that is not built
         // yet.
-        for b in removed {
-            if !live.contains(b) && !self.dead_bodies.contains(b) {
-                self.dead_bodies.push(*b);
-            }
-        }
+        //
+        // Each deletion's bodies are appended by id. The callers hand them over in the order of a `HashSet`, which is
+        // chosen at random for every set, and this list is saved with the document: the same edit saved twice gave two
+        // files. (The list as a whole is in the order of the deletions; a file saved before keeps the order it had.)
+        let mut newly: Vec<Id> = removed.iter().copied().filter(|b| !live.contains(b) && !self.dead_bodies.contains(b)).collect();
+        newly.sort_unstable();
+        newly.dedup();
+        self.dead_bodies.extend(newly);
         let _ = dead;
     }
 
@@ -1465,7 +1470,9 @@ impl Project {
     pub fn add_move(&mut self, src: Id, mat: [f64; 12]) -> Id {
         use crate::feature::{FeatureKind, FeatureNode};
         let body = self.alloc_id();
-        let parent = Some(self.body_parent());
+        // the move of a body stands in the part the body stands in: laid in the assembly in hand, it read a body of
+        // another component and was refused
+        let parent = Some(self.body_owner(src).unwrap_or_else(|| self.body_parent()));
         self.push_timeline(FeatureNode { id: body, name: "feat-name-move".into(), kind: FeatureKind::Move { src, mat, body }, parent, dirty: true, suppressed: false });
         body
     }

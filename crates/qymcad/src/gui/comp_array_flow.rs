@@ -61,6 +61,30 @@ pub(super) mod tests {
         assert_eq!(app.side.carr.mode, 0, "after applying, the command closes");
     }
 
+    /// A GRID PAST THE LIMIT IS REFUSED WITH THE LIMIT IN WORDS: 101 by 100 is 10,100 instances, past
+    /// `MAX_PATTERN_INSTANCES`, and each count is within the 512 its field takes. Walked as a person walks it, in real
+    /// frames: the part picked in the tree, the button, the counts typed into the bar, the second direction ticked on,
+    /// Enter. Without the limit the zero the count read as was taken for "a pattern of one instance".
+    #[test]
+    fn a_grid_past_the_limit_is_refused_with_its_numbers() {
+        let mut app = App::default();
+        let comp = assembly_with_part(&mut app);
+        let name = app.project.components.iter().find(|c| c.id == comp).map(|c| qymcad_i18n::name(&c.name)).expect("the part");
+        let mut hand = super::super::hand::Hand::new(&mut app);
+        assert!(hand.press_word(&name, egui::pos2(0.0, 0.0)), "setup: the part {name:?} is picked in the tree");
+        assert!(hand.press_hint(&qymcad_i18n::tr("tb-comp-lin-array-hint")), "the button of a linear component array");
+        assert_eq!(hand.app.side.carr.src, comp, "the command took another source; the status line: {}", hand.app.status);
+        assert!(hand.type_after_word(&qymcad_i18n::tr("cmd-copies"), "101"), "the field of the copies");
+        assert!(hand.press_word(&qymcad_i18n::tr("cmd-dir2"), egui::pos2(0.0, 0.0)), "the tick of the second direction, pressed on its word");
+        assert!(hand.type_after_word(&qymcad_i18n::tr("cmd-dir2"), "100"), "the field of the second direction");
+        hand.set("cstep", 30.0).set("cstep2", 30.0); // the steps: the fields at the geometry
+        hand.key(egui::Key::Enter); // the typing in the field ends
+        hand.key(egui::Key::Enter); // the command applies
+        assert!(hand.app.project.comp_pattern_of(comp).is_none(), "a grid past the limit was made; the status line: {}", hand.app.status);
+        let limit = qymcad_core::feature::MAX_PATTERN_INSTANCES.to_string();
+        assert!(hand.app.status.contains("10100") && hand.app.status.contains(&limit), "the refusal does not name the grid and the limit: {}", hand.app.status);
+    }
+
     /// With no part selected the command does not start and says why.
     #[test]
     fn without_a_part_the_command_refuses() {

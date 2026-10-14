@@ -5,6 +5,7 @@ pub(crate) use qymcad_ui_state::ensure_brep;
 #[allow(unused_imports)] // used by the checks through this module, which is the address they know
 pub(crate) use qymcad_ui_state::regenerate_now;
 use super::*;
+use qymcad_kernel::worker;
 use crate::gui::export_folder::{export_folder, project_folder, remember_export};
 use crate::gui::file_ask::Question;
 
@@ -82,8 +83,8 @@ impl App {
     pub(super) fn spawn_import_shapes(&mut self, regen: bool) {
         let project = self.project.clone();
         let (tx, rx) = std::sync::mpsc::channel();
-        std::thread::spawn(move || {
-            let shapes = qymcad_doc::brep::import_shapes(&project);
+        worker(move || {
+            let shapes = qymcad_kernel::imports::raise_imports(&project);
             let _ = tx.send(JobResult::ImportShapes { shapes, regen });
         });
         if regen {
@@ -292,7 +293,7 @@ impl App {
         let (tx, rx) = std::sync::mpsc::channel();
         let pulse = std::sync::Arc::new(qymcad_ui_state::RegenPulse { stamp, ..Default::default() });
         let watch = pulse.clone();
-        std::thread::spawn(move || rebuild_in_worker(proj, shapes, quality_k, watch, stamp, tx));
+        worker(move || rebuild_in_worker(proj, shapes, quality_k, watch, stamp, tx));
         // WHAT EXACTLY IS BEING REBUILT IS ASKED IN ADVANCE, and how to announce it depends on the answer.
         //
         // Reported: a cut in a single part pops up a modal window and makes you wait. A modal window over a
@@ -637,10 +638,8 @@ pub(crate) fn spawn_project_load(regen: &mut super::Rebuilding, path: String) {
                                            // model is already on screen.
                                            // LIVE BODIES ARE PARSED RIGHT HERE, IN THE THREAD: on the UI thread this would be a
                                            // freeze of exactly the kind we are getting away from.
-                let shapes = {
-                    let _gate = qymcad_kernel::kernel_gate();
-                    breps.into_iter().filter_map(|(id, b)| qymcad_kernel::Shape::from_brep_bytes(&b).map(|s| (id, s))).collect()
-                };
+                let saved = breps.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
+                let shapes = qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)).collect();
                 JobResult::ProjectLoaded { path, project: Box::new(project), shapes }
             }
             Err(e) => JobResult::Failed(crate::i18n::tr1("io-open-error", "error", &crate::i18n::name(&e.to_string()))),
@@ -756,7 +755,7 @@ pub(crate) fn write_mesh_to(ed: qymcad_ui_state::Editing, live: &mut LiveGeom, p
     let out = qymcad_doc::export::MeshOut { format, deflection, tree: job.tree.clone() };
     let p = path.to_string_lossy().into_owned();
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
+    worker(move || {
         // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT, as a rebuild's does not (`rebuild_in_worker`): the
         // bodies came into this thread from the cache and go back only in the result, so the work that may panic is
         // caught and the shapes are sent home whatever came of it. Unwind-safe as asserted: after a panic only `moved`
@@ -937,7 +936,7 @@ pub(crate) fn write_exact_to(live: &mut LiveGeom, project: &mut Project, regen: 
     let note = note.to_string();
     let tree = job.tree.clone();
     let (tx, rx) = std::sync::mpsc::channel();
-    std::thread::spawn(move || {
+    worker(move || {
         // A PANIC IN THE EXPORT DOES NOT TAKE THE LIVE B-rep WITH IT: caught as in `write_mesh_to`, the shapes sent home
         // whatever came of the write.
         let status = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {

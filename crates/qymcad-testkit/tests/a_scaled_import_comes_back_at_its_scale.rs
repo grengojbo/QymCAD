@@ -7,14 +7,14 @@
 //! 16 387 064 mm^3, so every check built on `open_like_the_app` measured a document the window never shows.
 use qymcad_core::feature::PLACE_IDENTITY;
 use qymcad_core::model::Project;
-use qymcad_kernel::{import_step, write_step, Shape};
+use qymcad_kernel::{import_step, write_step};
 
 #[test]
 fn a_scaled_import_comes_back_at_its_scale() {
     let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/scaled-import"));
     std::fs::create_dir_all(&dir).expect("a folder for the check");
     let path = dir.join("cube.step");
-    let cube = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
     write_step(&[(&cube, PLACE_IDENTITY)], &path.to_string_lossy()).expect("the STEP is written");
 
     let mut p = Project::default();

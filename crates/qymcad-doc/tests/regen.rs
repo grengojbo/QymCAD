@@ -62,9 +62,9 @@ fn a_changed_parameter_rebuilds_what_reads_it_and_nothing_else() {
 #[test]
 fn a_body_no_node_owns_goes_with_its_shape() {
     let (mut p, body) = block(40.0, 30.0, "10");
-    let ghost = p.add_mesh(qymcad_kernel::box_mesh(5.0, 5.0, 5.0, 0.1));
+    let ghost = p.add_mesh(qymcad_kernel::specimen::mesh_merged(&qymcad_kernel::specimen::extrude(&[0.0, 0.0, 5.0, 0.0, 5.0, 5.0, 0.0, 5.0], 5.0).expect("a box"), 0.1).expect("its mesh").mesh);
     let mut shapes: HashMap<Id, Shape> = HashMap::new();
-    shapes.insert(ghost, Shape::cylinder(1.0, 1.0).expect("a cylinder"));
+    shapes.insert(ghost, qymcad_kernel::specimen::cylinder(1.0, 1.0).expect("a cylinder"));
     let mut seen = HashMap::new();
     let _ = regen::run(&mut p, &mut shapes, &mut seen, None);
     assert!(p.mesh_index(ghost).is_none(), "the mesh no node owns is still in the document");

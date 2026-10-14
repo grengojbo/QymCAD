@@ -4534,7 +4534,7 @@ pub fn translate_selected(sk: &mut qymcad_ui_state::SketchCtx, dx: f64, dy: f64)
         }
         qymcad_ui_state::Sel::Mesh(i) if i < sk.project.bodies.len() => {
             qymcad_ui_state::move_body_at(&mut sk.rebuild(), i, qymcad_ui_state::mat_translate(dx, dy, 0.0));
-            // a B-rep gets a Move feature; a raw mesh is simply shifted
+            // a Move feature, a raw mesh's moved by the document
         }
         _ => {}
     }

@@ -777,6 +777,20 @@ pub struct MeshFace {
     pub id: u32,
 }
 
+impl MeshFace {
+    /// The face of a mesh moved by the 3x4 matrix `m` as its mesh is (`Mesh::transform`): its centroid placed, its normal
+    /// turned; a move or a turn keeps its area.
+    pub fn transformed(&self, m: &[f64; 12]) -> MeshFace {
+        let c = crate::feature::apply12(m, [self.centroid.x, self.centroid.y, self.centroid.z]);
+        MeshFace { centroid: Point3::new(c[0], c[1], c[2]), normal: crate::feature::apply12_dir(m, self.normal), ..self.clone() }
+    }
+
+    /// The face of a mesh scaled by `f` about the origin as its mesh is: its centroid with it, its area as the square.
+    pub fn scaled(&self, f: f64) -> MeshFace {
+        MeshFace { centroid: Point3::new(self.centroid.x * f, self.centroid.y * f, self.centroid.z * f), area: self.area * f * f, ..self.clone() }
+    }
+}
+
 /// WHAT THE KERNEL GIVES BACK FOR ONE NODE: the triangles of the body and the faces they are grouped into, each
 /// face carrying its persistent id.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -828,6 +842,10 @@ pub struct MeshEdge {
     /// between faces with no names - a body made of a mesh, a body come from a STEP - has none: it is found by these.
     #[serde(default)]
     pub faces: EdgeFaces,
+    /// The names of the two ends, at `a` and at `b`: the vertex of the topology each end stands on, named by the edges
+    /// that meet at it. Given by the bridge with the edge; a vertex has nothing of its own but its place and its edges.
+    #[serde(default)]
+    pub ends: [crate::names::VertexName; 2],
 }
 
 /// The two faces an edge parts, by their persistent ids; both zero where the edge parts no two.

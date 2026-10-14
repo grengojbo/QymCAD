@@ -158,8 +158,8 @@ fn a_3mf_keeps_its_parts_by_name_and_colour() {
 fn a_body_with_no_brep_goes_into_a_mesh_and_is_told_missing_from_a_step() {
     let dir = out_dir("mesh-only");
     let stl = dir.join("cube.stl").to_string_lossy().into_owned();
-    let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
-    let mesh = cube.tessellate_merged(0.1).expect("the cube tessellates").mesh;
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+    let mesh = qymcad_kernel::specimen::mesh_merged(&cube, 0.1).expect("the cube tessellates").mesh;
     qymcad_io::export_stl(&[mesh], &stl).expect("the STL is written");
     let mut d = DocEngine::blank();
     let came = d.import(&stl, 1.0, &same_name).expect("the STL comes in");

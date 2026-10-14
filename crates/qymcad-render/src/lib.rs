@@ -1257,7 +1257,9 @@ pub fn draw_array_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         } else {
             (0.0, 0.0, 0.0, 1)
         };
-        for i in 0..pn.arr.count.max(1) {
+        // past the limit the pattern will be refused, and drawing its copies one by one would hold every frame
+        let (c1, c2, c3) = if qymcad_core::feature::pattern_instances(&[pn.arr.count, c2, c3]).is_some() { (pn.arr.count.max(1), c2, c3) } else { (1, 1, 1) };
+        for i in 0..c1 {
             for j in 0..c2 {
                 for l in 0..c3 {
                     if i == 0 && j == 0 && l == 0 {
@@ -3939,13 +3941,13 @@ pub fn draw_fillet_vertices(pn: &Painting, painter: &egui::Painter, rect: Rect) 
         return;
     }
     let basis = pn.cam.basis();
-    for (pt, ids) in pn.project.vertex_spots(body) {
+    for qymcad_core::model::VertexSpot { at: pt, name } in pn.project.vertex_spots(body) {
         let on_picked = picked.iter().flatten().any(|p| (p[0] - pt[0]).abs() < 1e-6 && (p[1] - pt[1]).abs() < 1e-6 && (p[2] - pt[2]).abs() < 1e-6);
         if !on_picked {
             continue;
         }
         // THE NAME IS ASKED FOR, NOT CREATED: drawing has no business adding to the document's table.
-        let own = pn.project.names.vertex_desc(&qymcad_core::names::VertexName::new(ids)).is_some_and(|d| pn.cmd.params.iter().any(|p| p.key == format!("at{d}")));
+        let own = pn.project.names.vertex_desc(&name).is_some_and(|d| pn.cmd.params.iter().any(|p| p.key == format!("at{d}")));
         let sc = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis }.at(pt).0;
         let (r, col) = if own { (4.5, pn.scheme.pal.active()) } else { (3.0, pn.scheme.pal.handle_face()) };
         painter.circle_filled(sc, r, col);

@@ -371,6 +371,7 @@ fn every_core_error_has_words_in_every_language() {
         X::UnexpectedToken("]".into()),
         X::TrailingInput("xx".into()),
         X::NotANumber,
+        X::TooDeep { limit: 256 },
     ] {
         samples.push(E::Expr(x));
     }

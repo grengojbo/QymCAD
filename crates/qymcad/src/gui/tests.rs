@@ -295,7 +295,7 @@ mod command_flow_tests {
     /// measured with it.
     fn live_volume(app: &App) -> f64 {
         let consumed = qymcad_ui_state::consumed_bodies(&app.project);
-        app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| s.tessellate(0.02).iter().map(|b| b.mesh.volume()).sum::<f64>()).sum()
+        app.live.shapes.iter().filter(|(b, _)| !consumed.contains(b)).map(|(_, s)| qymcad_kernel::specimen::mesh(s, 0.02).iter().map(|b| b.mesh.volume()).sum::<f64>()).sum()
     }
 
     /// Run the thread command on a shaft through the FULL GUI flow and return the volume removed.
@@ -1032,7 +1032,7 @@ mod command_flow_tests {
         let _ = std::fs::remove_file(&proj_path);
 
         // a real embedded source: a block, then STEP, then the bytes into the project plus an import node on them
-        let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("the block");
+        let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("the block");
         qymcad_kernel::write_step(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], step.to_string_lossy().as_ref()).expect("the step was written");
         let bytes = std::fs::read(&step).expect("the step's bytes");
         let mut app = App::default();
@@ -2508,7 +2508,7 @@ mod sketch_plane_pick_frames_tests {
     //! rebuild window flickered back and forth leaving nothing possible to do. What runs here is A REAL frame
     //! loop: the plane pick calls `refresh_edges` every frame while the scheduler starts the deferred rebuild and
     //! takes its result. How many rebuilds start over 12 frames is counted: the right answer is ONE.
-    use super::{App, BgKind, Busy, JobResult, Picking, Sel};
+    use super::{App, BgKind, JobResult, Picking, Sel};
 
     /// One frame of the scheduler: if a rebuild was requested and the queue is free, start it and wait.
     /// This is what `tick_async` does in a live window, only without egui.
@@ -2519,8 +2519,8 @@ mod sketch_plane_pick_frames_tests {
             app.spawn_regen();
             *regens += 1;
         }
-        if let Some(Busy { rx, kind: BgKind::Regen, .. }) = app.regen.busy.take() {
-            match rx.recv().expect("the rebuild thread reported back") {
+        if let Some(busy) = app.regen.busy.take().filter(|b| b.kind == BgKind::Regen) {
+            match busy.rx.recv().expect("the rebuild thread reported back") {
                 JobResult::Regenerated { stamp, project, shapes, built, errors, cancelled } => app.finish_regen_checked(stamp, *project, shapes, built, errors, cancelled),
                 _ => panic!("a rebuild result was expected"),
             }

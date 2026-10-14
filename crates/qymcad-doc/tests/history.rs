@@ -169,7 +169,7 @@ fn an_import_taken_back_and_put_again_keeps_its_live_body_and_its_source() {
     let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-doc-history"));
     std::fs::create_dir_all(&dir).expect("a folder for the check");
     let path = dir.join("cube.step");
-    let cube = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
     write_step(&[(&cube, PLACE_IDENTITY)], &path.to_string_lossy()).expect("the STEP is written");
 
     let mut d = Doc::new();
@@ -178,7 +178,7 @@ fn an_import_taken_back_and_put_again_keeps_its_live_body_and_its_source() {
         let mesh = import_step(&path.to_string_lossy(), 0.5).expect("the STEP imports").remove(0).mesh;
         let body = p.add_mesh(mesh);
         p.import_tree_as_parts(vec![qymcad_core::model::ImportNode { name: "cube".into(), body: Some(body), ..Default::default() }], source, "cube");
-        shapes.extend(brep::import_shapes(p));
+        shapes.extend(qymcad_kernel::imports::raise_imports(p));
         (body, source)
     });
     let bytes = |d: &Doc| d.p.sources.iter().find(|s| s.id == source).map_or(0, |s| s.data.len());

@@ -200,7 +200,7 @@ pub fn write_mesh(out: &MeshOut, solids: &[(Id, &Shape, [f64; 12])], stored: Vec
     let mut own: Vec<Placed> = Vec::with_capacity(solids.len() + stored.len());
     let mut failed = 0usize;
     for (id, s, m) in solids {
-        if let Some(Built { mesh, faces }) = s.tessellate_merged(out.deflection) {
+        if let Some(Built { mesh, faces }) = qymcad_kernel::ask::export_mesh(s, out.deflection) {
             let tri = tri_colours(&out.tree, *id, &mesh, &faces);
             own.push(Placed { own: ExportMesh { body: *id, mesh, tri_colors: tri }, place: *m });
         } else {

@@ -1188,8 +1188,7 @@ pub fn split_plane_local(pc: &mut qymcad_ui_state::PartCtx, src: Id) -> Option<(
 pub fn split_piece_count(pc: &mut qymcad_ui_state::PartCtx, src: Id) -> Option<usize> {
     let (o, n) = split_plane_local(pc, src)?;
     qymcad_ui_state::ensure_brep(&mut pc.rebuild()); // there is nothing to cut with while there is no live B-rep
-    let sh = pc.live.shapes.get(&src)?;
-    sh.split_by_plane(o, n, 0).map(|v| v.len())
+    qymcad_kernel::ask::split_pieces(pc.live.shapes.get(&src)?, qymcad_core::feature::PlaneAt { origin: o, normal: n })
 }
 
 /// Apply the thickening: one selected face plus a thickness.
@@ -1227,7 +1226,7 @@ pub fn apply_split_face_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id> {
     // nothing, and a node in the timeline that is certain to go red is of no use to anyone.
     let (o, n) = split_plane_local(pc, src)?;
     qymcad_ui_state::ensure_brep(&mut pc.rebuild());
-    if pc.live.shapes.get(&src).and_then(|sh| sh.split_faces(o, n)).is_none() {
+    if !pc.live.shapes.get(&src).is_some_and(|sh| qymcad_kernel::ask::splits_faces(sh, qymcad_core::feature::PlaneAt { origin: o, normal: n })) {
         *pc.status = qymcad_i18n::tr("msg-plane-splits-nothing");
         return None;
     }
@@ -1419,6 +1418,11 @@ pub fn apply_comp_giz(pc: &mut qymcad_ui_state::PartCtx) {
 /// Whether the command is ready to apply (the required selection exists) - for highlighting the button
 /// and the field.
 pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
+    // A FILLET AND A CHAMFER ROUND THE EDGES PICKED, an edited one too: one whose edges were all lost opens with none, and
+    // to the kernel an empty list is every edge - its preview lit the whole part green, and Enter would have rounded it
+    if pc.cmd.edit.is_some() && matches!(pc.armed.cmd_kind(), 4 | 5) {
+        return !pc.gsel.edges.is_empty();
+    }
     if pc.cmd.edit.is_some() {
         return true; // editing an existing feature - the input is already valid
     }
@@ -1744,8 +1748,7 @@ pub fn apply_surface_replace_cmd(pc: &mut qymcad_ui_state::PartCtx) -> Option<Id
     // THE SHEET MUST CLOSE WHAT IS TAKEN AWAY, and that is asked of the live bodies before Enter lays a node: a sheet
     // over the top taken for the top and a side left the side open - the node came in red, "4 edges left unpaired".
     if let (Some(b), Some(sheet)) = (pc.live.shapes.get(&src), pc.live.shapes.get(&surface)) {
-        let _gate = qymcad_kernel::kernel_gate(); // the kernel is not safe to run beside a rebuild
-        if let Err(free) = b.replace_faces(&picks, sheet, 1e-4) {
+        if let Err(free) = qymcad_kernel::ask::sheet_closes(b, &picks, sheet) {
             *pc.status = qymcad_i18n::error_words::error_text(&qymcad_core::errors::CoreError::SurfaceDoesNotClose { free });
             return None;
         }
@@ -1888,6 +1891,11 @@ pub fn apply_comp_array(pc: &mut qymcad_ui_state::PartCtx) {
         return;
     }
     let kind = qymcad_ui_state::comp_array_kind(*pc.arr, pc.carr, pc.cmd);
+    // a layout past the limit is refused with the limit in words, before the "one instance" reading of a zero count
+    if kind.count() == 0 {
+        *pc.status = qymcad_i18n::error_words::error_text(&qymcad_core::feature::pattern_too_large(&kind.counts()));
+        return;
+    }
     // a row of one instance is the source alone: nothing to make, and said so
     if kind.count() < 2 {
         *pc.status = qymcad_i18n::tr("msg-comp-array-one");
@@ -2571,7 +2579,7 @@ pub fn take_boolean_pick(pc: &mut qymcad_ui_state::PartCtx, hit: Option<Id>) {
             // pieces of a split only touch), is refused in words and the document is not touched, rather than laying a
             // node that goes red. Without both shapes (a mesh, a body not built yet) the rebuild judges it as before.
             if let (0 | 2, Some(sa), Some(sb)) = (op, pc.live.shapes.get(&a), pc.live.shapes.get(&b)) {
-                if let Err(why) = sa.boolean_checked(sb, op) {
+                if let Err(why) = qymcad_kernel::ask::boolean_gives_body(sa, sb, op) {
                     *pc.status = qymcad_i18n::tr(match why {
                         qymcad_kernel::BoolVerdict::NothingInCommon => "vp-bool-nothing-in-common",
                         qymcad_kernel::BoolVerdict::CutRemovedNothing => "vp-bool-cut-removes-nothing",
@@ -3387,8 +3395,7 @@ pub fn apply_feat_cmd(pc: &mut qymcad_ui_state::PartCtx) {
 }
 
 /// Apply the world transform `accum` to the body of mesh `mi`: if the body is already a Move feature,
-/// accumulate into its matrix (no chain of Move nodes); otherwise create a new Move for a B-rep, or
-/// shift a raw mesh directly.
+/// accumulate into its matrix (no chain of Move nodes); otherwise create a new Move, for a B-rep and a raw mesh alike.
 pub fn apply_body_move(pc: &mut qymcad_ui_state::PartCtx, mi: usize, accum: [f64; 12]) {
     qymcad_ui_state::begin_edit(&mut *pc.edits, &*pc.project, qymcad_i18n::tr("status-move-body")); // THE BOUNDARY OF AN OPERATION
     use qymcad_core::feature::FeatureKind;
@@ -3399,7 +3406,7 @@ pub fn apply_body_move(pc: &mut qymcad_ui_state::PartCtx, mi: usize, accum: [f64
         qymcad_ui_state::mark_dirty_for_rebuild(&mut pc.rebuild()); // the document is marked; the planner does the counting
         qymcad_ui_state::select_body(&mut *pc.project, &mut *pc.sel, &mut *pc.view, body);
     } else {
-        qymcad_ui_state::move_body_at(&mut pc.rebuild(), mi, accum); // a B-rep gets a new Move feature (and selection); a raw mesh is shifted directly
+        qymcad_ui_state::move_body_at(&mut pc.rebuild(), mi, accum); // a new Move feature (and selection), a raw mesh's moved by the document
     }
     qymcad_ui_state::after_placement_change(&mut pc.rebuild()); // the source moved -> rebuild whoever consumes it
     qymcad_ui_state::commit_edit(&mut pc.rebuild());

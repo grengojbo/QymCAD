@@ -3080,7 +3080,7 @@ pub(super) fn open_exact(regen: &mut Rebuilding, path: String, format: qymcad_ke
     let name = exact_entry(format).name();
     let (tx, rx) = std::sync::mpsc::channel();
     let p = path.clone();
-    std::thread::spawn(move || {
+    qymcad_kernel::worker(move || {
         // ONE READING for both the bodies shown and the live solids: reading the file twice cost the whole wait twice
         let res = match qymcad_kernel::read_exact_tree(format, &p, 0.5) {
             Ok(qymcad_kernel::ExactTree { bodies, shapes, nodes }) if !bodies.is_empty() => JobResult::ExactImported { path: p, format, bodies, shapes, nodes },
@@ -3789,36 +3789,23 @@ pub(crate) fn refresh_interference(bv: qymcad_ui_state::BodyView, drag: qymcad_u
     if interference.rev == bv.regen.geom_rev {
         return;
     }
-    interference.rev = bv.regen.geom_rev;
     let ctx = current_ctx_id(bv.active_path, bv.project);
-    // the visible bodies that have an owning component become shapes in the context's frame (transformed once)
-    let mut placed: Vec<(Id, Id, qymcad_kernel::Shape)> = Vec::new();
-    for mi in 0..bv.project.bodies.len() {
-        if !body_shown(bv, mi) {
-            continue;
-        }
-        let Some(body) = bv.project.mesh_id(mi) else { continue };
-        let Some(owner) = bv.project.body_owner(body) else { continue };
-        let wt = bv.project.body_display_transform(body, ctx);
-        if let Some(ws) = live.shapes.get(&body).and_then(|s| s.transformed(&wt)) {
-            placed.push((body, owner, ws));
-        }
-    }
-    let mut pairs = Vec::new();
-    for i in 0..placed.len() {
-        for j in (i + 1)..placed.len() {
-            if placed[i].1 == placed[j].1 {
-                continue; // bodies of the same part: their overlap is normal, not interference
-            }
-            // A PAIR THE KERNEL CANNOT MEASURE IS FLAGGED TOO. "Could not measure" is not "they are
-            // clear of each other", and treating it as the second is how a part ends up sitting inside
-            // another one with nothing said about it.
-            if placed[i].2.interference_volume(&placed[j].2).is_none_or(|v| v > 1e-3) {
-                pairs.push((placed[i].0, placed[j].0));
-            }
-        }
-    }
-    interference.pairs = pairs;
+    // the visible bodies that have an owning component, each where it stands in the context; the bridge asks the clash
+    let placed: Vec<qymcad_kernel::ask::PlacedBody<'_>> = (0..bv.project.bodies.len())
+        .filter(|&mi| body_shown(bv, mi))
+        .filter_map(|mi| bv.project.mesh_id(mi))
+        .filter_map(|body| {
+            let part = bv.project.body_owner(body)?;
+            let shape = live.shapes.get(&body)?;
+            Some(qymcad_kernel::ask::PlacedBody { body, part, shape, place: bv.project.body_display_transform(body, ctx) })
+        })
+        .collect();
+    // while this window rebuilds, the pairs as they were, asked again on a later frame; otherwise the kernel is waited for,
+    // whoever holds it being quick
+    let wait = if bv.regen.busy.is_some() { qymcad_kernel::ask::Wait::IfFree } else { qymcad_kernel::ask::Wait::Always };
+    let Some(clashes) = qymcad_kernel::ask::clashes(&placed, wait) else { return };
+    interference.pairs = clashes.into_iter().map(|c| (c.a, c.b)).collect();
+    interference.rev = bv.regen.geom_rev;
 }
 
 #[cfg(test)]
@@ -3841,6 +3828,7 @@ mod described_picks;
 mod a_face_pick_reopens_with_its_face;
 /// A fillet with a radius at a corner reopens with that corner: `gui/a_variable_fillet_reopens_with_its_corners.rs`.
 mod a_variable_fillet_reopens_with_its_corners;
+mod a_fillet_with_its_edges_lost_waits_for_edges;
 mod expand_selection;
 mod sketch_sweep;
 mod input;
@@ -4036,6 +4024,8 @@ mod long_values;
 mod modal_barrier;
 mod open_keeps_brep;
 mod regen_live_view;
+mod the_program_ends_during_a_rebuild;
+mod the_program_ends_during_a_trial;
 mod recognise_then_delete;
 mod extrude_arrow_mouse;
 mod angle_dim_drag;
@@ -4166,6 +4156,7 @@ mod format_samples_look;
 mod import_door;
 pub(crate) mod check_folder;
 mod an_iges_import_survives_reopening;
+mod an_import_keeps_its_names_on_opening;
 mod a_step_assembly_lands_as_its_tree;
 mod a_component_stepped_into_is_not_lit;
 mod a_broken_part_is_no_ghost_elsewhere;

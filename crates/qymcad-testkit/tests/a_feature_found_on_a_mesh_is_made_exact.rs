@@ -5,18 +5,19 @@
 //! live kernel.
 //!
 //! Tool x mode x mesh: failures are gathered and told together.
+use qymcad_kernel::specimen::Specimen;
 use qymcad_core::model::{Id, ImportNode, Project};
 use qymcad_kernel::Shape;
 use qymcad_meshfit::feature::{feature_at, Pick};
 
 fn plate() -> Shape {
-    Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate")
+    qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate")
 }
 
 /// A cylinder of `r` round (20, 15), from z = `from` up `h`.
 fn bore(r: f64, from: f64, h: f64) -> Shape {
     let at = [1.0, 0.0, 0.0, 20.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 1.0, from];
-    Shape::cylinder(r, h).expect("a cylinder").transformed(&at).expect("placed")
+    qymcad_kernel::specimen::cylinder(r, h).expect("a cylinder").moved(&at).expect("placed")
 }
 
 /// The edge of the plate at x = 40, y = 30, by its id.
@@ -42,13 +43,13 @@ fn cases() -> Vec<Case> {
     let corner = |f: &qymcad_core::geom::MeshFace| f.centroid.x > 36.0 && f.centroid.y > 26.0 && f.normal[2].abs() < 0.1 && f.normal[0] < 0.999 && f.normal[1] < 0.999;
     let pi = std::f64::consts::PI;
     vec![
-        Case { name: "hole through", exact: || plate().boolean(&bore(5.0, -1.0, 12.0), 0).expect("drilled"), clicked: wall, size: "diameter", edited: "6", edited_volume: BLOCK - pi * 9.0 * 10.0 },
-        Case { name: "blind hole", exact: || plate().boolean(&bore(3.0, 4.0, 7.0), 0).expect("drilled"), clicked: wall, size: "depth", edited: "3", edited_volume: BLOCK - pi * 9.0 * 3.0 },
+        Case { name: "hole through", exact: || plate().combined(&bore(5.0, -1.0, 12.0), 0).expect("drilled"), clicked: wall, size: "diameter", edited: "6", edited_volume: BLOCK - pi * 9.0 * 10.0 },
+        Case { name: "blind hole", exact: || plate().combined(&bore(3.0, 4.0, 7.0), 0).expect("drilled"), clicked: wall, size: "depth", edited: "3", edited_volume: BLOCK - pi * 9.0 * 3.0 },
         Case {
             name: "rounding",
             exact: || {
                 let p = plate();
-                p.fillet_edges(4.0, &[corner_edge(&p)]).expect("rounded")
+                p.filleted(4.0, &[corner_edge(&p)]).expect("rounded")
             },
             clicked: corner,
             size: "radius",
@@ -59,7 +60,7 @@ fn cases() -> Vec<Case> {
             name: "chamfer",
             exact: || {
                 let p = plate();
-                p.chamfer_edges(3.0, &[corner_edge(&p)], &[], &[], &[]).expect("cut")
+                p.chamfered(3.0, &[corner_edge(&p)]).expect("cut")
             },
             clicked: |f| f.normal[0] > 0.1 && f.normal[1] > 0.1,
             size: "dist",
@@ -79,7 +80,7 @@ enum Mode {
 fn run(case: &Case, mode: Mode, deflection: f64) -> Result<(), String> {
     let exact = (case.exact)();
     let want = exact.volume();
-    let mesh = exact.tessellate_merged(deflection).ok_or("no mesh")?.mesh;
+    let mesh = qymcad_kernel::specimen::mesh_merged(&exact, deflection).ok_or("no mesh")?.mesh;
     let mut p = Project::default();
     p.new_document();
     let source = p.add_source("plate.stl", vec![1]);
@@ -92,7 +93,7 @@ fn run(case: &Case, mode: Mode, deflection: f64) -> Result<(), String> {
         Mode::Recognised => p.add_mesh_recognised(src, 1.0, 30.0, 0.0),
     };
     let (_, shapes) = qymcad_testkit::regenerate(&mut p);
-    let built = shapes.get(&body).and_then(|s| s.tessellate_merged(0.01)).ok_or("the body is not built")?;
+    let built = shapes.get(&body).and_then(|s| qymcad_kernel::specimen::mesh_merged(s, 0.01)).ok_or("the body is not built")?;
     let face = built.faces.iter().find(|f| (case.clicked)(f)).ok_or("no face to click")?;
     let pick = Pick { face: face.id, at: [face.centroid.x, face.centroid.y, face.centroid.z] };
     let found = feature_at(&built.mesh, &built.faces, pick, 1.0).map_err(|u| format!("nothing found: {u:?}"))?;

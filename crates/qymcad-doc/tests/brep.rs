@@ -35,7 +35,7 @@ fn block() -> (Project, Id, HashMap<Id, Shape>) {
 #[test]
 fn an_import_comes_back_at_the_factor_it_was_taken_at() {
     let path = folder("scaled").join("cube.step");
-    let cube = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
     write_step(&[(&cube, PLACE_IDENTITY)], &path.to_string_lossy()).expect("the STEP is written");
 
     let mut p = Project::default();
@@ -45,13 +45,13 @@ fn an_import_comes_back_at_the_factor_it_was_taken_at() {
     let body = p.add_mesh(mesh);
     p.import_tree_as_parts(vec![qymcad_core::model::ImportNode { name: "cube".into(), body: Some(body), ..Default::default() }], source, "cube");
 
-    let as_read: HashMap<Id, Shape> = brep::import_shapes(&p).into_iter().collect();
+    let as_read: HashMap<Id, Shape> = qymcad_kernel::imports::raise_imports(&p).into_iter().collect();
     let v = as_read.get(&body).expect("the cube has a live body").volume();
     assert!((v - 1000.0).abs() < 1e-6, "the cube taken as it is came back at {v} mm^3, not 1000");
 
     // the file was drawn in inches: every side 10 in, that is 254 mm
     assert!(p.set_import_scale(body, 25.4), "the cube is not an import");
-    let scaled: HashMap<Id, Shape> = brep::import_shapes(&p).into_iter().collect();
+    let scaled: HashMap<Id, Shape> = qymcad_kernel::imports::raise_imports(&p).into_iter().collect();
     let want = 254.0_f64.powi(3);
     let v = scaled.get(&body).expect("the cube has a live body").volume();
     assert!((v - want).abs() < want * 1e-6, "the cube came back at {v} mm^3, not at its scale ({want} mm^3)");
@@ -99,7 +99,7 @@ fn a_file_saved_without_live_bodies_rebuilds_only_them() {
 fn a_raw_mesh_gets_its_faces_found_and_a_live_body_keeps_its_own() {
     let (mut p, body, shapes) = block();
     let before = p.bodies[p.mesh_index(body).expect("a mesh")].faces.clone();
-    let raw = p.add_mesh(qymcad_kernel::box_mesh(5.0, 5.0, 5.0, 0.1));
+    let raw = p.add_mesh(qymcad_kernel::specimen::mesh_merged(&qymcad_kernel::specimen::extrude(&[0.0, 0.0, 5.0, 0.0, 5.0, 5.0, 0.0, 5.0], 5.0).expect("a box"), 0.1).expect("its mesh").mesh);
     let given = brep::detect_missing_faces(&mut p, &shapes);
     assert_eq!(given.iter().map(|(b, f)| (*b, f.len())).collect::<Vec<_>>(), vec![(raw, 6)], "the raw box did not get its six faces alone");
     assert_eq!(p.bodies[p.mesh_index(body).expect("a mesh")].faces, before, "the faces of a body with a live B-rep were found again on its mesh");

@@ -436,7 +436,7 @@ pub const SPLIT_BODY: Tool = Tool {
         // counts them; the plane is the core's own reading of it
         let (o, n) = project.op_plane(at.plane, at.datum, at.face.map(|k| (src, k))).ok_or_else(|| Refusal::new("ref-lost", "The plane is not found.", Stage::Resolve))?;
         let origin = [o[0] + n[0] * offset.value, o[1] + n[1] * offset.value, o[2] + n[2] * offset.value];
-        let pieces = ctx.doc.shape(src).and_then(|s| s.split_by_plane(origin, n, 0)).map_or(0, |v| v.len());
+        let pieces = ctx.doc.shape(src).and_then(|s| qymcad_kernel::ask::split_pieces(s, qymcad_core::feature::PlaneAt { origin, normal: n })).unwrap_or(0);
         if pieces < 2 {
             return Err(Refusal::new("cuts-nothing", &format!("The plane at offset {} does not cut body {src}.", offset.value), Stage::Validate).with_hint("A face's normal points out of the body: an offset inside it is negative."));
         }

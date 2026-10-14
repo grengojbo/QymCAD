@@ -16,5 +16,8 @@ qymcad-io.workspace = true
 qymcad-meshfit.workspace = true # what a click on a body finds, made again by the core
 ron.workspace = true
 
+[dev-dependencies]
+qymcad-kernel = { workspace = true, features = ["specimens"] } # the probes build the bodies they import or measure
+
 [lints]
 workspace = true

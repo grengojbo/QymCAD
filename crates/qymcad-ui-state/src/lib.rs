@@ -445,6 +445,19 @@ pub struct TrimTool {
     pub tool: Option<Id>,
 }
 
+/// WHAT THE OPEN EDIT IS. Work in hand - a sketch, a command, a drag - takes Ctrl+Z as a step of the history under it. A
+/// question to the person - an import waiting for its scale - is one step not yet taken: Ctrl+Z takes it back as its
+/// Cancel does, and the history under it is not touched.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Default)]
+pub enum OpenEdit {
+    #[default]
+    Working,
+    /// The open edit waits for an answer.
+    Asking,
+    /// Ctrl+Z came while it waited: its window cancels it on its next frame.
+    AskingDropped,
+}
+
 /// UNDO, REDO AND WHAT IS SAVED: the history of the document and how far it has been written to disk.
 pub struct Edits {
     /// Undo and redo: snapshots of the editor's state.
@@ -456,6 +469,8 @@ pub struct Edits {
     pub open: Option<(String, Snapshot)>,
     /// the nesting depth of the edits: an inner `commit_edit` must not close the OUTER edit
     pub depth: usize,
+    /// What the open edit is: work in hand or a question waiting for its answer.
+    pub open_kind: OpenEdit,
     pub committed_key: u64,
     /// The places that change the document past `App::edit` - they are gathered during real work and converted one
     /// at a time. A field rather than a global flag: the debt belongs to the session, not to the process.
@@ -484,6 +499,7 @@ impl Edits {
         self.redo.clear();
         self.open = None;
         self.depth = 0;
+        self.open_kind = OpenEdit::Working;
         self.ready = false;
     }
 }
@@ -496,6 +512,7 @@ impl Default for Edits {
             baseline: Snapshot { project: Project::default() },
             open: None,
             depth: 0,
+            open_kind: OpenEdit::Working,
             committed_key: 0,
             #[cfg(debug_assertions)]
             debt: std::collections::HashSet::new(),
@@ -2625,8 +2642,8 @@ pub struct ImportScale {
     pub applied: f64,
     /// The sides of the box of everything that came in, as the file has it.
     pub span: [f64; 3],
-    /// Every mesh that came in: its body, and the mesh and faces as read.
-    pub meshes: Vec<(Id, qymcad_core::geom::Mesh, Vec<qymcad_core::geom::MeshFace>)>,
+    /// The body of every mesh that came in: the document scales a piece itself, from the factor it stands at.
+    pub meshes: Vec<Id>,
     /// Every solid that came in: its body, and the shape as read.
     pub solids: Vec<(Id, qymcad_kernel::Shape)>,
     /// Every component that came in with the file's tree: its id, and where the file places it.
@@ -3000,6 +3017,25 @@ pub struct Busy {
     /// The kind of background task - it shows whether another one of the same kind may be queued (two writes of
     /// one file at once are a race between the temporary file and the rename) and what exactly to wait for on exit.
     pub kind: BgKind,
+}
+
+/// HOW LONG A REBUILD LEFT RUNNING IS WAITED FOR when its job is dropped: as long as the end of the program waits for a
+/// rebuild (`wait_bg`).
+const DROPPED_REBUILD_WAIT: std::time::Duration = std::time::Duration::from_secs(120);
+
+/// A REBUILD LEFT RUNNING IS STOPPED AND WAITED FOR when its job is dropped - at the end of the program, or of a check -
+/// so the process never ends with a thread inside OCCT: the static destructors of OCCT, some made lazily during the work
+/// and so destroyed before any handler of the end runs, then pulled its pool and its allocator from under the rebuild.
+/// Its result comes back and is dropped here, the shapes in it freed on this thread. A job whose result was taken has a
+/// worker gone or going: the channel is closed and nothing is waited for. A rebuild is started only when no job is in
+/// hand, so no job is dropped while the window works. Reported behaviour: of 40 programs ended during a rebuild, 5 hung
+/// and 1 ended with SIGABRT.
+impl Drop for Busy {
+    fn drop(&mut self) {
+        let Some(pulse) = &self.pulse else { return };
+        pulse.stop.store(true, std::sync::atomic::Ordering::Relaxed);
+        let _ = self.rx.recv_timeout(DROPPED_REBUILD_WAIT);
+    }
 }
 
 /// The sketch's diagnostics in one piece: the degrees of freedom and the redundancy, the free points, THE ARGUING
@@ -10778,6 +10814,7 @@ pub fn abort_edit(rc: &mut RebuildCtx) {
         return;
     }
     let Some((_, before)) = rc.edits.open.take() else { return };
+    rc.edits.open_kind = OpenEdit::Working;
     rc.regen.pending = false; // the operation was rolled back: there is nothing to rebuild
     let _ = restore(rc, before); // an aborted operation leaves the window where it is
     rc.edits.committed_key = doc_key(rc.project);
@@ -10792,6 +10829,7 @@ pub fn commit_edit_if_changed(rc: &mut RebuildCtx) {
     if unchanged {
         rc.edits.depth = 0;
         rc.edits.open = None;
+        rc.edits.open_kind = OpenEdit::Working;
     } else {
         commit_edit(rc);
     }
@@ -10882,6 +10920,7 @@ pub fn commit_edit(rc: &mut RebuildCtx) {
         return; // a nested operation: the outer one will sum it up
     }
     let Some((name, before)) = rc.edits.open.take() else { return };
+    rc.edits.open_kind = OpenEdit::Working;
     rc.edits.undo.push(Step { name, snap: before });
     rc.regen.pending = false;
     rebuild_if_dirty(rc); // ONE point: the scheduler decides for itself whether to compute
@@ -11027,6 +11066,15 @@ pub fn regenerate_all(rc: &mut RebuildCtx) {
 /// found by the check: with a mate tool holding its picks, Ctrl+Z took "Extrusion" off the list and the extrusion
 /// stayed in the document.
 pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> {
+    // A QUESTION WAITING FOR ITS ANSWER IS ONE STEP NOT YET TAKEN: Ctrl+Z takes it back - its window cancels it on the
+    // next frame, as its Cancel does - and nothing under it. Reported behaviour: with an STL asking about its scale, Ctrl+Z
+    // undid the step before the import, took the person to the part of that step, and left the window open.
+    if rc.edits.open.is_some() && rc.edits.open_kind != OpenEdit::Working {
+        if !redo {
+            rc.edits.open_kind = OpenEdit::AskingDropped;
+        }
+        return None;
+    }
     let step = if redo { rc.edits.redo.pop() } else { rc.edits.undo.pop() }?;
     // an operation still open - a command, a sketch session - now starts from the state brought back: put down, it
     // returns there. Letting it go instead broke the sketch session that owned it, and rebuilding everything after an
@@ -12939,14 +12987,13 @@ pub fn materialize_ref(project: &mut Project, si: usize, r: SketchRef) -> Id {
 
 pub fn move_body_at(rc: &mut RebuildCtx, mi: usize, mat: [f64; 12]) {
     begin_edit(rc.edits, rc.project, qymcad_i18n::tr("status-move-body")); // THE OPERATION BOUNDARY
-    if let Some(id) = brep_at(rc.live, rc.project, mi) {
+                                                                           // a body of a solid or of a raw mesh alike: a node of the timeline, the move made by the rebuild - of a mesh in the
+                                                                           // document, its faces carried with it
+    let movable = brep_at(rc.live, rc.project, mi).or_else(|| rc.project.mesh_id(mi).filter(|b| rc.project.mesh_born(*b)));
+    if let Some(id) = movable {
         let nb = rc.project.add_move(id, mat);
         mark_dirty_for_rebuild(rc); // the document is marked; the scheduler does the computing
         select_body(rc.project, rc.sel, rc.view, nb);
-    } else {
-        rc.project.bodies[mi].mesh.transform(&mat);
-        rc.project.bodies[mi].faces = rc.project.bodies[mi].mesh.detect_faces(8.0);
-        invalidate(rc.regen);
     }
     commit_edit(rc);
 }

@@ -5,6 +5,7 @@
 //! kernel.
 //!
 //! Body x side x distance: failures are gathered and told together.
+use qymcad_kernel::specimen::Specimen;
 use qymcad_core::feature::FaceKey;
 use qymcad_core::geom::MeshFace;
 use qymcad_core::model::{HoleMove, Id, ImportNode, Project};
@@ -12,9 +13,9 @@ use qymcad_kernel::Shape;
 use qymcad_meshfit::feature::{feature_at, Pick};
 
 fn drilled() -> Shape {
-    let plate = Shape::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate");
+    let plate = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 40.0, 0.0, 40.0, 30.0, 0.0, 30.0], 10.0).expect("a plate");
     let at = [1.0, 0.0, 0.0, 20.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 1.0, -1.0];
-    plate.boolean(&Shape::cylinder(5.0, 12.0).expect("a drill").transformed(&at).expect("placed"), 0).expect("drilled")
+    plate.combined(&qymcad_kernel::specimen::cylinder(5.0, 12.0).expect("a drill").moved(&at).expect("placed"), 0).expect("drilled")
 }
 
 fn key(f: &MeshFace) -> FaceKey {
@@ -34,7 +35,7 @@ fn plate(p: &mut Project, how: Plate) -> Id {
     match how {
         Plate::Exact => {
             let source = p.add_source("plate.step", vec![1]);
-            let mesh = drilled().tessellate_merged(0.01).expect("a mesh").mesh;
+            let mesh = qymcad_kernel::specimen::mesh_merged(&drilled(), 0.01).expect("a mesh").mesh;
             let src = p.add_mesh(mesh);
             p.import_tree_as_parts(vec![ImportNode { name: "plate".into(), body: Some(src), mesh: true, ..Default::default() }], source, "plate").expect("in");
             let part = p.timeline.iter().find(|n| n.kind.owns_body(src)).and_then(|n| n.parent);
@@ -43,7 +44,7 @@ fn plate(p: &mut Project, how: Plate) -> Id {
         }
         Plate::Polyhedron => {
             let source = p.add_source("plate.stl", vec![1]);
-            let src = p.add_mesh(drilled().tessellate_merged(0.1).expect("a mesh").mesh);
+            let src = p.add_mesh(qymcad_kernel::specimen::mesh_merged(&drilled(), 0.1).expect("a mesh").mesh);
             p.import_tree_as_parts(vec![ImportNode { name: "plate".into(), body: Some(src), mesh: true, ..Default::default() }], source, "plate").expect("in");
             let part = p.timeline.iter().find(|n| n.kind.owns_body(src)).and_then(|n| n.parent);
             p.set_active_component(part);
@@ -64,7 +65,7 @@ fn made(p: &mut Project, node: Id) -> Result<Made, String> {
         return Err(format!("the rebuild went red: {:?}", report.errors));
     }
     let shape = shapes.get(&node).ok_or("the node is not built")?;
-    let built = shape.tessellate_merged(0.01).ok_or("no mesh")?;
+    let built = qymcad_kernel::specimen::mesh_merged(shape, 0.01).ok_or("no mesh")?;
     // the wall: the triangles standing square to z inside the plate's sides
     let mut sum = [0.0, 0.0];
     let mut n = 0.0;
@@ -96,7 +97,7 @@ fn run(how: Plate, r: &Run) -> Result<(), String> {
     let mut p = Project::default();
     let body = plate(&mut p, how);
     let (_, shapes) = qymcad_testkit::regenerate(&mut p);
-    let built = shapes.get(&body).and_then(|s| s.tessellate_merged(0.01)).ok_or("the body is not built")?;
+    let built = shapes.get(&body).and_then(|s| qymcad_kernel::specimen::mesh_merged(s, 0.01)).ok_or("the body is not built")?;
     let wall = built.faces.iter().find(|f| f.normal[2].abs() < 0.1 && ((f.centroid.x - 20.0).powi(2) + (f.centroid.y - 15.0).powi(2)).sqrt() < 5.01).ok_or("no wall")?;
     let found = feature_at(&built.mesh, &built.faces, Pick { face: wall.id, at: [wall.centroid.x, wall.centroid.y, wall.centroid.z] }, 1.0).map_err(|u| format!("nothing found: {u:?}"))?;
     let faces = p.regen_faces.get(&body).cloned().unwrap_or_default();
@@ -141,7 +142,7 @@ fn a_hole_measured_to_the_face_it_opens_in_is_refused() {
     let mut p = Project::default();
     let body = plate(&mut p, Plate::Polyhedron);
     let (_, shapes) = qymcad_testkit::regenerate(&mut p);
-    let built = shapes.get(&body).and_then(|s| s.tessellate_merged(0.01)).expect("built");
+    let built = shapes.get(&body).and_then(|s| qymcad_kernel::specimen::mesh_merged(s, 0.01)).expect("built");
     let wall = built.faces.iter().find(|f| f.normal[2].abs() < 0.1 && ((f.centroid.x - 20.0).powi(2) + (f.centroid.y - 15.0).powi(2)).sqrt() < 5.01).expect("wall");
     let found = feature_at(&built.mesh, &built.faces, Pick { face: wall.id, at: [wall.centroid.x, wall.centroid.y, wall.centroid.z] }, 1.0).expect("found");
     let faces = p.regen_faces.get(&body).cloned().unwrap_or_default();

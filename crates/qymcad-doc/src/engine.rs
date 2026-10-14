@@ -134,7 +134,7 @@ impl DocEngine {
         let mut shapes = HashMap::new();
         let adopted = brep::adopt_loaded(&mut project, &mut shapes, from_file);
         if adopted.imports {
-            shapes.extend(brep::import_shapes(&project));
+            shapes.extend(qymcad_kernel::imports::raise_imports(&project));
         }
         let mut d = DocEngine {
             params_seen: project.param_map(),
@@ -390,7 +390,7 @@ impl DocEngine {
     fn raise_imports(&mut self) {
         let waiting = self.project.timeline.iter().any(|n| matches!(n.kind, FeatureKind::Import { body, .. } if !self.shapes.contains_key(&body)));
         if waiting {
-            for (body, s) in brep::import_shapes(&self.project) {
+            for (body, s) in qymcad_kernel::imports::raise_imports(&self.project) {
                 self.shapes.entry(body).or_insert(s);
             }
         }

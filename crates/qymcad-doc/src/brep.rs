@@ -8,60 +8,11 @@ use qymcad_core::model::{Id, Project};
 use qymcad_kernel::Shape;
 use std::collections::HashMap;
 
-/// A uniform scale about the origin as a 3x4 row-major matrix, the form the kernel takes a placement in.
-pub fn scale_matrix(f: f64) -> [f64; 12] {
-    [f, 0.0, 0.0, 0.0, 0.0, f, 0.0, 0.0, 0.0, 0.0, f, 0.0]
-}
-
-/// The live bodies written into a file as B-rep, parsed under the kernel's lock. A blob that does not parse is left
-/// out: its body is rebuilt from its recipe instead.
+/// The live bodies written into a file as B-rep, with the names they were saved with. A blob that does not parse is
+/// left out: its body is rebuilt from its recipe instead.
 pub fn shapes_from_blobs(breps: Vec<(Id, Vec<u8>)>) -> Vec<(Id, Shape)> {
-    let _gate = qymcad_kernel::kernel_gate();
-    breps.into_iter().filter_map(|(id, b)| Shape::from_brep_bytes(&b).map(|s| (id, s))).collect()
-}
-
-/// THE LIVE BODIES OF IMPORTS, raised again from the original files kept inside the document (`sources/`).
-///
-/// Each source is parsed once and its solids are laid out across the bodies that came from it, each by its index in
-/// the file. A source is read by what it is - an IGES source read as STEP gave nothing, and the part opened with no
-/// live body - and every solid is put back at the factor it was taken at when the file came in, because a file can
-/// name the wrong unit: without the factor a 10 mm cube taken at 25.4 comes back at 1000 mm^3 instead of
-/// 16 387 064 mm^3.
-pub fn import_shapes(project: &Project) -> Vec<(Id, Shape)> {
-    use qymcad_core::feature::FeatureKind;
-    // group by source, so that each file is unpacked only once
-    let mut by_src: HashMap<Id, Vec<(Id, u32, f64)>> = HashMap::new();
-    for n in &project.timeline {
-        if let FeatureKind::Import { body, source, solid, scale } = n.kind {
-            by_src.entry(source).or_default().push((body, solid, scale));
-        }
-    }
-    let mut out = Vec::new();
-    for (src, items) in by_src {
-        let Some(sf) = project.sources.iter().find(|s| s.id == src) else { continue };
-        if sf.data.is_empty() {
-            continue;
-        }
-        let ext = if sf.ext.is_empty() { "step" } else { sf.ext.as_str() };
-        // a name of its own for every parse: two documents read at once in one process may share a source id
-        static PARSES: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
-        let k = PARSES.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let tmp = std::env::temp_dir().join(format!("qym_import_{}_{k}_{src}.{ext}", std::process::id()));
-        if std::fs::write(&tmp, &sf.data).is_err() {
-            continue;
-        }
-        let format = qymcad_kernel::ExactFormat::of_extension(ext);
-        // the Option wrapper: a shape is moved (it is not Clone), and each solid is taken by index exactly once
-        let mut shapes: Vec<Option<Shape>> = qymcad_kernel::exact_solids(format, tmp.to_string_lossy().as_ref()).unwrap_or_default().into_iter().map(Some).collect();
-        let _ = std::fs::remove_file(&tmp);
-        for (body, solid, scale) in items {
-            if let Some(s) = shapes.get_mut(solid as usize).and_then(|o| o.take()) {
-                let s = if (scale - 1.0).abs() > 1e-12 { s.transformed(&scale_matrix(scale)).unwrap_or(s) } else { s };
-                out.push((body, s));
-            }
-        }
-    }
-    out
+    let saved = breps.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
+    qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)).collect()
 }
 
 /// What taking a loaded document in found.
@@ -123,7 +74,7 @@ pub fn detect_missing_faces(project: &mut Project, shapes: &HashMap<Id, Shape>) 
     for i in 0..project.bodies.len() {
         let has_brep = project.mesh_id(i).is_some_and(|id| shapes.contains_key(&id));
         if !has_brep && project.bodies[i].faces.is_empty() {
-            let f = project.bodies[i].mesh.detect_faces(8.0);
+            let f = qymcad_meshfit::raw_faces(&project.bodies[i].mesh);
             project.bodies[i].faces = f.clone();
             if let Some(body) = project.mesh_id(i) {
                 given.push((body, f));

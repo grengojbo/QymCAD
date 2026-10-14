@@ -75,8 +75,10 @@ fn an_edge_names_the_later_of_its_two_faces() {
     assert!(rims.iter().all(|e| by(e) == Some(fillet)), "a rim of the rounding is not the rounding's: {rims:?}");
 }
 
+/// A FACE OF A SOLID FROM A FILE IS THE IMPORT'S: named by the node that placed it, as every face is named, so a reference
+/// to it holds; it has no sizes of its own to edit.
 #[test]
-fn a_solid_from_a_file_names_no_feature() {
+fn a_solid_from_a_file_names_its_import() {
     let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-mcp-made-by"));
     std::fs::create_dir_all(&dir).expect("a folder for the check");
     let path = dir.join(format!("block-{}.stp", std::process::id()));
@@ -89,5 +91,6 @@ fn a_solid_from_a_file_names_no_feature() {
     let _ = std::fs::remove_file(path);
     let faces = ok(call(&mut ctx, "list_faces", json!({ "body": { "body": came["bodies"][0]["id"] } })))["faces"].as_array().cloned().expect("faces");
     assert_eq!(faces.len(), 6, "{faces:?}");
-    assert!(faces.iter().all(|f| f.get("made_by") == Some(&Value::Null)), "a face of a solid from a file names a feature: {faces:?}");
+    let of_import = |f: &Value| f["made_by"]["kind"] == "Import" && f["made_by"]["sizes"].as_array().is_some_and(|s| s.is_empty());
+    assert!(faces.iter().all(of_import), "a face of a solid from a file is not its import's: {faces:?}");
 }

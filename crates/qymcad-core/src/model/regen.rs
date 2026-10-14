@@ -329,10 +329,10 @@ fn pushed_job(src: Id, body: Id, shifts: Vec<Shift>, carried: Vec<Carried>) -> c
         }
         for c in &carried {
             let edge = parted_by(k, body, c.sides)?;
-            let names = crate::feature::BlendNames { surfaces: &[c.face], corners: &[c.corner], all: &[] };
+            let roles = crate::feature::BlendRoles::Named { feature: c.feature };
             built = Some(match c.blend {
-                Blend::Round(radius) => k.fillet(body, body, radius, &[edge], names)?,
-                Blend::Chamfer(leg) => k.chamfer(body, body, leg, &[edge], names)?,
+                Blend::Round(radius) => k.fillet(body, body, radius, &[edge], roles)?,
+                Blend::Chamfer(leg) => k.chamfer(body, body, leg, &[edge], roles)?,
             });
         }
         match built {
@@ -342,13 +342,13 @@ fn pushed_job(src: Id, body: Id, shifts: Vec<Shift>, carried: Vec<Carried>) -> c
     })
 }
 
-/// A rounding or a chamfer made exact carried across a push: `face` is its face, taken off before the push and named
-/// again after it, `corner` the name of the patch where blends meet.
+/// A rounding or a chamfer made exact carried across a push: `face` is its face, taken off before the push, and
+/// `feature` the node it was made exact by, whose name the face is given again after it.
 struct Carried {
     face: u32,
     sides: crate::geom::EdgeFaces,
     blend: Blend,
-    corner: u32,
+    feature: Id,
 }
 
 /// What a blend carried across a push is laid down again as, and its size.
@@ -383,8 +383,8 @@ fn in_plane_of(f: &crate::geom::MeshFace, among: &[crate::geom::MeshFace]) -> Op
 fn parted_by(k: &dyn crate::feature::Kernel, body: Id, sides: crate::geom::EdgeFaces) -> Result<u32, crate::errors::CoreError> {
     k.edge_face_pairs(body)
         .into_iter()
-        .find(|&(_, a, b)| (a == sides.one && b == sides.other) || (a == sides.other && b == sides.one))
-        .map(|(e, _, _)| e)
+        .find(|p| (p.faces[0] == sides.one && p.faces[1] == sides.other) || (p.faces[0] == sides.other && p.faces[1] == sides.one))
+        .map(|p| p.edge)
         .ok_or(crate::errors::CoreError::DescribedEdgesNotFound)
 }
 
@@ -595,58 +595,6 @@ impl Project {
             n = [-n[0], -n[1], -n[2]];
         }
         self.sketch_isolated_points(sid).into_iter().map(|p| crate::feature::PlaneFrame::from_origin_normal(p, n, 0.0).matrix12()).collect()
-    }
-
-    /// Face names of a primitive: the end face at -z, the end face at +z, and the side surface. A primitive has
-    /// no sketch, so the source of a role is the role itself (`src` = 0): the recipe defines the whole
-    /// topology.
-    pub fn primitive_names(&mut self, feature: Id) -> [u32; 3] {
-        [
-            self.intern_name(feature, crate::names::Role::CapStart, 0),
-            self.intern_name(feature, crate::names::Role::CapEnd, 0),
-            self.intern_name(feature, crate::names::Role::Side, 0),
-        ]
-    }
-
-    /// Cap names per region: triples of [region key, bottom, top].
-    ///
-    /// One pair per feature is not enough: extruding several contours produces several bodies, and one cap name
-    /// for all of them would mean two different faces under one name. The region key is the lowest wall name
-    /// among its edges: profiles merge into one planar face before the extrude, so "profile number k" no longer
-    /// exists afterwards while the set of region edges does.
-    pub fn region_cap_names(&mut self, feature: Id, profiles: &[Vec<f64>]) -> Vec<u32> {
-        let mut out = Vec::new();
-        // A single region carries no key. The key is the lowest wall name, and that changes as soon as an
-        // entity is added to or removed from the sketch, so the cap name would move on any profile edit (the
-        // test `face_ids_survive_a_topology_change_in_the_sketch` catches this). The key is needed only to
-        // separate several bodies of one feature, where it is more honest than a positional number.
-        if profiles.len() == 1 {
-            let [c0, c1] = self.cap_names(feature);
-            return vec![0, c0, c1];
-        }
-        for prof in profiles {
-            // Encoding: [nloops, then per loop nedges plus the edges laid out by EDGE_FIELDS]; the edge name is
-            // the last field of a record.
-            let mut key = 0u32;
-            let mut i = 1usize;
-            let loops = prof.first().copied().unwrap_or(0.0) as usize;
-            for _ in 0..loops {
-                let n = prof.get(i).copied().unwrap_or(0.0) as usize;
-                i += 1;
-                for k in 0..n {
-                    let at = i + k * crate::geom::EDGE_FIELDS + crate::geom::EDGE_FIELDS - 1;
-                    let v = prof.get(at).copied().unwrap_or(0.0) as u32;
-                    if v != 0 && (key == 0 || v < key) {
-                        key = v;
-                    }
-                }
-                i += n * crate::geom::EDGE_FIELDS;
-            }
-            let c0 = self.intern_name(feature, crate::names::Role::CapStart, key as Id);
-            let c1 = self.intern_name(feature, crate::names::Role::CapEnd, key as Id);
-            out.extend_from_slice(&[key, c0, c1]);
-        }
-        out
     }
 
     /// Whether the profile crosses the revolve axis.
@@ -1340,11 +1288,19 @@ impl Project {
                     let mut p = pass!(node_id);
                     clear = self.regen_partinstance(&mut p, i, src_comp, body);
                 }
-                FeatureKind::ComponentPattern { src, ref bodies, .. } if needs => {
+                FeatureKind::ComponentPattern { src, ref bodies, kind, .. } if needs => {
                     // every copy's body is the source's as it is; the pattern moves the copies, not the shapes
-                    let mut p = pass!(node_id);
-                    for b in bodies.clone() {
-                        clear &= self.regen_partinstance(&mut p, i, src, b);
+                    if kind.count() == 0 {
+                        // a layout past `MAX_PATTERN_INSTANCES`, from a file: refused in words, nothing built
+                        let e = crate::feature::pattern_too_large(&kind.counts());
+                        self.regen_errors.insert(node_id, e.clone());
+                        report.errors.push((node_id, e));
+                        clear = false;
+                    } else {
+                        let mut p = pass!(node_id);
+                        for b in bodies.clone() {
+                            clear &= self.regen_partinstance(&mut p, i, src, b);
+                        }
                     }
                 }
                 FeatureKind::MirrorPart { src_comp, ln, body } if needs => {
@@ -1520,36 +1476,31 @@ impl Project {
         // a vertex name is derived from its edges, so editing the neighbours does not disturb it.
         // The value is parametric like the radius itself, under the dimension key
         // `at{descriptor}`.
-        let verts: Vec<([f64; 3], f64)> = at_vertices
+        let verts: Vec<crate::feature::RadiusAt> = at_vertices
             .iter()
             .filter_map(|(r, val)| {
                 let desc = self.resolve_vertex_refs(src, r, "ref-what-fillet-vertex").ok()?.first().copied()?;
-                let val = p.dim(&format!("at{desc}"), *val);
-                self.vertex_point(src, desc).map(|p| (p, val))
+                let radius = p.dim(&format!("at{desc}"), *val);
+                self.vertex_point(src, desc).map(|at| crate::feature::RadiusAt { at, radius })
             })
             .collect();
         // A solid tool does not operate on a surface. Otherwise it appears to work: the node goes
         // red while a degenerate two-triangle body is left next to the part (found by the fuzzer).
         let on_sheet = p.kernel.body_is_sheet(src);
         let edges: Vec<u32> = edges.to_vec();
-        let job = if on_sheet {
+        if on_sheet {
             crate::feature::KernelJob::refused(crate::errors::CoreError::NeedsSolidNotSheet)
         } else if lost_edges {
             crate::feature::KernelJob::refused(lost_error)
         } else if !verts.is_empty() && !edges.is_empty() {
-            crate::feature::KernelJob::new(vec![src], move |k| k.fillet_at_vertices(body, src, radius, &edges, &verts))
+            // the faces it makes are named by the bridge, after this node, as a fillet of one radius names them
+            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            crate::feature::KernelJob::new(vec![src], move |k| k.fillet_at_vertices(body, src, radius, &edges, &verts, roles))
         } else {
-            // The name of a fillet surface comes from the edge that produced it, there being no
-            // other source in the recipe. The edges are already named, so the name is
-            // predictable.
-            let names: Vec<u32> = edges.iter().map(|e| self.intern_name(p.node, crate::names::Role::Blend, *e as Id)).collect();
-            // Corner patch: a face produced by the vertex where fillets meet (see
-            // `Role::Corner`).
-            let corners: Vec<u32> = edges.iter().map(|e| self.intern_name(p.node, crate::names::Role::Corner, *e as Id)).collect();
-            let all = self.blend_names_all(p.node, src, p.kernel);
-            crate::feature::KernelJob::new(vec![src], move |k| k.fillet(body, src, radius, &edges, crate::feature::BlendNames { surfaces: &names, corners: &corners, all: &all }))
-        };
-        job
+            // the faces it makes are named by the bridge, after this node
+            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            crate::feature::KernelJob::new(vec![src], move |k| k.fillet(body, src, radius, &edges, roles))
+        }
     }
 
     /// Chamfer: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1576,29 +1527,27 @@ impl Project {
         // Asymmetry (two setbacks, or setback plus angle) applies only to an explicit edge
         // selection; otherwise the chamfer is symmetric.
         let edges: Vec<u32> = edges.to_vec();
-        let job = if lost_edges {
+        if lost_edges {
             crate::feature::KernelJob::refused(lost_error)
         } else if mode != crate::feature::ChamferMode::Symmetric && !edges.is_empty() {
-            crate::feature::KernelJob::new(vec![src], move |k| k.chamfer_ex(body, src, dist, ChamferShape { mode, d2, flip, ref_face }, &edges))
+            // the faces it makes are named by the bridge, after this node, as a symmetric chamfer names them
+            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            crate::feature::KernelJob::new(vec![src], move |k| k.chamfer_ex(body, src, dist, ChamferShape { mode, d2, flip, ref_face }, &edges, roles))
         } else {
-            // The name of a chamfer surface comes from the edge that produced it and the patch name
-            // from the vertex: the same recipe as for a fillet.
-            let names: Vec<u32> = edges.iter().map(|e| self.intern_name(p.node, crate::names::Role::Blend, *e as Id)).collect();
-            let corners: Vec<u32> = edges.iter().map(|e| self.intern_name(p.node, crate::names::Role::Corner, *e as Id)).collect();
-            let all = self.blend_names_all(p.node, src, p.kernel);
-            crate::feature::KernelJob::new(vec![src], move |k| k.chamfer(body, src, dist, &edges, crate::feature::BlendNames { surfaces: &names, corners: &corners, all: &all }))
-        };
-        job
+            // the faces it makes are named by the bridge, after this node: the same rule as for a fillet
+            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            crate::feature::KernelJob::new(vec![src], move |k| k.chamfer(body, src, dist, &edges, roles))
+        }
     }
 
     /// Shell: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
     fn prep_shell(&mut self, p: &mut Pass, src: Id, thickness: f64, faces: &crate::refs::Ref, side: crate::feature::ShellSide, body: Id) -> crate::feature::KernelJob {
+        let feature = p.node;
         let thickness = p.dim("thickness", thickness);
         // Names of the inner walls come from the recipe: a wall is produced by offsetting a face
         // and, without a name of its own, takes the name of the outer face, so a reference to an
         // inner edge lands on the outer one.
-        let walls = self.shell_wall_names(p.node, src);
         // Resolution goes through the query, and a refusal stops the operation: opening the wrong
         // face is worse than opening none, since the body then looks similar with the hole in the
         // wrong place.
@@ -1615,7 +1564,7 @@ impl Project {
             Ok(ids) if asked_faces > 0 && ids.len() < asked_faces => crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
             Ok(ids) => match side {
                 crate::feature::ShellSide::Centred => crate::feature::KernelJob::new(vec![src], move |k| k.shell_center(body, src, thickness, &ids)),
-                side => crate::feature::KernelJob::new(vec![src], move |k| k.shell_named(body, src, thickness, side == crate::feature::ShellSide::Outward, &ids, &walls)),
+                side => crate::feature::KernelJob::new(vec![src], move |k| k.shell_named(body, src, thickness, side == crate::feature::ShellSide::Outward, &ids, feature)),
             },
         }
     }
@@ -1644,31 +1593,28 @@ impl Project {
                 let off = (0..3).map(|i| (at[i] - c.centroid[i]) * c.normal[i]).sum::<f64>();
                 let point = [at[0] - off * c.normal[0], at[1] - off * c.normal[1], at[2] - off * c.normal[2]];
                 let pl = crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12();
-                let bore = self.intern_name(p.node, crate::names::Role::Hole, 0);
-                let names = self.hole_tool_names(p.node);
+                let feature = p.node;
                 crate::feature::KernelJob::new(vec![src], move |k| {
                     k.remove_faces(body, src, &ids)?;
-                    k.hole(body, body, tool, pl, bore, &names)
+                    k.hole(body, body, tool, pl, feature)
                 })
             }
             Exact::Round { sides, radius } => {
-                let surface = self.intern_name(p.node, crate::names::Role::Blend, 0);
-                let corner = self.intern_name(p.node, crate::names::Role::Corner, 0);
+                let roles = crate::feature::BlendRoles::Named { feature: p.node };
                 let radius = p.dim("radius", radius);
                 crate::feature::KernelJob::new(vec![src], move |k| {
                     k.remove_faces(body, src, &ids)?;
                     let edge = parted_by(k, body, sides)?;
-                    k.fillet(body, body, radius, &[edge], crate::feature::BlendNames { surfaces: &[surface], corners: &[corner], all: &[] })
+                    k.fillet(body, body, radius, &[edge], roles)
                 })
             }
             Exact::Chamfer { sides, leg } => {
-                let surface = self.intern_name(p.node, crate::names::Role::Blend, 0);
-                let corner = self.intern_name(p.node, crate::names::Role::Corner, 0);
+                let roles = crate::feature::BlendRoles::Named { feature: p.node };
                 let leg = p.dim("dist", leg);
                 crate::feature::KernelJob::new(vec![src], move |k| {
                     k.remove_faces(body, src, &ids)?;
                     let edge = parted_by(k, body, sides)?;
-                    k.chamfer(body, body, leg, &[edge], crate::feature::BlendNames { surfaces: &[surface], corners: &[corner], all: &[] })
+                    k.chamfer(body, body, leg, &[edge], roles)
                 })
             }
         }
@@ -1680,8 +1626,8 @@ impl Project {
         if live.is_empty() {
             return crate::feature::KernelJob::refused(edges_lost(&edges, asked_edge_count(&edges)));
         }
-        let name = self.intern_name(p.node, crate::names::Role::Patch, 0);
-        crate::feature::KernelJob::new(vec![src], move |k| k.patch(body, src, &live, tangent, name))
+        let feature = p.node;
+        crate::feature::KernelJob::new(vec![src], move |k| k.patch(body, src, &live, tangent, feature))
     }
 
     fn prep_trim(&mut self, src: Id, tool: Id, keep: [f64; 3], body: Id) -> crate::feature::KernelJob {
@@ -1815,10 +1761,10 @@ impl Project {
             let then = self.regen_faces.get(&made_on).map(Vec::as_slice).unwrap_or_default();
             let side = |id: u32| then.iter().find(|f| f.id == id).and_then(|f| in_plane_of(f, &now));
             let (Some(one), Some(other)) = (side(sides.one), side(sides.other)) else { continue };
-            let face = self.intern_name(node, crate::names::Role::Blend, 0);
-            if (one == pushed || other == pushed) && now.iter().any(|f| f.id == face) {
-                let corner = self.intern_name(node, crate::names::Role::Corner, 0);
-                out.push(Carried { face, sides: crate::geom::EdgeFaces { one, other }, blend, corner });
+            // the face of the blend is named by the bridge after the node and the edge it was laid on: found by its node
+            let made_by = |f: &&crate::geom::MeshFace| self.names.get(f.id).is_some_and(|g| g.feature == node && g.role == crate::names::Role::Blend);
+            if let (true, Some(face)) = (one == pushed || other == pushed, now.iter().find(made_by).map(|f| f.id)) {
+                out.push(Carried { face, sides: crate::geom::EdgeFaces { one, other }, blend, feature: node });
             }
         }
         out
@@ -1836,8 +1782,8 @@ impl Project {
         let faces = faces.clone();
         match self.faces_by_ref(p.node, src, &faces, "ref-what-face-copy") {
             Ok(ids) if !ids.is_empty() => {
-                let names: Vec<u32> = ids.iter().map(|f| self.intern_name(p.node, crate::names::Role::Instance, *f as Id)).collect();
-                crate::feature::KernelJob::new(vec![src], move |k| k.copy_faces(body, src, &ids, &names))
+                let feature = p.node;
+                crate::feature::KernelJob::new(vec![src], move |k| k.copy_faces(body, src, &ids, feature))
             }
             _ => crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
         }
@@ -1849,8 +1795,8 @@ impl Project {
         let d = eval_dim(p.dims, "dist", dist, p.vars);
         match self.faces_by_ref(p.node, src, faces, "ref-what-offset-surface") {
             Ok(ids) if !ids.is_empty() => {
-                let names: Vec<u32> = ids.iter().map(|f| self.intern_name(p.node, crate::names::Role::Instance, *f as Id)).collect();
-                crate::feature::KernelJob::new(vec![src], move |k| k.offset_faces(body, src, &ids, &names, d))
+                let feature = p.node;
+                crate::feature::KernelJob::new(vec![src], move |k| k.offset_faces(body, src, &ids, feature, d))
             }
             _ => crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
         }
@@ -1859,6 +1805,7 @@ impl Project {
     /// Thicken: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
     fn prep_thicken(&mut self, p: &mut Pass, src: Id, face: u32, thickness: f64, join: Id, body: Id) -> crate::feature::KernelJob {
+        let feature = p.node;
         // The thickness is parametric (the `thickness` feature dimension) and the face reference
         // resolves by name.
         let t = eval_dim(p.dims, "thickness", thickness, p.vars);
@@ -1881,9 +1828,8 @@ impl Project {
             // side wall by its boundary edge, which is their entire recipe and does not depend on
             // numbering. The pairs are prepared in advance, since interning mutates the name table
             // while the kernel only needs the finished substitution.
-            let (face_names, edge_names) = self.thicken_names(p.node, src, p.kernel);
             let inputs = if join != 0 { vec![src, join] } else { vec![src] };
-            crate::feature::KernelJob::new(inputs, move |k| k.thicken_face(body, src, face, t, join, crate::feature::NameMaps { faces: &face_names, edges: &edge_names }))
+            crate::feature::KernelJob::new(inputs, move |k| k.thicken_face(body, src, face, t, join, feature))
         }
     }
 
@@ -1928,24 +1874,19 @@ impl Project {
         if angle.abs() < 1e-9 {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::DraftAngleZero);
         }
-        let job = match (self.faces_by_ref(p.node, src, faces, "ref-what-draft-faces"), self.face_by_ref(p.node, src, &neutral, "ref-what-draft-neutral")) {
+        match (self.faces_by_ref(p.node, src, faces, "ref-what-draft-faces"), self.face_by_ref(p.node, src, &neutral, "ref-what-draft-neutral")) {
             (Ok(ids), _) if asked_faces > 0 && ids.len() < asked_faces => crate::feature::KernelJob::refused(crate::errors::CoreError::DraftNeedsFaces),
             (Ok(ids), Ok(np)) if !ids.is_empty() => {
                 let np_o = np.centroid;
                 let np_n = if flip { [-np.normal[0], -np.normal[1], -np.normal[2]] } else { np.normal };
-                {
-                    // The side face of a draft is named after the face that was tilted: drafting
-                    // produces a new face next to it, which without a name of its own would take a
-                    // positional number.
-                    let sides: Vec<u32> = ids.iter().filter(|f| crate::names::NameTable::is_named(**f)).flat_map(|f| [*f, self.intern_name(p.node, crate::names::Role::DraftSide, *f as Id)]).collect();
-                    crate::feature::KernelJob::new(vec![src], move |k| {
-                        k.draft(body, src, &ids, crate::feature::DraftPull { angle, dir: np_n }, crate::feature::PlaneAt { origin: np_o, normal: np_n }, &sides)
-                    })
-                }
+                // the side faces a draft makes are named by the bridge, after the node
+                let feature = p.node;
+                crate::feature::KernelJob::new(vec![src], move |k| {
+                    k.draft(body, src, &ids, crate::feature::DraftPull { angle, dir: np_n }, crate::feature::PlaneAt { origin: np_o, normal: np_n }, feature)
+                })
             }
             _ => crate::feature::KernelJob::refused(crate::errors::CoreError::DraftNeedsFaces),
-        };
-        job
+        }
     }
 
     /// Mirror: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -1955,15 +1896,16 @@ impl Project {
         // otherwise a world plane 0, 1 or 2 is used.
         // An image is not the original face: with `keep` the body holds both halves, and without
         // names of their own they are indistinguishable — the same collision a pattern had.
-        let seed = self.instance_name_seeds(p.node, src, 2).pop().unwrap_or_default();
+        let keeps = if keep { crate::feature::MirrorKeeps::Both } else { crate::feature::MirrorKeeps::Image };
+        let made = crate::feature::Mirrored { keeps, names: crate::feature::ImageNames::Instance { feature: p.node } };
         // A deleted plane means no mirror. Falling back to a world plane sounds defensible — a
         // mirror about another plane is still a mirror — but the measurement refutes it: the part
         // moves. A mirror about a datum at x = 50 gave face centres from x = 10 to x = 90, and
         // deleting the datum moved them to -30..30 with no red node. A split already refuses in the
         // same situation, for exactly the same reason.
         match (world, at) {
-            (Some(plane), _) => crate::feature::KernelJob::new(vec![src], move |k| k.mirror_named(body, src, plane, keep, &seed)),
-            (None, Some((o, n))) => crate::feature::KernelJob::new(vec![src], move |k| k.mirror_plane_named(body, src, o, n, keep, &seed)),
+            (Some(plane), _) => crate::feature::KernelJob::new(vec![src], move |k| k.mirror(body, src, plane, made)),
+            (None, Some((o, n))) => crate::feature::KernelJob::new(vec![src], move |k| k.mirror_plane(body, src, crate::feature::PlaneAt { origin: o, normal: n }, made)),
             (None, None) => crate::feature::KernelJob::refused(crate::errors::CoreError::MirrorPlaneDeleted),
         }
     }
@@ -2004,6 +1946,15 @@ impl Project {
     /// Move: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
     fn prep_move(&mut self, src: Id, mat: [f64; 12], body: Id) -> crate::feature::KernelJob {
+        // A BODY MADE OF A MESH MOVES IN THE DOCUMENT: it has no B-rep for the kernel to move - its mesh and the faces found
+        // on it are moved as they are, and nothing is found on it again
+        if self.mesh_born(src) {
+            let Some(mi) = self.mesh_index(src) else { return crate::feature::KernelJob::refused(crate::errors::CoreError::SourceBodyNotBuilt) };
+            let mut mesh = self.bodies[mi].mesh.clone();
+            mesh.transform(&mat);
+            let faces: Vec<crate::geom::MeshFace> = self.bodies[mi].faces.iter().map(|f| f.transformed(&mat)).collect();
+            return crate::feature::KernelJob::new(Vec::new(), move |_| Ok(crate::geom::Built { mesh, faces }));
+        }
         crate::feature::KernelJob::new(vec![src], move |k| k.transform_body(body, src, mat))
     }
 
@@ -2019,24 +1970,34 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn prep_box3(&mut self, p: &Pass, dx: f64, dy: f64, dz: f64, body: Id) -> crate::feature::KernelJob {
         let (dx, dy, dz) = (p.dim("dx", dx), p.dim("dy", dy), p.dim("dz", dz));
+        if !above_zero(&[dx, dy, dz]) {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
+        }
         self.named_prism_job(p.node, &rect_profile(dx, dy), dz, body)
     }
 
-    /// A STRAIGHT PRISM OF A POLYGON - a box, a prism - built as an extrusion is built and named as one: a wall to
-    /// every side (`Role::Wall`, the side's number from 1 as its source) and the two caps. Its edges then take their
-    /// names from the faces they part. Built as a bare extrusion before, the six faces of a box carried positional
-    /// numbers and no edge had a name: "round every edge of the top" of a box found no edge, and a description that
-    /// finds nothing rounds nothing.
-    fn named_prism_job(&mut self, node: Id, xy: &[f64], h: f64, body: Id) -> crate::feature::KernelJob {
-        let points: Vec<crate::geom::Point2> = xy.as_chunks::<2>().0.iter().map(|c| crate::geom::Point2::new(c[0], c[1])).collect();
+    /// A PRIMITIVE EXTRUDED FROM A POLYGON, every face named by recipe: side k of the polygon (from 1) makes the wall
+    /// `Role::Wall` of number k, the ends are the caps of the node. The number of a side is its place in the recipe of
+    /// the primitive - the side from the first corner of a box, the side from the first vertex of a prism - and not
+    /// the place the face takes in the walk of the result: measured, a box and a prism laid with an unnamed profile
+    /// had 6 of 6 and 8 of 8 faces on positional numbers, and a fillet of an edge of a box held a number.
+    fn named_prism_job(&mut self, feature: Id, xy: &[f64], height: f64, body: Id) -> crate::feature::KernelJob {
+        let points: Vec<crate::geom::Point2> = xy.as_chunks::<2>().0.iter().map(|[x, y]| crate::geom::Point2::new(*x, *y)).collect();
         let sides = points.len() as Id;
         let mut outline = crate::geom::Contour::closed(points);
         outline.edge_src = (1..=sides).collect();
-        let walls: Vec<u32> = (1..=sides).map(|side| self.intern_name(node, crate::names::Role::Wall, side)).collect();
-        let profile = crate::geom::encode_profile_named(&outline, &[], &|src, _| walls.get((src as usize).wrapping_sub(1)).copied().unwrap_or(0));
-        let profiles = vec![profile];
-        let caps = self.region_cap_names(node, &profiles);
-        crate::feature::KernelJob::new(Vec::new(), move |k| k.combine_region_multi(BodyOp { src: 0, op: 1, body }, &profiles, h, crate::feature::PLACE_IDENTITY, &caps))
+        // side k is the source at place k: its slot holds k itself
+        let sources: Vec<crate::feature::SideSource> = (1..=sides).map(|k| crate::feature::SideSource { src: k, split: 0 }).collect();
+        let profiles = vec![crate::geom::encode_profile_named(&outline, &[], &|src: Id, _: &crate::geom::ProfEdge| src as u32)];
+        crate::feature::KernelJob::new(Vec::new(), move |k| {
+            k.combine_region_multi(
+                BodyOp { src: 0, op: 1, body },
+                &profiles,
+                crate::feature::ToolSpan { start: 0.0, length: height, ends: crate::feature::ToolEnds::Kept },
+                crate::feature::PLACE_IDENTITY,
+                crate::feature::Sides { feature, sources: &sources },
+            )
+        })
     }
 
     /// Cylinder: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -2049,8 +2010,11 @@ impl Project {
     /// the preparation stays on the thread that owns the document, and only the parcel travels.
     fn prep_cylinder(&mut self, p: &Pass, r: f64, h: f64, body: Id) -> crate::feature::KernelJob {
         let (r, h) = (p.dim("r", r), p.dim("h", h));
-        let nm = self.primitive_names(p.node);
-        crate::feature::KernelJob::new(Vec::new(), move |k| k.cylinder(body, r, h, nm))
+        if !above_zero(&[r, h]) {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
+        }
+        let feature = p.node;
+        crate::feature::KernelJob::new(Vec::new(), move |k| k.cylinder(body, r, h, feature))
         // Exact B-rep cylinder, three faces.
     }
 
@@ -2058,8 +2022,11 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn prep_sphere(&mut self, p: &Pass, r: f64, body: Id) -> crate::feature::KernelJob {
         let r = eval_dim(p.dims, "r", r, p.vars);
-        let nm = self.primitive_names(p.node);
-        crate::feature::KernelJob::new(Vec::new(), move |k| k.sphere(body, r, nm))
+        if !above_zero(&[r]) {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
+        }
+        let feature = p.node;
+        crate::feature::KernelJob::new(Vec::new(), move |k| k.sphere(body, r, feature))
         // Exact sphere, one face.
     }
 
@@ -2067,8 +2034,12 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn prep_cone(&mut self, p: &Pass, r1: f64, r2: f64, h: f64, body: Id) -> crate::feature::KernelJob {
         let (r1, r2, h) = (p.dim("r1", r1), p.dim("r2", r2), p.dim("h", h));
-        let nm = self.primitive_names(p.node);
-        crate::feature::KernelJob::new(Vec::new(), move |k| k.cone(body, r1, r2, h, nm))
+        // one end may close to a point, not both, and neither end is narrower than nothing
+        if !above_zero(&[h, r1.max(r2)]) || r1.min(r2) < 0.0 {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
+        }
+        let feature = p.node;
+        crate::feature::KernelJob::new(Vec::new(), move |k| k.cone(body, r1, r2, h, feature))
         // Exact cone.
     }
 
@@ -2076,13 +2047,16 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn prep_torus(&mut self, p: &Pass, major: f64, minor: f64, body: Id) -> crate::feature::KernelJob {
         let (major, minor) = (p.dim("major", major), p.dim("minor", minor));
+        if !above_zero(&[major, minor]) {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
+        }
         // a tube as thick as the ring or thicker passes through itself: a ring of 5 and a tube of 5 stood green as a
         // spindle of 2467 mm^3
         if minor >= major {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::TorusThroughItself);
         }
-        let nm = self.primitive_names(p.node);
-        crate::feature::KernelJob::new(Vec::new(), move |k| k.torus(body, major, minor, nm))
+        let feature = p.node;
+        crate::feature::KernelJob::new(Vec::new(), move |k| k.torus(body, major, minor, feature))
         // Exact torus, one face.
     }
 
@@ -2090,6 +2064,9 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn prep_prism(&mut self, p: &Pass, r: f64, n: u32, h: f64, body: Id) -> crate::feature::KernelJob {
         let (r, h) = (p.dim("r", r), p.dim("h", h));
+        if !above_zero(&[r, h]) {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
+        }
         self.named_prism_job(p.node, &polygon_profile(r, n), h, body)
     }
 
@@ -2100,16 +2077,19 @@ impl Project {
         // Each section sits on its own plane (the placement is encoded in `places`), and two or more
         // sections produce a body. A zero `src` makes a separate body; otherwise the lofted solid is
         // combined with body `src` as a lofted cut or boss.
-        let caps = self.cap_names(p.node);
-
-        match self.loft_encoded_named(p.node, &sketches, &contours) {
+        let feature = p.node;
+        match self.loft_encoded_sourced(&sketches, &contours) {
             // A surface is the same loft, not closed into a solid. It admits no boolean: there is
             // nothing to combine a surface with a body by until it has been given a thickness.
-            Some((data, offsets, places)) if src == 0 => crate::feature::KernelJob::new(Vec::new(), move |k| {
+            Some(enc) if src == 0 => crate::feature::KernelJob::new(Vec::new(), move |k| {
                 let body_kind = if surface { crate::feature::LoftBody::Sheet } else { crate::feature::LoftBody::Solid };
-                k.loft(body, crate::feature::LoftSections { data: &data, offsets: &offsets, places: &places }, walls(ruled), body_kind, caps)
+                let s = &enc.sections;
+                k.loft(body, crate::feature::LoftSections { data: &s.data, offsets: &s.offsets, places: &s.places }, walls(ruled), body_kind, crate::feature::Sides { feature, sources: &enc.sources })
             }),
-            Some((data, offsets, places)) => crate::feature::KernelJob::new(vec![src], move |k| k.loft_combine(BodyOp { src, op, body }, &data, &offsets, &places, walls(ruled), caps)),
+            Some(enc) => crate::feature::KernelJob::new(vec![src], move |k| {
+                let s = &enc.sections;
+                k.loft_combine(BodyOp { src, op, body }, &s.data, &s.offsets, &s.places, walls(ruled), crate::feature::Sides { feature, sources: &enc.sources })
+            }),
             None => crate::feature::KernelJob::refused(crate::errors::CoreError::LoftNeedsTwoSections),
         }
     }
@@ -2118,16 +2098,23 @@ impl Project {
     /// be cleared (see `apply_regen`).
     fn regen_import(&mut self, p: &mut Pass, body: Id) -> bool {
         // An external STEP solid has no recipe, so this only re-tessellates the shape from the kernel
-        // cache. Without a shape in the kernel (a mock, or before restoration from the source) the
-        // already loaded mesh is kept.
-        if let Some(crate::geom::Built { mesh, faces }) = p.kernel.tessellate(body) {
-            self.set_body_mesh(body, mesh);
-            p.dirty.insert(body);
-            self.regen_faces.insert(body, faces.clone());
-            p.report.built.push((body, faces));
-            self.regen_errors.remove(&p.node);
+        // cache - and lands it the way every result lands, so its faces and edges are named by the one rule (where
+        // nothing else is known about a face, by where it lies). Without a shape in the kernel (a mock, or before
+        // restoration from the source) the already loaded mesh is kept.
+        //
+        // THROUGH THE DOOR, as every body: a body read from a file comes as the file holds it - a face pinched to two
+        // places, a crack, a shell the check calls broken - and nothing cleaned it, the operations on it meeting the flaw.
+        // Landed through the door it is cleaned and checked; one the door cannot repair is kept as it came, in yellow.
+        self.regen_warnings.remove(&p.node);
+        match p.kernel.land_import(body) {
+            Some(crate::feature::ImportLanded { built, kept }) => {
+                if let Some(why) = kept {
+                    self.regen_warnings.insert(p.node, why);
+                }
+                self.apply_regen(p.landing(), body, Ok(built))
+            }
+            None => true, // The body is valid (a mesh exists), so the node is clean and its consumers continue.
         }
-        true // The body is valid (a mesh exists), so the node is clean and its consumers continue.
     }
 
     /// PartInstance: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -2165,7 +2152,12 @@ impl Project {
             // honestly: that part really has no body left.
             match self.active_body_before(src_comp, at) {
                 None => Err(crate::errors::CoreError::SourcePartHasNoBody),
-                Some(sb) => p.kernel.mirror_plane(body, sb, [0.0; 3], ln, false),
+                Some(sb) => p.kernel.mirror_plane(
+                    body,
+                    sb,
+                    crate::feature::PlaneAt { origin: [0.0; 3], normal: ln },
+                    crate::feature::Mirrored { keeps: crate::feature::MirrorKeeps::Image, names: crate::feature::ImageNames::Source },
+                ),
             }
         };
         self.apply_regen(p.landing(), body, res)
@@ -2203,6 +2195,8 @@ impl Project {
             Some(crate::errors::CoreError::ThreadDepthTooDeep { depth: g.depth, radius: r, dia: spec.nominal_d, pitch: g.pitch })
         } else if g.pitch < 0.05 {
             Some(crate::errors::CoreError::ThreadPitchTooSmall { pitch: g.pitch })
+        } else if spec.starts > crate::feature::MAX_HELIX_STARTS {
+            Some(crate::errors::CoreError::TooManyStarts { starts: spec.starts, limit: crate::feature::MAX_HELIX_STARTS })
         } else if turns > 400.0 {
             Some(crate::errors::CoreError::ThreadTooManyTurns { turns })
         } else if length <= 1e-6 {
@@ -2269,10 +2263,7 @@ impl Project {
                 match self.thread_verdict(src, (c, ax, r), &mut spec, length) {
                     Err(e) => crate::feature::KernelJob::refused(e),
                     Ok((g, r)) => {
-                        // The turn faces are named before the kernel call: the recipe supplies the names
-                        // (a profile edge plus the lead).
-                        let gnames = self.groove_names(p.node, g.groove.len(), spec.starts.max(1));
-                        let rnames = self.relief_names(p.node);
+                        let feature = p.node;
                         // the volume of the source is read BEFORE the parcel leaves: the check below compares
                         // against it, and the document does not travel with the worker
                         let src_v = self.mesh_index(src).map(|i| self.bodies[i].mesh.volume()).unwrap_or(0.0);
@@ -2293,8 +2284,7 @@ impl Project {
                                 fuse: false, // a thread is subtracted
                                 lead_in,
                                 lead_out,
-                                gnames: &gnames,
-                                rnames: &rnames,
+                                feature,
                                 crest_relief: relief,
                             })
                             .and_then(|built| {
@@ -2331,12 +2321,11 @@ impl Project {
         let lead_in = p.dim("lead_in", lead_in);
         let lead_out = p.dim("lead_out", lead_out);
         let res = match self.helical_axis(p.kernel, src, edge) {
+            // the starts are checked before the flight faces are named: the names are reserved per start
+            Some(_) if spec.starts > crate::feature::MAX_HELIX_STARTS => Err(crate::errors::CoreError::TooManyStarts { starts: spec.starts, limit: crate::feature::MAX_HELIX_STARTS }),
             Some((c, ax, r)) => {
-                spec.shaft_d = r * 2.0; // The shaft diameter is taken from the geometry, so it stays
-                                        // associative.
-                                        // The flight faces are named by the same recipe as the thread turns.
-                let gnames = self.groove_names(p.node, spec.flight_profile().len(), spec.starts.max(1));
-                let rnames = self.relief_names(p.node);
+                // the shaft diameter is taken from the geometry, so it stays associative
+                spec.shaft_d = r * 2.0;
                 if spec.flight_height() <= 1e-6 {
                     Err(crate::errors::CoreError::AugerOuterNotBigger { outer: spec.outer_d, shaft: spec.shaft_d })
                 } else if spec.pitch <= 1e-6 || length <= 1e-6 {
@@ -2357,8 +2346,7 @@ impl Project {
                             fuse: true, // an auger flight is welded on
                             lead_in,
                             lead_out,
-                            gnames: &gnames,
-                            rnames: &rnames,
+                            feature: p.node,
                             crest_relief: 0.0,
                         })
                         .and_then(|built| {
@@ -2398,9 +2386,9 @@ impl Project {
                 // The wall of each hole is named after the sketch point that placed it, so adding a
                 // point does not rename the neighbouring holes.
                 let pts = self.sketch_hole_point_ids(sketch);
-                let bores: Vec<u32> = (0..pls.len()).map(|i| self.intern_name(p.node, crate::names::Role::Hole, pts.get(i).copied().unwrap_or(i as Id + 1))).collect();
-                let names = self.hole_tool_names(p.node);
-                crate::feature::KernelJob::new(vec![src], move |k| k.holes(body, src, tool, &pls, &bores, &names))
+                let sites: Vec<Id> = (0..pls.len()).map(|i| pts.get(i).copied().unwrap_or(i as Id + 1)).collect();
+                let feature = p.node;
+                crate::feature::KernelJob::new(vec![src], move |k| k.holes(body, src, tool, &pls, &sites, feature))
             }
         } else {
             // The face is found by recipe through the query, and the hole travels with it.
@@ -2427,9 +2415,8 @@ impl Project {
                     // The tool (a cylinder plus a counterbore or countersink) is placed at the face
                     // point along its normal and cuts inwards.
                     let pl = crate::feature::PlaneFrame::from_origin_normal(point, normal, 0.0).matrix12();
-                    let bore = self.intern_name(p.node, crate::names::Role::Hole, 0);
-                    let names = self.hole_tool_names(p.node);
-                    crate::feature::KernelJob::new(vec![src], move |k| k.hole(body, src, tool, pl, bore, &names))
+                    let feature = p.node;
+                    crate::feature::KernelJob::new(vec![src], move |k| k.hole(body, src, tool, pl, feature))
                 }
             }
         };
@@ -2513,7 +2500,7 @@ impl Project {
             let d = eval_dim(p.dims, "offset", offset, p.vars);
             let u = [n[0] / len, n[1] / len, n[2] / len];
             let o = [o0[0] + u[0] * d, o0[1] + u[1] * d, o0[2] + u[2] * d];
-            p.kernel.split_body(bodies, src, o, u, self.intern_name(p.node, crate::names::Role::CutSection, 0))
+            p.kernel.split_body(bodies, src, o, u, p.node)
         };
         // A split writes SEVERAL bodies, so the answer is the conjunction: the node is clean only if every
         // piece of it landed.
@@ -2552,8 +2539,13 @@ impl Project {
         for (a, key) in axes.iter_mut().zip(["count", "count2", "count3"]) {
             a.count = p.dim(key, a.count as f64).round().max(1.0) as u32;
         }
+        // the product is checked before anything is reserved: past the limit the pattern is refused, not built
+        let counts = [axes[0].count, axes[1].count, axes[2].count];
+        let Some(total) = crate::feature::pattern_instances(&counts) else {
+            return crate::feature::KernelJob::refused(crate::feature::pattern_too_large(&counts));
+        };
         // a pattern of one copy is the body alone: it stood green and changed nothing
-        if axes.iter().map(|a| a.count.max(1)).product::<u32>() < 2 {
+        if total < 2 {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::ArrayOfOne);
         }
         // Parametric: the step lives as an expression per vector component, so global parameters move
@@ -2570,7 +2562,7 @@ impl Project {
         // A 3D grid: direction one (i*d1) by two (j*d2) by three (k*d3). A count of one or less in
         // the second or third direction reduces the dimensionality.
         let (c1, c2, c3) = (axes[0].count.max(1), axes[1].count.max(1), axes[2].count.max(1));
-        let mut ts: Vec<[f64; 12]> = Vec::with_capacity((c1 * c2 * c3) as usize);
+        let mut ts: Vec<[f64; 12]> = Vec::with_capacity(total as usize);
         for i in 0..c1 {
             for j in 0..c2 {
                 for k in 0..c3 {
@@ -2580,8 +2572,8 @@ impl Project {
                 }
             }
         }
-        let seeds = self.instance_name_seeds(p.node, src, ts.len());
-        crate::feature::KernelJob::new(vec![src], move |k| k.pattern_named(body, src, &ts, &seeds))
+        let feature = p.node;
+        crate::feature::KernelJob::new(vec![src], move |k| k.pattern(body, src, &ts, feature))
     }
 
     /// CircularArray: one branch of the timeline rebuild. Returns whether the node's error record may
@@ -2592,6 +2584,9 @@ impl Project {
         let angle = p.dim("angle", angle);
         // the count is a dimension of the node as the angle is: a count typed as `k` follows `k`
         let count = p.dim("count", count as f64).round().max(1.0) as u32;
+        if crate::feature::pattern_instances(&[count]).is_none() {
+            return crate::feature::KernelJob::refused(crate::feature::pattern_too_large(&[count]));
+        }
         if count < 2 {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::ArrayOfOne);
         }
@@ -2605,8 +2600,8 @@ impl Project {
             ([0.0; 3], [0.0, 0.0, 1.0])
         };
         let ts: Vec<[f64; 12]> = (0..c).map(|i| rot_about_axis(org, dir, i as f64 * step)).collect();
-        let seeds = self.instance_name_seeds(p.node, src, ts.len());
-        crate::feature::KernelJob::new(vec![src], move |k| k.pattern_named(body, src, &ts, &seeds))
+        let feature = p.node;
+        crate::feature::KernelJob::new(vec![src], move |k| k.pattern(body, src, &ts, feature))
     }
 
     /// WHAT CAN BE COMPUTED RIGHT NOW, starting from node `from`.
@@ -2748,7 +2743,21 @@ impl Project {
                 let run = HelixRun { src: *src, edge: *edge, length: *length, lead_in: *lead_in, lead_out: *lead_out, body: *body };
                 (*body, self.prep_thread(p, run, *spec))
             }
-            _ => return None,
+            // BUILT IN PLACE by the walk of the timeline (`None`, see above), or nothing to build: a sketch, a datum, a
+            // piece of a mesh whose mesh is its geometry. Named one by one, not as "everything else": a kind of node
+            // added to `FeatureKind` does not build until it is told here how it builds - under "everything else" it
+            // built nothing and said nothing (found by laying a made-up kind of node).
+            FeatureKind::Sketch { .. }
+            | FeatureKind::Plane { .. }
+            | FeatureKind::DatumPoint { .. }
+            | FeatureKind::DatumAxis { .. }
+            | FeatureKind::SplitBody { .. }
+            | FeatureKind::Import { .. }
+            | FeatureKind::PartInstance { .. }
+            | FeatureKind::ComponentPattern { .. }
+            | FeatureKind::MirrorPart { .. }
+            | FeatureKind::Auger { .. }
+            | FeatureKind::MeshPiece { .. } => return None,
         };
         Some(job)
     }
@@ -2809,12 +2818,18 @@ impl Project {
         // Encode every contour and extrude them in one node (`combine_region_multi`; a zero `src`
         // makes a new body).
 
-        match self.encode_profiles_fill(p.node, sketch, profiles, fill) {
+        let feature = p.node;
+        match self.encode_profiles_sourced(sketch, profiles, fill) {
             None => crate::feature::KernelJob::refused(crate::errors::CoreError::ProfileNotFound),
-            Some(profs) => {
-                let caps = self.region_cap_names(p.node, &profs);
-                crate::feature::KernelJob::new(Vec::new(), move |k| k.combine_region_multi(BodyOp { src: 0, op: 1, body }, &profs, total, pl, &caps))
-            }
+            Some(sourced) => crate::feature::KernelJob::new(Vec::new(), move |k| {
+                k.combine_region_multi(
+                    BodyOp { src: 0, op: 1, body },
+                    &sourced.profiles,
+                    crate::feature::ToolSpan { start: 0.0, length: total, ends: crate::feature::ToolEnds::Kept },
+                    pl,
+                    crate::feature::Sides { feature, sources: &sourced.sources },
+                )
+            }),
         }
     }
 
@@ -2844,10 +2859,10 @@ impl Project {
             }
         };
 
-        match self.encode_profiles_role(p.node, sketch, profiles, &[], crate::names::Role::Revolved) {
+        let feature = p.node;
+        match self.encode_profiles_sourced(sketch, profiles, &[]) {
             None => crate::feature::KernelJob::refused(crate::errors::CoreError::ProfileNotFound),
-            Some(profs) => (|| {
-                let caps = self.region_cap_names(p.node, &profs);
+            Some(sourced) => (|| {
                 // Honest diagnostics before the kernel: a profile crossing the axis produces readable
                 // text with a hint rather than a faceless "revolve failed".
                 //
@@ -2870,7 +2885,9 @@ impl Project {
                 let about = crate::feature::RevolveAbout { axis, line };
                 let place = with_start(ax_o, ax_d, pl);
                 let inputs = if src != 0 { vec![src] } else { Vec::new() };
-                crate::feature::KernelJob::new(inputs, move |k| k.revolve_region_multi(BodyOp { src, op, body }, &profs, about, angle, place, &caps))
+                crate::feature::KernelJob::new(inputs, move |k| {
+                    k.revolve_region_multi(BodyOp { src, op, body }, &sourced.profiles, about, angle, place, crate::feature::Sides { feature, sources: &sourced.sources })
+                })
             })(),
         }
     }
@@ -2885,11 +2902,13 @@ impl Project {
         let path_pl = self.sketch_place(path_sketch);
         let pth = self.sweep_path_encoded(path_sketch, path);
 
-        match (self.encode_profiles_role(p.node, sketch, profiles, &[], crate::names::Role::Swept), pth) {
-            (Some(profs), Some(pth)) => {
-                let caps = self.region_cap_names(p.node, &profs);
+        let feature = p.node;
+        match (self.encode_profiles_sourced(sketch, profiles, &[]), pth) {
+            (Some(sourced), Some(pth)) => {
                 let inputs = if src != 0 { vec![src] } else { Vec::new() };
-                crate::feature::KernelJob::new(inputs, move |k| k.sweep_multi(BodyOp { src, op, body }, &profs, prof_pl, &pth, path_pl, &caps))
+                crate::feature::KernelJob::new(inputs, move |k| {
+                    k.sweep_multi(BodyOp { src, op, body }, &sourced.profiles, prof_pl, &pth, path_pl, crate::feature::Sides { feature, sources: &sourced.sources })
+                })
             }
             (None, _) => crate::feature::KernelJob::refused(crate::errors::CoreError::SweepProfileMissing),
             (_, None) => crate::feature::KernelJob::refused(crate::errors::CoreError::SweepPathMissing),
@@ -2902,25 +2921,22 @@ impl Project {
         let CombineSpan { height, down, extent, fill } = span;
         let (sketch, profiles) = (prof.sketch, prof.profiles);
         let (src, op, body) = (t.src, t.op, t.body);
-        let mut pl = self.sketch_place(sketch);
+        let pl = self.sketch_place(sketch);
         let h0 = p.dim("height", height).abs();
         let down = p.dim("down", down);
         // Extent of the tool along the normal: one named computation (see `tool_extent`).
-        let (start, h) = self.tool_extent(src, &pl, h0, down, extent, op);
-        if start.abs() > 1e-9 {
-            pl[3] += pl[2] * start;
-            pl[7] += pl[6] * start;
-            pl[11] += pl[10] * start;
-        }
+        let tool = self.tool_extent(src, &pl, h0, down, extent, op);
         // Encode every tool contour and apply them with a single boolean
         // (`combine_region_multi`).
 
-        match self.encode_profiles_fill(p.node, sketch, profiles, fill) {
+        let feature = p.node;
+        match self.encode_profiles_sourced(sketch, profiles, fill) {
             None => crate::feature::KernelJob::refused(crate::errors::CoreError::ProfileNotFound),
-            Some(profs) => {
-                let caps = self.region_cap_names(p.node, &profs);
+            Some(sourced) => {
                 let inputs = if src != 0 { vec![src] } else { Vec::new() };
-                crate::feature::KernelJob::new(inputs, move |k| k.combine_region_multi(BodyOp { src, op, body }, &profs, h, pl, &caps))
+                crate::feature::KernelJob::new(inputs, move |k| {
+                    k.combine_region_multi(BodyOp { src, op, body }, &sourced.profiles, tool, pl, crate::feature::Sides { feature, sources: &sourced.sources })
+                })
             }
         }
     }
@@ -2944,8 +2960,9 @@ impl Project {
         } else {
             self.resolve_edge_refs_in(src, &cur, r, "ref-what-fillet-edge").unwrap_or_default()
         };
-        // And no foreign number reaches the kernel. The kernel does not refuse a non-existent edge, it
-        // crashes, so the check belongs on this side. Cheap insurance against a whole class of failures.
+        // A reference resolves to edges of the body as it stands: a number that did not resolve is counted lost
+        // (`edge_refs_lost`) and said, not handed on. That the kernel never meets an edge a body does not have is the
+        // bridge's to hold (`ops::blend::sharp`), whatever asks it.
         let known: std::collections::HashSet<u32> = cur.into_iter().map(|e| e.id).collect();
         if known.is_empty() {
             return live;
@@ -3009,34 +3026,6 @@ impl Project {
         }
     }
 
-    /// Names of the inner walls of a shell: pairs of "source face to the name of its wall".
-    ///
-    /// A wall is not the same face but a new surface produced by offsetting it: `Role::ShellWall` with `src`
-    /// set to the original face. The names are seeded during construction, because in the finished body an
-    /// outer face and its wall are indistinguishable by id (unlike a pattern, whose copies stay separate until
-    /// they are merged).
-    /// Names of the turn faces, from the profile edge and the start.
-    ///
-    /// Without this a thread names none of the faces it produces: in a probe of "cylinder, thread, cut, fillet"
-    /// only 6 faces out of 78 were named by recipe while the rest carried a traversal number, so moving one
-    /// sketch point disturbed all of them, and with them the edges between them and the fillet references.
-    ///
-    /// The groove profile is computed from the thread standard and has the same edges (flanks, crest, root) at
-    /// any diameter, pitch and length, so the edge number within the profile is a recipe. `split` is the start
-    /// number: for a multi-start thread the copies of the groove have to carry different names, or a reference
-    /// to a face of the second start would silently lead to the first.
-    ///
-    /// The list is ordered in blocks by start — start 0 edges, then start 1 edges — which is exactly how the
-    /// kernel reads it.
-    /// Face references resolved through a witness: by name first, and by a place snapshot when the name misses.
-    ///
-    /// Eight timeline features hold face references, and matching the descriptor is a single path that breaks on
-    /// every improvement to naming while some faces are still positional — a thicken went red that way twice in
-    /// a real project. The order matches the one used for edges: name, then a recorded merge, then the single
-    /// face of a body, then the snapshot (see `resolve_face_id`).
-    ///
-    /// The snapshot is refreshed on every successful rebuild: a witness has to speak about today's geometry, or
-    /// it becomes a source of misses itself.
     /// A single face through the same witness: like `faces_by_ref`, but for references to one face (a face
     /// offset, a hole axis, the neutral face of a draft).
     fn face_by_ref(&mut self, node_id: Id, src: Id, r: &crate::refs::Ref, what: &str) -> Result<crate::refs::Candidate, crate::refs::RefError> {
@@ -3056,6 +3045,15 @@ impl Project {
         }
     }
 
+    /// Face references resolved through a witness: by name first, and by a place snapshot when the name misses.
+    ///
+    /// Eight timeline features hold face references, and matching the descriptor is a single path that breaks on
+    /// every improvement to naming while some faces are still positional — a thicken went red that way twice in
+    /// a real project. The order matches the one used for edges: name, then a recorded merge, then the single
+    /// face of a body, then the snapshot (see `resolve_face_id`).
+    ///
+    /// The snapshot is refreshed on every successful rebuild: a witness has to speak about today's geometry, or
+    /// it becomes a source of misses itself.
     fn faces_by_ref(&mut self, node_id: Id, src: Id, r: &crate::refs::Ref, what: &str) -> Result<Vec<u32>, crate::refs::RefError> {
         let out = match self.resolve_face_refs(src, r, what) {
             Ok(v) => v,
@@ -3073,144 +3071,6 @@ impl Project {
         };
         self.capture_face_refs(node_id, src, &out);
         Ok(out)
-    }
-
-    /// Names of the remaining drill faces: the tip, the countersink and its bottom. The wall is named
-    /// separately, after the sketch point that placed the hole.
-    /// A fillet surface name for every named edge of a body, as "edge to name" pairs.
-    ///
-    /// A fillet is not limited to the selected edges: the kernel continues the surface across tangent
-    /// neighbours, and those faces are produced by an edge too — just not the one that was picked. Their recipe
-    /// is the same, so names are prepared for every named edge of the source (measured: otherwise 2 to 4
-    /// nameless faces per operation).
-    fn blend_names_all(&mut self, feature: Id, src: Id, kernel: &dyn crate::feature::Kernel) -> Vec<u32> {
-        let all: Vec<u32> = kernel.edges(src).into_iter().map(|e| e.id).collect();
-        // A name is issued only to something that can be told apart. While two edges of a body share one
-        // number (the ordinal within a pair of faces is not yet assigned by recipe), naming their surfaces
-        // identically makes the reference ambiguous and it would lead to two faces at once. Measured: a mirror
-        // produced 7 such pairs out of 20 edges, giving 3 duplicate face names on the following chamfer.
-        let mut cnt: std::collections::HashMap<u32, usize> = std::collections::HashMap::new();
-        for e in &all {
-            *cnt.entry(*e).or_default() += 1;
-        }
-        all.iter()
-            .copied()
-            .filter(|e| crate::names::NameTable::is_named(*e) && cnt.get(e) == Some(&1))
-            .collect::<Vec<u32>>()
-            .into_iter()
-            .flat_map(|e| [e, self.intern_name(feature, crate::names::Role::Blend, e as Id)])
-            .collect()
-    }
-
-    fn hole_tool_names(&mut self, feature: Id) -> Vec<u32> {
-        (0..3).map(|k| self.intern_name(feature, crate::names::Role::HoleTool, k as Id)).collect()
-    }
-
-    fn relief_names(&mut self, feature: Id) -> Vec<u32> {
-        // Disabled for now, and this is a recorded decision rather than a forgotten loose end.
-        //
-        // The names themselves are correct, but issuing them changes the edge naming scheme of already saved
-        // documents: edges that were positional (because they met a nameless relief face) become named. Carrying
-        // references across that transition does not hold — measured: 12 of 36 edges of an R2.0 fillet moved to
-        // the wrong place and it stopped building entirely. Landing on the wrong element silently is worse than
-        // staying nameless.
-        //
-        // To be re-enabled only once reference migration across a naming-scheme change is worked out and held
-        // by a threshold check.
-        let mut out = Vec::with_capacity(16);
-        for tool in 0..4u32 {
-            for surf in 0..4u32 {
-                let name = crate::names::GeoName { feature, role: crate::names::Role::ThreadRelief, src: tool as Id, split: surf as u16 };
-                out.push(self.names.intern_face(name));
-            }
-        }
-        out
-    }
-
-    /// Names of a thickened plate: pairs of "source face name to the name of its offset side" and "edge name to
-    /// the name of the wall it produced", as flat lists (the kernel reads them in pairs).
-    ///
-    /// Without this a thicken names nothing: the whole plate takes positional numbers and any reference to its
-    /// faces rests on the numbering alone — 6 nameless faces out of 6 in a probe, 18 out of 84 in a scenario
-    /// document. The operation history is complete and unambiguous (measured): a face produces the offset side
-    /// and an edge produces its wall.
-    fn thicken_names(&mut self, feature: Id, src: Id, kernel: &dyn crate::feature::Kernel) -> (Vec<u32>, Vec<u32>) {
-        let faces: Vec<u32> = self.regen_faces.get(&src).map(|f| f.iter().map(|x| x.id).collect()).unwrap_or_default();
-        // The edges are asked of the kernel rather than of the cache: in the middle of a rebuild `regen_edges`
-        // is not filled yet and the list comes out empty, leaving the walls nameless although names were
-        // prepared for them.
-        let edges: Vec<u32> = kernel.edges(src).into_iter().map(|e| e.id).collect();
-        let mut fmap = Vec::with_capacity(faces.len() * 2);
-        for f in faces {
-            let name = crate::names::GeoName { feature, role: crate::names::Role::Thickened, src: f as Id, split: 0 };
-            let d = self.names.intern_face(name);
-            fmap.push(f);
-            fmap.push(d);
-        }
-        let mut emap = Vec::with_capacity(edges.len() * 2);
-        for e in edges {
-            let name = crate::names::GeoName { feature, role: crate::names::Role::ThickenWall, src: e as Id, split: 0 };
-            let d = self.names.intern_face(name);
-            emap.push(e);
-            emap.push(d);
-        }
-        (fmap, emap)
-    }
-
-    fn groove_names(&mut self, feature: Id, edges: usize, starts: u32) -> Vec<u32> {
-        let mut out = Vec::with_capacity(edges * starts.max(1) as usize);
-        for start in 0..starts.max(1) {
-            for e in 0..edges {
-                let name = crate::names::GeoName { feature, role: crate::names::Role::ThreadGroove, src: e as Id, split: start as u16 };
-                out.push(self.names.intern_face(name));
-            }
-        }
-        out
-    }
-
-    fn shell_wall_names(&mut self, feature: Id, src: Id) -> Vec<(u32, u32)> {
-        let faces: Vec<u32> = self.regen_faces.get(&src).map(|fs| fs.iter().map(|f| f.id).collect()).unwrap_or_default();
-        faces
-            .into_iter()
-            // Only structurally named faces get a name: for a positional one there is nothing to derive a wall
-            // name from.
-            .filter(|f| crate::names::NameTable::is_named(*f))
-            .map(|f| {
-                let name = crate::names::GeoName { feature, role: crate::names::Role::ShellWall, src: f as Id, split: 0 };
-                (f, self.names.intern_face(name))
-            })
-            .collect()
-    }
-
-    /// Face names per pattern instance: `seeds[k]` holds pairs of "source face to its name in copy k".
-    ///
-    /// An instance is not the same face but the image of a face under the k-th transform, so the name comes from
-    /// the recipe: `Role::Instance` with `src` set to the descriptor of the source face and `split` to the copy
-    /// number. Without this every copy carries the names of the original (measured: 18 faces sharing 6 names)
-    /// and a reference to a face of the second copy silently resolves to the first, putting a feature in the
-    /// wrong place.
-    ///
-    /// Copy zero keeps the original names: it is the source in its own place, and references made before the
-    /// pattern existed have to keep working.
-    fn instance_name_seeds(&mut self, feature: Id, src: Id, count: usize) -> Vec<Vec<(u32, u32)>> {
-        let faces: Vec<u32> = self.regen_faces.get(&src).map(|fs| fs.iter().map(|f| f.id).collect()).unwrap_or_default();
-        if faces.is_empty() || count < 2 {
-            return Vec::new();
-        }
-        (0..count)
-            .map(|k| {
-                if k == 0 {
-                    return Vec::new();
-                }
-                faces
-                    .iter()
-                    .map(|&f| {
-                        let name = crate::names::GeoName { feature, role: crate::names::Role::Instance, src: f as Id, split: k as u16 };
-                        (f, self.names.intern_face(name))
-                    })
-                    .collect()
-            })
-            .collect()
     }
 
     /// Cascade of the unbuilt: the body of a node will not appear, and its consumers are not built either.
@@ -3265,59 +3125,33 @@ impl Project {
     /// Returns `(start along the normal, length)`. The target body `src` is needed so the extent knows the
     /// geometry it cuts: "through all" without a bounding box is a blind pocket, not a through cut.
     #[allow(clippy::too_many_arguments)]
-    fn tool_extent(&self, src: Id, pl: &[f64; 12], h: f64, down: f64, extent: crate::feature::Extent, op: u8) -> (f64, f64) {
+    fn tool_extent(&self, src: Id, pl: &[f64; 12], h: f64, down: f64, extent: crate::feature::Extent, op: u8) -> crate::feature::ToolSpan {
         let n = [pl[2], pl[6], pl[10]];
         let o = [pl[3], pl[7], pl[11]];
         if extent.through {
             // Span the whole of body `src` along the normal, both ways: the bounding box gives a start below it
             // and a length of the span plus margins.
+            let kept = |start: f64, length: f64| crate::feature::ToolSpan { start, length, ends: crate::feature::ToolEnds::Kept };
             return match self.body_span_along(src, o, n) {
                 Some((tmin, tmax)) => {
                     let margin = ((tmax - tmin).abs() * 0.1).max(1.0);
-                    (tmin - margin, (tmax - tmin) + 2.0 * margin)
+                    kept(tmin - margin, (tmax - tmin) + 2.0 * margin)
                 }
                 // Fallback: the mesh of `src` has no bounding box (the body is not tessellated yet, or the mesh
                 // is empty). "Through all" has to stay a through cut rather than degenerate into a blind pocket
                 // of nominal depth.
                 None => {
                     let reach = (h.abs() * 100.0).max(1000.0);
-                    (-reach, 2.0 * reach)
+                    kept(-reach, 2.0 * reach)
                 }
             };
         }
-        // The tool direction follows the extrude rules: one-sided, both ways or two-sided.
-        let (mut start, mut total) = crate::feature::extrude_extent(h, down, extent.reach);
-        // For a one-sided cut, an end face of the tool coincident with a face of the body leaves a cap behind
-        // and the hole comes out closed. When the end of the tool almost touches the body boundary it crosses,
-        // it is pushed outwards by a small clearance: a cut exactly as deep as the wall becomes a through cut,
-        // while an honest pocket (its end far from the far face) keeps its exact depth.
-        if op == 0 && extent.reach != crate::feature::Reach::BothWays && down.abs() <= 1e-9 {
-            let eps = (h.abs() * 0.01).max(0.05);
-            let (mut lo, mut hi) = (start, start + total);
-            if let Some((tmin, tmax)) = self.body_span_along(src, o, n) {
-                let touch = ((tmax - tmin).abs() * 1e-3).max(1e-4);
-                if hi > 1e-9 && (hi - tmax).abs() <= touch {
-                    hi = tmax + eps;
-                }
-                if lo < -1e-9 && (lo - tmin).abs() <= touch {
-                    lo = tmin - eps;
-                }
-            }
-            // The entry end face sits on the sketch plane (coordinate 0), which usually lies on a face of the
-            // body, so a coincident end face would leave a cap. The coincidence is broken by a micro clearance:
-            // 0.1 mm would shave a visible step when there is material behind the sketch plane, while a 1
-            // micrometre seam is invisible and removes the coplanarity reliably.
-            let seam = 1.0e-3;
-            if lo.abs() < 1e-9 {
-                lo -= seam;
-            }
-            if hi.abs() < 1e-9 {
-                hi += seam;
-            }
-            start = lo;
-            total = hi - lo;
-        }
-        (start, total)
+        // The tool direction follows the extrude rules: one-sided, both ways or two-sided. A one-sided cut has its ends
+        // met with the body by the bridge (`ToolEnds::OneSidedCut`): an end coincident with a face of the body leaves a
+        // cap behind, which is OCCT's to be worked round, not the model's.
+        let (start, length) = crate::feature::extrude_extent(h, down, extent.reach);
+        let one_sided = op == 0 && extent.reach != crate::feature::Reach::BothWays && down.abs() <= 1e-9;
+        crate::feature::ToolSpan { start, length, ends: if one_sided { crate::feature::ToolEnds::OneSidedCut } else { crate::feature::ToolEnds::Kept } }
     }
 
     fn apply_regen(&mut self, l: Landing, body: Id, res: Result<crate::geom::Built, crate::errors::CoreError>) -> bool {
@@ -3327,20 +3161,9 @@ impl Project {
                 self.set_body_mesh(body, mesh);
                 dirty.insert(body);
                 self.regen_faces.insert(body, faces); // Faces into the model, for resolving references by id.
-                                                      // Absorptions come before the names of split pieces and edges: merging faces changes which
-                                                      // names exist at all, and everything after this has to work from the new picture.
-                                                      //
-                                                      // Stale records are cleared first: a face whose name is alive again yielded to nobody, and an
-                                                      // old record about it only misleads.
-                let live_faces: Vec<u32> = self.regen_faces.get(&body).map(|f| f.iter().map(|x| x.id).collect()).unwrap_or_default();
-                self.names.forget_absorbed(&live_faces);
-                for (loser, winner) in kernel.absorbed_names(body) {
-                    self.names.absorb(loser, winner);
-                }
-                self.name_face_splits_of(body, kernel); // First finish naming the split face pieces.
-                self.name_seam_faces_of(node_id, body, kernel); // Then the seams: faces with no provenance,
-                                                                // named by their neighbours.
-                self.name_edges_of(body, kernel, emap); // Then the edges, derived from the face names.
+                                                      // What the history was silent about is named by the bridge - the pieces, the seams, the places, the
+                                                      // edges - by the table of the document, here on its thread and in the order of the tree.
+                self.land_silent_names(node_id, body, kernel, emap);
 
                 // THE EDGES INTO THE MODEL AT ONCE, as the faces went in above, not only when the pass ends: a node built
                 // later in this same pass reads them. A rounding kept as a query asked the edges of its base while the
@@ -3374,7 +3197,7 @@ impl Project {
                 self.regen_errors.remove(&node_id); // The feature built, so its error mark is cleared.
                                                     // and what it left out is said, or the old word taken away
                                                     // what the kernel left out adds to what the references lost before it
-                if let Some((asked, dropped)) = kernel.take_dropped_edges(body) {
+                if let Some(crate::feature::DroppedEdges { asked, dropped }) = kernel.take_dropped_edges(body) {
                     let (asked0, lost0) = match self.regen_warnings.get(&node_id) {
                         Some(crate::errors::CoreError::EdgesDropped { asked, dropped }) => (*asked, *dropped),
                         _ => (0, 0),
@@ -3407,6 +3230,13 @@ impl Project {
     fn dim_expr_error(&self, node: Id, vars: &std::collections::HashMap<String, f64>) -> Option<crate::errors::CoreError> {
         self.feat_dims.get(&node)?.values().map(|e| e.trim()).filter(|e| !e.is_empty()).find_map(|e| crate::expr::eval(e, vars).err()).map(crate::errors::CoreError::Expr)
     }
+}
+
+/// WHETHER EVERY SIZE OF A PRIMITIVE IS ABOVE ZERO. A box, a cylinder or a sphere of nothing reached the kernel and came
+/// back as a broken body or as "the operation failed" (measured on all six primitives), where the cause is the size the
+/// person typed.
+fn above_zero(sizes: &[f64]) -> bool {
+    sizes.iter().all(|s| *s > 1e-9)
 }
 
 /// `mesh` made lighter within `simplify` mm, or as it is where that is zero.

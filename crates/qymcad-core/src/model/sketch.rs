@@ -3955,6 +3955,10 @@ impl Project {
         out
     }
     pub(super) fn solve_sketch_inner(&mut self, si: usize, drag: Option<(Id, f64, f64)>, budget: crate::solver::Budget, rebuild: Rebuild) -> f64 {
+        // THE TIME OF A SOLVE COUNTS FROM HERE: the work before the solver is inside it, and each call of the solver gets
+        // what is left - a held rectangle's second call no longer starts a clock of its own
+        let started = std::time::Instant::now();
+        let left = |b: crate::solver::Budget| crate::solver::Budget { time: b.time.map(|t| t.saturating_sub(started.elapsed())), ..b };
         // The radius variables and the implicit arc constraints are computed before the mutable borrow.
         let mut radii = self.entity_radii(si);
         let intrinsics = self.entity_intrinsics(si);
@@ -4044,11 +4048,11 @@ impl Project {
         let anchors: Vec<Constraint> =
             s.rects.iter().filter_map(|r| held_for_size(r, dragged, centre_of(r))).filter(|p| s.points.iter().any(|q| q.id == *p)).map(|p| Constraint::Fixed { p }).collect();
         let outcome = if anchors.is_empty() {
-            crate::solver::solve_within(&mut s.points, &mut radii, &active, drag, budget)
+            crate::solver::solve_within(&mut s.points, &mut radii, &active, drag, left(budget))
         } else {
             let (mut held_points, mut held_radii) = (s.points.clone(), radii.clone());
             let held: Vec<Constraint> = active.iter().cloned().chain(anchors).collect();
-            let with_hold = crate::solver::solve_within(&mut held_points, &mut held_radii, &held, drag, budget);
+            let with_hold = crate::solver::solve_within(&mut held_points, &mut held_radii, &held, drag, left(budget));
             // SOLVED IS TOLD BY THE SKETCH'S OWN CONSTRAINTS, not by the hold, a soft pull of which a little is always left
             // under a corner dragged away from it. Solved means to the precision the polish reaches (1e-12): a side held
             // 0.0009 short of a collinear line by its anchor left 1e-7 and passed at 1e-6. A DRAG FRAME KEEPS THE HOLD
@@ -4062,7 +4066,7 @@ impl Project {
                 (s.points, radii) = (held_points, held_radii);
                 crate::solver::Outcome { residual: r, left: with_hold.left }
             } else {
-                crate::solver::solve_within(&mut s.points, &mut radii, &active, drag, budget)
+                crate::solver::solve_within(&mut s.points, &mut radii, &active, drag, left(budget))
             }
         };
         // NOT SOLVED TO THE END: the parts the time ran out before, said beside the degrees of freedom of the sketch
@@ -5307,28 +5311,16 @@ impl Project {
         let holes: Vec<&crate::geom::Contour> = hole_ids.iter().filter_map(|h| self.contour_index(*h).map(|i| &self.contours[i])).collect();
         Some(crate::geom::encode_profile(outer, &holes))
     }
-    /// Profile of a feature with names: each side face is named "`role` of feature F from sketch entity E".
-    /// `feature` is the node that builds the body, and the role depends on the operation (revolve, sweep,
-    /// loft).
-    pub fn feature_profile_encoded_named(&mut self, feature: Id, sketch: Id, profile: Id, fill: &[Id], role: crate::names::Role) -> Option<Vec<f64>> {
-        let (outer_cid, hole_ids) = self.profile_faces(sketch, &[profile], fill).into_iter().next()?;
-        let loops: Vec<Id> = std::iter::once(outer_cid).chain(hole_ids.iter().copied()).collect();
-        let map = self.piece_names(feature, role, &loops);
-        let outer = self.contours.get(self.contour_index(outer_cid)?)?;
-        let holes: Vec<&crate::geom::Contour> = hole_ids.iter().filter_map(|h| self.contour_index(*h).map(|i| &self.contours[i])).collect();
-        Some(crate::geom::encode_profile_named(outer, &holes, &|src, e| map.get(&(src, crate::geom::piece_of(e).0)).copied().unwrap_or(0)))
-    }
-
-    /// THE NAME OF EVERY PIECE OF EVERY SKETCH ENTITY in the contours `loops`: `role` of `feature` from the entity,
-    /// numbered by piece.
+    /// THE SOURCE OF EVERY PIECE OF EVERY SKETCH ENTITY in the contours `loops`: the entity and the number of the piece
+    /// along it, each at its place in a list (counted from 1).
     ///
-    /// A name per entity is not enough. An entity cut by its neighbours gives several pieces, and regions that meet
+    /// A source per entity is not enough. An entity cut by its neighbours gives several pieces, and regions that meet
     /// only at points keep them all as faces of one body: measured on a rectangle with a slanted bar over its corner,
     /// the band where the two overlap left out, 18 faces under 12 names and 36 edges under 15, so the cursor on one
-    /// edge lit another. The pieces of one entity are numbered along it (`geom::piece_of`) into `GeoName::split`; an
-    /// entity of one piece, the usual case, keeps split 0 and with it the name it always had.
-    fn piece_names(&mut self, feature: Id, role: crate::names::Role, loops: &[Id]) -> std::collections::HashMap<(Id, [i64; 2]), u32> {
-        let mut pieces: std::collections::BTreeMap<Id, Vec<([i64; 2], f64)>> = std::collections::BTreeMap::new();
+    /// edge lit another. The pieces of one entity are numbered along it (`geom::piece_of`); an entity of one piece, the
+    /// usual case, keeps number 0 and with it the name it always had.
+    fn piece_sources(&self, loops: &[Id]) -> PieceSources {
+        let mut pieces: std::collections::BTreeMap<Id, Vec<PieceAt>> = std::collections::BTreeMap::new();
         for cid in loops {
             let Some(i) = self.contour_index(*cid) else { continue };
             for (src, e) in self.contours[i].sourced_edges() {
@@ -5337,17 +5329,17 @@ impl Project {
                 }
                 let (key, along) = crate::geom::piece_of(&e);
                 let of = pieces.entry(src).or_default();
-                if !of.iter().any(|(k, _)| *k == key) {
-                    of.push((key, along));
+                if !of.iter().any(|p| p.key == key) {
+                    of.push(PieceAt { key, along });
                 }
             }
         }
-        let mut out = std::collections::HashMap::new();
+        let mut out = PieceSources::default();
         for (src, mut of) in pieces {
-            of.sort_by(|a, b| a.1.total_cmp(&b.1).then(a.0.cmp(&b.0)));
-            for (split, (key, _)) in of.into_iter().enumerate() {
-                let name = self.names.intern_face(crate::names::GeoName { feature, role, src, split: split as u16 });
-                out.insert((src, key), name);
+            of.sort_by(|a, b| a.along.total_cmp(&b.along).then(a.key.cmp(&b.key)));
+            for (split, p) in of.into_iter().enumerate() {
+                out.sources.push(crate::feature::SideSource { src, split: split as u16 });
+                out.slot.insert(PieceKey { src, key: p.key }, out.sources.len() as u32);
             }
         }
         out
@@ -5388,40 +5380,27 @@ impl Project {
         sel.dedup();
         sel.into_iter().map(|c| (c, self.feature_holes(sketch, c))).collect()
     }
-    /// Encode every contour in `profiles`, each as its own tool; empty takes the first contour. Returns `None`
-    /// when any contour fails to encode. The list feeds `Kernel::combine_region_multi`.
-    ///
-    /// Nesting of any depth also produces island faces, which enter the same list.
-    ///
-    /// `feature` is the node building these profiles: its id is part of the name of every side face ("wall of
-    /// feature F from sketch entity E"), so two different features over one sketch do not share face names and
-    /// the boolean does not confuse them.
-    pub fn encode_profiles_fill(&mut self, feature: Id, sketch: Id, profiles: &[Id], fill: &[Id]) -> Option<Vec<Vec<f64>>> {
-        self.encode_profiles_role(feature, sketch, profiles, fill, crate::names::Role::Wall)
-    }
-
-    /// The same, with the role of the side faces given explicitly. The role is part of a face name, and a
-    /// revolve has its own (`Revolved`) as does a sweep (`Swept`): the wall of an extrude and a surface of
-    /// revolution are different things, and naming them alike would collide the names of two unlike faces.
-    pub fn encode_profiles_role(&mut self, feature: Id, sketch: Id, profiles: &[Id], fill: &[Id], role: crate::names::Role) -> Option<Vec<Vec<f64>>> {
+    /// THE PROFILES OF AN OPERATION WITH THE SOURCES OF THEIR SIDES: each region encoded, the slot of the name of every
+    /// edge holding the place of its source (`crate::feature::SourcedProfiles`). The contours in `fill` are filled, not
+    /// holes. The pieces are counted over every region at once: the pieces of one entity in two regions are two faces of
+    /// the one body. What the sides are called from that is the bridge's rule.
+    pub fn encode_profiles_sourced(&self, sketch: Id, profiles: &[Id], fill: &[Id]) -> Option<crate::feature::SourcedProfiles> {
         let faces = self.profile_faces(sketch, profiles, fill);
         if faces.is_empty() {
             return None;
         }
-        // The wall names are prepared in advance, in one pass: interning mutates the name table and needs a
-        // mutable borrow, while the encoder only needs the finished substitution table. The pieces are counted over
-        // every region at once: the pieces of one entity in two regions are two faces of the one body.
         let loops: Vec<Id> = faces.iter().flat_map(|(outer, holes)| std::iter::once(*outer).chain(holes.iter().copied())).collect();
-        let wall = self.piece_names(feature, role, &loops);
-        let name_of = |src: Id, e: &crate::geom::ProfEdge| -> u32 { wall.get(&(src, crate::geom::piece_of(e).0)).copied().unwrap_or(0) };
-        faces
+        let pieces = self.piece_sources(&loops);
+        let slot_of = |src: Id, e: &crate::geom::ProfEdge| -> u32 { pieces.slot.get(&PieceKey { src, key: crate::geom::piece_of(e).0 }).copied().unwrap_or(0) };
+        let encoded: Option<Vec<Vec<f64>>> = faces
             .into_iter()
             .map(|(outer_cid, hole_ids)| {
                 let outer = self.contours.get(self.contour_index(outer_cid)?)?;
                 let holes: Vec<&crate::geom::Contour> = hole_ids.iter().filter_map(|h| self.contour_index(*h).map(|i| &self.contours[i])).collect();
-                Some(crate::geom::encode_profile_named(outer, &holes, &name_of))
+                Some(crate::geom::encode_profile_named(outer, &holes, &slot_of))
             })
-            .collect()
+            .collect();
+        Some(crate::feature::SourcedProfiles { profiles: encoded?, sources: pieces.sources })
     }
     /// Encode the path of a sweep: one sketch contour, open or closed, as `[1.0, loop_block]` with exact lines
     /// and arcs (`build_exact_wire`). A `path` of zero takes the first contour with at least two points,
@@ -5478,21 +5457,22 @@ impl Project {
         }
         self.sweep_profile_contours(sketch).first().copied()
     }
-    /// Like `loft_encoded`, but the edges of the first section carry the names of the future loft faces: a face
+    /// Like `loft_encoded`, but the edges of the first section carry the sources of the future loft faces: a face
     /// between sections is named after the edge that swept it, there being no other source in the recipe.
-    pub fn loft_encoded_named(&mut self, feature: Id, sketches: &[Id], contours: &[Id]) -> Option<(Vec<f64>, Vec<usize>, Vec<f64>)> {
+    pub fn loft_encoded_sourced(&self, sketches: &[Id], contours: &[Id]) -> Option<LoftEncoded> {
         if sketches.len() < 2 {
             return None;
         }
-        // The names are prepared in advance (interning mutates the table) and only for the first section.
         let first_cid = self.loft_section_contour(sketches[0], contours.first().copied().unwrap_or(0))?;
         let mut srcs: Vec<Id> = self.contour_index(first_cid).map(|i| self.contours[i].edge_src.iter().copied().filter(|s| *s != 0).collect()).unwrap_or_default();
         srcs.sort_unstable();
         srcs.dedup();
-        let map: std::collections::HashMap<Id, u32> = srcs.into_iter().map(|src| (src, self.intern_name(feature, crate::names::Role::Lofted, src))).collect();
-        self.loft_encoded_with(sketches, contours, &map)
+        let sources: Vec<crate::feature::SideSource> = srcs.iter().map(|src| crate::feature::SideSource { src: *src, split: 0 }).collect();
+        let slots: std::collections::HashMap<Id, u32> = srcs.into_iter().enumerate().map(|(k, src)| (src, k as u32 + 1)).collect();
+        let sections = self.loft_encoded_with(sketches, contours, &slots)?;
+        Some(LoftEncoded { sections, sources })
     }
-    pub(super) fn loft_encoded_with(&self, sketches: &[Id], contours: &[Id], names: &std::collections::HashMap<Id, u32>) -> Option<(Vec<f64>, Vec<usize>, Vec<f64>)> {
+    pub(super) fn loft_encoded_with(&self, sketches: &[Id], contours: &[Id], names: &std::collections::HashMap<Id, u32>) -> Option<LoftSectionsEncoded> {
         if sketches.len() < 2 {
             return None;
         }
@@ -5515,7 +5495,7 @@ impl Project {
             let pl = self.sketch_frame_by_id(sid).map(|f| f.matrix12()).unwrap_or(crate::feature::PLACE_IDENTITY);
             places.extend_from_slice(&pl);
         }
-        Some((data, offsets, places))
+        Some(LoftSectionsEncoded { data, offsets, places })
     }
     /// Points of a contour, by id.
     pub(super) fn contour_pts(&self, cid: Id) -> Vec<Point2> {
@@ -5796,7 +5776,7 @@ impl Project {
         // set directly, changing a feature height during an ordinary build.
         for si in 0..self.sketches.len() {
             let before: Vec<(Id, f64, f64)> = self.sketches[si].points.iter().map(|p| (p.id, p.x, p.y)).collect();
-            self.solve_sketch_inner(si, None, crate::solver::Budget::FULL, Rebuild::Whole);
+            self.solve_sketch_inner(si, None, crate::solver::Budget::WHOLE, Rebuild::Whole);
             let moved = self.sketches[si].points.iter().zip(before.iter()).any(|(p, (id, x, y))| p.id != *id || (p.x - x).abs() > 1e-9 || (p.y - y).abs() > 1e-9);
             if moved {
                 self.regen_sketch(si); // The points moved, so the contours are rebuilt; otherwise the profile
@@ -6304,4 +6284,39 @@ pub(super) fn entity_box(e: &SketchEntity, at: &dyn Fn(Id) -> Option<(f64, f64)>
     };
     let m = 1e-2 + 1e-6 * (x1 - x0).max(y1 - y0);
     [x0 - m, y0 - m, x1 + m, y1 + m]
+}
+
+/// A PIECE OF A SKETCH ENTITY: the entity and the place of the piece on it (`geom::piece_of`).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+struct PieceKey {
+    src: Id,
+    key: [i64; 2],
+}
+
+/// A piece met on an entity, and how far along the entity it lies.
+struct PieceAt {
+    key: [i64; 2],
+    along: f64,
+}
+
+/// THE SOURCES OF THE PIECES OF A PROFILE, in their order, and the place (from 1) of every piece among them.
+#[derive(Default)]
+struct PieceSources {
+    sources: Vec<crate::feature::SideSource>,
+    slot: std::collections::HashMap<PieceKey, u32>,
+}
+
+/// A LOFT ENCODED with the sources of its sides: the sections as `loft_encoded` gives them, and the sources of the
+/// edges of the first section.
+pub struct LoftEncoded {
+    pub sections: LoftSectionsEncoded,
+    pub sources: Vec<crate::feature::SideSource>,
+}
+
+/// THE SECTIONS OF A LOFT, encoded: the loop blocks one after another, where each section starts in them, and the
+/// placement of each section plane (3 x 4).
+pub struct LoftSectionsEncoded {
+    pub data: Vec<f64>,
+    pub offsets: Vec<usize>,
+    pub places: Vec<f64>,
 }

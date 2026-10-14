@@ -144,7 +144,7 @@ pub(crate) fn edge_entry(project: &Project, body: Id, c: &qymcad_core::refs::Can
 
 pub const LIST_FACES: Tool = Tool {
     name: "list_faces",
-    description: "The faces of a body: key, kind (plane, cylinder, turned - a cone, sphere or torus - or other), centre, normal, area in mm^2, and for a cylinder its radius and axis. made_by: the feature that created the face (key, kind, the role of the face, how many faces of the body it made, its sizes with their expressions) - edit_feature on that key changes it; null for a face with no recipe, as from a STEP file. World coordinates. A key goes into a query as {\"ids\": [key]}.",
+    description: "The faces of a body: key, kind (plane, cylinder, turned - a cone, sphere or torus - or other), centre, normal, area in mm^2, and for a cylinder its radius and axis. made_by: the feature that created the face (key, kind, the role of the face, how many faces of the body it made, its sizes with their expressions) - edit_feature on that key changes it; for a face of a file brought in, the import that placed it (kind Import); null for a face with no recipe. World coordinates. A key goes into a query as {\"ids\": [key]}.",
     schema: body_only,
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: BodyArgs = tool::args(arguments)?;

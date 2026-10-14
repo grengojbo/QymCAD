@@ -59,10 +59,33 @@ impl Project {
                 *scale = factor;
                 n.dirty = true;
             }
-            FeatureKind::MeshPiece { scale, .. } => *scale = factor,
+            FeatureKind::MeshPiece { scale, .. } => {
+                // A PIECE OF A MESH IS ITS GEOMETRY: rescaled here, in the document, its mesh and the faces found on it
+                // together, from the factor it stood at - nothing is found on it again
+                let by = factor / *scale;
+                *scale = factor;
+                if let Some(mi) = self.mesh_index(body) {
+                    self.bodies[mi].mesh.scale(0.0, 0.0, 0.0, by);
+                    self.bodies[mi].faces = self.bodies[mi].faces.iter().map(|f| f.scaled(by)).collect();
+                }
+            }
             _ => {}
         }
         true
+    }
+
+    /// A BODY MADE OF A MESH, with no B-rep anywhere in its making: a piece of a mesh, or a move of one.
+    pub fn mesh_born(&self, body: Id) -> bool {
+        use crate::feature::FeatureKind;
+        let mut b = body;
+        for _ in 0..=self.timeline.len() {
+            match self.timeline.iter().find(|n| n.kind.body() == Some(b)).map(|n| &n.kind) {
+                Some(FeatureKind::MeshPiece { .. }) => return true,
+                Some(FeatureKind::Move { src, .. }) => b = *src,
+                _ => return false,
+            }
+        }
+        false
     }
     /// Root assembly component of the document, created lazily. Returns its id.
     pub fn ensure_root(&mut self) -> Id {

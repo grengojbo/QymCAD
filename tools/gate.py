@@ -70,6 +70,10 @@ HEAVY = [
 
 # THE STEPS BOTH LEVELS SHARE, and the acceptance run each makes.
 BUILDS = ("the code builds with no warning", ["cargo", "check", "--workspace", "--all-targets"], {})
+# THE APPLICATION BUILDS AS IT SHIPS: with no target of a probe the dev-dependencies are not built, so the specimens of
+# the bridge (`qymcad_kernel::specimen`, asked for by dev-dependencies alone) are not there, and code of the window that
+# builds a body past the door does not compile. A build with every target has them, for the probes.
+SHIPPED = ("the application builds as it ships", ["cargo", "check", "--workspace", "--lib", "--bins"], {})
 ORACLES = ("the oracles and the runner", ["cargo", "test", "-p", "qymcad-acceptance", "--lib"], {})
 ACCEPTANCE = ["cargo", "test", "-p", "qymcad-acceptance", "--test", "acceptance", "--no-fail-fast", "--"]
 # the place of the number of threads in a run of the acceptance set, filled once the machine is looked at
@@ -87,13 +91,64 @@ SKETCH_TIME = (
     {"QYMCAD_TIER": "time"},
 )
 
+# THE PROBES OF TIME OF A THREAD, in the bridge: they hold their budgets at this level only, one at a time.
+THREAD_TIME = (
+    "the probes of time of a thread, one at a time",
+    ["cargo", "test", "-p", "qymcad-kernel", "--lib", "thread_perf", "--", "--test-threads=1"],
+    {"QYMCAD_TIER": "time"},
+)
+
+# THE PROBES OF TIME OF A BIG DRAWING, through the window: their budgets hold at this level only, one at a time.
+DRAWING_TIME = (
+    "the probes of time of a big drawing, one at a time",
+    ["cargo", "test", "-p", "qymcad", "--lib", "a_big_drawing_stays_live", "--", "--test-threads=1"],
+    {"QYMCAD_TIER": "time"},
+)
+
+# THE PROBES OF TIME OF THE WINDOW, OF A GRID AND OF THE SKETCH OF THE REPORT: run each to a process beside 17 others in
+# the pool of every crate, they read the load - a grid of 200 moved in 85 ms against 60, the Line tool taken in 5.2 s,
+# eight redraws of a gallery in 216 ms against 180 - so their budgets hold at this level only, one at a time.
+WINDOW_TIME = (
+    "the probes of time of the window, one at a time",
+    ["cargo", "test", "-p", "qymcad", "--lib", "--", "the_sketch_of_the_report_takes_a_line", "selected_bundled_default_redraw_stays_responsive", "--test-threads=1"],
+    {"QYMCAD_TIER": "time"},
+)
+GRID_TIME = (
+    "the probes of time of a grid, one at a time",
+    ["cargo", "test", "-p", "qymcad-core", "--test", "a_line_of_a_connected_grid_is_dragged_within_a_frame", "--", "--test-threads=1"],
+    {"QYMCAD_TIER": "time"},
+)
+REPORT_TIME = (
+    "the probes of time of the sketch of the report, one at a time",
+    ["cargo", "test", "-p", "qymcad-testkit", "--test", "every_tool_keeps_its_time_on_the_sketch_of_the_report", "--", "--test-threads=1"],
+    {"QYMCAD_TIER": "time"},
+)
+
 RELEASE_MARK = os.path.join(ROOT, "target", "gate-release.json")
+
+# THE CHECKS OF EVERY CRATE IN ONE POOL. `cargo test` runs the test programs of the workspace one after another, each
+# with its own threads: of 1165 s of a run, 253 s went to five checks of one program (`matrix_names_survive_an_edit`)
+# with 15 of 20 threads idle, and the five slowest programs took 68 %. The pool (`--pool`) builds them, lists their
+# checks and runs each check as a process of its own, as many side by side as the acceptance probes, the slowest of the
+# run before first and a check never timed before them all - so a slow one starts at once rather than last.
+CRATES = ["cargo", "test", "--workspace", "--exclude", "qymcad-acceptance"]
+EVERY_CRATE = ("every crate's own checks", ["python3", "tools/gate.py", "--pool", PICKED], {})
+# the time of each check of the pool, `seconds<TAB>key` a line, read to order the next run
+CHECK_TIMES = os.path.join(ROOT, "target", "gate-check-times.tsv")
+# A CHECK STILL RUNNING AFTER THIS is stopped and red: once a check of a parallel run hung 44 min with no CPU.
+CHECK_TIMEOUT_S = 1200
 
 LEVELS = {
     "release": [
         BUILDS,
-        ("every crate's own checks", ["cargo", "test", "--workspace", "--exclude", "qymcad-acceptance", "--no-fail-fast"], {}),
+        SHIPPED,
+        EVERY_CRATE,
         SKETCH_TIME,
+        THREAD_TIME,
+        DRAWING_TIME,
+        WINDOW_TIME,
+        GRID_TIME,
+        REPORT_TIME,
         # EVERY LANGUAGE WHOLE: a string missing in a language falls back to English, so the checks of every change pass
         # with English alone and a contributor is asked for no language they do not know; before a release each
         # language must hold every key of the reference
@@ -107,21 +162,28 @@ LEVELS = {
     ],
     "full": [
         BUILDS,
+        SHIPPED,
         # every crate but the acceptance set: the rules of the code, the words, the help, the kernel and the heavy
         # geometry, the testkit's matrices
-        ("every crate's own checks", ["cargo", "test", "--workspace", "--exclude", "qymcad-acceptance", "--no-fail-fast"], {}),
+        EVERY_CRATE,
         ORACLES,
         ("every acceptance probe", ACCEPTANCE + [PICKED], {"QYMCAD_TIER": "full"}),
     ],
     "time": [
         ("the probes of time, one at a time", ACCEPTANCE + ["--test-threads=1", TIME], {"QYMCAD_TIER": "fast"}),
         SKETCH_TIME,
+        THREAD_TIME,
+        DRAWING_TIME,
+        WINDOW_TIME,
+        GRID_TIME,
+        REPORT_TIME,
     ],
     "fast": [
         # THE LAYOUT IS RUSTFMT'S: the tree was formatted once, and a hand layout coming back would be the next
         # thousand-line diff nobody can review
         ("the layout is rustfmt's", ["cargo", "fmt", "--all", "--check"], {}),
         BUILDS,
+        SHIPPED,
         # CLIPPY HAS NOTHING TO SAY: every remark is an error in the manifest, and the tree was brought to none. A crate
         # that fails is not kept as built, so a run from the cache sees again whatever was not mended.
         ("clippy has nothing to say", ["cargo", "clippy", "--workspace", "--all-targets"], {}),
@@ -156,11 +218,12 @@ def tree_of_working_copy():
 def run_step(name, cmd, env):
     """Run one step; answer (seconds, passed names, red names, whether the step itself failed without a red test)."""
     began = time.time()
-    # a script of ours caps its own runs; cargo is capped here
-    capped = cmd if cmd[0] == "python3" else CAP + cmd
+    # the script of the breakages caps its own runs; cargo and the pool of checks are capped here, the pool as one scope
+    breakages = cmd[:2] == ["python3", "tools/breakages.py"]
+    capped = cmd if breakages else CAP + cmd
     out = subprocess.run(capped, cwd=ROOT, capture_output=True, text=True, env={**os.environ, **env})
     said = out.stdout + out.stderr
-    if cmd[0] == "python3":
+    if breakages:
         # the breakages speak in lines of their own: "ok <name>" caught, anything else not
         caught = [l.strip()[3:] for l in said.splitlines() if l.startswith("  ok ")]
         missed = [l.strip() for l in said.splitlines() if l.startswith("  -- ") or l.startswith("  ?  ")]
@@ -194,6 +257,139 @@ def shard_of(cmd, env, k, n):
     mine = names[k - 1 :: n]
     print(f"share {k}/{n}: {len(mine)} of {len(names)} acceptance probes")
     return ACCEPTANCE + [PICKED, "--exact"] + mine
+
+
+class TestProgram:
+    """A TEST PROGRAM CARGO BUILT: the file to run, the folder of its crate it runs in (cargo runs a test there), the
+    crate's name, and the key its checks are timed under."""
+
+    def __init__(self, exe, crate_dir, crate, key):
+        self.exe, self.crate_dir, self.crate, self.key = exe, crate_dir, crate, key
+
+
+def test_programs(json_lines):
+    """The test programs of the words `cargo test --no-run --message-format=json...` wrote on its standard output: the
+    artifacts built for a test that have a file to run."""
+    progs = []
+    for line in json_lines.splitlines():
+        if not line.startswith("{"):
+            continue
+        try:
+            msg = json.loads(line)
+        except ValueError:
+            continue
+        if msg.get("reason") != "compiler-artifact" or not msg.get("executable") or not msg.get("profile", {}).get("test"):
+            continue
+        target = msg.get("target", {})
+        # `path+file:///.../qymcad-core#0.1.0` or `...#qymcad-core@0.1.0`: the crate's name is in the manifest's folder
+        crate_dir = os.path.dirname(msg.get("manifest_path", ""))
+        crate = os.path.basename(crate_dir)
+        kind = "+".join(target.get("kind", []))
+        progs.append(TestProgram(msg["executable"], crate_dir, crate, f"{crate}/{target.get('name', '')}/{kind}"))
+    return progs
+
+
+class Check:
+    """ONE CHECK OF THE POOL: its program, its name there, and the key it is timed under."""
+
+    def __init__(self, prog, name):
+        self.prog, self.name, self.key = prog, name, f"{prog.key}::{name}"
+
+
+def listed(prog, ignored):
+    """The names of the checks of `prog` (`ignored`: only those marked to be passed over), as libtest lists them."""
+    args = [prog.exe, "--list", "--format", "terse"] + (["--ignored"] if ignored else [])
+    out = subprocess.run(args, cwd=prog.crate_dir, capture_output=True, text=True, env=check_env(prog))
+    return [l[: -len(": test")] for l in out.stdout.splitlines() if l.endswith(": test")]
+
+
+def check_env(prog):
+    """THE ENVIRONMENT CARGO GIVES A TEST it runs: the crate's folder and name, and the folders of the libraries built
+    beside the programs on the path of the loader."""
+    deps = os.path.dirname(prog.exe)
+    lib_path = os.pathsep.join(p for p in (deps, os.path.dirname(deps), os.environ.get("LD_LIBRARY_PATH", "")) if p)
+    return {**os.environ, "CARGO_MANIFEST_DIR": prog.crate_dir, "CARGO_PKG_NAME": prog.crate, "LD_LIBRARY_PATH": lib_path}
+
+
+def read_times(text):
+    """The times of the run before, `seconds<TAB>key` a line, as {key: seconds}; a line not of that shape is passed over."""
+    times = {}
+    for line in text.splitlines():
+        seconds, _, key = line.partition("\t")
+        try:
+            times[key] = float(seconds)
+        except ValueError:
+            continue
+    return times
+
+
+def in_order(checks, times):
+    """THE ORDER OF THE POOL: a check never timed first, as it may be the slowest, then the slowest of the run before
+    first; the name breaks a tie, so the order is the same from run to run."""
+    return sorted(checks, key=lambda c: (c.key in times, -times.get(c.key, 0.0), c.key))
+
+
+def run_check(check):
+    """Run one check as a process of its own; answer (key, name, seconds, state, the words it said). The state is "ok",
+    "FAILED", or "ignored" when libtest passed it over."""
+    began = time.time()
+    try:
+        out = subprocess.run(
+            [check.prog.exe, "--exact", check.name, "--test-threads=1"],
+            cwd=check.prog.crate_dir, capture_output=True, text=True, env=check_env(check.prog), timeout=CHECK_TIMEOUT_S,
+        )
+        said = out.stdout + out.stderr
+        state = "ok" if out.returncode == 0 else "FAILED"
+        if state == "ok" and re.search(r"^test .* \.\.\. ignored", said, re.M):
+            state = "ignored"
+    except subprocess.TimeoutExpired as e:
+        said = f"{e.stdout or ''}{e.stderr or ''}\nstopped: still running after {CHECK_TIMEOUT_S} s"
+        state = "FAILED"
+    return check.key, check.name, time.time() - began, state, said
+
+
+def pool(threads):
+    """THE CHECKS OF EVERY CRATE BUT THE ACCEPTANCE SET, run as one pool of processes (`EVERY_CRATE`). Speaks as `cargo
+    test` does - the build's diagnostics, then `test NAME ... ok|FAILED|ignored` a check - so the gate reads it the same
+    way; the words of a red check follow its line. Answers the code to exit with."""
+    from concurrent.futures import ThreadPoolExecutor, as_completed
+
+    build = subprocess.run(CRATES + ["--no-run", "--message-format=json-render-diagnostics"], cwd=ROOT, capture_output=True, text=True)
+    # the diagnostics as cargo renders them: a warning among them is red to the gate
+    sys.stdout.write(build.stderr)
+    if build.returncode != 0:
+        return build.returncode
+    checks = []
+    for prog in test_programs(build.stdout):
+        passed_over = set(listed(prog, ignored=True))
+        for name in listed(prog, ignored=False):
+            if name in passed_over:
+                print(f"test {name} ... ignored")
+            else:
+                checks.append(Check(prog, name))
+    try:
+        with open(CHECK_TIMES, encoding="utf-8") as f:
+            before = read_times(f.read())
+    except OSError:
+        before = {}
+    order = in_order(checks, before)
+    print(f"{len(order)} checks in {len({c.prog.exe for c in order})} programs, {threads} side by side", flush=True)
+    took, red = {}, 0
+    with ThreadPoolExecutor(max_workers=threads) as ex:
+        for done in as_completed([ex.submit(run_check, c) for c in order]):
+            key, name, seconds, state, said = done.result()
+            took[key] = seconds
+            print(f"test {name} ... {state}", flush=True)
+            if state == "FAILED":
+                red += 1
+                print(f"---- {key} ----\n{said}", flush=True)
+    os.makedirs(os.path.dirname(CHECK_TIMES), exist_ok=True)
+    with open(CHECK_TIMES, "w", encoding="utf-8") as f:
+        f.writelines(f"{s:.2f}\t{k}\n" for k, s in sorted(took.items(), key=lambda t: -t[1]))
+    # THE EXAMPLES IN THE DOCUMENTATION, run by `cargo test` after the programs: none today, and a new one is run
+    doc = subprocess.run(CRATES + ["--doc"], cwd=ROOT, capture_output=True, text=True)
+    sys.stdout.write(doc.stdout + doc.stderr)
+    return 1 if red or doc.returncode != 0 else 0
 
 
 class Machine:
@@ -304,6 +500,18 @@ def self_test():
     expect("a key that is not there", read_mb(meminfo, "SwapTotal"), None)
     times = "1.5\tpart::a\n30.2\tsketch::b\nnonsense\n7.0\tasm::c\n"
     expect("the slowest two", slowest(times, 2), [(30.2, "sketch::b"), (7.0, "asm::c")])
+    expect("the times of the run before", read_times(times), {"part::a": 1.5, "sketch::b": 30.2, "asm::c": 7.0})
+    built = "\n".join([
+        "not json",
+        json.dumps({"reason": "compiler-artifact", "manifest_path": "/w/crates/qymcad-core/Cargo.toml", "target": {"name": "feature", "kind": ["test"]}, "profile": {"test": True}, "executable": "/w/target/debug/deps/feature-1"}),
+        json.dumps({"reason": "compiler-artifact", "manifest_path": "/w/crates/qymcad-core/Cargo.toml", "target": {"name": "qymcad_core", "kind": ["lib"]}, "profile": {"test": False}, "executable": None}),
+        json.dumps({"reason": "build-finished", "success": True}),
+    ])
+    progs = test_programs(built)
+    expect("the test programs of the build", [(p.exe, p.crate_dir, p.crate, p.key) for p in progs], [("/w/target/debug/deps/feature-1", "/w/crates/qymcad-core", "qymcad-core", "qymcad-core/feature/test")])
+    a, b, c = (Check(progs[0], n) for n in ("a", "b", "c"))
+    known = {a.key: 3.0, b.key: 90.0}
+    expect("the order of the pool: the untimed, then the slowest", [x.name for x in in_order([a, b, c], known)], ["c", "b", "a"])
     for w in wrong:
         print(f"  wrong: {w}")
     print("the gate's reckoning: " + ("right" if not wrong else f"{len(wrong)} wrong"))
@@ -313,6 +521,9 @@ def self_test():
 def main():
     if sys.argv[1:] == ["--self-test"]:
         return self_test()
+    if sys.argv[1:2] == ["--pool"]:
+        # the pool of the checks of every crate, run by the step `EVERY_CRATE` with the threads picked
+        return pool(int(sys.argv[2].partition("=")[2]))
     ap = argparse.ArgumentParser(description="Run a level of the checks and report it.")
     ap.add_argument("level", choices=sorted(LEVELS))
     ap.add_argument("--step", help="run only the step whose name begins with this")
@@ -344,7 +555,7 @@ def main():
         except ValueError as e:
             print(e)
             return 2
-        print(f"acceptance probes side by side: {pick.threads} ({pick.why})", flush=True)
+        print(f"acceptance probes and checks side by side: {pick.threads} ({pick.why})", flush=True)
         steps = [(name, [f"--test-threads={pick.threads}" if a == PICKED else a for a in cmd], env) for name, cmd, env in steps]
     whole = args.step is None and args.skip is None and args.shard is None and not args.skip_probe
     total_began = time.time()
@@ -368,6 +579,8 @@ def main():
         if broken:
             broken_steps.append(name)
             print("\n".join("    " + l for l in said.splitlines()[-15:]))
+        if "--pool" in cmd:
+            times = CHECK_TIMES
         if times:
             with open(times, encoding="utf-8") as f:
                 for took, probe in slowest(f.read(), SLOWEST):

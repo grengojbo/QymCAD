@@ -4,7 +4,7 @@
 use qymcad_core::feature::PLACE_IDENTITY;
 use qymcad_core::model::{Id, Project};
 use qymcad_doc::{import, DocEngine, DocError};
-use qymcad_kernel::{import_step, write_step, Shape};
+use qymcad_kernel::{import_step, write_step};
 use std::collections::HashMap;
 
 fn out_dir(name: &str) -> std::path::PathBuf {
@@ -17,7 +17,7 @@ fn out_dir(name: &str) -> std::path::PathBuf {
 fn cube_files(dir: &std::path::Path) -> (String, String) {
     let step = dir.join("cube.step").to_string_lossy().into_owned();
     let stl = dir.join("cube.stl").to_string_lossy().into_owned();
-    let cube = Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+    let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
     write_step(&[(&cube, PLACE_IDENTITY)], &step).expect("the STEP is written");
     let mesh = import_step(&step, 0.5).expect("the STEP reads").remove(0).mesh;
     qymcad_io::export_stl(&[mesh], &stl).expect("the STL is written");

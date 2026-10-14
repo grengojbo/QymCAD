@@ -12,7 +12,10 @@ pub use gui::session::{
 
 /// START THE PROGRAM: open the window and run it until it closes; a start that fails is told to the person.
 pub fn run() -> ExitCode {
-    match gui::launch() {
+    let launched = gui::launch();
+    // the program ends only after the threads it left working in OCCT (`qymcad_kernel::worker`)
+    qymcad_kernel::wait_for_workers();
+    match launched {
         Ok(()) => ExitCode::SUCCESS,
         Err(e) => {
             eprintln!("failed to start QymCAD: {e}");

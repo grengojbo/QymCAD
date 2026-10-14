@@ -15,5 +15,8 @@ qymcad-io.workspace = true
 qymcad-meshfit.workspace = true
 time.workspace = true # the calendar of the document stamp
 
+[dev-dependencies]
+qymcad-kernel = { workspace = true, features = ["specimens"] } # the probes build the bodies they import or measure
+
 [lints]
 workspace = true

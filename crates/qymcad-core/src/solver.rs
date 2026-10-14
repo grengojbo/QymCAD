@@ -76,6 +76,11 @@ impl Budget {
     /// A frame of a drag: fewer steps, the release solves in full; and half a second, past which the pointer is not
     /// followed anyway.
     pub const FRAME: Budget = Budget { steps: 40, time: Some(std::time::Duration::from_millis(500)), sizes: Sizes::Free };
+    /// THE SOLVE A REBUILD AND AN OPEN DEPEND ON: the steps of a full solve and no clock. What is built and saved from a
+    /// sketch must not depend on how fast the machine is or how busy: cut by a time, a sketch of 100 000 circles held
+    /// tangent to lines left 24 580 parts unsolved after 12.7 s on one thread (a debug build), and the rebuild built
+    /// from them and the file saved them.
+    pub const WHOLE: Budget = Budget { steps: 120, time: None, sizes: Sizes::Held };
 }
 
 /// What a solve came to.

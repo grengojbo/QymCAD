@@ -77,6 +77,9 @@ objc2 = "0.6"
 objc2-app-kit = { version = "0.3", default-features = false, features = ["std", "NSImage", "NSMenu", "NSMenuItem"] }
 objc2-foundation = { version = "0.3", default-features = false, features = ["std", "NSString"] }
 
+[dev-dependencies]
+qymcad-kernel = { workspace = true, features = ["specimens"] } # the probes build the bodies they write and import
+
 # The icon is embedded into the .exe only when building FOR Windows (host = windows under CI). On Linux
 # and macOS the dependency is not pulled in at all, and build.rs cuts its windows block out through
 # cfg(windows).

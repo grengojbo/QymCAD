@@ -341,7 +341,7 @@ pub(crate) mod tests {
         )
         .expect("the mesh is written");
         let igs = folder.file("cube.igs");
-        let cube = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+        let cube = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
         qymcad_kernel::write_iges(&[(&cube, qymcad_core::feature::PLACE_IDENTITY)], &igs.to_string_lossy(), qymcad_kernel::LengthUnit::Millimetre).expect("the IGES is written");
         // the STEP is written here too, like every other format of this check: a file brought from elsewhere is not in
         // every tree the check runs in
@@ -680,7 +680,7 @@ pub(crate) mod tests {
     fn a_file_that_lies_about_its_unit_is_scaled_and_keeps_its_scale() {
         let folder = CheckFolder::new("import-scale-half-mm");
         let p = scale_file(&folder, "half-mm.step");
-        let s = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 0.5], 0.5).expect("a cube");
+        let s = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 0.5, 0.0, 0.5, 0.5, 0.0, 0.5], 0.5).expect("a cube");
         qymcad_kernel::write_step(&[(&s, qymcad_core::feature::PLACE_IDENTITY)], &p).expect("written");
         let (mut app, ctx) = running();
         let before = app.project.bodies.len();
@@ -692,7 +692,7 @@ pub(crate) mod tests {
         let _ = frame(&mut app, &ctx, key(egui::Key::Enter));
         settle(&mut app, &ctx);
         assert!((size_after(&app, before) - 5.0).abs() < 1e-6, "the solid came in at {} mm, not ten times half a millimetre", size_after(&app, before));
-        let restored = qymcad_doc::brep::import_shapes(&app.project);
+        let restored = qymcad_kernel::imports::raise_imports(&app.project);
         assert_eq!(restored.len(), 1, "reopened, the document has {} solids", restored.len());
         let b = restored[0].1.bbox().expect("a box");
         // the kernel's box is widened by 1e-6 on every side
@@ -903,6 +903,68 @@ pub(crate) mod tests {
         assert!(app.win.import_scale.is_some(), "a double click on the import's node does not ask about its scale again; status: {}", app.status);
     }
 
+    /// CTRL+Z WHILE AN IMPORT ASKS ABOUT ITS SCALE TAKES THAT IMPORT BACK, as Cancel does: the window goes, the mesh
+    /// asked about goes - moved by the handle while it was asked or not - and the steps before it stay as they were.
+    /// Reported behaviour: the window stayed, the mesh went, and the person was taken to the part last edited, its last
+    /// step undone.
+    #[test]
+    fn ctrl_z_while_an_import_asks_takes_that_import_back() {
+        let (mut app, ctx) = running();
+        let first = stl_cube(&mut app, &ctx, "kept-first.stl");
+        let steps = app.disk.edits.undo.len();
+        let path = app.active_path.clone();
+        let folder = CheckFolder::new("import-door-ctrl-z-while-asked");
+        let p = folder.file("asked-second.stl");
+        std::fs::write(&p, cube_stl(10.0)).expect("written");
+        answer(&mut app, &ctx, Want::Anything, &p.to_string_lossy());
+        settle(&mut app, &ctx);
+        let _ = frame(&mut app, &ctx, Vec::new());
+        assert!(app.win.import_scale.is_some(), "setup: the second STL asks about its scale");
+        let second = app.project.bodies.iter().map(|b| b.id).find(|b| *b != first).expect("setup: the second cube is laid in while it asks");
+        let mi = app.project.mesh_index(second).expect("setup: the second cube's mesh");
+        qymcad_part::apply_body_move(&mut app.part_ctx(), mi, [1.0, 0.0, 0.0, 30.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        let _ = frame(&mut app, &ctx, Vec::new());
+        undo_by_hand(&mut app, &ctx);
+        let _ = frame(&mut app, &ctx, Vec::new());
+        assert!(app.win.import_scale.is_none(), "Ctrl+Z left the window of the scale open");
+        assert!(app.project.mesh_index(second).is_none(), "the second cube is still in the document");
+        assert!(app.project.mesh_index(first).is_some(), "Ctrl+Z took away the first cube, a step before the import");
+        assert_eq!(app.disk.edits.undo.len(), steps, "Ctrl+Z took a step of the history before the import");
+        assert_eq!(app.active_path, path, "Ctrl+Z took the person elsewhere");
+    }
+
+    /// A RAW MESH MOVES AS A SOLID DOES: by a node of the timeline, the move made by the rebuild in the document - its
+    /// mesh and the faces found on it carried along, nothing found on it again. The move is the one the handle of a body
+    /// makes when it is let go. Reported behaviour it replaces: the interface shifted the mesh in place and found its
+    /// faces anew, with no step in the timeline.
+    #[test]
+    fn a_raw_mesh_moves_by_a_node_of_the_timeline() {
+        let (mut app, ctx) = running();
+        let body = stl_cube(&mut app, &ctx, "moved.stl");
+        let mi = app.project.mesh_index(body).expect("the cube's mesh");
+        let before: Vec<(f64, [f64; 3])> = app.project.bodies[mi].faces.iter().map(|f| (f.area, [f.centroid.x, f.centroid.y, f.centroid.z])).collect();
+        assert_eq!(before.len(), 6, "setup: the cube came in with {} faces", before.len());
+        qymcad_part::apply_body_move(&mut app.part_ctx(), mi, [1.0, 0.0, 0.0, 50.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]);
+        let _ = frame(&mut app, &ctx, Vec::new()); // the frame after the handle is let go starts the rebuild
+        settle(&mut app, &ctx);
+        let moved = app.project.timeline.iter().find_map(|n| match n.kind {
+            qymcad_core::feature::FeatureKind::Move { src, body: b, .. } if src == body => Some(b),
+            _ => None,
+        });
+        let moved = moved.unwrap_or_else(|| panic!("no node of the timeline moved the mesh; status: {}", app.status));
+        let i = app.project.mesh_index(moved).unwrap_or_else(|| panic!("the moved mesh is no body of the document; errors {:?}, status: {}", app.project.regen_errors, app.status));
+        let b = app.project.bodies[i].mesh.bounds().expect("the moved mesh has a box");
+        assert!((b.min.x - 50.0).abs() < 1e-6 && (b.max.x - 60.0).abs() < 1e-6, "the moved cube stands from x {} to {}, not 50 to 60", b.min.x, b.max.x);
+        let after: Vec<(f64, [f64; 3])> = app.project.bodies[i].faces.iter().map(|f| (f.area, [f.centroid.x, f.centroid.y, f.centroid.z])).collect();
+        assert_eq!(after.len(), before.len(), "the moved cube has {} faces, it had {}", after.len(), before.len());
+        for ((a0, c0), (a1, c1)) in before.iter().zip(&after) {
+            assert!(
+                (a0 - a1).abs() < 1e-9 && (c0[0] + 50.0 - c1[0]).abs() < 1e-9 && (c0[1] - c1[1]).abs() < 1e-9 && (c0[2] - c1[2]).abs() < 1e-9,
+                "a face of {a0} at {c0:?} came to {a1} at {c1:?}, not 50 along x"
+            );
+        }
+    }
+
     /// The side of `body` along x, as it stands in its part.
     fn side_of(app: &App, body: qymcad_core::model::Id) -> f64 {
         app.project.mesh_index(body).and_then(|i| app.project.bodies[i].mesh.bounds()).map(|b| b.max.x - b.min.x).unwrap_or(0.0)
@@ -965,7 +1027,7 @@ pub(crate) mod tests {
     fn a_solid_is_asked_about_again_from_its_node() {
         let folder = CheckFolder::new("import-scale-again");
         let p = scale_file(&folder, "again.step");
-        let s = qymcad_kernel::Shape::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
+        let s = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 10.0, 0.0, 10.0, 10.0, 0.0, 10.0], 10.0).expect("a cube");
         qymcad_kernel::write_step(&[(&s, qymcad_core::feature::PLACE_IDENTITY)], &p).expect("written");
         let (mut app, ctx) = running();
         let before = app.project.bodies.len();
@@ -998,7 +1060,7 @@ pub(crate) mod tests {
         assert!((live(&app) - 100.0).abs() < 1e-4, "the live solid is {} mm", live(&app));
         assert_eq!(app.disk.edits.undo.len(), steps + 1, "asking again is not one step of undo");
         assert_eq!(app.project.import_scale(body), Some(10.0), "the node does not keep the factor");
-        let restored = qymcad_doc::brep::import_shapes(&app.project);
+        let restored = qymcad_kernel::imports::raise_imports(&app.project);
         let b = restored.iter().find(|(id, _)| *id == body).and_then(|(_, s)| s.bbox()).expect("reopened, the solid is there");
         assert!(((b[3] - b[0]).abs() - 100.0).abs() < 1e-4, "reopened, the solid is {} mm, not the 100 mm chosen", (b[3] - b[0]).abs());
     }
