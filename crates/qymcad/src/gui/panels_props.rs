@@ -727,7 +727,7 @@ pub(crate) fn properties_panel(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui
         // the CAM properties (the machine, the stock, the tool, the setup, the operation) belong to the CAM workbench only
         match *pr.sel {
             Sel::Mesh(i) if i < pr.project.bodies.len() => crate::gui::mesh_props(&mut *pr.deferred, &mut *pr.project, &mut *pr.regen, ui, i),
-            Sel::Face(mi, fi) if pr.project.bodies.get(mi).is_some_and(|b| fi < b.faces.len()) => crate::gui::face_props(&mut *pr.project, ui, mi, fi, !pr.gsel.faces.is_empty()),
+            Sel::Face(mi, fi) if pr.project.bodies.get(mi).is_some_and(|b| fi < b.faces.len()) => crate::gui::face_props(&mut *pr.project, &mut *pr.ask, ui, mi, fi, !pr.gsel.faces.is_empty()),
             Sel::Contour(i) if i < pr.project.contours.len() => {
                 crate::gui::panels_props::contour_props(qymcad_ui_state::editing_in!(pr), &mut *pr.array, &mut *pr.boolean, &mut *pr.deferred, &mut *pr.set, ui, i)
             }

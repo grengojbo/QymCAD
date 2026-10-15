@@ -3370,17 +3370,32 @@ pub(crate) fn datum_point_props(datum: &mut DatumCommand, deferred: &mut Deferre
     }
 }
 
-pub(crate) fn face_props(project: &mut Project, ui: &mut egui::Ui, mi: usize, fi: usize, for_cmd: bool) {
+pub(crate) fn face_props(project: &mut Project, ask: &mut Vec<qymcad_ui_state::PropsAsk>, ui: &mut egui::Ui, mi: usize, fi: usize, for_cmd: bool) {
     // INFORMATION ABOUT THE FACE, and nothing else. A face is selected by a click with nothing in hand and under
     // a command that collects faces (`for_cmd`, said in the last line); the older buttons (sketch, plane,
     // contour, projection, Z0) are gone — a sketch on a face is made with the Sketch tool on the toolbar (a
     // click on the face), and a datum by the datum command.
     let Some(face) = project.bodies.get(mi).and_then(|b| b.faces.get(fi)) else { return };
     let n = face.normal;
-    // THE LINEAGE IS TAKEN FROM THE BODY: a face has no Id of its own in the document, but "what made
-    // the thing this face lies on" is exactly the question the face's properties are opened for.
-    let lin = crate::gui::props_card::lineage_of(project, project.mesh_id(mi));
+    // THE NODE THAT MADE THIS FACE, as the name table records it, not the last node of its body: taken from the body, the
+    // top of a drilled plate said "Hole" when the hole was the last node. A face with no name (a body from a file) is
+    // told by the node that made its body.
+    let maker = qymcad_ui_state::made_by::maker_of(project, Sel::Face(mi, fi)).and_then(|m| project.timeline.iter().position(|n| n.id == m));
+    let lin = match maker {
+        Some(ti) => {
+            let id = project.timeline[ti].id;
+            qymcad_ui_state::Lineage { built_on: vec![crate::gui::panels_tree::feature_row_label(project, ti)], dependents: crate::gui::props_card::lineage_of(project, Some(id)).dependents }
+        }
+        None => crate::gui::props_card::lineage_of(project, project.mesh_id(mi)),
+    };
     props_header(ui, ph::SQUARE_HALF, "face-props-title", NameSlot::None, &lin);
+    // what to edit, said with a button: the same as a double click on the row of the node
+    if let Some(node) = maker.map(|ti| &project.timeline[ti]) {
+        let hint = if node.kind.is_import() { "fp-import-edit-hint" } else { "fp-edit-hint" };
+        if ui.button(format!("{} {}", ph::PENCIL_SIMPLE, crate::i18n::tr("props-edit"))).on_hover_text(crate::i18n::tr(hint)).clicked() {
+            ask.push(if node.kind.is_import() { qymcad_ui_state::PropsAsk::RescaleImport(node.id) } else { qymcad_ui_state::PropsAsk::EditFeature(node.id) });
+        }
+    }
     ui.label(crate::i18n::tr1("face-area", "v", &format!("{:.1}", face.area)));
     ui.label(crate::i18n::trn(
         "face-normal",
@@ -3862,6 +3877,7 @@ mod the_sketch_says_what_it_did_not_solve_in_time;
 mod a_big_drawing_stays_live;
 mod a_pattern_across_a_pattern_is_laid_by_hand;
 mod a_pushed_face_is_previewed_by_its_rim;
+mod a_face_and_its_node_light_each_other;
 mod a_size_is_set_between_two_faces;
 mod the_sketch_of_the_report_takes_a_line;
 mod a_big_sketch_selected_keeps_the_3d_frame;
