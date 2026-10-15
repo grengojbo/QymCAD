@@ -139,6 +139,7 @@ contract!(menu_parameters, qymcad_acceptance::tools::menus::PARAMETERS);
 contract!(recognise, qymcad_acceptance::tools::part::RECOGNISE);
 contract!(recognise_feature, qymcad_acceptance::tools::part::RECOGNISE_FEATURE);
 contract!(face_gap, qymcad_acceptance::tools::part::FACE_GAP);
+contract!(sketch_from_face, qymcad_acceptance::tools::part::SKETCH_FROM_FACE);
 contract!(menu_export_project, qymcad_acceptance::tools::menus::EXPORT_PROJECT);
 contract!(menu_recent, qymcad_acceptance::tools::menus::RECENT);
 contract!(menu_recent_clear, qymcad_acceptance::tools::menus::RECENT_CLEAR);

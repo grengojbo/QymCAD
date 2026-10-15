@@ -3553,6 +3553,25 @@ pub(crate) mod tests {
                 v => problems.push(format!("the printed plate made 12 thick holds {v:?} mm^3 in {} nodes more, not 14400 in one", hand.app.project.timeline.len() - nodes)),
             }
             hand.key(egui::Key::Escape).frame(Vec::new());
+            // a sketch taken off the top of the plate with "Sketch from face": nothing stands on it to redraw, so Enter
+            // lays the sketch alone - its outline, fully defined - and the body stays as it is
+            hand.tool(qymcad_part::SKETCH_FROM_FACE).frame(Vec::new());
+            hand.click([505.0, 5.0, 12.0]).frame(Vec::new());
+            let nodes = hand.app.project.timeline.len();
+            let sketches = hand.app.project.sketches.len();
+            hand.enter();
+            at_rest(&mut hand);
+            check_all(hand.app, "a sketch taken off the top of the printed plate", &mut problems);
+            let si = hand.app.project.sketches.len().checked_sub(1).filter(|_| hand.app.project.sketches.len() == sketches + 1);
+            match si.map(|si| hand.app.project.sketch_dof(si)) {
+                Some((0, 0)) if hand.app.project.timeline.len() == nodes + 1 => {}
+                dof => problems.push(format!(
+                    "the sketch taken off the printed plate stands {dof:?} in {} nodes more, not fully defined in one: {}",
+                    hand.app.project.timeline.len() - nodes,
+                    hand.app.status
+                )),
+            }
+            hand.key(egui::Key::Escape).frame(Vec::new());
             hand.app.enter_component(was);
             (hand.app.viewing.mode_3d, hand.app.viewing.cam) = view;
         }

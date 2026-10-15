@@ -1381,9 +1381,9 @@ fn apply(tool: &Tool) {
         let doc = s.document();
         let new: Vec<&str> = doc.features.iter().skip(before).map(|f| f.kind.as_str()).collect();
         // a command that changes the assembly rather than a part's timeline (grounding) names no node, and adds none
-        let want: &[&str] = if tool.node.is_empty() { &[] } else { std::slice::from_ref(&tool.node) };
+        let want: Vec<&str> = if tool.node.is_empty() { Vec::new() } else { tool.inputs.iter().copied().chain(std::iter::once(tool.node)).collect() };
         if matches!(tool.flow, Flow::Command) && new != want {
-            problems.push(format!("{how} added {new:?} to the timeline, not one {:?}", tool.node));
+            problems.push(format!("{how} added {new:?} to the timeline, not {want:?}"));
         }
         if let Err(e) = matches(&mut s, &tool.result) {
             problems.push(format!("{how}: {e}"));

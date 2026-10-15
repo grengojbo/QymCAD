@@ -39,6 +39,7 @@ pub const PART: &[(u8, &str)] = &[
     (35, "part/26-recognise"),
     (37, "part/28-recognise-feature"),
     (38, "part/29-face-gap"),
+    (39, "part/30-sketch-from-face"),
     (16, "part/16-mirror"),
     (17, "part/17-linear-array"),
     (18, "part/18-circular-array"),

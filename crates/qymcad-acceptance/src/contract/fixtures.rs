@@ -73,6 +73,9 @@ pub enum Fixture {
     /// The block with a step: a rectangle from (20, 0) to (40, 30) on the plane under it extruded 15 into it - one body
     /// of 15000 mm^3, its tops at 10 over x 0..20 and at 15 over x 20..40, both seen from where the view stands.
     SteppedBlock,
+    /// The block with a boss on its top: a rectangle from (10, 10) to (30, 20) on the table extruded 15, so 20 x 10 of it
+    /// stands 5 above the top of the block - a boss with its four walls square to its top and its base the top.
+    BossedBlock,
     /// A square of 10 on the table and a straight line of 40 up the front plane, in two sketches of the first part, the
     /// square's sketch picked in the tree: a profile and a path to sweep it along.
     SweepStraight,
@@ -158,6 +161,19 @@ impl Fixture {
                 let xy = s.word("plane-xy-table");
                 s.press_word(&xy);
                 draw(s, "tb-rect-hint", &[(20.0, 0.0), (40.0, 30.0)]);
+                let finish = s.word("wb-finish");
+                s.press_word_near(&finish, qymcad::pos2(0.0, 0.0));
+                let extrude = s.word("tb-extrude-hint");
+                s.press_hint(&extrude);
+                let length = s.word("f-length");
+                s.fill(&length, "15");
+                s.key(qymcad::Key::Enter);
+            }
+            Fixture::BossedBlock => {
+                Fixture::Block.build_here(s);
+                let xy = s.word("plane-xy-table");
+                s.press_word(&xy);
+                draw(s, "tb-rect-hint", &[(10.0, 10.0), (30.0, 20.0)]);
                 let finish = s.word("wb-finish");
                 s.press_word_near(&finish, qymcad::pos2(0.0, 0.0));
                 let extrude = s.word("tb-extrude-hint");
