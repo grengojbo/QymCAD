@@ -136,3 +136,27 @@ fn a_hole_is_moved_by_its_distance_to_a_side() {
     let across = call(&mut ctx, "face_gap", json!({ "face": "top", "hole": [37, 15, 5], "size": 5 }));
     assert_eq!(across["error"]["code"], "not-parallel", "{across}");
 }
+
+/// A SKETCH TAKEN OFF A FACE: a boss of 20 x 10 standing 5 on the block, its top taken into a sketch fully defined and
+/// the boss redrawn by it 8 high; the front of the block, with nothing standing on it, gives a sketch alone and is refused
+/// for a redraw.
+#[test]
+fn a_boss_is_redrawn_by_a_sketch_taken_off_its_top() {
+    let mut ctx = Ctx::blank();
+    let _ = block(&mut ctx);
+    let made = ok(call(&mut ctx, "create_sketch", json!({ "plane": "xy" })));
+    let _ = ok(call(&mut ctx, "sketch_add", json!({ "sketch": made["sketch"], "entities": [{ "rect": { "from": [10, 10], "to": [30, 20] } }] })));
+    let bossed = ok(call(&mut ctx, "extrude", json!({ "sketch": made["sketch"], "distance": 15 })));
+    assert_eq!(volumes(&bossed), [13000], "{bossed}");
+    let redrawn = ok(call(&mut ctx, "sketch_from_face", json!({ "face": "top", "action": "replace", "height": 8 })));
+    assert_eq!(volumes(&redrawn), [13600], "{redrawn}");
+    assert_eq!(redrawn["found"]["kind"], "boss", "{redrawn}");
+    assert!((redrawn["found"]["height"].as_f64().unwrap_or_default() - 5.0).abs() < 1e-6, "{redrawn}");
+    assert_eq!(redrawn["sketch"]["free"], 0, "the sketch is not fully defined: {redrawn}");
+    let front = ok(call(&mut ctx, "sketch_from_face", json!({ "face": "front" })));
+    assert_eq!(volumes(&front), [13600], "a sketch alone changed the body: {front}");
+    assert_eq!(front["found"]["kind"], "none", "{front}");
+    assert_eq!(front["sketch"]["free"], 0, "{front}");
+    let refused = call(&mut ctx, "sketch_from_face", json!({ "face": "front", "action": "replace" }));
+    assert_eq!(refused["error"]["code"], "not-a-prism", "{refused}");
+}

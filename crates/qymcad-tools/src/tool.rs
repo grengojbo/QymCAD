@@ -180,6 +180,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::modify::PUSH_FACE,
     crate::tools::modify::RECOGNISE_FEATURE,
     crate::tools::modify::FACE_GAP,
+    crate::tools::modify::SKETCH_FROM_FACE,
     crate::tools::timeline::ADD_PART,
     crate::tools::timeline::SET_ACTIVE_PART,
     crate::tools::timeline::DELETE_FEATURE,
