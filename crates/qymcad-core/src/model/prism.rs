@@ -18,7 +18,7 @@ const SQUARE: f64 = 1.75e-4;
 const NEAR: f64 = 1e-4;
 
 /// Which way a prism stands from its face.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub enum PrismKind {
     /// Standing out of the body: the face is its top.
     Boss,
@@ -34,6 +34,8 @@ pub struct Prism {
     pub walls: Vec<u32>,
     pub inner: Vec<u32>,
     pub base: Vec<u32>,
+    /// The edges of the outer loop of the largest face of the base: the outline the prism is placed from.
+    pub outline: Vec<u32>,
     pub height: f64,
     pub kind: PrismKind,
 }
@@ -93,8 +95,9 @@ struct Span {
     high: f64,
 }
 
-/// An edge of the face: the face across it, and its ends.
+/// An edge of the face: its id, the face across it, and its ends.
 struct Rim {
+    edge: u32,
     across: u32,
     from: [f64; 3],
     to: [f64; 3],
@@ -152,7 +155,7 @@ impl Project {
             .filter_map(|p| {
                 let poly = geom.get(&p.edge)?;
                 let across = if p.faces[0] == face { p.faces[1] } else { p.faces[0] };
-                Some(Rim { across, from: *poly.first()?, to: *poly.last()? })
+                Some(Rim { edge: p.edge, across, from: *poly.first()?, to: *poly.last()? })
             })
             .collect();
         let mut chains = loops(rims);
@@ -224,7 +227,23 @@ impl Project {
                 }
             }
         }
-        Ok(Prism { face, walls, inner, base, height: s.abs(), kind })
+        // the outline of the base: the outer loop of its largest face, the loop the prism stands in left out
+        let widest = base.iter().filter_map(|&b| by_id(b)).max_by(|a, b| a.area.total_cmp(&b.area)).map(|b| b.id);
+        let outline = widest.map_or(Vec::new(), |b| {
+            let rims: Vec<Rim> = pairs
+                .iter()
+                .filter(|p| p.faces.contains(&b) && p.faces[0] != p.faces[1])
+                .filter_map(|p| {
+                    let poly = geom.get(&p.edge)?;
+                    let across = if p.faces[0] == b { p.faces[1] } else { p.faces[0] };
+                    Some(Rim { edge: p.edge, across, from: *poly.first()?, to: *poly.last()? })
+                })
+                .collect();
+            let mut chains = loops(rims);
+            chains.sort_by(|a, b| area_along(b, n).total_cmp(&area_along(a, n)));
+            chains.into_iter().next().map_or(Vec::new(), |c| c.into_iter().map(|r| r.edge).collect())
+        });
+        Ok(Prism { face, walls, inner, base, outline, height: s.abs(), kind })
     }
 }
 

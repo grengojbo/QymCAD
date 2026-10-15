@@ -358,6 +358,7 @@ fn every_core_error_has_words_in_every_language() {
         E::PrismRimRounded,
         E::PrismBaseUneven,
         E::PrismHoleDeeper,
+        E::PrismHeightNotAboveZero,
         E::GapNotAboveZero,
         E::HoleGapNotAboveZero,
         E::HoleAxisAcrossFace,

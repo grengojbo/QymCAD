@@ -125,6 +125,8 @@ ref-what-shell-faces = Shell faces
 ref-what-removed-faces = Removed faces
 ref-what-pushed-face = Pushed face
 ref-what-gap-face = Face the size stands on
+ref-what-redrawn-faces = Faces of the redrawn boss or pocket
+ref-what-redrawn-base = Face the redrawn boss stands on
 ref-what-face-copy = Copied faces
 ref-what-offset-surface = Offset faces
 ref-what-draft-faces = Draft faces
@@ -2739,7 +2741,11 @@ msg-hole-gap-picked = From the axis of the hole to the face now: { $d }. Type th
 msg-hole-gap-face = click a flat face along its axis to measure from
 cmd-gap-hole-moves = The hole moves
 feat-name-hole-moved = Hole position
+feat-name-redrawn-boss = Boss by sketch
+feat-name-redrawn-pocket = Pocket by sketch
 feat-hole-moved = Hole position { $d }
+feat-redrawn-boss = Boss by sketch h={ $h }
+feat-redrawn-pocket = Pocket by sketch h={ $h }
 msg-unfound-no-surface = No surface found here: the mesh is rougher than the tolerance. Raise "Tolerance" and click again
 msg-unfound-no-entry = This round wall has no face to drill it from: it is a shaft or a boss, not a hole
 msg-unfound-not-two-sides = This rounding is not met by two faces along its length: click another strip of it, or round the edge with "Fillet"

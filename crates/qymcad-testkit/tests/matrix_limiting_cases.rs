@@ -300,7 +300,7 @@ fn top_rim(p: &mut Project, body: u64) -> u32 {
     rims.max_by(|a, b| a.mid[2].total_cmp(&b.mid[2])).map(|e| e.id).expect("a round edge")
 }
 
-const ON_THE_BLOCK: [OnTheBlock; 42] = [
+const ON_THE_BLOCK: [OnTheBlock; 44] = [
     // a hole 10 across exactly as deep as the block: through, no cap of the bottom left in it
     OnTheBlock {
         name: "a hole exactly as deep as the block",
@@ -705,6 +705,32 @@ const ON_THE_BLOCK: [OnTheBlock; 42] = [
             p.add_hole_moved(h, qymcad_core::model::HoleMove { hole, face: front, size: 3.0 })
         },
         expect: Expect::Builds { volume: BLOCK_VOLUME - 9.0 * std::f64::consts::PI * 5.0, faces: None },
+    },
+    // a hole in the top redrawn by a sketch taken off its floor, then made no height: refused for the number
+    OnTheBlock {
+        name: "a hole redrawn and made no height",
+        kind: "Redrawn",
+        apply: |p, b| {
+            let key = face_key(p, b, UP);
+            let h = p.add_hole(b, key, 6.0, 5.0);
+            let r = qymcad_testkit::redrawn_on(p, h, |x| x.normal[2] > 0.999 && x.centroid.z < 10.0 - 1e-3).expect("the hole redrawn");
+            p.set_feat_dim(r, "height", "0".into());
+            r
+        },
+        expect: Expect::Says(qymcad_core::errors::CoreError::PrismHeightNotAboveZero),
+    },
+    // a hole in the top redrawn by a sketch taken off its floor, then made as deep as the block: it goes through
+    OnTheBlock {
+        name: "a hole redrawn as deep as the block",
+        kind: "Redrawn",
+        apply: |p, b| {
+            let key = face_key(p, b, UP);
+            let h = p.add_hole(b, key, 6.0, 5.0);
+            let r = qymcad_testkit::redrawn_on(p, h, |x| x.normal[2] > 0.999 && x.centroid.z < 10.0 - 1e-3).expect("the hole redrawn");
+            p.set_feat_dim(r, "height", "10".into());
+            r
+        },
+        expect: Expect::Builds { volume: BLOCK_VOLUME - 9.0 * std::f64::consts::PI * 10.0, faces: None },
     },
 ];
 

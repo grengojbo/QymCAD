@@ -1505,6 +1505,11 @@ pub enum FeatureKind {
     /// and drilled again with its axis `gap` from the plane of `face`, the size, the depth and the entry face as they
     /// were. The distance stays a number in the tree.
     HoleMoved { src: Id, faces: crate::refs::Ref, exact: crate::model::Exact, face: crate::refs::Ref, gap: f64, body: Id },
+    /// A BOSS OR A POCKET REDRAWN BY A SKETCH: its faces `faces` (the face it was found from, its walls, the holes inside)
+    /// are taken off body `src` and the largest closed contour of `sketch` is extruded `height` from the plane of `base` -
+    /// up from the face a boss stands on and fused, down from the face a pocket opens in and cut. The sizes of the sketch
+    /// drive it; the height stays a number in the tree.
+    Redrawn { src: Id, faces: crate::refs::Ref, base: crate::refs::Ref, sketch: Id, height: f64, kind: crate::model::PrismKind, body: Id },
     /// Split a body by a plane: `src` falls apart into pieces, each an independent body. `bodies` holds one id
     /// per piece, ordered from bottom to top along the normal, and the first of them also serves as the
     /// `body()` of the node.
@@ -2686,6 +2691,7 @@ impl FeatureKind {
                 crate::model::Exact::Chamfer { leg, .. } => vec![("dist", leg)],
             },
             FeatureKind::FaceGap { gap, .. } | FeatureKind::HoleMoved { gap, .. } => vec![("gap", gap)],
+            FeatureKind::Redrawn { height, .. } => vec![("height", height)],
             FeatureKind::Shell { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Thicken { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Draft { angle, .. } => vec![("angle", angle)],
@@ -2733,6 +2739,7 @@ impl FeatureKind {
             | FeatureKind::Remade { body, .. }
             | FeatureKind::FaceGap { body, .. }
             | FeatureKind::HoleMoved { body, .. }
+            | FeatureKind::Redrawn { body, .. }
             | FeatureKind::Chamfer { body, .. }
             | FeatureKind::FaceCopy { body, .. }
             | FeatureKind::OffsetSurface { body, .. }
@@ -2888,6 +2895,7 @@ impl FeatureKind {
             FeatureKind::Sweep { sketch, path_sketch, .. } => vec![sketch, path_sketch],
             FeatureKind::BodyBoolean { a, b, .. } => vec![a, b],
             FeatureKind::Combine { src, sketch, .. } => vec![src, sketch],
+            FeatureKind::Redrawn { src, sketch, .. } => vec![src, sketch],
             FeatureKind::Fillet { src, .. }
             | FeatureKind::Chamfer { src, .. }
             | FeatureKind::Shell { src, .. }
@@ -2961,6 +2969,7 @@ impl FeatureKind {
             | FeatureKind::Remade { src, .. }
             | FeatureKind::FaceGap { src, .. }
             | FeatureKind::HoleMoved { src, .. }
+            | FeatureKind::Redrawn { src, .. }
             | FeatureKind::FaceCopy { src, .. }
             | FeatureKind::OffsetSurface { src, .. }
             | FeatureKind::Patch { src, .. }
@@ -3092,6 +3101,11 @@ impl FeatureKind {
                 m(sketch);
                 m(body);
             }
+            FeatureKind::Redrawn { src, sketch, body, .. } => {
+                m(src);
+                m(sketch);
+                m(body);
+            }
             FeatureKind::Fillet { src, body, .. }
             | FeatureKind::Chamfer { src, body, .. }
             | FeatureKind::Shell { src, body, .. }
@@ -3174,6 +3188,10 @@ impl FeatureKind {
                 exact.remap_descs(&mut |d| m(d));
                 face.remap_descs(&mut |d| m(d));
             }
+            FeatureKind::Redrawn { faces, base, .. } => {
+                faces.remap_descs(&mut |d| m(d));
+                base.remap_descs(&mut |d| m(d));
+            }
             // Surface features hold references of the same kind: without translation a cloned part and a
             // deleted node would break them exactly as they broke a thread.
             FeatureKind::FaceCopy { faces, .. } | FeatureKind::OffsetSurface { faces, .. } | FeatureKind::SurfaceReplace { faces, .. } => faces.remap_descs(&mut |d| m(d)),
@@ -3245,6 +3263,7 @@ impl FeatureKind {
             | FeatureKind::Remade { src, .. }
             | FeatureKind::FaceGap { src, .. }
             | FeatureKind::HoleMoved { src, .. }
+            | FeatureKind::Redrawn { src, .. }
             | FeatureKind::LinearArray { src, .. }
             | FeatureKind::CircularArray { src, .. }
             | FeatureKind::Mirror { src, .. }

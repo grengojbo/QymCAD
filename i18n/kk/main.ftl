@@ -112,6 +112,8 @@ ref-what-shell-faces = Қабық беттері
 ref-what-removed-faces = Жойылатын беттер
 ref-what-pushed-face = Жылжытылатын бет
 ref-what-gap-face = Өлшем беті
+ref-what-redrawn-faces = Қайта сызылған шығыңқының немесе қалтаның беттері
+ref-what-redrawn-base = Қайта сызылған шығыңқы тұрған бет
 ref-what-face-copy = Көшірілетін беттер
 ref-what-offset-surface = Ығыстырылатын беттер
 ref-what-draft-faces = Еңіс беттері
@@ -2595,7 +2597,11 @@ msg-hole-gap-picked = Тесік осінен бетке дейін қазір: 
 msg-hole-gap-face = өлшеу басталатын, осі бойындағы жазық бетті басыңыз
 cmd-gap-hole-moves = Тесік жылжиды
 feat-name-hole-moved = Тесіктің орны
+feat-name-redrawn-boss = Эскиз бойынша шығыңқы
+feat-name-redrawn-pocket = Эскиз бойынша қалта
 feat-hole-moved = Тесіктің орны { $d }
+feat-redrawn-boss = Эскиз бойынша шығыңқы h={ $h }
+feat-redrawn-pocket = Эскиз бойынша қалта h={ $h }
 msg-unfound-no-surface = Мұнда бет табылмады: тор төзімділіктен дөрекі. «Төзімділікті» үлкейтіп, қайта шертіңіз
 msg-unfound-no-entry = Бұл дөңгелек қабырғаның оны бұрғылайтын беті жоқ: бұл тесік емес, білік не бобышка
 msg-unfound-not-two-sides = Бұл дөңгелектеуге бойымен екі бет жанаспайды: оның басқа жолағын шертіңіз не қырды «Дөңгелектеу» құралымен дөңгелектеңіз

@@ -125,6 +125,8 @@ ref-what-shell-faces = Грани оболочки
 ref-what-removed-faces = Удаляемые грани
 ref-what-pushed-face = Сдвигаемая грань
 ref-what-gap-face = Грань размера
+ref-what-redrawn-faces = Грани выступа или кармана, начерченного заново
+ref-what-redrawn-base = Грань, на которой стоит заново начерченный выступ
 ref-what-face-copy = Копируемые грани
 ref-what-offset-surface = Смещаемые грани
 ref-what-draft-faces = Грани уклона
@@ -2739,7 +2741,11 @@ msg-hole-gap-picked = От оси отверстия до грани сейча�
 msg-hole-gap-face = щёлкните плоскую грань вдоль его оси, от которой мерить
 cmd-gap-hole-moves = Двигается отверстие
 feat-name-hole-moved = Положение отверстия
+feat-name-redrawn-boss = Выступ по эскизу
+feat-name-redrawn-pocket = Карман по эскизу
 feat-hole-moved = Положение отверстия { $d }
+feat-redrawn-boss = Выступ по эскизу h={ $h }
+feat-redrawn-pocket = Карман по эскизу h={ $h }
 msg-unfound-no-surface = Здесь не найдено поверхности: сетка грубее допуска. Увеличьте «Допуск» и щёлкните ещё раз
 msg-unfound-no-entry = У этой круглой стенки нет грани, с которой её сверлить: это вал или бобышка, а не отверстие
 msg-unfound-not-two-sides = К этому скруглению вдоль него не примыкают две грани: щёлкните другую его полосу или скруглите ребро инструментом «Скругление»
