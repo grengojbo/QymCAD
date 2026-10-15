@@ -785,6 +785,36 @@ pub(crate) fn tree_sketch_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::
     }
 }
 
+/// THE NODE WHOSE ROW IS LIT FOR WHAT IS PICKED IN THE VIEW: the node that made the face, edge or corner selected
+/// (`made_by::maker_of`), worked out once a frame - every row asks.
+fn made_by_lit(ui: &egui::Ui, project: &qymcad_core::model::Project, sel: Sel) -> Option<qymcad_core::model::Id> {
+    #[derive(Clone)]
+    struct Lit {
+        pass: u64,
+        node: Option<qymcad_core::model::Id>,
+    }
+    if !matches!(sel, Sel::Face(..) | Sel::Edge(..) | Sel::Vertex(..)) {
+        return None;
+    }
+    let key = egui::Id::new("made_by_lit");
+    let pass = ui.ctx().cumulative_pass_nr();
+    if let Some(lit) = ui.ctx().data(|d| d.get_temp::<Lit>(key)).filter(|l| l.pass == pass) {
+        return lit.node;
+    }
+    let node = qymcad_ui_state::made_by::maker_of(project, sel);
+    ui.ctx().data_mut(|d| d.insert_temp(key, Lit { pass, node }));
+    node
+}
+
+/// WHETHER THE ROW OF `node` IS LIT FOR A NEW PICK: the tree is scrolled to it once, not held there while a person
+/// scrolls away.
+fn shown_first(ui: &egui::Ui, node: qymcad_core::model::Id) -> bool {
+    let key = egui::Id::new("made_by_shown");
+    let was = ui.ctx().data(|d| d.get_temp::<qymcad_core::model::Id>(key));
+    ui.ctx().data_mut(|d| d.insert_temp(key, node));
+    was != Some(node)
+}
+
 /// A feature row: it expands into the resulting body; a click selects the feature (for editing or deleting).
 pub(crate) fn tree_feature_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui, ti: usize) {
     // a guard against a STALE index: deleting a feature within this same pass of the loop (right button ->
@@ -845,7 +875,11 @@ pub(crate) fn tree_feature_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui:
             _ => crate::i18n::tr("tree-feature-hint"),
         };
         let nid = tc.project.timeline.get(ti).map(|n| n.id).unwrap_or_default();
-        let resp = ui.selectable_label(*tc.sel == Sel::Feature(ti) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, nid), txt).on_hover_text(hover);
+        let made = made_by_lit(ui, tc.project, *tc.sel) == Some(nid);
+        let resp = ui.selectable_label(*tc.sel == Sel::Feature(ti) || qymcad_ui_state::in_tree_group(&*tc.tree_sel, nid) || made, txt).on_hover_text(hover);
+        if made && shown_first(ui, nid) {
+            resp.scroll_to_me(Some(egui::Align::Center));
+        }
         if resp.clicked() {
             tree_pick_node(tc, ui, nid, Sel::Feature(ti));
         }

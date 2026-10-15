@@ -14,6 +14,7 @@
 pub mod icons;
 pub use icons::*;
 pub mod grab;
+pub mod made_by;
 pub mod platform_keys;
 /// Clipping a triangle by a plane for the SECTION view: a pure module with no `self`, so it can be unit-tested.
 pub mod smallvec_tris {

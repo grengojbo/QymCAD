@@ -760,6 +760,14 @@ fn draw_piece(pn: &Painting, painter: &egui::Painter, rect: Rect, piece: Sel, co
             }
             painter.add(egui::Shape::mesh(hm));
         }
+        Sel::Feature(ti) => {
+            // the faces the node made, on the bodies shown: the row picked in the tree is seen on the body
+            let Some(node) = pn.project.timeline.get(ti).map(|n| n.id) else { return };
+            let bv = pn.body_view();
+            for at in qymcad_ui_state::made_by::faces_made_by(pn.project, node, |mi| qymcad_ui_state::body_shown(bv, mi)) {
+                draw_piece(pn, painter, rect, Sel::Face(at.mesh, at.face), col, alpha);
+            }
+        }
         Sel::Edge(body, id) | Sel::Vertex(body, id, _) => {
             let Some(edges) = qymcad_pick::body_edges_cached(pn.cache, pn.live, pn.regen, body) else { return };
             let Some(poly) = edges.ids.iter().position(|i| *i == id).map(|k| &edges.polys[k]) else { return };

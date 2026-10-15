@@ -770,6 +770,34 @@ impl<'a> Hand<'a> {
         out
     }
 
+    /// HOW MANY CORNERS OF FILLED TRIANGLES IN `colour` THE LAST FRAME DREW: a lit face is drawn as its triangles.
+    pub fn mesh_corners_in(&self, colour: egui::Color32) -> usize {
+        fn walk(s: &egui::Shape, colour: egui::Color32) -> usize {
+            match s {
+                egui::Shape::Mesh(m) => m.vertices.iter().filter(|v| v.color == colour).count(),
+                egui::Shape::Vec(v) => v.iter().map(|x| walk(x, colour)).sum(),
+                _ => 0,
+            }
+        }
+        self.win.shapes.iter().map(|cs| walk(&cs.shape, colour)).sum()
+    }
+
+    /// WHETHER THE ROW WHOSE WORDS HOLD `word` STANDS LIT AS SELECTED, the next frame drawn: a filled rectangle in the
+    /// colour of the selection lies under where it is written.
+    pub fn row_lit(&mut self, word: &str) -> bool {
+        fn fills(s: &egui::Shape, at: egui::Pos2, colour: egui::Color32) -> bool {
+            match s {
+                egui::Shape::Rect(r) => r.fill == colour && r.rect.contains(at),
+                egui::Shape::Vec(v) => v.iter().any(|x| fills(x, at, colour)),
+                _ => false,
+            }
+        }
+        self.frame(Vec::new());
+        let colour = self.win.ctx.global_style().visuals.selection.bg_fill;
+        let Some(at) = self.win.drawn.iter().find(|(t, _)| t.contains(word)).map(|(_, r)| r.center()) else { return false };
+        self.win.shapes.iter().any(|cs| fills(&cs.shape, at, colour))
+    }
+
     /// HOW MANY STROKES OF `colour` THE FRAME DRAWS NEAR THE POINTER, the hand resting over `place` of the sketch: a
     /// path or a segment with a point within 40 px of it. What follows the pointer is drawn there.
     pub fn strokes_near2d(&mut self, place: (f64, f64), colour: egui::Color32) -> usize {
