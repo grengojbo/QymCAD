@@ -255,6 +255,18 @@ pub enum CoreError {
     PushFaceOnSheet,
     /// A size between two faces asks for two flat faces standing parallel and apart.
     GapNotParallel,
+    /// A sketch from a face is taken off a flat face.
+    PrismFaceNotFlat,
+    /// Nothing stands on the face as a boss or a pocket with walls square to it.
+    NotAPrism,
+    /// A wall of the boss or the pocket leans off square to its face.
+    PrismWallSlanted,
+    /// The rim of the boss or the pocket is rounded or cut, at its face or at its base.
+    PrismRimRounded,
+    /// The walls of the boss or the pocket end at different heights.
+    PrismBaseUneven,
+    /// A hole inside the face goes deeper than the boss or the pocket.
+    PrismHoleDeeper,
     /// A size between two faces asks for a size above zero: the faces cannot stand in one plane.
     GapNotAboveZero,
     /// A hole moved to stand from a face asks for a distance above zero: its axis cannot lie in the face's plane.
@@ -486,6 +498,12 @@ impl CoreError {
             ImportKeptAsItCame => "warn-import-kept-as-it-came".into(),
             PushFaceOnSheet => "error-push-face-on-sheet".into(),
             GapNotParallel => "error-gap-not-parallel".into(),
+            PrismFaceNotFlat => "error-prism-face-not-flat".into(),
+            NotAPrism => "error-not-a-prism".into(),
+            PrismWallSlanted => "error-prism-wall-slanted".into(),
+            PrismRimRounded => "error-prism-rim-rounded".into(),
+            PrismBaseUneven => "error-prism-base-uneven".into(),
+            PrismHoleDeeper => "error-prism-hole-deeper".into(),
             GapNotAboveZero => "error-gap-not-above-zero".into(),
             HoleGapNotAboveZero => "error-hole-gap-not-above-zero".into(),
             HoleAxisAcrossFace => "error-hole-axis-across-face".into(),
@@ -614,6 +632,12 @@ impl std::fmt::Display for CoreError {
             ImportKeptAsItCame => write!(f, "the body brought in failed the checks and is kept as it came"),
             PushFaceOnSheet => write!(f, "push face on a sheet"),
             GapNotParallel => write!(f, "a size between faces that are not parallel planes apart"),
+            PrismFaceNotFlat => write!(f, "a sketch from a face that is not flat"),
+            NotAPrism => write!(f, "no boss or pocket with square walls on the face"),
+            PrismWallSlanted => write!(f, "a wall of the boss or pocket leans off square"),
+            PrismRimRounded => write!(f, "the rim of the boss or pocket is rounded or cut"),
+            PrismBaseUneven => write!(f, "the walls of the boss or pocket end at different heights"),
+            PrismHoleDeeper => write!(f, "a hole inside the face goes deeper than the boss or pocket"),
             GapNotAboveZero => write!(f, "a size of no distance between faces"),
             HoleGapNotAboveZero => write!(f, "a hole moved to stand no distance from the face"),
             HoleAxisAcrossFace => write!(f, "the axis of the hole runs into the face"),
