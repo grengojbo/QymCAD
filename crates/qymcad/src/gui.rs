@@ -3880,6 +3880,7 @@ mod the_sketch_says_what_it_did_not_solve_in_time;
 mod a_big_drawing_stays_live;
 mod a_pattern_across_a_pattern_is_laid_by_hand;
 mod a_pushed_face_is_previewed_by_its_rim;
+mod a_boss_is_redrawn_from_its_face;
 mod a_face_and_its_node_light_each_other;
 mod a_size_is_set_between_two_faces;
 mod the_sketch_of_the_report_takes_a_line;

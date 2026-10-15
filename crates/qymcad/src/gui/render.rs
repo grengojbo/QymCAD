@@ -303,7 +303,7 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     draw_joints(pn, painter, rect); // the mate glyphs
     draw_grounded_glyphs(pn, painter, rect); // the anchor at the grounded parts
 
-    // face highlighting happens ONLY under the Shell/Hole command (outside them a face is not pickable).
+    // face highlighting happens ONLY under the commands that take faces (outside them a face is not pickable).
     // Shell (6) lights EVERY face of the multi-selection by persistent id; Hole (7) lights one Sel::Face.
     let fill_face = |painter: &egui::Painter, face: &qymcad_core::geom::MeshFace, mesh: &qymcad_core::geom::Mesh| {
         let mut hm = egui::Mesh::default();
@@ -319,7 +319,8 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
             painter.add(egui::Shape::mesh(hm));
         }
     };
-    if pn.armed.cmd_kind() == 6 {
+    // SKETCH FROM FACE (39) lights what Enter takes: the face, and with Replace the whole boss or pocket
+    if matches!(pn.armed.cmd_kind(), 6 | 39) {
         for (mi, faces) in pn.project.bodies.iter().map(|b| &b.faces).enumerate() {
             if pn.project.mesh_id(mi) != pn.gsel.faces_body {
                 continue; // only the target body's faces are lit (the ids are local to a body)
@@ -390,6 +391,9 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         draw_remade_preview(pn, painter, &scr);
     } else if pn.armed.cmd_kind() == 38 {
         draw_gap_preview(pn, painter, &scr);
+    }
+    if pn.armed.cmd_kind() == 39 {
+        draw_redraw_preview(pn, painter, &scr);
     } else if matches!(pn.armed.cmd_kind(), 30 | 31 | 36) {
         // COPY FACE (30) and REPLACE FACE (31): show the selection TO THE EYE, not only in the model.
         //
@@ -925,6 +929,30 @@ fn draw_gap_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr
     };
     dash(one, by.one);
     dash(other, by.other);
+}
+
+/// SKETCH FROM FACE WITH REPLACE: the outline of the face dashed where the height typed puts it - the top of a boss
+/// raised or lowered, the floor of a pocket sunk deeper or brought up - over the boss or pocket lit as it stands.
+fn draw_redraw_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {
+    let Some(held) = pn.recognise.redraw.as_ref() else { return };
+    let Some(prism) = held.prism.as_ref().filter(|_| pn.feat.op == qymcad_part::REPLACE) else { return };
+    if !pn.cmd.params.iter().any(|p| p.key == "height") {
+        return;
+    }
+    let Some(mi) = pn.project.mesh_index(held.body) else { return };
+    let body = &pn.project.bodies[mi];
+    let Some(f) = body.faces.iter().find(|f| f.id == held.face.id) else { return };
+    let grow = qymcad_ui_state::cmd_val(pn.cmd, "height") - prism.height;
+    // a boss grows out along the normal of its top, a pocket deepens against the normal of its floor
+    let d = if prism.kind == qymcad_core::model::PrismKind::Boss { grow } else { -grow };
+    if d.abs() < 1e-9 {
+        return;
+    }
+    let col = if grow > 0.0 { pn.scheme.pal.ok() } else { pn.scheme.pal.offset_in() };
+    let off = |v: qymcad_core::geom::Point3| [v.x + f.normal[0] * d, v.y + f.normal[1] * d, v.z + f.normal[2] * d];
+    for s in body.mesh.face_outline(f) {
+        painter.add(egui::Shape::dashed_line(&[scr.at(off(s.from)).0, scr.at(off(s.to)).0], Stroke::new(1.2, col), 5.0, 4.0));
+    }
 }
 
 fn draw_remade_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {

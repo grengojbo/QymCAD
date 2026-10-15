@@ -44,6 +44,7 @@ pub static ALL: &[&Tool] = &[
     &part::RECOGNISE,
     &part::RECOGNISE_FEATURE,
     &part::FACE_GAP,
+    &part::SKETCH_FROM_FACE,
     &part::PIECE_TO_PART,
     &primitives::BOX,
     &primitives::CYLINDER,

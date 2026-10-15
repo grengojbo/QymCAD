@@ -7234,6 +7234,20 @@ pub struct RecogniseTool {
     pub feature: Option<FeatureInHand>,
     /// The faces "Size on body" took, in the order they were clicked: the first, then the second.
     pub gap: Vec<u32>,
+    /// The flat face "Sketch from face" took, and what stands on it.
+    pub redraw: Option<RedrawInHand>,
+    /// What the last sketch taken off a face laid, in words, for the status line after Enter.
+    pub laid: String,
+}
+
+/// A FLAT FACE HELD BY "SKETCH FROM FACE" until Enter: the body, the face, the boss or pocket standing on it (none when
+/// nothing can be redrawn there), and what was found in words.
+#[derive(Clone, Debug)]
+pub struct RedrawInHand {
+    pub body: Id,
+    pub face: qymcad_core::feature::FaceKey,
+    pub prism: Option<qymcad_core::model::Prism>,
+    pub told: String,
 }
 
 /// A FEATURE FOUND ON A BODY AND HELD BY THE TOOL until Enter: the body it stands on, what the core is to lay down for
@@ -15264,6 +15278,7 @@ pub fn clear_feat_picks(p: FeatPicks) {
     p.recognise.src = None;
     p.recognise.feature = None;
     p.recognise.gap.clear();
+    p.recognise.redraw = None;
     p.trim.keep = None;
     p.trim.tool = None;
 }

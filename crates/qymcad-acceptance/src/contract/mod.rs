@@ -68,6 +68,9 @@ pub struct Tool {
     pub result: Outcome,
     /// The kind of timeline node it makes (`Extrude`, `Fillet`).
     pub node: &'static str,
+    /// The nodes one Enter lays before `node` as what it reads - the sketch taken off a face a boss is redrawn by - by
+    /// kind and in order; none for most tools.
+    pub inputs: &'static [&'static str],
     /// The name of its step of undo, and how many such steps the ordinary use makes.
     pub undo: Word,
     pub undo_steps: usize,

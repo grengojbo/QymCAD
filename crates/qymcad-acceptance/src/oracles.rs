@@ -110,6 +110,11 @@ pub fn save_copy_open(s: &mut Session, path: &str) -> Result<(), String> {
 /// professional systems. A cut that misses the body is the extrusion's own matrix to refuse.
 const NODES_WITHOUT_A_BODY: [&str; 5] = ["Sketch", "Plane", "DatumPoint", "DatumAxis", "Combine"];
 
+/// NODES THAT LAY THEIR BODY AGAIN AS IT STOOD, by design: a boss redrawn by a sketch at its own height is the same
+/// solid, the sketch now driving it - what changed is what holds the body, not what it holds. A size typed into it that
+/// does not reach the body is still caught: the values of the tool are checked against the body they give.
+const NODES_LAID_AGAIN_AS_THEY_STOOD: [&str; 1] = ["Redrawn"];
+
 /// The bodies of their own, as the eye tells them apart: how much each holds, its faces and edges, how far it reaches,
 /// whether it is shown and in which part - not their names, and not the bodies taken up into others. A node rebuilds its
 /// body under a new name and leaves the old one consumed: the same body under another name is not a body changed; the
@@ -152,7 +157,12 @@ thread_local! {
 ///
 /// Reported behaviour: a fillet and a chamfer stand green in the timeline, and the edge they name stays sharp.
 pub fn green_and_idle(doc: &Document) -> Vec<String> {
-    let mut green: Vec<String> = doc.features.iter().filter(|f| f.error.is_none() && !f.suppressed && !NODES_WITHOUT_A_BODY.contains(&f.kind.as_str())).map(|f| f.kind.clone()).collect();
+    let mut green: Vec<String> = doc
+        .features
+        .iter()
+        .filter(|f| f.error.is_none() && !f.suppressed && !NODES_WITHOUT_A_BODY.contains(&f.kind.as_str()) && !NODES_LAID_AGAIN_AS_THEY_STOOD.contains(&f.kind.as_str()))
+        .map(|f| f.kind.clone())
+        .collect();
     green.sort();
     let now = bodies(doc);
     let last = LAST.with(|l| l.replace(Some((green.clone(), now.clone()))));
