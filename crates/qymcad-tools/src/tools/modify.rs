@@ -40,6 +40,11 @@ fn positive(project: &Project, a: &Amount, field: &str) -> Result<Read, Refusal>
 
 /// The answer of a node that leaves one body.
 fn laid(ctx: &Ctx, node: Id) -> Answer {
+    laid_node(ctx, node)
+}
+
+/// What a node laid: the feature and the body it made, with the outcome of the document.
+fn laid_node(ctx: &Ctx, node: Id) -> Answer {
     let mut a = answer("feature", json!(node));
     a.insert("body".into(), json!(node));
     outcome(ctx, a)
@@ -563,6 +568,99 @@ pub const FACE_GAP: Tool = Tool {
             .map_err(tool::doc_refusal)?;
         let mut out = laid(ctx, node);
         out.insert("was".into(), json!(apart));
+        Ok(out)
+    },
+};
+
+/// What a sketch taken off a face goes on to do, as a caller names it.
+#[derive(Deserialize, Default, Clone, Copy, PartialEq)]
+#[serde(rename_all = "lowercase")]
+enum FromFaceArg {
+    /// Lay the sketch alone.
+    #[default]
+    Sketch,
+    /// Lay the sketch and redraw the boss or pocket on the face by it.
+    Replace,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SketchFromFaceArgs {
+    body: Option<BodyRef>,
+    face: QueryArg,
+    #[serde(default)]
+    action: FromFaceArg,
+    height: Option<Amount>,
+}
+
+/// What one call laid: the sketch, and the node that redrew the boss or pocket by it.
+struct FromFaceLaid {
+    sketch: qymcad_core::model::FaceSketch,
+    node: Option<Id>,
+}
+
+pub const SKETCH_FROM_FACE: Tool = Tool {
+    name: "sketch_from_face",
+    description: "Take a sketch off a flat face of a body - a STEP has no sketch behind its bosses. The outline of the face is copied into a sketch on it as curves of its own, given the relations it shows (horizontal, vertical, parallel, perpendicular, tangent, concentric, equal) and sizes until it is fully defined, placed from the outline of the face the boss stands on, sizes rounded to a tenth. face is a query finding one flat face: the top of a boss or the floor of a pocket. action replace also takes the boss or pocket off and lays it again by the sketch, one node, its height from its base (height, mm, a number or an expression; as found by default): from then on the sizes of the sketch drive the body. A boss whose walls lean, whose rim is rounded or cut, whose walls end at different heights or with a hole going deeper is refused for replace; sketch still copies the outline. The answer says what was found and what the sketch holds: constraints, sizes, freedoms left, sizes rounded.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": body_field(),
+            "face": args::query_schema(),
+            "action": { "type": "string", "enum": ["sketch", "replace"], "description": "sketch: the sketch alone (by default); replace: the boss or pocket redrawn by it." },
+            "height": amount_schema("The height of the boss or the depth of the pocket redrawn, mm; as found by default"),
+        }, "required": ["face"], "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        let a: SketchFromFaceArgs = tool::args(arguments)?;
+        let project = ctx.doc.project();
+        let src = target(project, a.body)?;
+        let key = args::face_key(project, src, &a.face)?;
+        let height = a.height.as_ref().map(|h| positive(project, h, "height")).transpose()?;
+        let name = qymcad_i18n::tr1("g-sketch-n", "n", &(project.sketches.len() + 1).to_string());
+        let found = ctx.doc.with_kernel(|p, k| p.prism_at(src, key.id, k));
+        let what = match &found {
+            Ok(p) => json!({ "kind": if p.kind == qymcad_core::model::PrismKind::Boss { "boss" } else { "pocket" }, "height": p.height, "walls": p.walls.len(), "holes": p.inner.len() }),
+            Err(e) => json!({ "kind": "none", "why": e.to_string() }),
+        };
+        let replace = a.action == FromFaceArg::Replace;
+        let prism = match found {
+            Ok(p) => Some(p),
+            Err(e) if replace => return Err(Refusal::new("not-a-prism", &format!("Nothing to redraw on that face: {e}."), Stage::Validate).with_hint("Give action sketch to copy the outline only.")),
+            Err(_) => None,
+        };
+        let outline = prism.as_ref().map(|p| p.outline.clone()).unwrap_or_default();
+        let redraw = prism.filter(|_| replace);
+        let laid = ctx
+            .doc
+            .edit_with_kernel("f-sketch-from-face", |p, k| {
+                let part = p.body_owner(src);
+                p.set_active_component(part);
+                let sketch = p.add_sketch_from_face(qymcad_core::model::FromFace { body: src, face: key, outline: &outline, name }, k).ok_or("msg-sketch-from-face-no-outline")?;
+                let node = redraw.as_ref().map(|prism| p.add_redrawn(src, prism, sketch.sketch));
+                // the height asked, a number or an expression kept on the node
+                for (node, h) in node.iter().zip(height.as_ref()) {
+                    if let Some(qymcad_core::feature::FeatureKind::Redrawn { height: stored, .. }) = p.timeline.iter_mut().find(|n| n.id == *node).map(|n| &mut n.kind) {
+                        *stored = h.value;
+                    }
+                    p.set_feat_dim(*node, "height", h.expr.clone().unwrap_or_default());
+                }
+                Ok(FromFaceLaid { sketch, node })
+            })
+            .map_err(tool::doc_refusal)?;
+        let d = &laid.sketch.defined;
+        let held = json!({
+            "id": laid.sketch.sketch,
+            "constraints": d.relations,
+            "sizes": d.sizes,
+            "free": d.free,
+            "rounded": d.rounded.iter().map(|r| json!({ "was": r.was, "now": r.now })).collect::<Vec<_>>(),
+        });
+        let mut out = match laid.node {
+            Some(node) => laid_node(ctx, node),
+            None => outcome(ctx, answer("sketch", json!(laid.sketch.sketch))),
+        };
+        out.insert("found".into(), what);
+        out.insert("sketch".into(), held);
         Ok(out)
     },
 };

@@ -176,10 +176,24 @@ impl DocEngine {
     /// action back whole and leaves no step. A node that does not build stays red in the document, as in the window,
     /// and is told in [`DocEngine::report`].
     pub fn edit<R>(&mut self, name: &str, f: impl FnOnce(&mut Project) -> Result<R, String>) -> Result<R, DocError> {
+        self.edit_with_kernel(name, |project, _| f(project))
+    }
+
+    /// ONE ACTION UNDER `name` THAT MAY ASK THE KERNEL: as [`DocEngine::edit`], `f` handed the live bodies as a kernel as
+    /// well - a sketch taken off a face reads the edges of the face from it. The bodies are back in the document before
+    /// the rebuild that follows the action.
+    pub fn edit_with_kernel<R>(&mut self, name: &str, f: impl FnOnce(&mut Project, &dyn qymcad_core::feature::Kernel) -> Result<R, String>) -> Result<R, DocError> {
         self.ensure_brep();
         let before: Vec<Id> = self.project.timeline.iter().map(|n| n.id).collect();
         self.history.begin(name, &self.project);
-        let r = match f(&mut self.project) {
+        let done = {
+            let _gate = qymcad_kernel::kernel_gate();
+            let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut self.shapes)), quality_k: self.project.geom_quality.deflection_k(), ..Default::default() };
+            let done = f(&mut self.project, &kernel);
+            self.shapes = kernel.shapes.into_inner();
+            done
+        };
+        let r = match done {
             Ok(r) => r,
             Err(code) => {
                 self.abort();
@@ -196,6 +210,17 @@ impl DocEngine {
         self.rebuild();
         self.history.commit();
         Ok(r)
+    }
+
+    /// ASK THE KERNEL ABOUT THE DOCUMENT AS IT STANDS: `f` reads the document with the live bodies as a kernel. Nothing
+    /// changes and no step is made.
+    pub fn with_kernel<R>(&mut self, f: impl FnOnce(&Project, &dyn qymcad_core::feature::Kernel) -> R) -> R {
+        self.ensure_brep();
+        let _gate = qymcad_kernel::kernel_gate();
+        let kernel = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut self.shapes)), quality_k: self.project.geom_quality.deflection_k(), ..Default::default() };
+        let r = f(&self.project, &kernel);
+        self.shapes = kernel.shapes.into_inner();
+        r
     }
 
     /// OPEN A BATCH under `name`: the actions taken until [`DocEngine::commit_batch`] are one undo step. Each still
