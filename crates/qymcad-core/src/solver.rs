@@ -1854,27 +1854,30 @@ pub fn dof(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Constrain
     (free, redundant)
 }
 
-/// THE JACOBIAN OF A PART BY DIFFERENCES, KEPT SPARSE: each row the non-zero derivatives of a constraint, by the
-/// column. The same differences as `dof_whole` takes - a variable stepped by `h`, the rows of the constraints that hold
-/// it computed again - but only the rows of those constraints, where `dof_whole` computes every row of the part for
-/// every variable and keeps a matrix of every row by every variable: 8 000 by 8 000 for an array of 1 000 rectangles.
-struct Differences {
+/// THE JACOBIAN OF A PART, KEPT SPARSE: each row the non-zero derivatives of a constraint, by the column, written out
+/// by `con_jac` - only the rows of the constraints, where `dof_whole` keeps a matrix of every row by every variable:
+/// 8 000 by 8 000 for an array of 1 000 rectangles.
+///
+/// Not by forward differences: a step of 1e-6 leaves an error of the step times the curvature of the row, and a
+/// distance from a line that may turn is curved by its span over the length of the line. An L dimensioned from a side
+/// 10 mm long by spans of 28 and 40 mm carried 4e-7 of noise into the rows, over the 1e-7 a pivot is taken at, and a
+/// row that follows from the others read independent - by the order the constraints stood in: the L read fully defined
+/// while it slid along X, and its width laid twice read as a size that holds something.
+struct Jacobian {
     rows: Vec<Vec<(usize, f64)>>,
     /// the constraint of each row, by its place among the constraints given
     of: Vec<usize>,
     nv: usize,
 }
 
-fn differences(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Constraint]) -> Differences {
+fn jacobian_sparse(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Constraint]) -> Jacobian {
     let np = points.len();
     let idx: HashMap<Id, usize> = points.iter().enumerate().map(|(i, p)| (p.id, i)).collect();
     let ridx: HashMap<Id, usize> = radii.iter().enumerate().map(|(j, rv)| (rv.center, np * 2 + j)).collect();
     let has = |id: Id| idx.contains_key(&id);
     let is_center = |id: Id| ridx.contains_key(&id);
-    let given: Vec<usize> = (0..constraints.len()).filter(|&k| cons_ok(&constraints[k], &has, &is_center)).collect();
-    let cons: Vec<Constraint> = given.iter().map(|&k| constraints[k].clone()).collect();
     let nv = np * 2 + radii.len();
-    let anchor: HashMap<Id, (f64, f64)> = cons
+    let anchor: HashMap<Id, (f64, f64)> = constraints
         .iter()
         .filter_map(|c| match *c {
             Constraint::Fixed { p } => idx.get(&p).map(|&i| (p, (points[i].x, points[i].y))),
@@ -1883,48 +1886,30 @@ fn differences(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Const
         .collect();
     let mut x: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y]).collect();
     x.extend(radii.iter().map(|rv| rv.value));
+    let mut rows: Vec<Vec<(usize, f64)>> = Vec::new();
     let mut of = Vec::new();
-    // the rows of every constraint at x, where they start, and the constraints that hold each variable
-    let mut r0: Vec<Vec<f64>> = Vec::with_capacity(cons.len());
-    let mut first = Vec::with_capacity(cons.len());
-    let mut m = 0;
-    let mut holding: Vec<Vec<usize>> = vec![Vec::new(); nv];
-    for (ci, c) in cons.iter().enumerate() {
-        let mut r = Vec::new();
-        con_rows(c, &x, &x, &idx, &ridx, &anchor, &mut r); // the side of an axis dimension is read off the current configuration
-        first.push(m);
-        m += r.len();
-        of.extend(std::iter::repeat_n(given[ci], r.len()));
-        r0.push(r);
-        for id in c.points() {
-            let vars = idx.get(&id).map(|&i| [2 * i, 2 * i + 1]).into_iter().flatten().chain(ridx.get(&id).copied());
-            for k in vars {
-                if holding[k].last() != Some(&ci) {
-                    holding[k].push(ci);
-                }
+    let (mut r, mut j) = (Vec::new(), Vec::new());
+    for (k, c) in constraints.iter().enumerate().filter(|(_, c)| cons_ok(c, &has, &is_center)) {
+        r.clear();
+        j.clear();
+        // as many rows as the residuals, the side of an axis dimension read off the current configuration
+        con_rows(c, &x, &x, &idx, &ridx, &anchor, &mut r);
+        con_jac(c, &x, &x, &idx, &ridx, &mut j);
+        for t in 0..r.len() {
+            // a variable named twice in a row (a point of a line and the line) summed into one value
+            let mut by_col: std::collections::BTreeMap<usize, f64> = std::collections::BTreeMap::new();
+            for &(col, v) in j.get(t).into_iter().flatten() {
+                *by_col.entry(col).or_insert(0.0) += v;
             }
+            rows.push(by_col.into_iter().filter(|&(_, v)| v != 0.0).collect());
+            of.push(k);
         }
     }
-    let h = 1e-6;
-    let mut rows: Vec<Vec<(usize, f64)>> = vec![Vec::new(); m];
-    let mut xp = x.clone();
-    let mut rp = Vec::new();
-    for k in 0..nv {
-        xp[k] = x[k] + h;
-        for &ci in &holding[k] {
-            rp.clear();
-            con_rows(&cons[ci], &xp, &x, &idx, &ridx, &anchor, &mut rp);
-            for (t, (&after, &before)) in rp.iter().zip(&r0[ci]).enumerate() {
-                let v = (after - before) / h;
-                if v != 0.0 {
-                    rows[first[ci] + t].push((k, v));
-                }
-            }
-        }
-        xp[k] = x[k];
-    }
-    // each row scaled to unit length, summed by the column as `normalize_rows` sums it: the rank must not depend on
-    // the scale of the sketch or on constraint weights
+    // each row scaled to unit length before the rank is taken. The pivot threshold (1e-7) is absolute, while the
+    // magnitudes of the derivatives depend on the size of the sketch and on the constraint weights - `Fixed` carries x50,
+    // `Parallel` scales with length, tangencies sit near 1 - so unscaled the rank drifted, reporting false redundancy or
+    // under-constraint on large and on tiny parts. A null row, left by a degenerate constraint, is left alone: it is
+    // genuinely dependent.
     for row in rows.iter_mut() {
         let n = row.iter().map(|(_, v)| v * v).sum::<f64>().sqrt();
         if n > 1e-12 {
@@ -1933,7 +1918,7 @@ fn differences(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Const
             }
         }
     }
-    Differences { rows, of, nv }
+    Jacobian { rows, of, nv }
 }
 
 /// THE PIVOT COLUMNS OF A SPARSE MATRIX, by the elimination of `pivot_columns` step for step: the columns in order,
@@ -2099,12 +2084,12 @@ fn movable(pivots: &[usize], echelon: &[Vec<(usize, f64)>], cols: usize) -> Vec<
     moved
 }
 
-/// `dof_whole` of a part, by `differences` and `pivot_columns_sparse`: the same count, at the cost of the non-zeros.
+/// `dof_whole` of a part, by `jacobian_sparse` and `pivot_columns_sparse`: the same count, at the cost of the non-zeros.
 fn dof_sparse(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Constraint]) -> (i32, i32) {
     if points.is_empty() {
         return (0, 0);
     }
-    let Differences { rows, nv, .. } = differences(points, radii, constraints);
+    let Jacobian { rows, nv, .. } = jacobian_sparse(points, radii, constraints);
     let m = rows.len();
     if m == 0 {
         return (nv as i32, 0);
@@ -2113,13 +2098,13 @@ fn dof_sparse(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Constr
     (nv as i32 - rank, m as i32 - rank)
 }
 
-/// `free_points_whole` of a part, by `differences` and `pivot_columns_sparse`.
+/// `free_points_whole` of a part, by `jacobian_sparse` and `pivot_columns_sparse`.
 fn free_points_sparse(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Constraint]) -> Vec<bool> {
     let n = points.len();
     if n == 0 {
         return Vec::new();
     }
-    let Differences { rows, nv, .. } = differences(points, radii, constraints);
+    let Jacobian { rows, nv, .. } = jacobian_sparse(points, radii, constraints);
     if rows.is_empty() {
         return vec![true; n]; // no constraints at all, so everything is free
     }
@@ -2134,58 +2119,30 @@ pub fn dof_whole(points: &[SketchPoint], radii: &[RadiusVar], constraints: &[Con
     if points.is_empty() {
         return (0, 0);
     }
-    let np = points.len();
-    let idx: HashMap<Id, usize> = points.iter().enumerate().map(|(i, p)| (p.id, i)).collect();
-    let ridx: HashMap<Id, usize> = radii.iter().enumerate().map(|(j, rv)| (rv.center, np * 2 + j)).collect();
-    let has = |id: Id| idx.contains_key(&id);
-    let is_center = |id: Id| ridx.contains_key(&id);
-    let cons: Vec<Constraint> = constraints.iter().filter(|&c| cons_ok(c, &has, &is_center)).cloned().collect();
-    let nv = np * 2 + radii.len();
-    let anchor: HashMap<Id, (f64, f64)> = cons
-        .iter()
-        .filter_map(|c| match *c {
-            Constraint::Fixed { p } => idx.get(&p).map(|&i| (p, (points[i].x, points[i].y))),
-            _ => None,
-        })
-        .collect();
-    let mut x: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y]).collect();
-    x.extend(radii.iter().map(|rv| rv.value));
-    let r0 = residuals_of(&x, &x, &idx, &ridx, &anchor, &cons); // the side of an axis dimension is read off the current configuration
-    let m = r0.len();
+    let Jacobian { rows, nv, .. } = jacobian_sparse(points, radii, constraints);
+    let m = rows.len();
     if m == 0 {
         return (nv as i32, 0);
     }
-    let h = 1e-6;
-    let mut jac = vec![vec![0.0_f64; nv]; m];
-    for k in 0..nv {
-        let mut xp = x.clone();
-        xp[k] += h;
-        let rp = residuals_of(&xp, &x, &idx, &ridx, &anchor, &cons);
-        for i in 0..m {
-            jac[i][k] = (rp[i] - r0[i]) / h;
-        }
-    }
-    normalize_rows(&mut jac);
+    let mut jac = dense(rows, nv);
     let rank = pivot_columns(&mut jac, nv).len() as i32;
     let dof = nv as i32 - rank;
     let redundant = m as i32 - rank;
     (dof, redundant)
 }
 
-/// Normalise the rows of the Jacobian to unit length before taking the rank. The pivot threshold (1e-7) is
-/// absolute, while the magnitudes of the derivatives depend on the size of the sketch and on the constraint
-/// weights — `Fixed` carries ×50, `Parallel` scales with length, tangencies sit near 1 — so without
-/// normalisation the rank drifted, reporting false redundancy or under-constraint on large and on tiny parts.
-/// Null rows, left by a degenerate constraint, are left alone: they are genuinely dependent.
-fn normalize_rows(jac: &mut [Vec<f64>]) {
-    for row in jac.iter_mut() {
-        let n = row.iter().map(|v| v * v).sum::<f64>().sqrt();
-        if n > 1e-12 {
-            for v in row.iter_mut() {
-                *v /= n;
+/// The rows of `jacobian_sparse` as a matrix of every row by every variable, for the dense elimination of the
+/// references.
+fn dense(rows: Vec<Vec<(usize, f64)>>, nv: usize) -> Vec<Vec<f64>> {
+    rows.into_iter()
+        .map(|row| {
+            let mut d = vec![0.0; nv];
+            for (k, v) in row {
+                d[k] = v;
             }
-        }
-    }
+            d
+        })
+        .collect()
 }
 
 /// Which points can still move (`true`), used to highlight the under-constrained ones.
@@ -2377,7 +2334,7 @@ fn counted(own: &Own) -> Counted {
     if n == 0 {
         return Counted { free: 0, excess: 0, free_points: Vec::new(), maybe: Default::default() };
     }
-    let Differences { rows, of, nv } = differences(&own.points, &own.radii, &own.constraints);
+    let Jacobian { rows, of, nv } = jacobian_sparse(&own.points, &own.radii, &own.constraints);
     let m = rows.len();
     if m == 0 {
         return Counted { free: nv as i32, excess: 0, free_points: vec![true; n], maybe: Default::default() };
@@ -2400,39 +2357,13 @@ pub fn free_points_whole(points: &[SketchPoint], radii: &[RadiusVar], constraint
     if n == 0 {
         return Vec::new();
     }
-    let idx: HashMap<Id, usize> = points.iter().enumerate().map(|(i, p)| (p.id, i)).collect();
-    let ridx: HashMap<Id, usize> = radii.iter().enumerate().map(|(j, rv)| (rv.center, n * 2 + j)).collect();
-    let has = |id: Id| idx.contains_key(&id);
-    let is_center = |id: Id| ridx.contains_key(&id);
-    let cons: Vec<Constraint> = constraints.iter().filter(|&c| cons_ok(c, &has, &is_center)).cloned().collect();
-    let nv = n * 2 + radii.len();
-    let anchor: HashMap<Id, (f64, f64)> = cons
-        .iter()
-        .filter_map(|c| match *c {
-            Constraint::Fixed { p } => idx.get(&p).map(|&i| (p, (points[i].x, points[i].y))),
-            _ => None,
-        })
-        .collect();
-    let mut x: Vec<f64> = points.iter().flat_map(|p| [p.x, p.y]).collect();
-    x.extend(radii.iter().map(|rv| rv.value));
-    let r0 = residuals_of(&x, &x, &idx, &ridx, &anchor, &cons); // the side of an axis dimension is read off the current configuration
-    let m = r0.len();
-    if m == 0 {
+    let Jacobian { rows, nv, .. } = jacobian_sparse(points, radii, constraints);
+    if rows.is_empty() {
         return vec![true; n]; // no constraints at all, so everything is free
     }
-    let h = 1e-6;
-    let mut jac = vec![vec![0.0_f64; nv]; m];
-    for k in 0..nv {
-        let mut xp = x.clone();
-        xp[k] += h;
-        let rp = residuals_of(&xp, &x, &idx, &ridx, &anchor, &cons);
-        for i in 0..m {
-            jac[i][k] = (rp[i] - r0[i]) / h;
-        }
-    }
-    normalize_rows(&mut jac); // the rank must not depend on the scale of the sketch or on constraint weights
-                              // REDUCED: each row of a pivot holds its pivot and the free columns alone, its values there the shares of the free
-                              // columns in the motion of its pivot column (`movable`)
+    // REDUCED: each row of a pivot holds its pivot and the free columns alone, its values there the shares of the free
+    // columns in the motion of its pivot column (`movable`)
+    let mut jac = dense(rows, nv);
     let pivots = pivot_columns(&mut jac, nv);
     let mut moved = vec![true; nv];
     for &c in &pivots {
