@@ -85,7 +85,7 @@ pub fn redrawn_on(project: &mut Project, body: Id, wanted: impl Fn(&qymcad_core:
     let key = qymcad_core::feature::FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id };
     let k = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(shapes), ..Default::default() };
     let prism = project.prism_at(body, f.id, &k).ok()?;
-    let sk = project.add_sketch_from_face(qymcad_core::model::FromFace { body, face: key, outline: &prism.outline, name: "Redrawn".into() }, &k)?;
+    let sk = project.add_sketch_from_face(qymcad_core::model::FromFace { body, face: key, profile: &prism.profile, outline: &prism.outline, name: "Redrawn".into() }, &k)?;
     Some(project.add_redrawn(body, &prism, sk.sketch))
 }
 

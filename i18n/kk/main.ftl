@@ -2828,3 +2828,7 @@ msg-edit-redrawn = Шығыңқының немесе қалтаның биікт
 f-redrawn-height = Биіктік
 cmd-sketch-only = Тек эскиз
 cmd-sketch-replace = Ауыстыру
+msg-rim-round = дөңгелектеу R{ $d }
+msg-rim-chamfer = фаска { $d }
+msg-rim-at-face = беттің жиегінде
+msg-rim-at-base = негізінде

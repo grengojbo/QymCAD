@@ -9,11 +9,12 @@
 use super::{Anchor, Defined, Id, ProjSource, Prism, Project};
 use crate::feature::{FaceKey, SketchPlane};
 
-/// WHAT A SKETCH IS TAKEN OFF: the body, its flat face, the edges the drawing is placed from (none: from the axes of
-/// the sketch), and the name the sketch is given.
+/// WHAT A SKETCH IS TAKEN OFF: the body, its flat face, the edges whose plan is the drawing (none: the outline of the
+/// face), the edges the drawing is placed from (none: from the axes of the sketch), and the name the sketch is given.
 pub struct FromFace<'a> {
     pub body: Id,
     pub face: FaceKey,
+    pub profile: &'a [u32],
     pub outline: &'a [u32],
     pub name: String,
 }
@@ -31,18 +32,26 @@ impl Project {
     /// `outline` projected in as construction lines it is placed from, and the drawing defined to the end. Answers
     /// `None` when the face gives no outline, and lays nothing then.
     pub fn add_sketch_from_face(&mut self, from: FromFace, kernel: &dyn crate::feature::Kernel) -> Option<FaceSketch> {
-        let FromFace { body, face, outline, name } = from;
+        let FromFace { body, face, profile, outline, name } = from;
         let si = self.new_sketch(name.clone());
         self.sketches[si].plane = SketchPlane::Face(body, face);
-        let pid = self.add_sketch_projection(si, body, ProjSource::Face(face.id), kernel);
-        if pid == 0 {
+        // the drawing: the outline of the face, or the edges named for it - a rounded rim leaves the face smaller than
+        // the boss, and the boss is drawn by where its walls stand
+        let sources: Vec<ProjSource> = if profile.is_empty() { vec![ProjSource::Face(face.id)] } else { profile.iter().map(|&e| ProjSource::Edge(e)).collect() };
+        let mut ents = Vec::new();
+        for src in sources {
+            let pid = self.add_sketch_projection(si, body, src, kernel);
+            ents.extend(self.sketches[si].projections.iter().find(|p| p.id == pid).map(|p| p.entities.clone()).unwrap_or_default());
+            self.release_sketch_projection(si, pid);
+        }
+        if ents.is_empty() {
             self.sketches.pop();
             return None;
         }
+        // curves copied edge by edge meet at corners of their own: one point each, as a curve drawn on from another
+        self.merge_close_points(si, 1e-6);
         let sketch = self.sketches[si].id;
         self.add_sketch_node(sketch, name);
-        let ents = self.sketches[si].projections.iter().find(|p| p.id == pid).map(|p| p.entities.clone()).unwrap_or_default();
-        self.release_sketch_projection(si, pid);
         // the edges it is placed from, held by the body, drawn as construction: never a profile of its own
         let mut lines = Vec::new();
         for &edge in outline {
@@ -74,7 +83,7 @@ impl Project {
             Some(f) => crate::refs::Ref::one(f.id, crate::refs::Fingerprint { centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal }),
             None => crate::refs::Ref::picks(&prism.base),
         };
-        let kind = FeatureKind::Redrawn { src, faces, base, sketch, height: prism.height, kind: prism.kind, body };
+        let kind = FeatureKind::Redrawn { src, faces, base, sketch, height: prism.height, kind: prism.kind, rims: prism.rims, body };
         let name = match prism.kind {
             super::PrismKind::Boss => "feat-name-redrawn-boss",
             super::PrismKind::Pocket => "feat-name-redrawn-pocket",

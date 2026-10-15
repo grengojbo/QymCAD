@@ -6,7 +6,7 @@
 //! Body x what is clicked: failures are gathered and told together.
 use qymcad_core::errors::CoreError;
 use qymcad_core::geom::MeshFace;
-use qymcad_core::model::{Id, ImportNode, PrismKind, Project};
+use qymcad_core::model::{Id, ImportNode, PrismKind, Project, RimBlend, RimCut, Rims};
 use qymcad_kernel::specimen::Specimen;
 use qymcad_kernel::{OcctKernel, Shape};
 use std::collections::HashMap;
@@ -47,8 +47,15 @@ fn top_rim(s: &Shape) -> Vec<u32> {
 
 /// What a case expects: the prism found, or the words of a refusal.
 enum Want {
-    Found { kind: PrismKind, walls: usize, inner: usize, height: f64 },
+    Found { kind: PrismKind, walls: usize, inner: usize, height: f64, rims: Rims },
     Refused(CoreError),
+}
+
+const SHARP: Rims = Rims { at_face: None, at_base: None };
+
+/// The edges round the foot of the boss of `bossed`, at z = 5 inside the plate's outline.
+fn foot(s: &Shape) -> Vec<u32> {
+    s.edges_info().into_iter().filter(|e| e.poly.iter().all(|p| (p[2] as f64 - 5.0).abs() < 1e-6 && p[0] > 1.0 && p[0] < 59.0 && p[1] > 1.0 && p[1] < 39.0)).map(|e| e.id).collect()
 }
 
 struct Case {
@@ -64,18 +71,18 @@ fn up_at(z: f64) -> impl Fn(&MeshFace) -> bool {
 
 fn cases() -> Vec<Case> {
     vec![
-        Case { name: "boss", solid: bossed, clicked: |f| up_at(13.0)(f), want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 0, height: 8.0 } },
+        Case { name: "boss", solid: bossed, clicked: |f| up_at(13.0)(f), want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 0, height: 8.0, rims: SHARP } },
         Case {
             name: "pocket",
             solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 10.0).combined(&block(10.0, 10.0, 30.0, 20.0, 6.0, 5.0), 0).expect("cut"),
             clicked: |f| up_at(6.0)(f),
-            want: Want::Found { kind: PrismKind::Pocket, walls: 4, inner: 0, height: 4.0 },
+            want: Want::Found { kind: PrismKind::Pocket, walls: 4, inner: 0, height: 4.0, rims: SHARP },
         },
         Case {
             name: "round post",
             solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&post(30.0, 20.0, 6.0, 5.0, 8.0), 1).expect("fused"),
             clicked: |f| up_at(13.0)(f),
-            want: Want::Found { kind: PrismKind::Boss, walls: 1, inner: 0, height: 8.0 },
+            want: Want::Found { kind: PrismKind::Boss, walls: 1, inner: 0, height: 8.0, rims: SHARP },
         },
         Case {
             name: "boss with its corners rounded",
@@ -85,13 +92,13 @@ fn cases() -> Vec<Case> {
                 s.filleted(3.0, &e).expect("rounded")
             },
             clicked: |f| up_at(13.0)(f),
-            want: Want::Found { kind: PrismKind::Boss, walls: 8, inner: 0, height: 8.0 },
+            want: Want::Found { kind: PrismKind::Boss, walls: 8, inner: 0, height: 8.0, rims: SHARP },
         },
         Case {
             name: "boss drilled to its base",
             solid: || bossed().combined(&post(25.0, 20.0, 3.0, 5.0, 9.0), 0).expect("drilled"),
             clicked: |f| up_at(13.0)(f),
-            want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 1, height: 8.0 },
+            want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 1, height: 8.0, rims: SHARP },
         },
         Case {
             name: "boss rounded at its top",
@@ -99,6 +106,36 @@ fn cases() -> Vec<Case> {
                 let s = bossed();
                 let e = top_rim(&s);
                 s.filleted(2.0, &e).expect("rounded")
+            },
+            clicked: |f| up_at(13.0)(f),
+            want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 0, height: 8.0, rims: Rims { at_face: Some(RimBlend { cut: RimCut::Round, size: 2.0 }), at_base: None } },
+        },
+        Case {
+            name: "boss cut at its top",
+            solid: || {
+                let s = bossed();
+                let e = top_rim(&s);
+                s.chamfered(1.5, &e).expect("cut")
+            },
+            clicked: |f| up_at(13.0)(f),
+            want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 0, height: 8.0, rims: Rims { at_face: Some(RimBlend { cut: RimCut::Chamfer, size: 1.5 }), at_base: None } },
+        },
+        Case {
+            name: "boss rounded at its foot",
+            solid: || {
+                let s = bossed();
+                let e = foot(&s);
+                s.filleted(1.0, &e).expect("rounded")
+            },
+            clicked: |f| up_at(13.0)(f),
+            want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 0, height: 8.0, rims: Rims { at_face: None, at_base: Some(RimBlend { cut: RimCut::Round, size: 1.0 }) } },
+        },
+        Case {
+            name: "boss rounded along one edge of its top",
+            solid: || {
+                let s = bossed();
+                let e = top_rim(&s);
+                s.filleted(2.0, &e[..1]).expect("rounded")
             },
             clicked: |f| up_at(13.0)(f),
             want: Want::Refused(CoreError::PrismRimRounded),
@@ -151,8 +188,10 @@ fn run(c: &Case) -> Result<(), String> {
     let k = OcctKernel { shapes: std::cell::RefCell::new(shapes), ..Default::default() };
     let got = p.prism_at(body, face, &k);
     match (&c.want, got) {
-        (Want::Found { kind, walls, inner, height }, Ok(found)) => {
-            if found.kind != *kind || found.walls.len() != *walls || found.inner.len() != *inner || (found.height - height).abs() > 1e-6 || found.base.is_empty() {
+        (Want::Found { kind, walls, inner, height, rims }, Ok(found)) => {
+            let rim_like = |a: Option<RimBlend>, b: Option<RimBlend>| a.map_or(b.is_none(), |a| b.is_some_and(|b| a.cut == b.cut && (a.size - b.size).abs() < 1e-3));
+            let rims_ok = rim_like(found.rims.at_face, rims.at_face) && rim_like(found.rims.at_base, rims.at_base);
+            if found.kind != *kind || found.walls.len() != *walls || found.inner.len() != *inner || (found.height - height).abs() > 1e-6 || found.base.is_empty() || !rims_ok {
                 return Err(format!("found {found:?}"));
             }
             Ok(())

@@ -4,7 +4,7 @@
 //! by the sketch, one node whose height is a field at the geometry (`Project::add_redrawn`): from then on the sizes of
 //! the sketch drive the body. Made for a body come from a STEP file, which has no sketch behind its bosses.
 use qymcad_core::feature::{FaceKey, FeatureKind};
-use qymcad_core::model::{FaceSketch, FromFace, Id, PrismKind};
+use qymcad_core::model::{FaceSketch, FromFace, Id, PrismKind, RimBlend, RimCut};
 use qymcad_ui_state::{CmdParam, PartCtx, RedrawInHand};
 
 /// The code of the command.
@@ -74,7 +74,14 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
     let told = match &found {
         Ok(p) => {
             let what = if p.kind == PrismKind::Boss { "msg-sketch-from-face-boss" } else { "msg-sketch-from-face-pocket" };
-            qymcad_i18n::tr1(what, "h", &qymcad_i18n::num(p.height, 2))
+            let mut told = qymcad_i18n::tr1(what, "h", &qymcad_i18n::num(p.height, 2));
+            // a rim rounded or cut is named: it goes with the boss and comes back the same size
+            let rims = [p.rims.at_face.map(|r| RimTold { rim: r, at: "msg-rim-at-face" }), p.rims.at_base.map(|r| RimTold { rim: r, at: "msg-rim-at-base" })];
+            for r in rims.into_iter().flatten() {
+                let how = if r.rim.cut == RimCut::Round { "msg-rim-round" } else { "msg-rim-chamfer" };
+                told = format!("{told}, {} {}", qymcad_i18n::tr1(how, "d", &qymcad_i18n::num(r.rim.size, 2)), qymcad_i18n::tr(r.at));
+            }
+            told
         }
         Err(e) => qymcad_i18n::tr(&e.key()),
     };
@@ -125,6 +132,12 @@ pub fn sketch_from_face_ready(pc: &PartCtx) -> bool {
     pc.recognise.redraw.is_some()
 }
 
+/// A rim of the prism held, and where it runs, for the status line.
+struct RimTold {
+    rim: RimBlend,
+    at: &'static str,
+}
+
 /// What Enter laid: the sketch, and the node that redrew the boss or pocket by it.
 struct Laid {
     sketch: FaceSketch,
@@ -139,10 +152,11 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
     let replace = pc.feat.op == REPLACE;
     let height = qymcad_ui_state::cmd_val(pc.cmd, "height");
     let outline = held.prism.as_ref().map(|p| p.outline.clone()).unwrap_or_default();
+    let profile = held.prism.as_ref().map(|p| p.profile.clone()).unwrap_or_default();
     let name = qymcad_i18n::tr1("g-sketch-n", "n", &(pc.project.sketches.len() + 1).to_string());
     let prism = held.prism.clone().filter(|_| replace);
     let laid = qymcad_ui_state::with_kernel(&mut pc.rebuild(), |project, k| {
-        let sketch = project.add_sketch_from_face(FromFace { body: held.body, face: held.face, outline: &outline, name }, k)?;
+        let sketch = project.add_sketch_from_face(FromFace { body: held.body, face: held.face, profile: &profile, outline: &outline, name }, k)?;
         let node = prism.as_ref().map(|p| project.add_redrawn(held.body, p, sketch.sketch));
         Some(Laid { sketch, node })
     });

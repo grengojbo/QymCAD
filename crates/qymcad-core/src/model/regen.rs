@@ -119,7 +119,23 @@ struct Redraw<'a> {
     base: &'a crate::refs::Ref,
     sketch: Id,
     kind: crate::model::PrismKind,
+    rims: crate::model::Rims,
     body: Id,
+}
+
+/// A RIM TO LAY AGAIN on a redrawn prism: what it is, and how far along the normal of the sketch its edges stand.
+struct RimAt {
+    rim: crate::model::RimBlend,
+    at: f64,
+}
+
+/// A rim laid again on a redrawn prism: rounded or cut to its size along `edges`, its faces named after the node.
+fn blend_rim(k: &dyn crate::feature::Kernel, body: Id, rim: crate::model::RimBlend, edges: &[u32], feature: Id) -> Result<crate::geom::Built, crate::errors::CoreError> {
+    let roles = crate::feature::BlendRoles::Named { feature };
+    match rim.cut {
+        crate::model::RimCut::Round => k.fillet(body, body, rim.size, edges, roles),
+        crate::model::RimCut::Chamfer => k.chamfer(body, body, rim.size, edges, roles),
+    }
 }
 
 /// How far a redrawn boss reaches into its base, or a pocket out of its opening, in mm: past the plane of the face it
@@ -1764,7 +1780,7 @@ impl Project {
     /// carries the boss. The tool reaches `REDRAW_PAST` back past the base, into the plate or out of the opening: an end
     /// lying in the plane of a face of the body leaves a sliver of a face behind it.
     fn prep_redrawn(&mut self, p: &Pass, r: Redraw, height: f64) -> crate::feature::KernelJob {
-        let Redraw { src, faces, base, sketch, kind, body } = r;
+        let Redraw { src, faces, base, sketch, kind, rims, body } = r;
         let ids = match self.faces_by_ref(p.node, src, faces, "ref-what-redrawn-faces") {
             Ok(ids) if !ids.is_empty() => ids,
             _ => return crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
@@ -1787,10 +1803,26 @@ impl Project {
             crate::model::PrismKind::Boss => 1,
             crate::model::PrismKind::Pocket => 0,
         };
+        // the rims as the tree has them, laid again where the new walls meet the new face (`far`) and the base (`off`), the
+        // edges found by the outline of the sketch in plan: the new faces are numbered by the kernel only once they are made
+        let face_rim = rims.at_face.map(|r| crate::model::RimBlend { size: p.dim("rim", r.size), ..r });
+        let base_rim = rims.at_base.map(|r| crate::model::RimBlend { size: p.dim("base_rim", r.size), ..r });
+        let outline: Vec<crate::geom::Point2> = self.contour_index(outer).map(|i| self.contours[i].points.clone()).unwrap_or_default();
+        let far = off + toward * h;
+        let laid: Vec<RimAt> = [face_rim.map(|rim| RimAt { rim, at: far }), base_rim.map(|rim| RimAt { rim, at: off })].into_iter().flatten().collect();
         let feature = p.node;
         crate::feature::KernelJob::new(vec![src], move |k| {
             k.remove_faces(body, src, &ids)?;
-            k.combine_region_multi(BodyOp { src: body, op, body }, &sourced.profiles, span, pl, crate::feature::Sides { feature, sources: &sourced.sources })
+            let mut built = k.combine_region_multi(BodyOp { src: body, op, body }, &sourced.profiles, span, pl, crate::feature::Sides { feature, sources: &sourced.sources })?;
+            for r in &laid {
+                let edges = crate::model::edges_round_outline(k, body, &pl, r.at, &outline);
+                if edges.is_empty() {
+                    let op = if r.rim.cut == crate::model::RimCut::Round { crate::errors::Op::Fillet } else { crate::errors::Op::Chamfer };
+                    return Err(crate::errors::CoreError::OpFailed(op));
+                }
+                built = blend_rim(k, body, r.rim, &edges, feature)?;
+            }
+            Ok(built)
         })
     }
 
@@ -2784,8 +2816,8 @@ impl Project {
             FeatureKind::Remade { src, faces, exact, body } => (*body, self.prep_remade(p, *src, faces, exact, *body)),
             FeatureKind::PushFace { src, face, dist, body } => (*body, self.prep_pushface(p, *src, face, *dist, *body)),
             FeatureKind::HoleMoved { src, faces, exact, face, gap, body } => (*body, self.prep_holemoved(p, *src, HoleRefs { faces, face }, exact, *gap, *body)),
-            FeatureKind::Redrawn { src, faces, base, sketch, height, kind, body } => {
-                (*body, self.prep_redrawn(p, Redraw { src: *src, faces, base, sketch: *sketch, kind: *kind, body: *body }, *height))
+            FeatureKind::Redrawn { src, faces, base, sketch, height, kind, rims, body } => {
+                (*body, self.prep_redrawn(p, Redraw { src: *src, faces, base, sketch: *sketch, kind: *kind, rims: *rims, body: *body }, *height))
             }
             FeatureKind::FaceGap { src, one, other, gap, moves, body } => (*body, self.prep_facegap(p, *src, GapRefs { one, other }, *gap, *moves, *body)),
             FeatureKind::Patch { src, edges, tangent, body } => (*body, self.prep_patch(p, *src, edges, *tangent, *body)),

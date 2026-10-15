@@ -2885,3 +2885,7 @@ msg-edit-redrawn = The height of the redrawn boss or pocket: type it and press E
 f-redrawn-height = Height
 cmd-sketch-only = Sketch only
 cmd-sketch-replace = Replace
+msg-rim-round = rounded R{ $d }
+msg-rim-chamfer = chamfered { $d }
+msg-rim-at-face = at its face
+msg-rim-at-base = at its base

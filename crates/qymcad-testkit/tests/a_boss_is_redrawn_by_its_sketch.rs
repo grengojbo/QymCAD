@@ -40,6 +40,16 @@ fn uprights(s: &Shape) -> Vec<u32> {
         .collect()
 }
 
+/// The edges round the top of the boss of `bossed`, at z = 13.
+fn top_rim(s: &Shape) -> Vec<u32> {
+    s.edges_info().into_iter().filter(|e| e.poly.iter().all(|p| (p[2] as f64 - 13.0).abs() < 1e-6)).map(|e| e.id).collect()
+}
+
+/// The edges round the foot of the boss of `bossed`, at z = 5 inside the plate's outline.
+fn foot(s: &Shape) -> Vec<u32> {
+    s.edges_info().into_iter().filter(|e| e.poly.iter().all(|p| (p[2] as f64 - 5.0).abs() < 1e-6 && p[0] > 1.0 && p[0] < 59.0 && p[1] > 1.0 && p[1] < 39.0)).map(|e| e.id).collect()
+}
+
 /// A size of the sketch typed anew: from what it measures to what it is made.
 struct Resize {
     from: f64,
@@ -96,6 +106,47 @@ fn cases() -> Vec<Case> {
             height: 10.0,
             height_gains: (30.0 * 20.0 - (4.0 - PI) * 9.0) * 2.0,
         },
+        // a rounding of 2 along the top: the boss 2 taller gains its section, the rounding moving up with the top; 10 longer,
+        // its two long edges lose r^2 (1 - pi/4) a millimetre more each to the rounding laid again
+        Case {
+            name: "boss rounded at its top",
+            solid: || {
+                let s = bossed();
+                let e = top_rim(&s);
+                s.filleted(2.0, &e).expect("rounded")
+            },
+            clicked: |f| top(13.0)(f),
+            resize: Resize { from: 30.0, to: 40.0 },
+            gains: 10.0 * 20.0 * 10.0 - 2.0 * 10.0 * 4.0 * (1.0 - PI / 4.0),
+            height: 10.0,
+            height_gains: 30.0 * 20.0 * 2.0,
+        },
+        Case {
+            name: "boss cut at its top",
+            solid: || {
+                let s = bossed();
+                let e = top_rim(&s);
+                s.chamfered(1.5, &e).expect("cut")
+            },
+            clicked: |f| top(13.0)(f),
+            resize: Resize { from: 30.0, to: 40.0 },
+            gains: 10.0 * 20.0 * 10.0 - 2.0 * 10.0 * 1.5 * 1.5 / 2.0,
+            height: 10.0,
+            height_gains: 30.0 * 20.0 * 2.0,
+        },
+        Case {
+            name: "boss rounded at its foot",
+            solid: || {
+                let s = bossed();
+                let e = foot(&s);
+                s.filleted(1.0, &e).expect("rounded")
+            },
+            clicked: |f| top(13.0)(f),
+            resize: Resize { from: 30.0, to: 40.0 },
+            gains: 10.0 * 20.0 * 10.0 + 2.0 * 10.0 * (1.0 - PI / 4.0),
+            height: 10.0,
+            height_gains: 30.0 * 20.0 * 2.0,
+        },
     ]
 }
 
@@ -142,7 +193,7 @@ fn run(c: &Case) -> Result<(), String> {
     let key = FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id };
     let k = OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(&mut shapes)), ..Default::default() };
     let prism = p.prism_at(body, key.id, &k).map_err(|e| format!("not found: {e:?}"))?;
-    let sk = p.add_sketch_from_face(FromFace { body, face: key, outline: &prism.outline, name: "S".into() }, &k).ok_or("no sketch")?;
+    let sk = p.add_sketch_from_face(FromFace { body, face: key, profile: &prism.profile, outline: &prism.outline, name: "S".into() }, &k).ok_or("no sketch")?;
     shapes = k.shapes.into_inner();
     if p.sketch_dof(sk.si) != (0, 0) {
         return Err(format!("the sketch stands {:?}, not fully defined; {:?}", p.sketch_dof(sk.si), sk.defined));

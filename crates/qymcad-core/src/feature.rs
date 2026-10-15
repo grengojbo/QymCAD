@@ -1507,9 +1507,19 @@ pub enum FeatureKind {
     HoleMoved { src: Id, faces: crate::refs::Ref, exact: crate::model::Exact, face: crate::refs::Ref, gap: f64, body: Id },
     /// A BOSS OR A POCKET REDRAWN BY A SKETCH: its faces `faces` (the face it was found from, its walls, the holes inside)
     /// are taken off body `src` and the largest closed contour of `sketch` is extruded `height` from the plane of `base` -
-    /// up from the face a boss stands on and fused, down from the face a pocket opens in and cut. The sizes of the sketch
-    /// drive it; the height stays a number in the tree.
-    Redrawn { src: Id, faces: crate::refs::Ref, base: crate::refs::Ref, sketch: Id, height: f64, kind: crate::model::PrismKind, body: Id },
+    /// up from the face a boss stands on and fused, down from the face a pocket opens in and cut - and its rims rounded or
+    /// cut again as they were (`rims`). The sizes of the sketch drive it; the height and the rims stay numbers in the tree.
+    Redrawn {
+        src: Id,
+        faces: crate::refs::Ref,
+        base: crate::refs::Ref,
+        sketch: Id,
+        height: f64,
+        kind: crate::model::PrismKind,
+        #[serde(default)]
+        rims: crate::model::Rims,
+        body: Id,
+    },
     /// Split a body by a plane: `src` falls apart into pieces, each an independent body. `bodies` holds one id
     /// per piece, ordered from bottom to top along the normal, and the first of them also serves as the
     /// `body()` of the node.
@@ -2691,7 +2701,12 @@ impl FeatureKind {
                 crate::model::Exact::Chamfer { leg, .. } => vec![("dist", leg)],
             },
             FeatureKind::FaceGap { gap, .. } | FeatureKind::HoleMoved { gap, .. } => vec![("gap", gap)],
-            FeatureKind::Redrawn { height, .. } => vec![("height", height)],
+            FeatureKind::Redrawn { height, rims, .. } => {
+                let mut v = vec![("height", height)];
+                v.extend(rims.at_face.map(|r| ("rim", r.size)));
+                v.extend(rims.at_base.map(|r| ("base_rim", r.size)));
+                v
+            }
             FeatureKind::Shell { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Thicken { thickness, .. } => vec![("thickness", thickness)],
             FeatureKind::Draft { angle, .. } => vec![("angle", angle)],
