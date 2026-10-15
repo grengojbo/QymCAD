@@ -103,7 +103,7 @@ struct Row {
     build: fn(&mut Project) -> u64,
 }
 
-const ROWS: [Row; 43] = [
+const ROWS: [Row; 44] = [
     Row { name: "an extruded block", kind: "Extrude", build: extruded_block },
     Row { name: "the box primitive", kind: "Box3", build: |p| p.add_box(40.0, 30.0, 10.0) },
     Row { name: "the prism primitive", kind: "Prism", build: |p| p.add_prism(10.0, 6, 10.0) },
@@ -466,6 +466,17 @@ const ROWS: [Row; 43] = [
             let b = extruded_block(p);
             let (one, other) = (face_key(p, b, FRONT), face_key(p, b, [0.0, 1.0, 0.0]));
             p.add_face_gap(b, qymcad_core::model::Gap { one, other, size: 40.0, moves: qymcad_core::feature::GapMoves::Other })
+        },
+    },
+    Row {
+        name: "a pocket redrawn by a sketch taken off its floor",
+        kind: "Redrawn",
+        build: |p| {
+            let b = extruded_block(p);
+            let (sid, profiles, _) = sketch_of(p, "Pocket", [p2(5.0, 5.0), p2(15.0, 15.0)], None);
+            let span = qymcad_core::model::CombineSpan { height: 5.0, down: 0.0, extent: qymcad_core::feature::Extent { reach: Reach::Forward, ..Default::default() }, fill: &[] };
+            let c = p.add_combine_multi_op(b, sid, profiles, span, 0);
+            qymcad_testkit::redrawn_on(p, c, |f| f.normal[2] < -0.999 && (f.centroid.z - 5.0).abs() < 1e-6).expect("the pocket redrawn")
         },
     },
     Row {

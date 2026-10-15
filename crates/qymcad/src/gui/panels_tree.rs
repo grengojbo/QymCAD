@@ -320,6 +320,10 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         // A SIZE ON THE BODY names its number, as a dimension does
         FeatureKind::FaceGap { gap, .. } => format!("{} {}", ph::RULER, crate::i18n::tr1("feat-face-gap", "d", &crate::i18n::num(at("gap", gap), 1))),
         FeatureKind::HoleMoved { gap, .. } => format!("{} {}", ph::ARROWS_OUT_CARDINAL, crate::i18n::tr1("feat-hole-moved", "d", &crate::i18n::num(at("gap", gap), 1))),
+        FeatureKind::Redrawn { height, kind, .. } => {
+            let key = if kind == qymcad_core::model::PrismKind::Boss { "feat-redrawn-boss" } else { "feat-redrawn-pocket" };
+            format!("{} {}", ph::PENCIL_LINE, crate::i18n::tr1(key, "h", &crate::i18n::num(at("height", height), 1)))
+        }
         // A FEATURE MADE EXACT names what it is and its size, as the tool that made it does
         FeatureKind::Remade { ref exact, .. } => {
             use qymcad_core::model::{Exact, Reach};

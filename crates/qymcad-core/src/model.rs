@@ -2130,6 +2130,8 @@ pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, Exte
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
+mod face_sketch;
+pub use face_sketch::{FaceSketch, FromFace};
 mod prism;
 pub use prism::{Prism, PrismKind};
 mod sketch_define;

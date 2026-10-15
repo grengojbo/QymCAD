@@ -267,6 +267,8 @@ pub enum CoreError {
     PrismBaseUneven,
     /// A hole inside the face goes deeper than the boss or the pocket.
     PrismHoleDeeper,
+    /// A boss or a pocket redrawn asks for a height above zero.
+    PrismHeightNotAboveZero,
     /// A size between two faces asks for a size above zero: the faces cannot stand in one plane.
     GapNotAboveZero,
     /// A hole moved to stand from a face asks for a distance above zero: its axis cannot lie in the face's plane.
@@ -504,6 +506,7 @@ impl CoreError {
             PrismRimRounded => "error-prism-rim-rounded".into(),
             PrismBaseUneven => "error-prism-base-uneven".into(),
             PrismHoleDeeper => "error-prism-hole-deeper".into(),
+            PrismHeightNotAboveZero => "error-prism-height-not-above-zero".into(),
             GapNotAboveZero => "error-gap-not-above-zero".into(),
             HoleGapNotAboveZero => "error-hole-gap-not-above-zero".into(),
             HoleAxisAcrossFace => "error-hole-axis-across-face".into(),
@@ -638,6 +641,7 @@ impl std::fmt::Display for CoreError {
             PrismRimRounded => write!(f, "the rim of the boss or pocket is rounded or cut"),
             PrismBaseUneven => write!(f, "the walls of the boss or pocket end at different heights"),
             PrismHoleDeeper => write!(f, "a hole inside the face goes deeper than the boss or pocket"),
+            PrismHeightNotAboveZero => write!(f, "a boss or pocket redrawn no height"),
             GapNotAboveZero => write!(f, "a size of no distance between faces"),
             HoleGapNotAboveZero => write!(f, "a hole moved to stand no distance from the face"),
             HoleAxisAcrossFace => write!(f, "the axis of the hole runs into the face"),

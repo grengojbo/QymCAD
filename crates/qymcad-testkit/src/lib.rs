@@ -75,6 +75,20 @@ pub fn found_on(project: &Project, body: Id, wanted: impl Fn(&qymcad_core::geom:
     qymcad_meshfit::feature::feature_at(mesh, faces, pick, 1.0).ok()?.remake(faces)
 }
 
+/// THE BOSS OR POCKET UNDER THE FLAT FACE OF `body` THAT `wanted` PICKS, REDRAWN BY A SKETCH TAKEN OFF IT, as the window
+/// lays it: the prism found, the sketch taken off the face and placed from the outline of the base, one node. The
+/// document is rebuilt first, so the faces and the live shapes are those of the body as it stands. `None` when there is
+/// no such face, nothing stands on it, or it gives no outline.
+pub fn redrawn_on(project: &mut Project, body: Id, wanted: impl Fn(&qymcad_core::geom::MeshFace) -> bool) -> Option<Id> {
+    let (_, shapes) = regenerate(project);
+    let f = project.regen_faces.get(&body)?.iter().find(|f| wanted(f))?.clone();
+    let key = qymcad_core::feature::FaceKey { index: 0, centroid: [f.centroid.x, f.centroid.y, f.centroid.z], normal: f.normal, id: f.id };
+    let k = qymcad_kernel::OcctKernel { shapes: std::cell::RefCell::new(shapes), ..Default::default() };
+    let prism = project.prism_at(body, f.id, &k).ok()?;
+    let sk = project.add_sketch_from_face(qymcad_core::model::FromFace { body, face: key, outline: &prism.outline, name: "Redrawn".into() }, &k)?;
+    Some(project.add_redrawn(body, &prism, sk.sketch))
+}
+
 /// THE KINDS OF NODE A TIMELINE HOLDS, by the names of the variants of `FeatureKind` as its source declares them. Read
 /// from the source rather than listed by hand: a kind added to the enum is a kind the matrices have not seen, and a
 /// list kept beside the enum would not know of it.

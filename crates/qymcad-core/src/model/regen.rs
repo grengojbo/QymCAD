@@ -111,6 +111,21 @@ fn walls(ruled: bool) -> crate::feature::LoftWalls {
 /// The same three arguments trail the end of nearly every rebuild branch. Together they are one thing:
 /// take `src`, make something, and add or cut it into `body` according to `op`.
 #[derive(Clone, Copy)]
+/// A BOSS OR A POCKET TO REDRAW, as its node holds it: the body it is taken off, its faces, the face it stands on or
+/// opens in, the sketch it is redrawn by, which way it stands, and the body the result lands in.
+struct Redraw<'a> {
+    src: Id,
+    faces: &'a crate::refs::Ref,
+    base: &'a crate::refs::Ref,
+    sketch: Id,
+    kind: crate::model::PrismKind,
+    body: Id,
+}
+
+/// How far a redrawn boss reaches into its base, or a pocket out of its opening, in mm: past the plane of the face it
+/// ends at, so no sliver of that face is left between the tool and the body.
+const REDRAW_PAST: f64 = 0.01;
+
 pub struct BodyOp {
     /// The body the operation reads.
     pub src: Id,
@@ -1742,6 +1757,58 @@ impl Project {
         self.prep_remade(p, src, refs.faces, &Exact::Hole { entry, at, diameter, depth, reach }, body)
     }
 
+    /// A boss or a pocket redrawn (`FeatureKind::Redrawn`): its faces taken off `src`, the body healed, and the largest
+    /// closed contour of the sketch extruded `height` from the plane of its base towards the sketch - fused for a boss,
+    /// cut for a pocket. Measured from the sketch, a taller boss only went deeper into the plate it stood on (its top
+    /// is the sketch): 8 made 10 left the body as it was. The base is read where it stands now, so a base moved above
+    /// carries the boss. The tool reaches `REDRAW_PAST` back past the base, into the plate or out of the opening: an end
+    /// lying in the plane of a face of the body leaves a sliver of a face behind it.
+    fn prep_redrawn(&mut self, p: &Pass, r: Redraw, height: f64) -> crate::feature::KernelJob {
+        let Redraw { src, faces, base, sketch, kind, body } = r;
+        let ids = match self.faces_by_ref(p.node, src, faces, "ref-what-redrawn-faces") {
+            Ok(ids) if !ids.is_empty() => ids,
+            _ => return crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
+        };
+        let h = p.dim("height", height);
+        if h <= PLANE_GAP {
+            return crate::feature::KernelJob::refused(crate::errors::CoreError::PrismHeightNotAboveZero);
+        }
+        let Some(outer) = self.outer_contour(sketch) else { return crate::feature::KernelJob::refused(crate::errors::CoreError::ProfileNotFound) };
+        let Some(sourced) = self.encode_profiles_sourced(sketch, &[outer], &[]) else { return crate::feature::KernelJob::refused(crate::errors::CoreError::ProfileNotFound) };
+        let pl = self.sketch_place(sketch);
+        let Ok(b) = self.face_by_ref(p.node, src, base, "ref-what-redrawn-base") else { return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound) };
+        // where the base stands along the normal of the sketch, and which way from it the sketch lies
+        let (n, o) = ([pl[2], pl[6], pl[10]], [pl[3], pl[7], pl[11]]);
+        let off = (0..3).map(|i| (b.centroid[i] - o[i]) * n[i]).sum::<f64>();
+        let toward = if off > 0.0 { -1.0 } else { 1.0 };
+        let (near, far) = (off - toward * REDRAW_PAST, off + toward * h);
+        let span = crate::feature::ToolSpan { start: near.min(far), length: (far - near).abs(), ends: crate::feature::ToolEnds::Kept };
+        let op = match kind {
+            crate::model::PrismKind::Boss => 1,
+            crate::model::PrismKind::Pocket => 0,
+        };
+        let feature = p.node;
+        crate::feature::KernelJob::new(vec![src], move |k| {
+            k.remove_faces(body, src, &ids)?;
+            k.combine_region_multi(BodyOp { src: body, op, body }, &sourced.profiles, span, pl, crate::feature::Sides { feature, sources: &sourced.sources })
+        })
+    }
+
+    /// THE LARGEST CLOSED CONTOUR OF A SKETCH, by the area it encloses: the outline a boss or a pocket is redrawn by,
+    /// the contours inside it its holes.
+    pub fn outer_contour(&self, sketch: Id) -> Option<Id> {
+        let si = self.sketch_index(sketch)?;
+        let area = |cid: Id| -> f64 {
+            let Some(c) = self.contour_index(cid).map(|i| &self.contours[i]) else { return 0.0 };
+            if !c.closed || c.points.len() < 3 {
+                return 0.0;
+            }
+            let n = c.points.len();
+            (0..n).map(|k| c.points[k].x * c.points[(k + 1) % n].y - c.points[(k + 1) % n].x * c.points[k].y).sum::<f64>().abs() * 0.5
+        };
+        self.sketches[si].contour_ids.iter().copied().filter(|c| area(*c) > 0.0).max_by(|a, b| area(*a).total_cmp(&area(*b)))
+    }
+
     /// The roundings and chamfers made exact on the chain body `src` comes from that stand on face `pushed` and still
     /// have their face on `src`. A blend names its two faces as they were on the body it was found on; a later body names
     /// them anew, so they are found on `src` by their planes.
@@ -2717,6 +2784,9 @@ impl Project {
             FeatureKind::Remade { src, faces, exact, body } => (*body, self.prep_remade(p, *src, faces, exact, *body)),
             FeatureKind::PushFace { src, face, dist, body } => (*body, self.prep_pushface(p, *src, face, *dist, *body)),
             FeatureKind::HoleMoved { src, faces, exact, face, gap, body } => (*body, self.prep_holemoved(p, *src, HoleRefs { faces, face }, exact, *gap, *body)),
+            FeatureKind::Redrawn { src, faces, base, sketch, height, kind, body } => {
+                (*body, self.prep_redrawn(p, Redraw { src: *src, faces, base, sketch: *sketch, kind: *kind, body: *body }, *height))
+            }
             FeatureKind::FaceGap { src, one, other, gap, moves, body } => (*body, self.prep_facegap(p, *src, GapRefs { one, other }, *gap, *moves, *body)),
             FeatureKind::Patch { src, edges, tangent, body } => (*body, self.prep_patch(p, *src, edges, *tangent, *body)),
             FeatureKind::SurfaceReplace { src, faces, surface, body } => (*body, self.prep_surfacereplace(p, *src, faces, *surface, *body)),

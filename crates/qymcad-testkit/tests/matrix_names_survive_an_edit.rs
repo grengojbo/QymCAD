@@ -99,7 +99,7 @@ struct Top {
     z: fn(Size) -> f64,
 }
 
-const ROWS: [Row; 28] = [
+const ROWS: [Row; 29] = [
     // the top edge at the back, carried from the sketch
     Row { name: "the block itself", kind: "Extrude", build: |_, src| src, edge: |s| [s.w / 2.0, 30.0, s.h], top: Some(Top { at: [5.0, 5.0], z: |s| s.h }) },
     // the arc where the rounding of the front right corner meets the top, its middle at 45 deg
@@ -423,6 +423,19 @@ const ROWS: [Row; 28] = [
             let hole = qymcad_testkit::found_on(p, h, |x| x.id == wall.id, [wall.centroid.x + 3.0, wall.centroid.y, wall.centroid.z]).expect("the hole under the click");
             let front = face_key(p, h, [0.0, -1.0, 0.0]);
             p.add_hole_moved(h, qymcad_core::model::HoleMove { hole, face: front, size: 10.0 })
+        },
+        edge: |s| [s.w / 2.0, 0.0, 0.0],
+        top: Some(Top { at: [5.0, 5.0], z: |s| s.h }),
+    },
+    // a hole in the top redrawn by a sketch taken off its floor: the bottom front edge, as the hole's
+    Row {
+        name: "a hole redrawn by a sketch taken off its floor",
+        kind: "Redrawn",
+        build: |p, src| {
+            let _ = qymcad_testkit::regenerate(p);
+            let key = face_key(p, src, [0.0, 0.0, 1.0]);
+            let h = p.add_hole(src, key, 6.0, 5.0);
+            qymcad_testkit::redrawn_on(p, h, |x| x.normal[2] > 0.999 && x.centroid.z < BASE.h - 1e-3).expect("the hole redrawn")
         },
         edge: |s| [s.w / 2.0, 0.0, 0.0],
         top: Some(Top { at: [5.0, 5.0], z: |s| s.h }),

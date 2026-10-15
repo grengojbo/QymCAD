@@ -125,6 +125,8 @@ ref-what-shell-faces = Грані оболонки
 ref-what-removed-faces = Грані для видалення
 ref-what-pushed-face = Грань для зміщення
 ref-what-gap-face = Грань розміру
+ref-what-redrawn-faces = Грані виступу чи кишені, накресленої заново
+ref-what-redrawn-base = Грань, на якій стоїть накреслений заново виступ
 ref-what-face-copy = Грані для копіювання
 ref-what-offset-surface = Грані для зміщення
 ref-what-draft-faces = Грані ухилу
@@ -2732,7 +2734,11 @@ msg-hole-gap-picked = Від осі отвору до грані зараз: { $
 msg-hole-gap-face = клацніть пласку грань уздовж його осі, від якої міряти
 cmd-gap-hole-moves = Рухається отвір
 feat-name-hole-moved = Положення отвору
+feat-name-redrawn-boss = Виступ за ескізом
+feat-name-redrawn-pocket = Кишеня за ескізом
 feat-hole-moved = Положення отвору { $d }
+feat-redrawn-boss = Виступ за ескізом h={ $h }
+feat-redrawn-pocket = Кишеня за ескізом h={ $h }
 msg-unfound-no-surface = Тут не знайдено поверхні: сітка грубіша за допуск. Збільште «Допуск» і клацніть ще раз
 msg-unfound-no-entry = Ця кругла стінка не має грані, з якої її свердлити: це вал або бобишка, а не отвір
 msg-unfound-not-two-sides = До цього скруглення вздовж нього не прилягають дві грані: клацніть іншу його смугу або скругліть ребро інструментом «Скруглення»
