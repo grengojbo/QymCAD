@@ -2868,3 +2868,7 @@ msg-edit-redrawn = Висота виступу чи кишені: введіть
 f-redrawn-height = Висота
 cmd-sketch-only = Лише ескіз
 cmd-sketch-replace = Замінити
+msg-rim-round = скруглення R{ $d }
+msg-rim-chamfer = фаска { $d }
+msg-rim-at-face = по краю грані
+msg-rim-at-base = біля основи

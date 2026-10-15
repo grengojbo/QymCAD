@@ -2133,7 +2133,7 @@ mod projection;
 mod face_sketch;
 pub use face_sketch::{FaceSketch, FromFace};
 mod prism;
-pub use prism::{Prism, PrismKind};
+pub use prism::{edges_round_outline, Prism, PrismKind, RimBlend, RimCut, Rims};
 mod sketch_define;
 pub use sketch_define::{Anchor, Defined, Rounded};
 mod hash_ser;

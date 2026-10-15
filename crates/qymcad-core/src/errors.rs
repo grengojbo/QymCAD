@@ -261,7 +261,7 @@ pub enum CoreError {
     NotAPrism,
     /// A wall of the boss or the pocket leans off square to its face.
     PrismWallSlanted,
-    /// The rim of the boss or the pocket is rounded or cut, at its face or at its base.
+    /// The rim of the boss or the pocket is rounded or cut along part of it only.
     PrismRimRounded,
     /// The walls of the boss or the pocket end at different heights.
     PrismBaseUneven,
@@ -269,6 +269,8 @@ pub enum CoreError {
     PrismHoleDeeper,
     /// A boss or a pocket redrawn asks for a height above zero.
     PrismHeightNotAboveZero,
+    /// The rim of the boss or the pocket is rounded or cut to different sizes along it.
+    PrismRimUneven,
     /// A size between two faces asks for a size above zero: the faces cannot stand in one plane.
     GapNotAboveZero,
     /// A hole moved to stand from a face asks for a distance above zero: its axis cannot lie in the face's plane.
@@ -507,6 +509,7 @@ impl CoreError {
             PrismBaseUneven => "error-prism-base-uneven".into(),
             PrismHoleDeeper => "error-prism-hole-deeper".into(),
             PrismHeightNotAboveZero => "error-prism-height-not-above-zero".into(),
+            PrismRimUneven => "error-prism-rim-uneven".into(),
             GapNotAboveZero => "error-gap-not-above-zero".into(),
             HoleGapNotAboveZero => "error-hole-gap-not-above-zero".into(),
             HoleAxisAcrossFace => "error-hole-axis-across-face".into(),
@@ -638,10 +641,11 @@ impl std::fmt::Display for CoreError {
             PrismFaceNotFlat => write!(f, "a sketch from a face that is not flat"),
             NotAPrism => write!(f, "no boss or pocket with square walls on the face"),
             PrismWallSlanted => write!(f, "a wall of the boss or pocket leans off square"),
-            PrismRimRounded => write!(f, "the rim of the boss or pocket is rounded or cut"),
+            PrismRimRounded => write!(f, "the rim of the boss or pocket is rounded or cut along part of it"),
             PrismBaseUneven => write!(f, "the walls of the boss or pocket end at different heights"),
             PrismHoleDeeper => write!(f, "a hole inside the face goes deeper than the boss or pocket"),
             PrismHeightNotAboveZero => write!(f, "a boss or pocket redrawn no height"),
+            PrismRimUneven => write!(f, "the rim of the boss or pocket is rounded or cut to different sizes"),
             GapNotAboveZero => write!(f, "a size of no distance between faces"),
             HoleGapNotAboveZero => write!(f, "a hole moved to stand no distance from the face"),
             HoleAxisAcrossFace => write!(f, "the axis of the hole runs into the face"),

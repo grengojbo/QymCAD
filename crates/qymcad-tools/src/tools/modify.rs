@@ -601,7 +601,7 @@ struct FromFaceLaid {
 
 pub const SKETCH_FROM_FACE: Tool = Tool {
     name: "sketch_from_face",
-    description: "Take a sketch off a flat face of a body - a STEP has no sketch behind its bosses. The outline of the face is copied into a sketch on it as curves of its own, given the relations it shows (horizontal, vertical, parallel, perpendicular, tangent, concentric, equal) and sizes until it is fully defined, placed from the outline of the face the boss stands on, sizes rounded to a tenth. face is a query finding one flat face: the top of a boss or the floor of a pocket. action replace also takes the boss or pocket off and lays it again by the sketch, one node, its height from its base (height, mm, a number or an expression; as found by default): from then on the sizes of the sketch drive the body. A boss whose walls lean, whose rim is rounded or cut, whose walls end at different heights or with a hole going deeper is refused for replace; sketch still copies the outline. The answer says what was found and what the sketch holds: constraints, sizes, freedoms left, sizes rounded.",
+    description: "Take a sketch off a flat face of a body - a STEP has no sketch behind its bosses. The outline of the face is copied into a sketch on it as curves of its own, given the relations it shows (horizontal, vertical, parallel, perpendicular, tangent, concentric, equal) and sizes until it is fully defined, placed from the outline of the face the boss stands on, sizes rounded to a tenth. face is a query finding one flat face: the top of a boss or the floor of a pocket. action replace also takes the boss or pocket off and lays it again by the sketch, one node, its height from its base (height, mm, a number or an expression; as found by default): from then on the sizes of the sketch drive the body. A rim rounded or cut all round, at the face or at the base, goes with the boss and is laid again its size (rim_at_face, rim_at_base in the answer; editable as rim and base_rim). A boss whose walls lean, whose rim is rounded only in part or to different sizes, whose walls end at different heights or with a hole going deeper is refused for replace; sketch still copies the outline. The answer says what was found and what the sketch holds: constraints, sizes, freedoms left, sizes rounded.",
     schema: || {
         json!({ "type": "object", "properties": {
             "body": body_field(),
@@ -619,7 +619,10 @@ pub const SKETCH_FROM_FACE: Tool = Tool {
         let name = qymcad_i18n::tr1("g-sketch-n", "n", &(project.sketches.len() + 1).to_string());
         let found = ctx.doc.with_kernel(|p, k| p.prism_at(src, key.id, k));
         let what = match &found {
-            Ok(p) => json!({ "kind": if p.kind == qymcad_core::model::PrismKind::Boss { "boss" } else { "pocket" }, "height": p.height, "walls": p.walls.len(), "holes": p.inner.len() }),
+            Ok(p) => {
+                let rim = |r: Option<qymcad_core::model::RimBlend>| r.map(|r| json!({ "cut": if r.cut == qymcad_core::model::RimCut::Round { "round" } else { "chamfer" }, "size": r.size }));
+                json!({ "kind": if p.kind == qymcad_core::model::PrismKind::Boss { "boss" } else { "pocket" }, "height": p.height, "walls": p.walls.len(), "holes": p.inner.len(), "rim_at_face": rim(p.rims.at_face), "rim_at_base": rim(p.rims.at_base) })
+            }
             Err(e) => json!({ "kind": "none", "why": e.to_string() }),
         };
         let replace = a.action == FromFaceArg::Replace;
@@ -629,13 +632,14 @@ pub const SKETCH_FROM_FACE: Tool = Tool {
             Err(_) => None,
         };
         let outline = prism.as_ref().map(|p| p.outline.clone()).unwrap_or_default();
+        let profile = prism.as_ref().map(|p| p.profile.clone()).unwrap_or_default();
         let redraw = prism.filter(|_| replace);
         let laid = ctx
             .doc
             .edit_with_kernel("f-sketch-from-face", |p, k| {
                 let part = p.body_owner(src);
                 p.set_active_component(part);
-                let sketch = p.add_sketch_from_face(qymcad_core::model::FromFace { body: src, face: key, outline: &outline, name }, k).ok_or("msg-sketch-from-face-no-outline")?;
+                let sketch = p.add_sketch_from_face(qymcad_core::model::FromFace { body: src, face: key, profile: &profile, outline: &outline, name }, k).ok_or("msg-sketch-from-face-no-outline")?;
                 let node = redraw.as_ref().map(|prism| p.add_redrawn(src, prism, sketch.sketch));
                 // the height asked, a number or an expression kept on the node
                 for (node, h) in node.iter().zip(height.as_ref()) {

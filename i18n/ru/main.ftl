@@ -2885,3 +2885,7 @@ msg-edit-redrawn = Высота выступа или кармана: введи
 f-redrawn-height = Высота
 cmd-sketch-only = Только эскиз
 cmd-sketch-replace = Заменить
+msg-rim-round = скругление R{ $d }
+msg-rim-chamfer = фаска { $d }
+msg-rim-at-face = по краю грани
+msg-rim-at-base = у основания
