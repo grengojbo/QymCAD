@@ -2130,6 +2130,8 @@ pub use sketch::{ChamferLegs, CornerAt, CornerBlend, CornerCut, CornerTool, Exte
 pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
+mod sketch_define;
+pub use sketch_define::{Anchor, Defined, Rounded};
 mod hash_ser;
 
 impl Project {
