@@ -11,23 +11,45 @@ use qymcad_kernel::specimen::Specimen;
 use qymcad_kernel::{OcctKernel, Shape};
 use std::collections::HashMap;
 
-fn block(x: f64, y: f64, w: f64, d: f64, z: f64, h: f64) -> Shape {
+/// A box by its corner and its sizes.
+struct Block {
+    x: f64,
+    y: f64,
+    w: f64,
+    d: f64,
+    z: f64,
+    h: f64,
+}
+
+/// A cylinder standing up from (x, y, z), of radius `r` and height `h`.
+struct Post {
+    x: f64,
+    y: f64,
+    r: f64,
+    z: f64,
+    h: f64,
+}
+
+fn block(b: Block) -> Shape {
+    let Block { x, y, w, d, z, h } = b;
     let at = [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z];
     qymcad_kernel::specimen::extrude(&[0.0, 0.0, w, 0.0, w, d, 0.0, d], h).expect("a block").moved(&at).expect("placed")
 }
 
-fn post(x: f64, y: f64, r: f64, z: f64, h: f64) -> Shape {
+fn post(p: Post) -> Shape {
+    let Post { x, y, r, z, h } = p;
     let at = [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z];
     qymcad_kernel::specimen::cylinder(r, h).expect("a cylinder").moved(&at).expect("placed")
 }
 
 /// A plate of 60 x 40 x 5 with a boss of 30 x 20 x 8 from (10, 10) on it.
 fn bossed() -> Shape {
-    block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&block(10.0, 10.0, 30.0, 20.0, 5.0, 8.0), 1).expect("fused")
+    block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }).combined(&block(Block { x: 10.0, y: 10.0, w: 30.0, d: 20.0, z: 5.0, h: 8.0 }), 1).expect("fused")
 }
 
 /// The edges of `s` running along `z` from `z0` to `z1` at the corners of the boss of `bossed`.
-fn uprights(s: &Shape, z0: f64, z1: f64) -> Vec<u32> {
+fn uprights(s: &Shape, from: std::ops::Range<f64>) -> Vec<u32> {
+    let (z0, z1) = (from.start, from.end);
     s.edges_info()
         .into_iter()
         .filter(|e| {
@@ -74,13 +96,13 @@ fn cases() -> Vec<Case> {
         Case { name: "boss", solid: bossed, clicked: |f| up_at(13.0)(f), want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 0, height: 8.0, rims: SHARP } },
         Case {
             name: "pocket",
-            solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 10.0).combined(&block(10.0, 10.0, 30.0, 20.0, 6.0, 5.0), 0).expect("cut"),
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 10.0 }).combined(&block(Block { x: 10.0, y: 10.0, w: 30.0, d: 20.0, z: 6.0, h: 5.0 }), 0).expect("cut"),
             clicked: |f| up_at(6.0)(f),
             want: Want::Found { kind: PrismKind::Pocket, walls: 4, inner: 0, height: 4.0, rims: SHARP },
         },
         Case {
             name: "round post",
-            solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&post(30.0, 20.0, 6.0, 5.0, 8.0), 1).expect("fused"),
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }).combined(&post(Post { x: 30.0, y: 20.0, r: 6.0, z: 5.0, h: 8.0 }), 1).expect("fused"),
             clicked: |f| up_at(13.0)(f),
             want: Want::Found { kind: PrismKind::Boss, walls: 1, inner: 0, height: 8.0, rims: SHARP },
         },
@@ -88,7 +110,7 @@ fn cases() -> Vec<Case> {
             name: "boss with its corners rounded",
             solid: || {
                 let s = bossed();
-                let e = uprights(&s, 5.0, 13.0);
+                let e = uprights(&s, 5.0..13.0);
                 s.filleted(3.0, &e).expect("rounded")
             },
             clicked: |f| up_at(13.0)(f),
@@ -96,7 +118,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "boss drilled to its base",
-            solid: || bossed().combined(&post(25.0, 20.0, 3.0, 5.0, 9.0), 0).expect("drilled"),
+            solid: || bossed().combined(&post(Post { x: 25.0, y: 20.0, r: 3.0, z: 5.0, h: 9.0 }), 0).expect("drilled"),
             clicked: |f| up_at(13.0)(f),
             want: Want::Found { kind: PrismKind::Boss, walls: 4, inner: 1, height: 8.0, rims: SHARP },
         },
@@ -140,16 +162,16 @@ fn cases() -> Vec<Case> {
             clicked: |f| up_at(13.0)(f),
             want: Want::Refused(CoreError::PrismRimRounded),
         },
-        Case { name: "plain plate", solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0), clicked: |f| up_at(5.0)(f), want: Want::Refused(CoreError::NotAPrism) },
+        Case { name: "plain plate", solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }), clicked: |f| up_at(5.0)(f), want: Want::Refused(CoreError::NotAPrism) },
         Case {
             name: "boss drilled through the plate",
-            solid: || bossed().combined(&post(25.0, 20.0, 3.0, -1.0, 15.0), 0).expect("drilled"),
+            solid: || bossed().combined(&post(Post { x: 25.0, y: 20.0, r: 3.0, z: -1.0, h: 15.0 }), 0).expect("drilled"),
             clicked: |f| up_at(13.0)(f),
             want: Want::Refused(CoreError::PrismHoleDeeper),
         },
         Case {
             name: "the side of a post",
-            solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&post(30.0, 20.0, 6.0, 5.0, 8.0), 1).expect("fused"),
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }).combined(&post(Post { x: 30.0, y: 20.0, r: 6.0, z: 5.0, h: 8.0 }), 1).expect("fused"),
             clicked: |f| f.normal[2].abs() < 0.5 && ((f.centroid.x - 30.0).hypot(f.centroid.y - 20.0)) < 6.5 && f.centroid.z > 5.5,
             want: Want::Refused(CoreError::PrismFaceNotFlat),
         },

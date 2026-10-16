@@ -103,23 +103,54 @@ struct Curves {
     at: HashMap<Id, Point2>,
 }
 
-/// The angle between two directions of length one, in degrees, from 0 to 180.
-fn angle(u: [f64; 2], v: [f64; 2]) -> f64 {
-    (u[0] * v[1] - u[1] * v[0]).abs().atan2(u[0] * v[0] + u[1] * v[1]).to_degrees()
+/// A direction in the plane of the sketch, of length one.
+trait V2 {
+    /// The angle to another direction of length one, in degrees, from 0 to 180.
+    fn angle_to(self, o: Self) -> f64;
+    fn dot(self, o: Self) -> f64;
+    fn cross(self, o: Self) -> f64;
 }
 
-fn dot(u: [f64; 2], v: [f64; 2]) -> f64 {
-    u[0] * v[0] + u[1] * v[1]
+impl V2 for [f64; 2] {
+    fn angle_to(self, o: Self) -> f64 {
+        self.cross(o).abs().atan2(self.dot(o)).to_degrees()
+    }
+
+    fn dot(self, o: Self) -> f64 {
+        self[0] * o[0] + self[1] * o[1]
+    }
+
+    fn cross(self, o: Self) -> f64 {
+        self[0] * o[1] - self[1] * o[0]
+    }
 }
 
-fn cross(u: [f64; 2], v: [f64; 2]) -> f64 {
-    u[0] * v[1] - u[1] * v[0]
+/// A point of the sketch seen from another.
+trait Toward {
+    /// The direction from this point to `p`, of length one.
+    fn toward(self, p: Point2) -> [f64; 2];
 }
 
-/// The direction from `c` to `p`, of length one.
-fn radial(c: Point2, p: Point2) -> [f64; 2] {
-    let l = (p.x - c.x).hypot(p.y - c.y).max(1e-12);
-    [(p.x - c.x) / l, (p.y - c.y) / l]
+impl Toward for Point2 {
+    fn toward(self, p: Point2) -> [f64; 2] {
+        let l = (p.x - self.x).hypot(p.y - self.y).max(1e-12);
+        [(p.x - self.x) / l, (p.y - self.y) / l]
+    }
+}
+
+/// THE TWO ENDS OF A LINE OR OF A SIZE, by id.
+#[derive(Clone, Copy)]
+struct Ends {
+    a: Id,
+    b: Id,
+}
+
+/// How a candidate constraint is judged: where the constraints hold (a relation nearly met), or where the geometry
+/// stands (a size measured off it).
+#[derive(Clone, Copy, PartialEq, Eq)]
+enum Judged {
+    WhereSolved,
+    AsItStands,
 }
 
 /// THE RELATIONS THE CURVES SHOW, in the order they are offered: a side along an axis, then sides parallel and sides
@@ -141,9 +172,9 @@ fn relations(c: &Curves) -> Vec<Constraint> {
                 continue; // along the axes both: the relation follows from the two
             }
             let shared = s.ends().iter().any(|p| t.ends().contains(p));
-            if cross(s.dir(), t.dir()).abs() < TURN {
+            if s.dir().cross(t.dir()).abs() < TURN {
                 out.push(Constraint::Parallel { a: s.a, b: s.b, c: t.a, d: t.b });
-            } else if shared && dot(s.dir(), t.dir()).abs() < TURN {
+            } else if shared && s.dir().dot(t.dir()).abs() < TURN {
                 out.push(Constraint::Perpendicular { a: s.a, b: s.b, c: t.a, d: t.b });
             }
         }
@@ -153,7 +184,7 @@ fn relations(c: &Curves) -> Vec<Constraint> {
         for p in ends {
             let Some(&at) = c.at.get(&p) else { continue };
             for s in c.sides.iter().filter(|s| s.ends().contains(&p)) {
-                if dot(s.dir(), radial(r.at, at)).abs() < TURN {
+                if s.dir().dot(r.at.toward(at)).abs() < TURN {
                     out.push(Constraint::Tangent { a: s.a, b: s.b, c: r.centre, r: r.r });
                 }
             }
@@ -164,9 +195,9 @@ fn relations(c: &Curves) -> Vec<Constraint> {
             let (Some(re), Some(qe)) = (r.ends, q.ends) else { continue };
             for p in re.iter().filter(|p| qe.contains(p)) {
                 let Some(&at) = c.at.get(p) else { continue };
-                let (u, v) = (radial(r.at, at), radial(q.at, at));
-                if cross(u, v).abs() < TURN {
-                    out.push(Constraint::CircleTangent { c1: q.centre, c2: r.centre, external: dot(u, v) < 0.0 });
+                let (u, v) = (r.at.toward(at), q.at.toward(at));
+                if u.cross(v).abs() < TURN {
+                    out.push(Constraint::CircleTangent { c1: q.centre, c2: r.centre, external: u.dot(v) < 0.0 });
                 }
             }
         }
@@ -198,12 +229,14 @@ fn relations(c: &Curves) -> Vec<Constraint> {
 }
 
 /// A size in its plain form: driving, no expression, its label where it falls.
-fn distance(a: Id, b: Id, d: f64, axis: u8) -> Constraint {
+fn distance(ends: Ends, d: f64, axis: u8) -> Constraint {
+    let Ends { a, b } = ends;
     Constraint::Distance { a, b, d, off: 0.0, expr: String::new(), driven: false, axis, at: None }
 }
 
 /// A point at its distance from a line; a point standing on the line is laid on it, not 0 from it.
-fn to_line(p: Id, a: Id, b: Id, d: f64) -> Constraint {
+fn to_line(p: Id, line: Ends, d: f64) -> Constraint {
+    let Ends { a, b } = line;
     if d.abs() < SAME {
         return Constraint::PointOnLine { p, a, b };
     }
@@ -224,7 +257,7 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
     for (i, s) in c.sides.iter().enumerate() {
         for t in &c.sides[i + 1..] {
             let shared = s.ends().iter().any(|p| t.ends().contains(p));
-            if shared || cross(s.dir(), t.dir()).abs() >= TURN {
+            if shared || s.dir().cross(t.dir()).abs() >= TURN {
                 continue;
             }
             // sides along an axis are measured along the other axis, end to end. The distance of a point from a side
@@ -233,9 +266,9 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
             // under a pull. Turned sides are left to their lengths.
             let d = s.dir();
             if d[1].abs() < TURN {
-                out.push(distance(s.a, t.a, (t.from.y - s.from.y).abs(), 2));
+                out.push(distance(Ends { a: s.a, b: t.a }, (t.from.y - s.from.y).abs(), 2));
             } else if d[0].abs() < TURN {
-                out.push(distance(s.a, t.a, (t.from.x - s.from.x).abs(), 1));
+                out.push(distance(Ends { a: s.a, b: t.a }, (t.from.x - s.from.x).abs(), 1));
             }
         }
     }
@@ -255,7 +288,7 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
         } else {
             s.len()
         };
-        out.push(distance(s.a, s.b, len, axis));
+        out.push(distance(Ends { a: s.a, b: s.b }, len, axis));
     }
     for (i, s) in c.sides.iter().enumerate() {
         for t in &c.sides[i + 1..] {
@@ -263,7 +296,7 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
             let Some(&at) = c.at.get(&p) else { continue };
             let (fa, fb) = (s.far(p), t.far(p));
             let (Some(&a), Some(&b)) = (c.at.get(&fa), c.at.get(&fb)) else { continue };
-            let deg = angle(radial(at, a), radial(at, b));
+            let deg = at.toward(a).angle_to(at.toward(b));
             if deg.abs() > TURN.to_degrees() && (deg - 180.0).abs() > TURN.to_degrees() {
                 out.push(Constraint::Angle { a: fa, b: p, c: fb, deg, expr: String::new(), driven: false, off: 0.0, at: None });
             }
@@ -277,7 +310,7 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
     // not by the place of a second corner
     let place = |p: Id, out: &mut Vec<Constraint>| {
         if let Some(&at) = c.at.get(&p) {
-            out.extend(anchors.iter().map(|l| to_line(p, l.a, l.b, l.off(at))));
+            out.extend(anchors.iter().map(|l| to_line(p, Ends { a: l.a, b: l.b }, l.off(at))));
         }
     };
     if let Some(&first) = points.first() {
@@ -285,7 +318,7 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
     }
     for s in c.sides.iter().filter(|s| !s.square()) {
         for l in anchors {
-            out.push(Constraint::AngleLines { a: l.a, b: l.b, c: s.a, d: s.b, deg: angle(l.dir(), s.dir()), expr: String::new(), driven: false, off: 0.0, at: None });
+            out.push(Constraint::AngleLines { a: l.a, b: l.b, c: s.a, d: s.b, deg: l.dir().angle_to(s.dir()), expr: String::new(), driven: false, off: 0.0, at: None });
         }
     }
     for &p in points.iter().skip(1) {
@@ -365,7 +398,7 @@ impl Project {
     /// judged where the constraints hold (`freedom_taken_where_solved`): two relations nearly met, each read at the
     /// geometry as it stands, both counted as taking the freedom one of them takes. A size, measured off the geometry,
     /// is met where it stands. Answers how many went on.
-    fn lay_independent(&mut self, si: usize, offered: Vec<Constraint>, solved: bool) -> usize {
+    fn lay_independent(&mut self, si: usize, offered: Vec<Constraint>, judged: Judged) -> usize {
         let mut n = 0;
         for c in offered {
             let Some(s) = self.sketches.get_mut(si) else { return n };
@@ -375,7 +408,11 @@ impl Project {
             let k = active.len() - 1;
             active.extend(self.entity_intrinsics(si));
             let radii = self.entity_radii(si);
-            let takes = if solved { crate::solver::freedom_taken_where_solved(&s.points, &radii, &active, k) } else { crate::solver::freedom_taken(&s.points, &radii, &active, k) };
+            let takes = if judged == Judged::WhereSolved {
+                crate::solver::freedom_taken_where_solved(&s.points, &radii, &active, k)
+            } else {
+                crate::solver::freedom_taken(&s.points, &radii, &active, k)
+            };
             if takes > 0 {
                 n += 1;
             } else {
@@ -389,7 +426,7 @@ impl Project {
     /// went on.
     pub fn infer_constraints(&mut self, si: usize, ents: &[Id]) -> usize {
         let offered = relations(&self.curves_of(si, ents));
-        let n = self.lay_independent(si, offered, true);
+        let n = self.lay_independent(si, offered, Judged::WhereSolved);
         if n > 0 {
             self.solve_sketch(si);
         }
@@ -405,14 +442,15 @@ impl Project {
         let anchors = self.anchor_sides(si, anchor);
         let from = self.sketches.get(si).map_or(0, |s| s.constraints.len());
         let offered = sizes(&self.curves_of(si, ents), &anchors);
-        let sizes = self.lay_independent(si, offered, false);
-        let rounded = self.round_sizes(si, from);
+        let sizes = self.lay_independent(si, offered, Judged::AsItStands);
+        let rounded = self.round_sizes(si, from..);
         Defined { relations, sizes, free: self.sketch_dof(si).0, rounded }
     }
 
     /// The sizes of sketch `si` from constraint `from` on rounded to a tenth and the sketch solved to them; put back as
     /// they were when the solve cannot meet them all. Answers each size rounded.
-    fn round_sizes(&mut self, si: usize, from: usize) -> Vec<Rounded> {
+    fn round_sizes(&mut self, si: usize, laid: std::ops::RangeFrom<usize>) -> Vec<Rounded> {
+        let from = laid.start;
         let Some(s) = self.sketches.get_mut(si) else { return Vec::new() };
         let was: Vec<Constraint> = s.constraints.clone();
         let points = s.points.clone();

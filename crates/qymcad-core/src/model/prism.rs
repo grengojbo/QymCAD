@@ -82,16 +82,31 @@ impl Prism {
     }
 }
 
-fn dot(a: [f64; 3], b: [f64; 3]) -> f64 {
-    a[0] * b[0] + a[1] * b[1] + a[2] * b[2]
+/// A direction or a point in space, as the mesh and the kernel hand them.
+trait V3 {
+    fn dot(self, o: Self) -> f64;
+    fn minus(self, o: Self) -> Self;
 }
 
-fn sub(a: [f64; 3], b: [f64; 3]) -> [f64; 3] {
-    [a[0] - b[0], a[1] - b[1], a[2] - b[2]]
+impl V3 for [f64; 3] {
+    fn dot(self, o: Self) -> f64 {
+        self[0] * o[0] + self[1] * o[1] + self[2] * o[2]
+    }
+
+    fn minus(self, o: Self) -> Self {
+        [self[0] - o[0], self[1] - o[1], self[2] - o[2]]
+    }
+}
+
+/// A line along a normal from a point: how far a point or a face reaches is read along it.
+#[derive(Clone, Copy)]
+struct Along {
+    from: [f64; 3],
+    n: [f64; 3],
 }
 
 fn unit(v: [f64; 3]) -> [f64; 3] {
-    let l = dot(v, v).sqrt().max(1e-300);
+    let l = v.dot(v).sqrt().max(1e-300);
     [v[0] / l, v[1] / l, v[2] / l]
 }
 
@@ -103,17 +118,18 @@ fn normals(mesh: &Mesh, f: &MeshFace) -> Vec<[f64; 3]> {
             let [a, b, c] = mesh.triangle(t as usize);
             let (u, v) = ([b.x - a.x, b.y - a.y, b.z - a.z], [c.x - a.x, c.y - a.y, c.z - a.z]);
             let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-            (dot(n, n) > 1e-24).then(|| unit(n))
+            (n.dot(n) > 1e-24).then(|| unit(n))
         })
         .collect()
 }
 
 /// The corners of a face's triangles, read along `n` from `o`: the lowest and the highest.
-fn reach_along(mesh: &Mesh, f: &MeshFace, o: [f64; 3], n: [f64; 3]) -> Option<Span> {
+fn reach_along(mesh: &Mesh, f: &MeshFace, along: Along) -> Option<Span> {
+    let Along { from: o, n } = along;
     let mut s: Option<Span> = None;
     for &t in &f.triangles {
         for v in mesh.triangle(t as usize) {
-            let h = dot(sub([v.x, v.y, v.z], o), n);
+            let h = ([v.x, v.y, v.z].minus(o)).dot(n);
             s = Some(match s {
                 Some(Span { low, high }) => Span { low: low.min(h), high: high.max(h) },
                 None => Span { low: h, high: h },
@@ -140,7 +156,7 @@ struct Rim {
 
 /// The edges of a face chained into loops by their ends; an edge that closes on itself (a circle) is a loop alone.
 fn loops(rims: Vec<Rim>) -> Vec<Vec<Rim>> {
-    let close = |a: [f64; 3], b: [f64; 3]| dot(sub(a, b), sub(a, b)).sqrt() < NEAR;
+    let close = |a: [f64; 3], b: [f64; 3]| a.minus(b).dot(a.minus(b)).sqrt() < NEAR;
     let mut left = rims;
     let mut out = Vec::new();
     while let Some(first) = left.pop() {
@@ -165,7 +181,7 @@ fn area_along(chain: &[Rim], n: [f64; 3]) -> f64 {
         let c = [r.from[1] * r.to[2] - r.from[2] * r.to[1], r.from[2] * r.to[0] - r.from[0] * r.to[2], r.from[0] * r.to[1] - r.from[1] * r.to[0]];
         s = [s[0] + c[0], s[1] + c[1], s[2] + c[2]];
     }
-    dot(s, n).abs() * 0.5
+    s.dot(n).abs() * 0.5
 }
 
 /// The faces a walk across a body reached, and the faces it stopped at.
@@ -174,9 +190,16 @@ struct Walked {
     stopped: Vec<u32>,
 }
 
+/// Where a walk across the faces starts, and the faces it keeps off.
+struct Walk<'a> {
+    from: &'a [u32],
+    kept: &'a [u32],
+}
+
 /// WALK ACROSS THE FACES FROM `from`: the faces `goes` lets through are walked over, those it does not are where the walk
 /// stops; the faces in `kept` are neither.
-fn walk(pairs: &[crate::feature::EdgeFaces], from: &[u32], kept: &[u32], goes: impl Fn(u32) -> bool) -> Walked {
+fn walk(pairs: &[crate::feature::EdgeFaces], w: Walk, goes: impl Fn(u32) -> bool) -> Walked {
+    let Walk { from, kept } = w;
     let mut over: Vec<u32> = Vec::new();
     let mut stopped: Vec<u32> = Vec::new();
     let mut todo: Vec<u32> = from.to_vec();
@@ -207,8 +230,8 @@ impl Project {
         let top = by_id(face).ok_or(CoreError::FaceNotFound)?;
         let n = unit(top.normal);
         // a face standing square to the normal (a wall), lying flat as the face does (a base), or neither (a rim)
-        let square = |id: u32| by_id(id).is_some_and(|f| normals(mesh, f).iter().all(|t| dot(*t, n).abs() <= SQUARE));
-        let level = |id: u32| by_id(id).is_some_and(|f| normals(mesh, f).iter().all(|t| 1.0 - dot(*t, n) <= SQUARE * SQUARE));
+        let square = |id: u32| by_id(id).is_some_and(|f| normals(mesh, f).iter().all(|t| (*t).dot(n).abs() <= SQUARE));
+        let level = |id: u32| by_id(id).is_some_and(|f| normals(mesh, f).iter().all(|t| 1.0 - (*t).dot(n) <= SQUARE * SQUARE));
         if !level(face) {
             return Err(CoreError::PrismFaceNotFlat);
         }
@@ -229,7 +252,7 @@ impl Project {
         first.sort_unstable();
         first.dedup();
         // THE RIM AT THE FACE: walked over from the face across what is neither square nor flat, to the walls
-        let at_face = walk(&pairs, &first, &[face], |f| !square(f) && !level(f));
+        let at_face = walk(&pairs, Walk { from: &first, kept: &[face] }, |f| !square(f) && !level(f));
         if !at_face.over.is_empty() && first.iter().any(|f| square(*f)) {
             return Err(CoreError::PrismRimRounded);
         }
@@ -238,7 +261,7 @@ impl Project {
             // a walk that met no square wall went down a slanted one
             return Err(CoreError::PrismWallSlanted);
         }
-        let rim_at_face = rim_of(mesh, &at_face.over, faces, o, n, 0.0)?;
+        let rim_at_face = rim_of(mesh, &at_face.over, faces, Along { from: o, n }, 0.0)?;
         // the edges where the walls meet what is above them: the plan of the outline
         let above: Vec<u32> = std::iter::once(face).chain(at_face.over.iter().copied()).collect();
         let upper: Vec<Rim> = pairs.iter().filter(|p| p.faces.iter().any(|f| walls.contains(f)) && p.faces.iter().any(|f| above.contains(f))).filter_map(|p| edge_of(p, p.faces[0])).collect();
@@ -249,17 +272,17 @@ impl Project {
             let Some(w) = p.and_then(|p| p.faces.iter().find(|f| walls.contains(f))).and_then(|&f| by_id(f)) else { continue };
             let mid = [(r.from[0] + r.to[0]) * 0.5, (r.from[1] + r.to[1]) * 0.5, (r.from[2] + r.to[2]) * 0.5];
             let wn = nearest_normal(mesh, w, mid).unwrap_or(w.normal);
-            let away = sub(mid, o);
-            let away = sub(away, [n[0] * dot(away, n), n[1] * dot(away, n), n[2] * dot(away, n)]);
+            let away = mid.minus(o);
+            let away = away.minus([n[0] * away.dot(n), n[1] * away.dot(n), n[2] * away.dot(n)]);
             // weighed by the length of the edge: a long side tells more than a short one round a corner
-            outward += dot(wn, away).signum() * dot(sub(r.to, r.from), sub(r.to, r.from)).sqrt().max(NEAR);
+            outward += wn.dot(away).signum() * r.to.minus(r.from).dot(r.to.minus(r.from)).sqrt().max(NEAR);
         }
         let kind = if outward > 0.0 { PrismKind::Boss } else { PrismKind::Pocket };
         // THE BASE: below the walls, across the rim at the base if there is one, flat faces at one height
         let mut kept: Vec<u32> = above.clone();
         kept.extend(walls.iter().copied());
         let below: Vec<u32> = pairs.iter().filter(|p| p.faces.iter().any(|f| walls.contains(f))).flat_map(|p| p.faces.iter().copied()).filter(|f| !kept.contains(f)).collect();
-        let at_base = walk(&pairs, &below, &kept, |f| !square(f) && !level(f));
+        let at_base = walk(&pairs, Walk { from: &below, kept: &kept }, |f| !square(f) && !level(f));
         if !at_base.over.is_empty() && below.iter().any(|f| level(*f)) {
             return Err(CoreError::PrismRimRounded);
         }
@@ -271,7 +294,7 @@ impl Project {
                 return Err(CoreError::NotAPrism);
             }
             let Some(b) = by_id(f) else { continue };
-            let s = dot(sub([b.centroid.x, b.centroid.y, b.centroid.z], o), n);
+            let s = ([b.centroid.x, b.centroid.y, b.centroid.z].minus(o)).dot(n);
             if height.is_some_and(|h| (h - s).abs() > NEAR) {
                 return Err(CoreError::PrismBaseUneven);
             }
@@ -285,14 +308,14 @@ impl Project {
         if (kind == PrismKind::Boss) != (s < -NEAR) || s.abs() <= NEAR {
             return Err(CoreError::NotAPrism);
         }
-        let rim_at_base = rim_of(mesh, &at_base.over, faces, o, n, s)?;
+        let rim_at_base = rim_of(mesh, &at_base.over, faces, Along { from: o, n }, s)?;
         // loops inside the face: holes through the prism, taken off with it while they end inside it
         let mut inner = Vec::new();
         let mut profile: Vec<u32> = upper.iter().map(|r| r.edge).collect();
         for chain in chains {
             for r in chain {
                 let Some(w) = by_id(r.across) else { continue };
-                let reach = reach_along(mesh, w, o, n).ok_or(CoreError::FaceNotFound)?;
+                let reach = reach_along(mesh, w, Along { from: o, n }).ok_or(CoreError::FaceNotFound)?;
                 if reach.low < s.min(0.0) - NEAR || reach.high > s.max(0.0) + NEAR {
                     return Err(CoreError::PrismHoleDeeper);
                 }
@@ -319,7 +342,8 @@ impl Project {
 /// THE RIM MADE OF `strips`, read from how far they reach along `n` from the plane at `at` from `o`: a rounding when
 /// any strip bends, a chamfer when every one is flat; its size the reach. None for no strips; refused when the strips
 /// reach unequally.
-fn rim_of(mesh: &Mesh, strips: &[u32], faces: &[MeshFace], o: [f64; 3], n: [f64; 3], at: f64) -> Result<Option<RimBlend>, CoreError> {
+fn rim_of(mesh: &Mesh, strips: &[u32], faces: &[MeshFace], along: Along, at: f64) -> Result<Option<RimBlend>, CoreError> {
+    let Along { from: o, n } = along;
     if strips.is_empty() {
         return Ok(None);
     }
@@ -327,14 +351,14 @@ fn rim_of(mesh: &Mesh, strips: &[u32], faces: &[MeshFace], o: [f64; 3], n: [f64;
     let mut bends = false;
     for &id in strips {
         let Some(f) = faces.iter().find(|f| f.id == id) else { continue };
-        let reach = reach_along(mesh, f, o, n).ok_or(CoreError::FaceNotFound)?;
+        let reach = reach_along(mesh, f, Along { from: o, n }).ok_or(CoreError::FaceNotFound)?;
         let r = (reach.high - at).abs().max((reach.low - at).abs());
         if size.is_some_and(|s| (s - r).abs() > 1e-3 * s.max(1.0)) {
             return Err(CoreError::PrismRimUneven);
         }
         size = Some(size.map_or(r, |s| s.max(r)));
         let ns = normals(mesh, f);
-        bends |= ns.iter().any(|t| ns.first().is_some_and(|f0| 1.0 - dot(*t, *f0) > SQUARE * SQUARE));
+        bends |= ns.iter().any(|t| ns.first().is_some_and(|f0| 1.0 - (*t).dot(*f0) > SQUARE * SQUARE));
     }
     Ok(size.map(|size| RimBlend { cut: if bends { RimCut::Round } else { RimCut::Chamfer }, size }))
 }
@@ -360,8 +384,8 @@ pub fn edges_round_outline(kernel: &dyn crate::feature::Kernel, body: Id, frame:
         .filter(|(_, poly, _)| {
             !poly.is_empty()
                 && poly.iter().all(|p| {
-                    let q = sub(*p, o);
-                    (dot(q, n) - height).abs() < 1e-3 && near_line(Point2::new(dot(q, x), dot(q, y)))
+                    let q = (*p).minus(o);
+                    (q.dot(n) - height).abs() < 1e-3 && near_line(Point2::new(q.dot(x), q.dot(y)))
                 })
         })
         .map(|(id, _, _)| id)
@@ -381,9 +405,9 @@ fn nearest_normal(mesh: &Mesh, f: &MeshFace, at: [f64; 3]) -> Option<[f64; 3]> {
             let mid = [(a.x + b.x + c.x) / 3.0, (a.y + b.y + c.y) / 3.0, (a.z + b.z + c.z) / 3.0];
             let (u, v) = ([b.x - a.x, b.y - a.y, b.z - a.z], [c.x - a.x, c.y - a.y, c.z - a.z]);
             let nn = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
-            Near { far: dot(sub(mid, at), sub(mid, at)), normal: nn }
+            Near { far: mid.minus(at).dot(mid.minus(at)), normal: nn }
         })
-        .filter(|x| dot(x.normal, x.normal) > 1e-24)
+        .filter(|x| x.normal.dot(x.normal) > 1e-24)
         .min_by(|a, b| a.far.total_cmp(&b.far))
         .map(|x| unit(x.normal))
 }
