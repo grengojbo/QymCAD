@@ -10,6 +10,7 @@ pub mod curve;
 pub mod feature;
 pub mod prep;
 pub mod regions;
+pub mod section;
 
 pub use boundary::{boundaries, Boundaries, Edge, OPEN};
 pub use curve::{curves, Curve};
