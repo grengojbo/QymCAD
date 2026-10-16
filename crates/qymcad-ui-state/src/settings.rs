@@ -20,6 +20,9 @@ pub fn armed_toolbar_hint(pn: &Painting) -> Option<&'static str> {
     if pn.picking.fillet_all() {
         return Some("tb-fillet-all-hint");
     }
+    if pn.picking.fully_define() {
+        return Some("tb-fully-define-hint");
+    }
     // Edit -> Copy, Cut, Insert in a sketch are the copy's article: the base point and the place
     if pn.clip.geom_pending.is_some() || pn.clip.geom_place {
         return Some("tb-copy-hint");

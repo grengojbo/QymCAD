@@ -21,6 +21,7 @@ pub enum IconId {
     // --- Sketch modification ---
     SketchFillet,
     SketchFilletAll,
+    SketchFullyDefine,
     SketchChamfer,
     SketchTrim,
     SketchExtend,

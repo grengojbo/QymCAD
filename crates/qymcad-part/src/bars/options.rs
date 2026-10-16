@@ -34,6 +34,11 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
         }
         return;
     }
+    // FULLY DEFINE holds the hand: its name, what Enter would lay or what to click, the way out
+    if bc.picking.fully_define() {
+        define_bar(bc, ui);
+        return;
+    }
     // another tool taken puts the copy down: one thing in hand at a time
     if !matches!(*bc.armed, qymcad_ui_state::Armed::None) {
         bc.clip.drop_geom();
@@ -438,4 +443,35 @@ pub fn tool_options_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
             ui.label(egui::RichText::new(qymcad_i18n::tr1("opt-selected-n", "n", &bc.sel_sk.items.len().to_string())).weak());
         });
     });
+}
+
+/// THE BAR OF "FULLY DEFINE": its name, then what Enter would lay - the relations and sizes counted on a copy - or, with
+/// nothing taken, what to click; and the button that puts it down.
+fn define_bar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
+    let curves = qymcad_ui_state::define_curves(&*bc.sel_sk);
+    let preview = match *bc.sel {
+        qymcad_ui_state::Sel::Sketch(si) => qymcad_ui_state::define_preview(&*bc.project, si, &curves),
+        _ => None,
+    };
+    let ask = match &preview {
+        Some(p) => qymcad_ui_state::told_defined(&p.defined, "sk-define-would"),
+        None => qymcad_i18n::tr("g-define-hint"),
+    };
+    let mut cancel = false;
+    ui.horizontal_wrapped(|ui| {
+        ui.label(egui::RichText::new(qymcad_i18n::tr("tool-fully-define")).strong());
+        ui.separator();
+        ui.label(egui::RichText::new(ask).weak());
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            cancel = ui.button(qymcad_i18n::tr("cmd-cancel-btn")).clicked();
+        });
+    });
+    if preview.is_none() {
+        // the contour is clicked, not typed: Enter before it has nothing to define
+        qymcad_ui_state::enter_not_ready(&ui.ctx().clone(), bc.status, &qymcad_i18n::tr("g-define-hint"));
+    }
+    if cancel {
+        bc.picking.clear();
+        *bc.status = Notice::info(qymcad_i18n::tr("in-define-cancelled"));
+    }
 }

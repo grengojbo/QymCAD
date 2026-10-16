@@ -127,6 +127,7 @@ contract!(assembly_section, qymcad_acceptance::tools::assembly::SECTION);
 contract!(measure_3d, qymcad_acceptance::tools::part::MEASURE_3D);
 contract!(sketch_measure, qymcad_acceptance::tools::sketch::MEASURE);
 contract!(fillet_all, qymcad_acceptance::tools::sketch::FILLET_ALL);
+contract!(fully_define, qymcad_acceptance::tools::sketch::FULLY_DEFINE);
 contract!(sketch_select, qymcad_acceptance::tools::sketch::SELECT);
 contract!(tangent, qymcad_acceptance::tools::assembly::TANGENT);
 contract!(width, qymcad_acceptance::tools::assembly::WIDTH);

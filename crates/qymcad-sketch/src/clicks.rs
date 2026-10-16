@@ -599,6 +599,8 @@ pub fn sketch_click_at(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context,
                         *sk.status = Notice::refusal(qymcad_i18n::tr("sk-click-shape-line"));
                     }
                 }
+            } else if sk.picking.fully_define() {
+                define::define_click(sk, rect, pos);
             } else if sk.armed.draw_kind() != 0 && !qymcad_ui_state::bar_fields_valid(ctx) {
                 // A FIELD OF THE BAR THAT CANNOT BE TAKEN stops the click as it stops Enter: the shape would
                 // be made with the last value the field held, not with what is written in it

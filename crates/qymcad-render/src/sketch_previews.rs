@@ -5,6 +5,7 @@ use super::*;
 pub fn draw_sketch_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
     draw_offset_preview(pn, painter, &sh);
+    draw_define_preview(pn, painter, &sh);
     if pn.armed.draw_kind() == 0 {
         return;
     }
@@ -536,3 +537,31 @@ pub fn draw_move_preview(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     painter.circle_filled(sh.at(base), 3.0, col);
     painter.line_segment([sh.at(base), sh.at(cur)], Stroke::new(0.8, col));
 }
+
+/// THE SIZES "FULLY DEFINE" WOULD LAY, dashed in the colour of a preview with their values, where they would stand on the
+/// drawing as Enter would leave it - worked out on a copy of the document (`qymcad_ui_state::define_preview`).
+fn draw_define_preview(pn: &Painting, painter: &egui::Painter, sh: &qymcad_ui_state::Sheet) {
+    let qymcad_ui_state::Sel::Sketch(si) = pn.sel else { return };
+    if !pn.picking.fully_define() {
+        return;
+    }
+    let curves = qymcad_ui_state::define_curves(pn.sel_sk);
+    let Some(p) = qymcad_ui_state::define_preview(pn.project, si, &curves) else { return };
+    let Some(s) = p.project.sketches.get(si) else { return };
+    let col = pn.scheme.pal.preview();
+    let stroke = Stroke::new(1.2, col);
+    let font = egui::FontId::proportional(pn.set.dim_font);
+    for (ci, c) in s.constraints.iter().enumerate().skip(p.from) {
+        let Some(text) = qymcad_ui_state::dim_caption(&p.project, si, c, pn.set) else { continue };
+        if let Some((a, b, perp)) = qymcad_ui_state::linear_dim_line(&p.project, si, c, sh) {
+            painter.add(egui::Shape::dashed_line(&[a, b], stroke, 6.0, 4.0));
+            painter.text(a.lerp(b, 0.5) + perp * DEFINE_TEXT_GAP, egui::Align2::CENTER_CENTER, text, font.clone(), col);
+        } else if let Some(g) = qymcad_ui_state::radial_dim_geom(&p.project, si, ci, sh, pn.set) {
+            painter.add(egui::Shape::dashed_line(&[g.start, g.edge, g.knee], stroke, 6.0, 4.0));
+            painter.text(g.text, egui::Align2::CENTER_CENTER, text, font.clone(), col);
+        }
+    }
+}
+
+/// How far the value of a size "Fully define" would lay stands off its dashed line, in pixels.
+const DEFINE_TEXT_GAP: f32 = 10.0;

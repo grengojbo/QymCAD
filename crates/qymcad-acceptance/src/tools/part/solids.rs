@@ -18,7 +18,7 @@ pub static EXTRUDE: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-extrude",
     entries: &[Entry::Button("tb-extrude-hint"), Entry::Key(Modifiers::NONE, Key::E), Entry::Search("cmd-extrude")],
-    other: (Entry::Button("tb-revolve-hint"), "cmd-revolve"),
+    other: Other { entry: Entry::Button("tb-revolve-hint"), title: "cmd-revolve" },
     fixture: Fixture::RectangleSketch,
     picks: &[],
     pick_trial: &[Pick::Space([20.0, 15.0, 0.0])],
@@ -48,9 +48,9 @@ pub static EXTRUDE: Tool = Tool {
     dependency: Some(Node { kind: "Sketch", row: None }),
     contexts: &[Context::SecondPart, Context::AfterTool(&FILLET)],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/01-extrude",
-    not_applicable: &[(17, "a length of the right form over a closed contour always builds a prism: there is nothing for the kernel to refuse")],
+    not_applicable: &[Skip { point: 17, why: "a length of the right form over a closed contour always builds a prism: there is nothing for the kernel to refuse" }],
 };
 
 /// The block with the top front edge rounded to `r`: the edge's quarter of a square taken off, less the quarter disc.
@@ -64,7 +64,7 @@ pub static FILLET: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-fillet",
     entries: &[Entry::Button("tb-fillet-body-hint"), Entry::Key(Modifiers::NONE, Key::F), Entry::Search("cmd-fillet")],
-    other: (Entry::Button("tb-chamfer-body-hint"), "cmd-chamfer"),
+    other: Other { entry: Entry::Button("tb-chamfer-body-hint"), title: "cmd-chamfer" },
     fixture: Fixture::Block,
     picks: &[Pick::Edge([20.0, 0.0, 10.0])],
     pick_trial: &[Pick::Edge([20.0, 0.0, 10.0])],
@@ -87,9 +87,9 @@ pub static FILLET: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(12.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/05-fillet",
-    not_applicable: &[(2, "the fillet's bar has no modes: it takes edges and a radius")],
+    not_applicable: &[Skip { point: 2, why: "the fillet's bar has no modes: it takes edges and a radius" }],
 };
 
 /// The block with the top front edge cut by a chamfer of leg `d`: the triangle d^2 / 2 taken off along all 40 mm.
@@ -104,7 +104,7 @@ pub static CHAMFER: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-chamfer",
     entries: &[Entry::Button("tb-chamfer-body-hint"), Entry::Key(Modifiers::NONE, Key::C), Entry::Search("cmd-chamfer")],
-    other: (Entry::Button("tb-fillet-body-hint"), "cmd-fillet"),
+    other: Other { entry: Entry::Button("tb-fillet-body-hint"), title: "cmd-fillet" },
     fixture: Fixture::Block,
     picks: &[Pick::Edge([20.0, 0.0, 10.0])],
     pick_trial: &[Pick::Edge([20.0, 0.0, 10.0])],
@@ -131,7 +131,7 @@ pub static CHAMFER: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(12.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/06-chamfer",
     not_applicable: &[],
 };
@@ -159,7 +159,7 @@ pub static HOLE: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-hole",
     entries: &[Entry::Button("tb-hole-hint"), Entry::Key(Modifiers::NONE, Key::O), Entry::Search("cmd-hole")],
-    other: (Entry::Button("tb-shell-hint"), "cmd-shell"),
+    other: Other { entry: Entry::Button("tb-shell-hint"), title: "cmd-shell" },
     fixture: Fixture::Block,
     picks: &[Pick::Face([20.0, 15.0, 10.0])],
     pick_trial: &[Pick::Face([20.0, 15.0, 10.0])],
@@ -209,7 +209,7 @@ pub static HOLE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(60.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/08-hole",
     not_applicable: &[],
 };
@@ -235,7 +235,7 @@ pub static SHELL: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-shell",
     entries: &[Entry::Button("tb-shell-hint"), Entry::Key(Modifiers::NONE, Key::H), Entry::Search("cmd-shell")],
-    other: (Entry::Button("tb-hole-hint"), "cmd-hole"),
+    other: Other { entry: Entry::Button("tb-hole-hint"), title: "cmd-hole" },
     fixture: Fixture::Block,
     picks: &[Pick::Face([20.0, 15.0, 10.0])],
     pick_trial: &[Pick::Face([20.0, 15.0, 10.0])],
@@ -268,7 +268,7 @@ pub static SHELL: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(10.5),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/07-shell",
     not_applicable: &[],
 };
@@ -304,7 +304,7 @@ pub static REVOLVE: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-revolve",
     entries: &[Entry::Button("tb-revolve-hint"), Entry::Key(Modifiers::NONE, Key::R), Entry::Search("cmd-revolve")],
-    other: (Entry::Button("tb-extrude-hint"), "cmd-extrude"),
+    other: Other { entry: Entry::Button("tb-extrude-hint"), title: "cmd-extrude" },
     fixture: Fixture::RectangleSketch,
     picks: &[],
     pick_trial: &[Pick::Space([20.0, 15.0, 0.0])],
@@ -332,10 +332,7 @@ pub static REVOLVE: Tool = Tool {
     dependency: Some(Node { kind: "Sketch", row: None }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/02-revolve",
-    not_applicable: &[(
-        17,
-        "every angle of 1 to 360 degrees turns a contour lying beside its axis into a body; what the kernel cannot build is a contour lying across the axis, which is a matter of what is drawn, not of the value typed",
-    )],
+    not_applicable: &[Skip { point: 17, why: "every angle of 1 to 360 degrees turns a contour lying beside its axis into a body; what the kernel cannot build is a contour lying across the axis, which is a matter of what is drawn, not of the value typed" }],
 };

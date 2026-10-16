@@ -39,15 +39,15 @@ pub(crate) const PROJECTED_FACE: Outcome = Outcome::Sketch {
 
 /// What a projection leaves out of the contract: it takes the edge it projects by the click itself, has no field and
 /// makes nothing between clicks.
-pub(crate) const PROJECTS: &[(u8, &str)] = &[
-    (3, "the edge is taken by the click that projects it, not by a pick before it"),
-    (4, "a click away from an edge is answered by the tool itself, in words: see the drawing tools"),
-    (5, "the projection has no field: what it brings in is given by the click"),
-    (6, "the projection has no field to refuse a value in"),
-    (7, "the edge is brought in by one click: there is nothing drawn between clicks to follow the pointer"),
+pub(crate) const PROJECTS: &[Skip] = &[
+    Skip { point: 3, why: "the edge is taken by the click that projects it, not by a pick before it" },
+    Skip { point: 4, why: "a click away from an edge is answered by the tool itself, in words: see the drawing tools" },
+    Skip { point: 5, why: "the projection has no field: what it brings in is given by the click" },
+    Skip { point: 6, why: "the projection has no field to refuse a value in" },
+    Skip { point: 7, why: "the edge is brought in by one click: there is nothing drawn between clicks to follow the pointer" },
     DRAWS[2],
-    (14, "a change above the sketch reopens the part's timeline, which the open sketch stands in front of: the edge following the part is the matter of the sketch's own contract"),
-    (15, "the body under the open sketch is deleted from the tree, and the open sketch puts its own list where the tree stands"),
+    Skip { point: 14, why: "a change above the sketch reopens the part's timeline, which the open sketch stands in front of: the edge following the part is the matter of the sketch's own contract" },
+    Skip { point: 15, why: "the body under the open sketch is deleted from the tree, and the open sketch puts its own list where the tree stands" },
     DRAWS[5],
 ];
 
@@ -57,7 +57,7 @@ pub static PROJECT_BODY: Tool = Tool {
     flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "tool-project-body",
     entries: &[Entry::Button("tb-project-body-hint"), Entry::SearchByArticle],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
     fixture: Fixture::SketchOnBlockTop,
     picks: &[],
     pick_trial: &[],
@@ -78,7 +78,7 @@ pub static PROJECT_BODY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // one tool, one article: the projection of edges and of a body are the same tool (the owner's word of 26.09)
     help: "sketch/15-project",
     not_applicable: PROJECTS,

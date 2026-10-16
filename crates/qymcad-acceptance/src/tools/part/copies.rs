@@ -14,7 +14,7 @@ pub static MIRROR: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-mirror",
     entries: &[Entry::Button("tb-mirror-body-hint"), Entry::Key(Modifiers::NONE, Key::M), Entry::SearchByArticle],
-    other: (Entry::Button("tb-lin-array-body-hint"), "cmd-linear-array"),
+    other: Other { entry: Entry::Button("tb-lin-array-body-hint"), title: "cmd-linear-array" },
     fixture: Fixture::Block,
     picks: &[Pick::Face([20.0, 15.0, 10.0]), Pick::Face([40.0, 15.0, 5.0])],
     pick_trial: &[Pick::Face([20.0, 15.0, 10.0]), Pick::Face([40.0, 15.0, 5.0])],
@@ -38,12 +38,12 @@ pub static MIRROR: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/16-mirror",
     not_applicable: &[
-        (5, "the mirror takes no value: what it makes is settled by the body and the plane clicked"),
-        (6, "the mirror takes no value, so there is none to refuse"),
-        (17, "a body reflected in a plane always builds: there is no value for the kernel to fail on"),
+        Skip { point: 5, why: "the mirror takes no value: what it makes is settled by the body and the plane clicked" },
+        Skip { point: 6, why: "the mirror takes no value, so there is none to refuse" },
+        Skip { point: 17, why: "a body reflected in a plane always builds: there is no value for the kernel to fail on" },
     ],
 };
 
@@ -70,7 +70,7 @@ pub static LINEAR_ARRAY: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-linear-array",
     entries: &[Entry::Button("tb-lin-array-body-hint"), Entry::SearchByArticle],
-    other: (Entry::Button("tb-mirror-body-hint"), "cmd-mirror"),
+    other: Other { entry: Entry::Button("tb-mirror-body-hint"), title: "cmd-mirror" },
     fixture: Fixture::Block,
     picks: &[Pick::Face([20.0, 15.0, 10.0])],
     pick_trial: &[Pick::Face([20.0, 15.0, 10.0])],
@@ -96,11 +96,11 @@ pub static LINEAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/17-linear-array",
     not_applicable: &[
-        (2, "the bar of the pattern holds its count and the direction it goes, not modes that put each other down"),
-        (17, "copies of a body laid along a line always build: what the kernel could not make of them is a matter of where they fall, not of the value typed"),
+        Skip { point: 2, why: "the bar of the pattern holds its count and the direction it goes, not modes that put each other down" },
+        Skip { point: 17, why: "copies of a body laid along a line always build: what the kernel could not make of them is a matter of where they fall, not of the value typed" },
     ],
 };
 
@@ -116,7 +116,7 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-circular-array",
     entries: &[Entry::Button("tb-circ-array-body-hint"), Entry::SearchByArticle],
-    other: (Entry::Button("tb-mirror-body-hint"), "cmd-mirror"),
+    other: Other { entry: Entry::Button("tb-mirror-body-hint"), title: "cmd-mirror" },
     fixture: Fixture::BlockOffAxis,
     picks: &[Pick::Face([220.0, 0.0, 10.0])],
     pick_trial: &[Pick::Face([220.0, 0.0, 10.0])],
@@ -136,7 +136,7 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/18-circular-array",
-    not_applicable: &[(17, "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed")],
+    not_applicable: &[Skip { point: 17, why: "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed" }],
 };

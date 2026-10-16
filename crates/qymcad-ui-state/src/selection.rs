@@ -115,6 +115,8 @@ pub enum Picking {
     ReplaceSketch(usize),
     /// all the edges of a body, for a fillet
     FilletAll,
+    /// the curves of a sketch to be dimensioned until no freedom is left ("Fully define")
+    FullyDefine,
     /// a contour into a slot of the command (profile / path / section)
     Contour(ContourSlot),
     /// A TOOL WAITING FOR THE SKETCH IT NEEDS, carrying the kind of command that was pressed.
@@ -153,6 +155,9 @@ impl Picking {
     pub fn fillet_all(&self) -> bool {
         *self == Picking::FilletAll
     }
+    pub fn fully_define(&self) -> bool {
+        *self == Picking::FullyDefine
+    }
     pub fn contour(&self) -> Option<ContourSlot> {
         match *self {
             Picking::Contour(s) => Some(s),
@@ -182,6 +187,7 @@ impl Picking {
             Picking::SketchPlane(_) => Some("in-sketch-plane-cancelled"),
             Picking::SketchFor(_) => Some("in-sketch-wait-cancelled"),
             Picking::FilletAll => Some("in-fillet-all-cancelled"),
+            Picking::FullyDefine => Some("in-define-cancelled"),
             Picking::None | Picking::Contour(_) => None,
         }
     }

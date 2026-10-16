@@ -1,7 +1,7 @@
 //! THE PRIMITIVES DESCRIBED: a box, a cylinder, a sphere, a cone, a torus and a six-sided prism. Each is taken by its
 //! button, takes no picks - its sizes are fields at the geometry - and stands on the table about the origin.
 use crate::contract::fixtures::Fixture;
-use crate::contract::{Class, Context, Entry, Field, Flow, Outcome, Tool, When};
+use crate::contract::{Skip, Other, Budget, Class, Context, Entry, Field, Flow, Outcome, Tool, When};
 
 /// A body of the part with the numbers `volume`, `faces` and `edges`, standing in the box `min`..`max`.
 const fn body(volume: f64, faces: usize, edges: usize, min: [f64; 3], max: [f64; 3]) -> Outcome {
@@ -30,7 +30,7 @@ pub static BOX: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-box",
     entries: &[Entry::Button("tb-box-hint"), Entry::Search("cmd-box")],
-    other: (Entry::Button("tb-cylinder-hint"), "cmd-cylinder"),
+    other: Other { entry: Entry::Button("tb-cylinder-hint"), title: "cmd-cylinder" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -52,25 +52,25 @@ pub static BOX: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
-        (2, "a box has no modes: its bar holds its three lengths and nothing else"),
-        (3, "a box takes no picks: its sizes are fields at the geometry"),
-        (4, "a box takes no picks, so there are none to refuse"),
-        (14, "a box stands first in the timeline of its part: there is nothing above it to change"),
-        (15, "a box stands on nothing: it is made of its three numbers alone"),
-        (17, "every size the fields take builds: what the kernel cannot build is refused by the fields themselves (see 6)"),
+        Skip { point: 2, why: "a box has no modes: its bar holds its three lengths and nothing else" },
+        Skip { point: 3, why: "a box takes no picks: its sizes are fields at the geometry" },
+        Skip { point: 4, why: "a box takes no picks, so there are none to refuse" },
+        Skip { point: 14, why: "a box stands first in the timeline of its part: there is nothing above it to change" },
+        Skip { point: 15, why: "a box stands on nothing: it is made of its three numbers alone" },
+        Skip { point: 17, why: "every size the fields take builds: what the kernel cannot build is refused by the fields themselves (see 6)" },
     ],
 };
 
 /// The points a primitive does not answer to, and why: it has no modes, takes no picks, stands first on nothing.
-const NOT_APPLICABLE: &[(u8, &str)] = &[
-    (2, "a primitive has no modes: its bar holds its sizes and nothing else"),
-    (3, "a primitive takes no picks: its sizes are fields at the geometry"),
-    (4, "a primitive takes no picks, so there are none to refuse"),
-    (14, "a primitive stands first in the timeline of its part: there is nothing above it to change"),
-    (15, "a primitive stands on nothing: it is made of its numbers alone"),
+const NOT_APPLICABLE: &[Skip] = &[
+    Skip { point: 2, why: "a primitive has no modes: its bar holds its sizes and nothing else" },
+    Skip { point: 3, why: "a primitive takes no picks: its sizes are fields at the geometry" },
+    Skip { point: 4, why: "a primitive takes no picks, so there are none to refuse" },
+    Skip { point: 14, why: "a primitive stands first in the timeline of its part: there is nothing above it to change" },
+    Skip { point: 15, why: "a primitive stands on nothing: it is made of its numbers alone" },
 ];
 
 /// A CYLINDER of radius `r` and height `h`, standing on the table about the origin: its side, its top and its bottom;
@@ -92,7 +92,7 @@ pub static CYLINDER: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-cylinder",
     entries: &[Entry::Button("tb-cylinder-hint"), Entry::Search("cmd-cylinder")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -113,7 +113,7 @@ pub static CYLINDER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],
@@ -121,7 +121,7 @@ pub static CYLINDER: Tool = Tool {
         NOT_APPLICABLE[2],
         NOT_APPLICABLE[3],
         NOT_APPLICABLE[4],
-        (17, "every size the fields take builds a cylinder: what cannot be built is refused by the fields themselves (see 6)"),
+        Skip { point: 17, why: "every size the fields take builds a cylinder: what cannot be built is refused by the fields themselves (see 6)" },
     ],
 };
 
@@ -139,7 +139,7 @@ pub static SPHERE: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-sphere",
     entries: &[Entry::Button("tb-sphere-hint"), Entry::Search("cmd-sphere")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -157,7 +157,7 @@ pub static SPHERE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],
@@ -165,7 +165,7 @@ pub static SPHERE: Tool = Tool {
         NOT_APPLICABLE[2],
         NOT_APPLICABLE[3],
         NOT_APPLICABLE[4],
-        (17, "every radius the field takes builds a sphere: what cannot be built is refused by the field itself (see 6)"),
+        Skip { point: 17, why: "every radius the field takes builds a sphere: what cannot be built is refused by the field itself (see 6)" },
     ],
 };
 
@@ -194,7 +194,7 @@ pub static CONE: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-cone",
     entries: &[Entry::Button("tb-cone-hint"), Entry::Search("cmd-cone")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -216,7 +216,7 @@ pub static CONE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],
@@ -224,7 +224,7 @@ pub static CONE: Tool = Tool {
         NOT_APPLICABLE[2],
         NOT_APPLICABLE[3],
         NOT_APPLICABLE[4],
-        (17, "every size the fields take builds a cone: two radii of nothing are refused by the fields themselves (see 6)"),
+        Skip { point: 17, why: "every size the fields take builds a cone: two radii of nothing are refused by the fields themselves (see 6)" },
     ],
 };
 
@@ -247,7 +247,7 @@ pub static TORUS: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-torus",
     entries: &[Entry::Button("tb-torus-hint"), Entry::Search("cmd-torus")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -271,7 +271,7 @@ pub static TORUS: Tool = Tool {
     contexts: &[Context::SecondPart],
     // a ring of 3 about the tube of 4 is of the right form and passes through itself
     refusal: Some(3.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: NOT_APPLICABLE,
 };
@@ -312,7 +312,7 @@ pub static PRISM: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-prism",
     entries: &[Entry::Button("tb-prism-hint"), Entry::Search("cmd-prism")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -334,7 +334,7 @@ pub static PRISM: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],
@@ -342,6 +342,6 @@ pub static PRISM: Tool = Tool {
         NOT_APPLICABLE[2],
         NOT_APPLICABLE[3],
         NOT_APPLICABLE[4],
-        (17, "every size the fields take builds a prism: what cannot be built is refused by the fields themselves (see 6)"),
+        Skip { point: 17, why: "every size the fields take builds a prism: what cannot be built is refused by the fields themselves (see 6)" },
     ],
 };

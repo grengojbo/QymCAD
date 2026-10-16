@@ -837,6 +837,7 @@ mod clicks;
 pub use clicks::*;
 mod offset;
 pub use offset::*;
+mod define;
 mod drag;
 pub use drag::*;
 mod snap;

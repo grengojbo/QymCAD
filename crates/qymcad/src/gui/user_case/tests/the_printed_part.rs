@@ -182,6 +182,41 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
         dof => problems.push(format!("the sketch taken off the printed plate stands {dof:?} in {} nodes more, not fully defined in one: {}", hand.app.project.timeline.len() - nodes, hand.app.status)),
     }
     hand.key(egui::Key::Escape).frame(Vec::new());
+    if let Some(si) = si {
+        a_circle_drawn_on_it_is_fully_defined(&mut hand, si, problems);
+    }
     hand.app.enter_component(was);
     (hand.app.viewing.mode_3d, hand.app.viewing.cam) = view;
+}
+
+/// A CIRCLE DRAWN ON THE SKETCH TAKEN OFF THE PLATE, AND "FULLY DEFINE": the sketch opened from its row in the tree, a
+/// circle of 3 drawn in the middle of the outline, the tool taken, the circle clicked and Enter - its diameter and its
+/// place laid from the origin, and the sketch has no freedom left.
+fn a_circle_drawn_on_it_is_fully_defined(hand: &mut crate::gui::hand::Hand, si: usize, problems: &mut Vec<String>) {
+    let name = hand.app.project.sketches[si].name.clone();
+    if !hand.double_click_word(&name) {
+        problems.push(format!("the sketch {name:?} taken off the printed plate has no row to open it by"));
+        return;
+    }
+    hand.frame(Vec::new());
+    let pts = &hand.app.project.sketches[si].points;
+    let n = pts.len().max(1) as f64;
+    let middle = pts.iter().fold((0.0, 0.0), |(x, y), p| (x + p.x / n, y + p.y / n));
+    hand.sk_tool(3).click2d(middle.0, middle.1).click2d(middle.0 + 3.0, middle.1);
+    hand.sk_tool(0);
+    let free = hand.app.project.sketch_dof(si).0;
+    hand.hover2d(middle.0, middle.1);
+    if !hand.press_hint(&crate::i18n::tr("tb-fully-define-hint")) {
+        problems.push("the button of Fully define is not on the panel of the sketch".into());
+        return;
+    }
+    hand.click2d(middle.0 + 3.0, middle.1).frame(Vec::new());
+    hand.key(egui::Key::Enter).frame(Vec::new());
+    check_all(hand.app, "a circle on the sketch of the printed plate fully defined", problems);
+    match hand.app.project.sketch_dof(si) {
+        (0, 0) if free > 0 => {}
+        dof => problems.push(format!("the circle on the sketch of the printed plate stands {dof:?} after Fully define (it was free by {free}): {}", hand.app.status)),
+    }
+    hand.key(egui::Key::Escape).frame(Vec::new());
+    hand.app.finish_sketch_edit();
 }

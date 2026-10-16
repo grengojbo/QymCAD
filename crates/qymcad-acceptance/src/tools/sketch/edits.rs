@@ -3,12 +3,12 @@
 use super::*;
 
 /// What the items of the Edit menu leave out in a sketch: what they work on is picked before them.
-pub(crate) const EDITS: &[(u8, &str)] = &[
-    (2, "the item has no mode"),
-    (3, "what is copied or cut is picked before the item; its clicks put points"),
-    (4, "a click on empty sheet is a place like any other: there is no wrong click to refuse"),
-    (5, "the item has no field"),
-    (6, "the item has no field to refuse a value in"),
+pub(crate) const EDITS: &[Skip] = &[
+    Skip { point: 2, why: "the item has no mode" },
+    Skip { point: 3, why: "what is copied or cut is picked before the item; its clicks put points" },
+    Skip { point: 4, why: "a click on empty sheet is a place like any other: there is no wrong click to refuse" },
+    Skip { point: 5, why: "the item has no field" },
+    Skip { point: 6, why: "the item has no field to refuse a value in" },
     DRAWS[2],
     DRAWS[3],
     DRAWS[4],
@@ -24,7 +24,7 @@ pub static EDIT_COPY: Tool = Tool {
     entries: &[Entry::Menu(&["menu-edit", "menu-copy"])],
     // over Trim, not a drawing tool: a drawing tool taken drops the selection, and with nothing selected there is nothing
     // to copy
-    other: (Entry::Button("tb-trim-hint"), "tool-trim"),
+    other: Other { entry: Entry::Button("tb-trim-hint"), title: "tool-trim" },
     fixture: Fixture::RectangleSidePicked,
     picks: &[],
     pick_trial: &[],
@@ -42,7 +42,7 @@ pub static EDIT_COPY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: EDITS,
 };
@@ -56,7 +56,7 @@ pub static EDIT_CUT: Tool = Tool {
     entries: &[Entry::Menu(&["menu-edit", "menu-cut"])],
     // over Trim, not a drawing tool: a drawing tool taken drops the selection, and with nothing selected there is nothing
     // to copy
-    other: (Entry::Button("tb-trim-hint"), "tool-trim"),
+    other: Other { entry: Entry::Button("tb-trim-hint"), title: "tool-trim" },
     fixture: Fixture::RectangleSidePicked,
     picks: &[],
     pick_trial: &[],
@@ -88,7 +88,7 @@ pub static EDIT_CUT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: EDITS,
 };
@@ -99,7 +99,7 @@ pub static EDIT_INSERT: Tool = Tool {
     flow: Flow::Drawing(&[(20.0, -30.0)], Finish::LastClick),
     title: "win-insert",
     entries: &[Entry::Menu(&["menu-edit", "win-insert"])],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
     fixture: Fixture::RectangleSideCut,
     picks: &[],
     pick_trial: &[],
@@ -131,7 +131,7 @@ pub static EDIT_INSERT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: EDITS,
 };

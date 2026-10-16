@@ -4,12 +4,12 @@ use std::time::{Duration, Instant};
 
 use qymcad::{pos2, Document, Key, Modifiers, Pos2, Session, Solid};
 
-use super::{Class, Context, Entry, Field, Finish, Flow, Node, Outcome, Pick, Tool, Under, Upstream, When, POINTS};
+use super::{Skip, Class, Context, Entry, Field, Finish, Flow, Node, Outcome, Pick, Tool, Under, Upstream, When, POINTS};
 use crate::build;
 
 /// RUN POINT `n` OF THE CONTRACT OF `tool`. A point the description marks as not applying passes when it says why.
 pub fn point(tool: &Tool, n: u8) {
-    if let Some((_, why)) = tool.not_applicable.iter().find(|(p, _)| *p == n) {
+    if let Some(Skip { why, .. }) = tool.not_applicable.iter().find(|s| s.point == n) {
         assert!(!why.trim().is_empty(), "{}: point {n} is marked as not applying without a reason", tool.id);
         return;
     }

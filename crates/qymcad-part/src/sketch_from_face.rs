@@ -174,17 +174,9 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
     node.or(Some(sketch.sketch))
 }
 
-/// What a sketch taken off a face laid, in words: its relations and sizes, whether it is fully defined, and each size
-/// rounded - "29.97 -> 30.0".
+/// What a sketch taken off a face laid, in words (`qymcad_ui_state::told_defined`).
 fn told_laid(s: &FaceSketch) -> String {
-    let d = &s.defined;
-    let state = if d.free == 0 { qymcad_i18n::tr("dof-fully-defined") } else { qymcad_i18n::tr1("sk-dof-n", "n", &d.free.to_string()) };
-    let mut out = qymcad_i18n::trn("msg-sketch-from-face-laid", &[("rel", &d.relations.to_string()), ("sizes", &d.sizes.to_string()), ("state", &state)]);
-    if !d.rounded.is_empty() {
-        let list: Vec<String> = d.rounded.iter().map(|r| format!("{} -> {}", qymcad_i18n::num(r.was, 2), qymcad_i18n::num(r.now, 1))).collect();
-        out = format!("{out}; {}", qymcad_i18n::tr1("msg-sketch-from-face-rounded", "list", &list.join(", ")));
-    }
-    out
+    qymcad_ui_state::told_defined(&s.defined, "msg-sketch-from-face-laid")
 }
 
 /// A DOUBLE CLICK ON A BOSS OR POCKET REDRAWN reopens the tool on its height: its faces lit on the body it was taken off,

@@ -165,10 +165,10 @@ pub(crate) fn cancel(tool: &Tool) {
                 let word = s.word("cmd-cancel-esc");
                 s.press_word_near(&word, TOP);
             }
-            _ => enter(&mut s, &tool.other.0),
+            _ => enter(&mut s, &tool.other.entry),
         }
         if how == "another tool" {
-            let other = s.word(tool.other.1);
+            let other = s.word(tool.other.title);
             if in_hand(&mut s, tool) || !s.in_hand().contains(&other) {
                 problems.push(format!("{how}: the bar says {:?}", s.in_hand()));
             }
