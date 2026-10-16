@@ -33,6 +33,17 @@ impl SectionAt {
     }
 }
 
+/// WHAT FITS ONE CLOSED LOOP: its corners in order, to its pieces (`qymcad_meshfit::section::fit_loop`).
+pub type LoopFitter = dyn Fn(&[crate::geom::Point2]) -> Fitted;
+
+/// WHAT A SKETCH OF A FACE OF A MESH IS TAKEN OF: the body, its flat face, what fits the loops of its outline, the name.
+pub struct OfFace<'a> {
+    pub body: Id,
+    pub face: crate::feature::FaceKey,
+    pub fit: &'a LoopFitter,
+    pub name: String,
+}
+
 /// WHAT A SKETCH OF A SECTION IS TAKEN OF: the body, where it is cut, what fits the loops, and the sketch's name.
 pub struct OfSection<'a> {
     pub body: Id,
@@ -80,6 +91,44 @@ impl Project {
         }
         let si = self.new_sketch(name.clone());
         self.sketches[si].plane = plane;
+        Some(self.draw_loops(si, loops, name))
+    }
+
+    /// A SKETCH OF A FLAT FACE OF A MESH: a sketch on the face, the outline of the face read in its frame, stitched into
+    /// loops, each fitted (`fit`) and drawn as `add_sketch_of_loops` draws them. The outline of a mesh face is chords:
+    /// copied as it is, a hole of 10 was 24 lines. Answers `None` and lays nothing when the face gives no closed loop.
+    pub fn add_sketch_of_face_loops(&mut self, of: OfFace) -> Option<FaceSketch> {
+        let OfFace { body, face, fit, name } = of;
+        let b = self.bodies.iter().find(|b| b.id == body)?;
+        let near = |f: &&crate::geom::MeshFace| {
+            let c = [f.centroid.x - face.centroid[0], f.centroid.y - face.centroid[1], f.centroid.z - face.centroid[2]];
+            (c[0] * c[0] + c[1] * c[1] + c[2] * c[2]).sqrt() - (f.normal[0] * face.normal[0] + f.normal[1] * face.normal[1] + f.normal[2] * face.normal[2])
+        };
+        // a face of a polyhedron by its name; a face of a raw mesh has none (id 0) and is the one standing where the key
+        // says, turned as it says
+        let mf = match face.id {
+            0 => b.faces.iter().min_by(|x, y| near(x).total_cmp(&near(y)))?,
+            id => b.faces.iter().find(|f| f.id == id)?,
+        };
+        let outline = b.mesh.face_outline(mf);
+        let si = self.new_sketch(name.clone());
+        self.sketches[si].plane = SketchPlane::Face(body, face);
+        let Some(frame) = self.sketch_frame(si) else {
+            self.sketches.pop();
+            return None;
+        };
+        let segs = outline.iter().map(|s| (frame.project(s.from), frame.project(s.to))).collect();
+        let loops: Vec<Fitted> = crate::geom::stitch_segments(segs, 1e-6).into_iter().filter(|c| c.closed && c.points.len() >= 3).map(|c| fit(&c.points)).collect();
+        if loops.iter().all(|l| l.pieces.is_empty()) {
+            self.sketches.pop();
+            return None;
+        }
+        Some(self.draw_loops(si, &loops, name))
+    }
+
+    /// The pieces of `loops` drawn into sketch `si` as curves of its own, joined end to end, the sketch laid in the
+    /// timeline and defined to the end from its origin, its relations taken as a mesh shows them.
+    fn draw_loops(&mut self, si: usize, loops: &[Fitted], name: String) -> FaceSketch {
         let mut ents = Vec::new();
         for piece in loops.iter().flat_map(|l| &l.pieces) {
             match piece {
@@ -105,6 +154,6 @@ impl Project {
         self.add_sketch_node(sketch, name);
         let defined = self.fully_define_seen(si, &ents, &Anchor::Origin, Seen::MESH);
         self.regen_sketch(si);
-        Some(FaceSketch { si, sketch, defined })
+        FaceSketch { si, sketch, defined }
     }
 }

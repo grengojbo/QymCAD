@@ -20,6 +20,9 @@ body. Made for a body from a STEP file, which has no sketch behind its bosses wh
   (horizontal, vertical, parallel, tangent, equal) and sizes are laid so the sketch is **fully defined**. It is placed
   from the edges of the face the boss stands on (thin construction lines), or from the origin of the sketch when there
   are no straight edges.
+- On a face of a mesh - a body from STL, OBJ or 3MF, or made a polyhedron - only the sketch is laid: the outline, made
+  of chords, is fitted with lines, arcs and circles, so a hole is one circle. See also
+  [Sketch from section](part/31-sketch-from-section).
 - Sizes are rounded to 0.1; the status line says which, for example **rounded 29.97 -> 30.0**.
 - With Replace, also a row **Boss by sketch h=8.0** (or **Pocket by sketch**). A double click opens the height, a double
   click on the sketch opens the sketch. Change a size of the sketch from 30 to 40 and the boss gets wider.

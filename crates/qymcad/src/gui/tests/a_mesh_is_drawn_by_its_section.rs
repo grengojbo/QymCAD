@@ -84,3 +84,22 @@ fn the_plate_clicked_and_enter_lay_a_sketch_of_its_section() {
     assert_eq!((again.entities.len(), circles), (5, 1), "the second section is not the rectangle and the hole");
     hand.key(egui::Key::Escape);
 }
+
+/// "SKETCH FROM FACE" ON A FACE OF A MESH: the top of the printed plate clicked and Enter - its outline is chords, the
+/// hole two dozen of them - is a sketch of the rectangle and one circle, defined to the end, not a polygon of the hole.
+#[test]
+fn the_top_of_the_printed_plate_is_drawn_with_its_hole_a_circle() {
+    let Printed { mut app, _folder } = a_printed_plate();
+    let mut hand = Hand::new(&mut app);
+    let sketches = hand.app.project.sketches.len();
+    hand.tool(qymcad_part::SKETCH_FROM_FACE).frame(Vec::new());
+    hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
+    hand.key(egui::Key::Enter);
+    at_rest(&mut hand);
+    assert_eq!(hand.app.project.sketches.len(), sketches + 1, "Enter laid no sketch: {}", hand.app.status);
+    let si = hand.app.project.sketches.len() - 1;
+    let s = &hand.app.project.sketches[si];
+    let circles = s.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).count();
+    assert_eq!((s.entities.len(), circles), (5, 1), "the top is not drawn as its rectangle and its hole: {} curves, {circles} circles", s.entities.len());
+    assert_eq!(hand.app.project.sketch_dof(si).0, 0, "the sketch of the top is left free: {}", hand.app.status);
+}

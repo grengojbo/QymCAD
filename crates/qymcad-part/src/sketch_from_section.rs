@@ -65,7 +65,7 @@ pub fn start_sketch_from_section_cmd(pc: &mut PartCtx) {
 /// WHETHER A BODY CAME FROM A MESH: the node that made it, or one it was made from, brought a mesh in or sewed one into
 /// a polyhedron. A plate printed and brought back, its hole since made exact, is still drawn by its section; a body of
 /// exact surfaces from the start is drawn better by "Sketch from face" and by a projection.
-fn from_a_mesh(project: &Project, mut body: Id) -> bool {
+pub(crate) fn from_a_mesh(project: &Project, mut body: Id) -> bool {
     for _ in 0..project.timeline.len() + 1 {
         let Some(node) = project.timeline.iter().find(|n| n.kind.body() == Some(body)) else { return false };
         match node.kind {

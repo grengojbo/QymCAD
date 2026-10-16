@@ -2880,6 +2880,7 @@ f-sketch-from-face = Sketch from face
 hint-sketch-from-face = Click a flat face of the body: its outline goes into a sketch; Replace redraws the boss or pocket by it
 tb-sketch-from-face-hint = Sketch from face - click a flat face -> Enter: a sketch of its outline, fully defined; Replace redraws its boss or pocket by the sketch, its sizes then driving the body
 msg-sketch-from-face = Click a flat face of the body; Esc cancels
+msg-sketch-from-face-mesh = A face of a mesh: its outline is fitted with lines, arcs and circles
 f-sketch-from-section = Sketch from section
 hint-sketch-from-section = Click a body of a mesh: its section goes into a sketch, fitted with lines, arcs and circles
 tb-sketch-from-section-hint = Sketch from section - click a body of a mesh, choose the plane and its offset -> Enter: a sketch of the section, fitted with lines, arcs and circles, fully defined

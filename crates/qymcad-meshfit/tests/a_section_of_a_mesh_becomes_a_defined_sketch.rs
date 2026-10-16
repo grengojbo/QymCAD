@@ -119,3 +119,28 @@ fn a_section_off_a_base_plane_lies_on_a_datum_plane_there() {
     let missed = p.add_sketch_of_section(OfSection { body: id, at: SectionAt { base: BasePlane::XY, offset: 50.0 }, fit: &fit, name: "Nothing".into() });
     assert!(missed.is_none() && p.sketches.len() == 1 && p.planes.len() == 1, "a plane missing the body laid something");
 }
+
+/// A FLAT FACE OF A MESH DRAWN BY ITS FITTED OUTLINE: the top of the plate - its outline chords, the rounded corners and
+/// the hole a few dozen of them - is a sketch on the face of 4 lines, 4 arcs and a circle, defined to the end.
+#[test]
+fn the_top_of_a_mesh_plate_is_drawn_with_its_arcs_and_its_hole() {
+    use qymcad_core::model::OfFace;
+    let body = qymcad_kernel::specimen::extrude_profile(&plate(), 10.0).expect("the plate is built");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&body, 0.05).into_iter().next().expect("the plate is a mesh");
+    let mut p = Project::default();
+    let id = p.alloc_id();
+    let faces = qymcad_meshfit::raw_faces(&mesh);
+    p.bodies.push(qymcad_core::model::Body { id, mesh, faces, ..Default::default() });
+    let top = qymcad_core::feature::FaceKey { index: 0, centroid: [25.0, 20.0, 10.0], normal: [0.0, 0.0, 1.0], id: 0 };
+    let fit = |pts: &[Point2]| fit_loop(pts, &Fit::for_loop(pts));
+    let made = p.add_sketch_of_face_loops(OfFace { body: id, face: top, fit: &fit, name: "Top".into() }).expect("a sketch is laid");
+    let s = &p.sketches[made.si];
+    let kinds = |want: fn(&qymcad_core::model::EntityKind) -> bool| s.entities.iter().filter(|e| want(&e.kind)).count();
+    let found = [
+        kinds(|k| matches!(k, qymcad_core::model::EntityKind::Line { .. })),
+        kinds(|k| matches!(k, qymcad_core::model::EntityKind::Arc { .. })),
+        kinds(|k| matches!(k, qymcad_core::model::EntityKind::Circle { .. })),
+    ];
+    assert_eq!(found, [4, 4, 1], "the top is drawn as lines, arcs and circles {found:?}");
+    assert_eq!(made.defined.free, 0, "the sketch of the top is left free: {:?}", made.defined);
+}

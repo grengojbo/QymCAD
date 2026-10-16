@@ -70,6 +70,13 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("error-prism-face-not-flat"));
         return;
     }
+    // A FACE OF A MESH IS DRAWN BY ITS FITTED OUTLINE, as a sketch only: its chords become the lines, arcs and circles
+    // they follow (`add_sketch_of_face_loops`), and there is no exact boss to redraw
+    if crate::sketch_from_section::from_a_mesh(pc.project, body) {
+        pc.recognise.redraw = Some(RedrawInHand { body, face: key, prism: None, told: qymcad_i18n::tr("msg-sketch-from-face-mesh") });
+        refresh(pc);
+        return;
+    }
     let found = qymcad_ui_state::with_kernel(&mut pc.rebuild(), |project, k| project.prism_at(body, key.id, k));
     let told = match &found {
         Ok(p) => {
@@ -155,6 +162,15 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
     let profile = held.prism.as_ref().map(|p| p.profile.clone()).unwrap_or_default();
     let name = qymcad_i18n::tr1("g-sketch-n", "n", &(pc.project.sketches.len() + 1).to_string());
     let prism = held.prism.clone().filter(|_| replace);
+    if crate::sketch_from_section::from_a_mesh(pc.project, held.body) {
+        let fit = |pts: &[qymcad_core::geom::Point2]| qymcad_meshfit::section::fit_loop(pts, &qymcad_meshfit::section::Fit::for_loop(pts));
+        let Some(sketch) = pc.project.add_sketch_of_face_loops(qymcad_core::model::OfFace { body: held.body, face: held.face, fit: &fit, name }) else {
+            *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-face-no-outline"));
+            return None;
+        };
+        pc.recognise.laid = told_laid(&sketch);
+        return Some(sketch.sketch);
+    }
     let laid = qymcad_ui_state::with_kernel(&mut pc.rebuild(), |project, k| {
         let sketch = project.add_sketch_from_face(FromFace { body: held.body, face: held.face, profile: &profile, outline: &outline, name }, k)?;
         let node = prism.as_ref().map(|p| project.add_redrawn(held.body, p, sketch.sketch));
