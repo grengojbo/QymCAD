@@ -44,7 +44,7 @@ pub static DATUM_PLANE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
         (2, "the bar of the datum plane holds no modes: it takes a base and an offset from it"),
@@ -81,7 +81,7 @@ pub static DATUM_AXIS: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
         (5, "the axis takes no value: it lies along the edge or the cylinder picked"),
@@ -124,7 +124,7 @@ pub static DATUM_POINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
         (2, "the bar of the datum point holds no modes: it takes three coordinates"),

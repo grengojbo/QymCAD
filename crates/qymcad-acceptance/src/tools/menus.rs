@@ -1,6 +1,6 @@
 //! THE MENUS OF THE PROGRAM: the items that show a window, described as actions.
 use crate::contract::fixtures::Fixture;
-use crate::contract::{Entry, Flow, Outcome, Tool};
+use crate::contract::{Budget, Entry, Flow, Outcome, Tool};
 
 /// The block as the extrusion makes it: 40 x 30 x 10 from the origin.
 const BLOCK: Outcome = Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] };
@@ -49,7 +49,7 @@ macro_rules! shows {
             dependency: None,
             contexts: &[],
             refusal: None,
-            budget: (10, 2000),
+            budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: $help,
             not_applicable: SHOWS,
         };
@@ -105,7 +105,7 @@ pub static UNDO: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/03-timeline",
     not_applicable: HISTORY,
 };
@@ -134,7 +134,7 @@ pub static REDO: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/03-timeline",
     not_applicable: HISTORY,
 };
@@ -163,7 +163,7 @@ pub static REBUILD: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/03-timeline",
     not_applicable: HISTORY,
 };
@@ -193,7 +193,7 @@ pub static NEW_PROJECT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/08-documents",
     not_applicable: HISTORY,
 };
@@ -224,7 +224,7 @@ macro_rules! chooses {
             dependency: None,
             contexts: &[],
             refusal: None,
-            budget: (10, 2000),
+            budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: $help,
             not_applicable: CHOOSES,
         };
@@ -278,7 +278,7 @@ macro_rules! shows_first {
             dependency: None,
             contexts: &[],
             refusal: None,
-            budget: (10, 2000),
+            budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: "general/06-import-export",
             not_applicable: CHOOSES,
         };
@@ -324,7 +324,7 @@ macro_rules! asks {
             dependency: None,
             contexts: &[],
             refusal: None,
-            budget: (10, 2000),
+            budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: "general/08-documents",
             not_applicable: HISTORY,
         };
@@ -367,7 +367,7 @@ macro_rules! paints {
             dependency: None,
             contexts: &[],
             refusal: None,
-            budget: (10, 2000),
+            budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: "general/07-settings",
             not_applicable: SHOWS,
         };
@@ -405,7 +405,7 @@ pub static PARAMETERS: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/05-parameters",
     not_applicable: SHOWS,
 };
@@ -436,7 +436,7 @@ macro_rules! opens {
             dependency: None,
             contexts: &[],
             refusal: None,
-            budget: (10, 2000),
+            budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: "general/08-documents",
             not_applicable: SUBMENU,
         };
@@ -491,7 +491,7 @@ pub static RECENT_CLEAR: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/08-documents",
     not_applicable: SUBMENU,
 };
@@ -520,7 +520,7 @@ pub static FIT_VIEW: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/09-viewport",
     not_applicable: SHOWS,
 };

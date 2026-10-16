@@ -2,7 +2,7 @@
 use qymcad::{Key, Modifiers};
 
 use crate::contract::fixtures::Fixture;
-use crate::contract::{When, Class, Context, Entry, Field, Finish, Flow, Mode, Outcome, Pick, Tool, Under, Words};
+use crate::contract::{Budget, When, Class, Context, Entry, Field, Finish, Flow, Mode, Outcome, Pick, Tool, Under, Words};
 
 /// Why the points of the contract that belong to a command do not apply to a tool that draws.
 const DRAWS: &[(u8, &str)] = &[

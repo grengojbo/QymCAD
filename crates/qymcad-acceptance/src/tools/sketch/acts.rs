@@ -41,7 +41,7 @@ pub static DELETE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/18-delete",
     not_applicable: ACTS,
 };
@@ -102,7 +102,7 @@ pub static MIRROR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/19-mirror",
     not_applicable: &[
         (2, "the mirror has no mode: what is reflected is picked before it, the axis is clicked"),
@@ -156,7 +156,7 @@ pub static MOVE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
         (2, "the tool has no mode: what is moved is picked before it, the base and the target are clicked"),
@@ -209,7 +209,7 @@ pub static COPY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
         (2, "the tool has no mode: what is copied is picked before it, the base and the target are clicked"),
@@ -288,7 +288,7 @@ pub static ROTATE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
         (2, "the tool has no mode: what is turned is picked before it, the centre is clicked"),
@@ -353,7 +353,7 @@ pub static LINEAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/22-array",
     not_applicable: &[
         (3, "the pattern takes the selection made before it, and nothing else is clicked"),
@@ -407,7 +407,7 @@ pub static CIRCULAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/22-array",
     not_applicable: &[
         (3, "the centre is a click that puts a point, not a pick of what is there"),

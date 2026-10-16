@@ -58,7 +58,7 @@ pub static DIM_LINEAR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/11-dimensions",
     not_applicable: &[
         (2, "the linear dimension has no mode: what it measures follows from what is clicked"),
@@ -128,7 +128,7 @@ pub static DIM_RADIUS: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/11-dimensions",
     not_applicable: &[
         (2, "the radius has no mode: a click on a circle is the whole of it"),
@@ -171,7 +171,7 @@ pub static DIM_ANGLE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/11-dimensions",
     not_applicable: &[
         (2, "the angular dimension has no mode: two lines or three points are the whole of it"),

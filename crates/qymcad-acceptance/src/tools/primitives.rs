@@ -1,7 +1,7 @@
 //! THE PRIMITIVES DESCRIBED: a box, a cylinder, a sphere, a cone, a torus and a six-sided prism. Each is taken by its
 //! button, takes no picks - its sizes are fields at the geometry - and stands on the table about the origin.
 use crate::contract::fixtures::Fixture;
-use crate::contract::{Class, Context, Entry, Field, Flow, Outcome, Tool, When};
+use crate::contract::{Budget, Class, Context, Entry, Field, Flow, Outcome, Tool, When};
 
 /// A body of the part with the numbers `volume`, `faces` and `edges`, standing in the box `min`..`max`.
 const fn body(volume: f64, faces: usize, edges: usize, min: [f64; 3], max: [f64; 3]) -> Outcome {
@@ -52,7 +52,7 @@ pub static BOX: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         (2, "a box has no modes: its bar holds its three lengths and nothing else"),
@@ -113,7 +113,7 @@ pub static CYLINDER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],
@@ -157,7 +157,7 @@ pub static SPHERE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],
@@ -216,7 +216,7 @@ pub static CONE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],
@@ -271,7 +271,7 @@ pub static TORUS: Tool = Tool {
     contexts: &[Context::SecondPart],
     // a ring of 3 about the tube of 4 is of the right form and passes through itself
     refusal: Some(3.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: NOT_APPLICABLE,
 };
@@ -334,7 +334,7 @@ pub static PRISM: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/19-primitives",
     not_applicable: &[
         NOT_APPLICABLE[0],

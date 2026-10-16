@@ -1,6 +1,6 @@
 //! THE TOOLS OF THE ASSEMBLY.
 use crate::contract::fixtures::Fixture;
-use crate::contract::{Class, Context, Entry, Field, Flow, Mode, Outcome, Pick, Tool, When, Words};
+use crate::contract::{Budget, Class, Context, Entry, Field, Flow, Mode, Outcome, Pick, Tool, When, Words};
 
 /// GROUND: the part with the block clicked with the tool in hand - it is fixed where it stands, the anchor the other
 /// parts are placed against. A second click on it lets it go.
@@ -28,7 +28,7 @@ pub static GROUND: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: &[
         (2, "the bar of grounding holds no modes: a click fixes a part, a second click lets it go"),
@@ -75,7 +75,7 @@ pub static JOINT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
         (2, "the kinds of joint in the bar are not described yet: this contract holds the rigid joint the tool starts with"),
@@ -130,7 +130,7 @@ pub static NEW_PART: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: MAKES,
 };
@@ -159,7 +159,7 @@ pub static NEW_SUBASSEMBLY: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: MAKES,
 };
@@ -218,7 +218,7 @@ pub static COMP_LINEAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/04-arrays",
     not_applicable: &[COPIES[0], COPIES[1], COPIES[2], COPIES[3], COPIES[4], COPIES[5], COPIES[6]],
 };
@@ -247,7 +247,7 @@ pub static COMP_CIRCULAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/04-arrays",
     not_applicable: &[
         (2, "the axis and the whole circle are choices of the bar, and where the copies go is not read yet"),
@@ -288,7 +288,7 @@ pub static MIRROR_PART: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/04-arrays",
     not_applicable: &[
         (2, "the mirrored copy has no modes: a plane or a face is clicked"),
@@ -327,7 +327,7 @@ pub static INSERT_COMPONENT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: &[
         (2, "the button has no bar of options"),
@@ -373,7 +373,7 @@ pub static GROUP: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
         (2, "the group has no modes: the parts clicked are the whole of it"),
@@ -413,7 +413,7 @@ pub static SECTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/09-viewport",
     not_applicable: &[
         (2, "the section has no modes in the assembly: a plane or a face is the whole of it"),
@@ -453,7 +453,7 @@ pub static TANGENT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
         (2, "the tangent has no modes: a plane and a cylinder are the whole of it"),
@@ -492,7 +492,7 @@ pub static WIDTH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
         (2, "the width has no modes: two walls and a part are the whole of it"),
@@ -531,7 +531,7 @@ pub static RELATION: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/07-relations",
     not_applicable: &[
         (2, "the kinds of relation in the bar are not described yet: this contract holds the gear the tool starts with"),
@@ -570,7 +570,7 @@ pub static INTERFERENCE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/05-interference",
     not_applicable: &[
         (2, "the check is a box of the tree: it has no bar of options"),
@@ -632,7 +632,7 @@ pub static DRIVE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/03-limits-drives",
     not_applicable: &[
         (2, "a mate taken in the list has no bar of options: its numbers stand in the list"),
@@ -675,7 +675,7 @@ pub static BREAK_REF: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/06-external-refs",
     not_applicable: &[
         (2, "the cross has no bar of options: it breaks the one reference it stands beside"),
@@ -727,7 +727,7 @@ pub static SEARCH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/02-tree",
     not_applicable: &[
         (2, "the search is a box of the tree: it has no bar of options"),

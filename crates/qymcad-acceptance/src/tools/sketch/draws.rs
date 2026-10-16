@@ -40,7 +40,7 @@ pub static LINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/01-line",
     not_applicable: &[
         (2, "the line has no mode of its own: it draws a chain of segments"),
@@ -135,7 +135,7 @@ pub static RECT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/02-rect",
     not_applicable: &[
         DRAWS_WITHOUT_FIELDS[0],
@@ -212,7 +212,7 @@ pub static CIRCLE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/03-circle",
     not_applicable: &[
         DRAWS_WITHOUT_FIELDS[0],
@@ -264,7 +264,7 @@ pub static POINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/05-point",
     not_applicable: &[
         (2, "a point has no mode: one click is the whole of it"),
@@ -343,7 +343,7 @@ pub static ARC: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/04-arc",
     not_applicable: &[
         DRAWS_WITHOUT_FIELDS[0],
@@ -395,7 +395,7 @@ pub static CIRCLE3: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/03-circle",
     not_applicable: &[
         (2, "the circle through three points has no mode: three clicks are the whole of it"),
@@ -479,7 +479,7 @@ pub static POLYGON: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/06-polygon",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],
 };
@@ -522,7 +522,7 @@ pub static SLOT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/07-slot",
     not_applicable: &[
         (2, "the slot has no mode: a centre line and a width are the whole of it"),
@@ -575,7 +575,7 @@ pub static ELLIPSE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/08-ellipse",
     not_applicable: &[
         (2, "the ellipse has no mode: a centre and two axes are the whole of it"),
@@ -628,7 +628,7 @@ pub static SPLINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/09-spline",
     not_applicable: &[
         (2, "the spline has no mode: its nodes are its shape"),
@@ -709,7 +709,7 @@ pub static TEXT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/10-text",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],
 };

@@ -38,7 +38,7 @@ pub static MIRROR: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/16-mirror",
     not_applicable: &[
         (5, "the mirror takes no value: what it makes is settled by the body and the plane clicked"),
@@ -96,7 +96,7 @@ pub static LINEAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/17-linear-array",
     not_applicable: &[
         (2, "the bar of the pattern holds its count and the direction it goes, not modes that put each other down"),
@@ -136,7 +136,7 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/18-circular-array",
     not_applicable: &[(17, "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed")],
 };

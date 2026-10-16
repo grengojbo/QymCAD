@@ -42,7 +42,7 @@ pub static EDIT_COPY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: EDITS,
 };
@@ -88,7 +88,7 @@ pub static EDIT_CUT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: EDITS,
 };
@@ -131,7 +131,7 @@ pub static EDIT_INSERT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: EDITS,
 };

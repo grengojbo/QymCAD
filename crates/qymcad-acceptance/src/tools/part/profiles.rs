@@ -37,7 +37,7 @@ pub static SWEEP: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/03-sweep",
     not_applicable: FROM_SKETCHES,
 };
@@ -67,7 +67,7 @@ pub static LOFT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/04-loft",
     not_applicable: FROM_SKETCHES,
 };
@@ -118,7 +118,7 @@ pub static THREAD: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (60, 2000),
+    budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/10-thread",
     not_applicable: &[
         (2, "the kinds of thread in the bar (outer, inner, standards) are the matrix of threads' cases"),
@@ -171,7 +171,7 @@ pub static THREAD_OWN_PITCH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (60, 2000),
+    budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/10-thread",
     not_applicable: &[
         (2, "the kinds of thread in the bar are the matrix of threads' cases"),

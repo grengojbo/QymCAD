@@ -84,8 +84,8 @@ pub struct Tool {
     pub contexts: &'static [Context],
     /// A value of the right form the kernel cannot build, typed into the first field.
     pub refusal: Option<f64>,
-    /// How long applying may take, in seconds, and the longest frame, in milliseconds.
-    pub budget: (u64, u64),
+    /// How long applying may take, and the longest frame.
+    pub budget: Budget,
     /// Its article of help, by its path under `docs/help/<language>/` without `.md`.
     pub help: &'static str,
     /// Points of the contract that do not apply, each with why.
@@ -117,6 +117,13 @@ pub enum Finish {
     /// The clicks pick what the tool works on, then the pointer stands at this place of the sheet - the side the
     /// result goes to - and Enter makes it: the offset.
     EnterAt((f64, f64)),
+}
+
+/// HOW LONG A TOOL MAY TAKE: applying it, in seconds, and the longest frame on the way, in milliseconds.
+#[derive(Clone, Copy, Debug)]
+pub struct Budget {
+    pub apply_secs: u64,
+    pub frame_ms: u64,
 }
 
 /// A way to take a tool.

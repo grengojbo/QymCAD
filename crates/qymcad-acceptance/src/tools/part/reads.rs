@@ -27,7 +27,7 @@ pub static SECTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/09-viewport",
     not_applicable: &[
         (2, "the section's offset and tilts in the bar move the plane; where it cuts is not read yet"),
@@ -82,7 +82,7 @@ pub static MEASURE_3D: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/11-measure",
     not_applicable: READS,
 };
@@ -116,7 +116,7 @@ pub static RECOGNISE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
-    budget: (60, 2000),
+    budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/26-recognise",
     not_applicable: &[
         (5, "recognising takes the tolerances of the bar as they come; the values are the matrix of meshes' cases"),
@@ -164,7 +164,7 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     dependency: Some(Node { kind: "MeshSolid", row: Some("feat-name-mesh-solid") }),
     contexts: &[],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/28-recognise-feature",
     not_applicable: &[
         (14, "nothing of a timeline stands above an imported mesh"),
@@ -213,7 +213,7 @@ pub static FACE_GAP: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/29-face-gap",
     not_applicable: &[(17, "a size the faces cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse")],
 };
@@ -267,7 +267,7 @@ pub static SKETCH_FROM_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/30-sketch-from-face",
     not_applicable: &[(17, "a height the boss cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse")],
 };
@@ -312,7 +312,7 @@ pub static PIECE_TO_PART: Tool = Tool {
     dependency: Some(Node { kind: "SplitBody", row: Some("feat-name-split-body") }),
     contexts: &[],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/13-split-body",
     not_applicable: &[
         (2, "the command holds no bar: it asks one name beside the cursor"),

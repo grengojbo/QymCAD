@@ -4,7 +4,7 @@ crates/qymcad-acceptance/src/bodies.rs 1 0 0
 crates/qymcad-acceptance/src/chains.rs 0 6 0
 crates/qymcad-acceptance/src/completeness.rs 1 5 0
 crates/qymcad-acceptance/src/contract/fixtures.rs 0 2 0
-crates/qymcad-acceptance/src/contract/mod.rs 0 7 0
+crates/qymcad-acceptance/src/contract/mod.rs 0 6 0
 crates/qymcad-acceptance/src/contract/run/refusing.rs 0 1 0
 crates/qymcad-acceptance/src/contract/run/steps.rs 1 0 0
 crates/qymcad-acceptance/src/contract/run/taking.rs 0 4 0

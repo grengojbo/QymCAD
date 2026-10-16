@@ -129,7 +129,7 @@ pub static CORNER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/16-corner",
     not_applicable: &[
         (3, "the corner is taken by the click that rounds it, not by a pick before it"),
@@ -251,7 +251,7 @@ pub static CORNER_CHAMFER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/16-corner",
     not_applicable: &[
         (3, "the corner is taken by the click that cuts it, not by a pick before it"),
@@ -347,7 +347,7 @@ pub static FILLET_ALL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/16-corner",
     not_applicable: &[
         (2, "the tool has no mode: a click on a contour is the whole of it"),

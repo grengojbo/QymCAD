@@ -33,7 +33,7 @@ pub static FACE_COPY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/20-face-copy",
     not_applicable: &[
         (2, "the bar of the face copy holds no modes: it takes the faces to copy and nothing else"),
@@ -78,7 +78,7 @@ pub static OFFSET_SURFACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/27-offset-surface",
     not_applicable: &[
         (2, "the bar of the offset holds no modes: the side is the sign of the distance"),
@@ -121,7 +121,7 @@ pub static REMOVE_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/12-remove-face",
     not_applicable: &[
         (2, "the bar of remove face holds no modes: it takes the faces of the feature to take away"),
@@ -162,7 +162,7 @@ pub static BOOLEAN: Tool = Tool {
     dependency: Some(Node { kind: "SplitBody", row: Some("feat-name-split-body") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/25-boolean",
     not_applicable: &[
         (5, "the boolean takes no value: its kind is a mode of the bar, and its bodies are picked"),
@@ -201,7 +201,7 @@ pub static PATCH: Tool = Tool {
     dependency: Some(Node { kind: "Hole", row: Some("feat-name-hole") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/22-patch",
     not_applicable: &[
         (5, "the patch takes no value: its surface is given by the edges picked and the mode"),
@@ -236,7 +236,7 @@ pub static SKETCH_ON_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
         (2, "the pencil has no bar of modes: a click on a plane, a datum or a face is the whole of it"),
@@ -294,7 +294,7 @@ pub static STITCH: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/23-stitch",
     not_applicable: &[
         (2, "the stitch has no modes: the sheets and the tolerance are the whole of it"),
@@ -330,7 +330,7 @@ pub static REPLACE_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/21-surface-replace",
     not_applicable: &[
         (2, "replacing a face has no modes: the face and the surface are the whole of it"),
@@ -370,7 +370,7 @@ pub static TRIM_SURFACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/24-trim",
     not_applicable: &[
         (2, "the trim has no modes: the side kept and the body to cut with are the whole of it"),

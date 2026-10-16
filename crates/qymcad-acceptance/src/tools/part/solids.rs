@@ -48,7 +48,7 @@ pub static EXTRUDE: Tool = Tool {
     dependency: Some(Node { kind: "Sketch", row: None }),
     contexts: &[Context::SecondPart, Context::AfterTool(&FILLET)],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/01-extrude",
     not_applicable: &[(17, "a length of the right form over a closed contour always builds a prism: there is nothing for the kernel to refuse")],
 };
@@ -87,7 +87,7 @@ pub static FILLET: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(12.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/05-fillet",
     not_applicable: &[(2, "the fillet's bar has no modes: it takes edges and a radius")],
 };
@@ -131,7 +131,7 @@ pub static CHAMFER: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(12.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/06-chamfer",
     not_applicable: &[],
 };
@@ -209,7 +209,7 @@ pub static HOLE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(60.0),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/08-hole",
     not_applicable: &[],
 };
@@ -268,7 +268,7 @@ pub static SHELL: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart, Context::AfterTool(&EXTRUDE)],
     refusal: Some(10.5),
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/07-shell",
     not_applicable: &[],
 };
@@ -332,7 +332,7 @@ pub static REVOLVE: Tool = Tool {
     dependency: Some(Node { kind: "Sketch", row: None }),
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (30, 2000),
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/02-revolve",
     not_applicable: &[(
         17,

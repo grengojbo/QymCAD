@@ -57,7 +57,7 @@ pub static TRIM: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/12-trim",
     not_applicable: CUTS,
 };
@@ -102,7 +102,7 @@ pub static BREAK: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/14-break",
     not_applicable: CUTS,
 };
@@ -147,7 +147,7 @@ pub static EXTEND: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/13-extend",
     not_applicable: CUTS,
 };
@@ -228,7 +228,7 @@ pub static OFFSET: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/20-offset",
     not_applicable: &[
         (2, "the tool has no mode: a click on a contour is the whole of it"),

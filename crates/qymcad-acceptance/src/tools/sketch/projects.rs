@@ -78,7 +78,7 @@ pub static PROJECT_BODY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // one tool, one article: the projection of edges and of a body are the same tool (the owner's word of 26.09)
     help: "sketch/15-project",
     not_applicable: PROJECTS,

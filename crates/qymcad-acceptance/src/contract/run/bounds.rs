@@ -86,7 +86,7 @@ pub(crate) fn budget(tool: &Tool) {
     finish_all(&mut s, tool);
     let _ = s.document();
     let (took, frame) = (began.elapsed(), s.worst_frame());
-    let (apply_budget, frame_budget) = (Duration::from_secs(tool.budget.0), Duration::from_millis(tool.budget.1));
+    let (apply_budget, frame_budget) = (Duration::from_secs(tool.budget.apply_secs), Duration::from_millis(tool.budget.frame_ms));
     assert!(took <= apply_budget && frame <= frame_budget, "{}: applying took {took:?} of {apply_budget:?}, the longest frame {frame:?} of {frame_budget:?}", tool.id);
 }
 

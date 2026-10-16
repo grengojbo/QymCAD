@@ -44,7 +44,7 @@ pub static CON_HORIZONTAL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -75,7 +75,7 @@ pub static CON_VERTICAL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -106,7 +106,7 @@ pub static CON_PARALLEL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -137,7 +137,7 @@ pub static CON_PERPENDICULAR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -170,7 +170,7 @@ pub static CON_EQUAL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -201,7 +201,7 @@ pub static CON_COLLINEAR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -233,7 +233,7 @@ pub static CON_CONCENTRIC: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -265,7 +265,7 @@ pub static CON_TANGENT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -299,7 +299,7 @@ pub static CON_MIDPOINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -332,7 +332,7 @@ pub static CON_COINCIDENT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -363,7 +363,7 @@ pub static CON_FIX: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -395,7 +395,7 @@ pub static CON_SYMMETRY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no constraint: there is no article to name
     help: "sketch/17-constraints",
     not_applicable: CONSTRAINS,
@@ -426,7 +426,7 @@ pub static CONSTRUCTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
-    budget: (10, 2000),
+    budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no construction geometry: there is no article to name
     help: "sketch/23-construction",
     not_applicable: ACTS,
