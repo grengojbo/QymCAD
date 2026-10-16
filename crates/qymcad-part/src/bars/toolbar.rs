@@ -412,6 +412,10 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSketchFromFace, &qymcad_i18n::tr("tb-sketch-from-face-hint"), bc.armed.cmd_kind() == 39) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 39, qymcad_ui_state::BarAsk::FeatCmd(39)));
                     }
+                    // a sketch of a section of a body of a mesh, fitted with lines, arcs and circles
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSketchFromSection, &qymcad_i18n::tr("tb-sketch-from-section-hint"), bc.armed.cmd_kind() == 40) {
+                        bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 40, qymcad_ui_state::BarAsk::FeatCmd(40)));
+                    }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::PartSplitBody, &qymcad_i18n::tr("tb-split-body-hint"), bc.armed.cmd_kind() == 27) {
                         bc.ask.push(qymcad_ui_state::take_or_drop(bc.armed.cmd_kind() == 27, qymcad_ui_state::BarAsk::FeatCmd(27)));
                     }

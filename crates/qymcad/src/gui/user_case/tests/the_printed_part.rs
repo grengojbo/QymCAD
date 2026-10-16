@@ -185,6 +185,7 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
     if let Some(si) = si {
         a_circle_drawn_on_it_is_fully_defined(&mut hand, si, problems);
     }
+    a_section_of_the_plate_is_drawn(&mut hand, problems);
     hand.app.enter_component(was);
     (hand.app.viewing.mode_3d, hand.app.viewing.cam) = view;
 }
@@ -219,4 +220,25 @@ fn a_circle_drawn_on_it_is_fully_defined(hand: &mut crate::gui::hand::Hand, si: 
     }
     hand.key(egui::Key::Escape).frame(Vec::new());
     hand.app.finish_sketch_edit();
+}
+
+/// THE PLATE DRAWN BY ITS SECTION: "Sketch from section" on the printed plate - a mesh made a polyhedron, its hole made
+/// exact and taken off since, its thickness set - cut through its middle: one sketch of its rectangle on a datum plane
+/// there, defined to the end. A plate come from a mesh is drawn by its section however much has been done to it since.
+fn a_section_of_the_plate_is_drawn(hand: &mut crate::gui::hand::Hand, problems: &mut Vec<String>) {
+    let sketches = hand.app.project.sketches.len();
+    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.click([505.0, 5.0, 12.0]).frame(Vec::new());
+    hand.enter();
+    check_all(hand.app, "the printed plate drawn by its section", problems);
+    let laid = hand.app.project.sketches.len() == sketches + 1;
+    let drawn = hand.app.project.sketches.last().filter(|_| laid).map(|s| {
+        let circles = s.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).count();
+        (s.entities.len(), circles)
+    });
+    let free = hand.app.project.sketch_dof(hand.app.project.sketches.len() - 1).0;
+    if drawn != Some((4, 0)) || free != 0 {
+        problems.push(format!("the section of the printed plate is drawn as {drawn:?} curves and circles with {free} freedoms, not its rectangle fully defined: {}", hand.app.status));
+    }
+    hand.key(egui::Key::Escape).frame(Vec::new());
 }

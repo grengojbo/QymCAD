@@ -48,6 +48,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
             37 => &qymcad_i18n::tr("f-recognise-feature"),
             38 => &qymcad_i18n::tr("f-face-gap"),
             SKETCH_FROM_FACE => &qymcad_i18n::tr("f-sketch-from-face"),
+            SKETCH_FROM_SECTION => &qymcad_i18n::tr("f-sketch-from-section"),
             _ => &qymcad_i18n::tr("cmd-command"),
         };
         let (mut apply, mut cancel, mut reselect) = (false, false, false);
@@ -125,6 +126,23 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
                     if let Some(held) = pc.recognise.redraw.as_ref() {
                         ui.separator();
                         ui.label(egui::RichText::new(held.told.as_str()).color(pc.scheme.pal.hint()));
+                    }
+                }
+                SKETCH_FROM_SECTION => {
+                    // THE PLANE THE BODY IS CUT BY, and what the cut is fitted with, counted where the tool is
+                    let was = pc.feat.op;
+                    ui.label(qymcad_i18n::tr("cmd-section-plane"));
+                    ui.selectable_value(&mut pc.feat.op, ON_XY, qymcad_i18n::tr("plane-xy-table"));
+                    ui.selectable_value(&mut pc.feat.op, ON_XZ, qymcad_i18n::tr("plane-xz-front"));
+                    ui.selectable_value(&mut pc.feat.op, ON_YZ, qymcad_i18n::tr("plane-yz-side"));
+                    if pc.feat.op != was {
+                        sketch_from_section_plane_changed(pc);
+                    }
+                    if let Some(held) = pc.recognise.section {
+                        ui.separator();
+                        let loops = section_preview(&*pc.project, section_asked(held, pc.feat.op, &*pc.cmd));
+                        let told = if loops.iter().all(|l| l.pieces.is_empty()) { qymcad_i18n::tr("msg-sketch-from-section-misses") } else { told_pieces(&loops) };
+                        ui.label(egui::RichText::new(told).color(pc.scheme.pal.hint()));
                     }
                 }
                 37 => {

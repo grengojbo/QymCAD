@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / sketch from section">
+<path id="Body" d="M6 9L16 5L26 9V23L16 27L6 23V9Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Facets" d="M6 9L16 13L26 9M16 13V27M6 16L16 20L26 16" stroke="var(--icon-stroke, #000000FF)" stroke-width="0.7" stroke-linejoin="round"/>
+<path id="Plane" d="M2 16L16 10L30 16L16 22L2 16Z" fill="var(--icon-accent, #18F2F2FF)" fill-opacity="0.25" stroke="var(--icon-accent, #18F2F2FF)" stroke-width="1.2" stroke-linejoin="round"/>
+<path id="Section" d="M9 16C9 14 12 12.5 16 12.5C20 12.5 23 14 23 16C23 18 20 19.5 16 19.5C12 19.5 9 18 9 16Z" stroke="var(--icon-constraint-primary, #F26118FF)" stroke-width="1.6"/>
+</g>
+</svg>

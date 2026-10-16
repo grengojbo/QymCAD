@@ -342,6 +342,8 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     }
     if pn.armed.cmd_kind() == 39 {
         draw_redraw_preview(pn, painter, &scr);
+    } else if pn.armed.cmd_kind() == 40 {
+        draw_section_preview(pn, painter, &scr);
     } else if matches!(pn.armed.cmd_kind(), 30 | 31 | 36) {
         // COPY FACE (30) and REPLACE FACE (31): show the selection TO THE EYE, not only in the model.
         //
@@ -900,6 +902,33 @@ fn draw_redraw_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, 
     let off = |v: qymcad_core::geom::Point3| [v.x + f.normal[0] * d, v.y + f.normal[1] * d, v.z + f.normal[2] * d];
     for s in body.mesh.face_outline(f) {
         painter.add(egui::Shape::dashed_line(&[scr.at(off(s.from)).0, scr.at(off(s.to)).0], Stroke::new(1.2, col), 5.0, 4.0));
+    }
+}
+
+/// SKETCH FROM SECTION: the section where the plane of the bar cuts the body held, as Enter would draw it - the lines in
+/// one colour, the arcs and circles in another, the splines in a third - so a person sees what the mesh was found to be
+/// before a sketch is laid.
+fn draw_section_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {
+    use qymcad_core::geom::{Piece, Point2};
+    let Some(held) = pn.recognise.section else { return };
+    let asked = qymcad_part::section_asked(held, pn.feat.op, pn.cmd);
+    let frame = asked.at.frame();
+    let lift = |p: Point2| {
+        let q = frame.lift(p);
+        scr.at([q.x, q.y, q.z]).0
+    };
+    let round = |c: Point2, r: f64, a0: f64, a1: f64, ccw: bool| qymcad_core::geom::tessellate_arc(c.x, c.y, r, a0, a1, ccw, 0.02).iter().map(|p| lift(Point2::new(p.x, p.y))).collect::<Vec<_>>();
+    for piece in qymcad_part::section_preview(pn.project, asked).iter().flat_map(|l| &l.pieces) {
+        let (line, col) = match piece {
+            Piece::Line { from, to } => (vec![lift(*from), lift(*to)], pn.scheme.pal.ok()),
+            Piece::Arc { center, radius, from, to, winding } => {
+                let angle = |p: &Point2| (p.y - center.y).atan2(p.x - center.x);
+                (round(*center, *radius, angle(from), angle(to), *winding == qymcad_core::feature::Winding::Ccw), pn.scheme.pal.emphasis())
+            }
+            Piece::Circle { center, radius } => (round(*center, *radius, 0.0, 2.0 * std::f64::consts::PI, true), pn.scheme.pal.emphasis()),
+            Piece::Spline(points) => (points.iter().map(|p| lift(*p)).collect(), pn.scheme.pal.offset_in()),
+        };
+        painter.add(egui::Shape::line(line, Stroke::new(2.5, col)));
     }
 }
 

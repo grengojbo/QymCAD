@@ -143,6 +143,7 @@ pub fn feat_cmd_name(armed: &qymcad_ui_state::Armed, feat: qymcad_ui_state::Feat
         37 => qymcad_i18n::tr("f-recognise-feature"),
         38 => qymcad_i18n::tr("f-face-gap"),
         SKETCH_FROM_FACE => qymcad_i18n::tr("f-sketch-from-face"),
+        SKETCH_FROM_SECTION => qymcad_i18n::tr("f-sketch-from-section"),
         _ => qymcad_i18n::tr("f-operation"),
     }
 }
@@ -427,6 +428,7 @@ pub fn cmd_hint(armed: &qymcad_ui_state::Armed, gsel: &qymcad_ui_state::GeomSele
         37 => qymcad_i18n::tr("hint-recognise-feature"),
         38 => qymcad_i18n::tr("hint-face-gap"),
         SKETCH_FROM_FACE => qymcad_i18n::tr("hint-sketch-from-face"),
+        SKETCH_FROM_SECTION => qymcad_i18n::tr("hint-sketch-from-section"),
         34 => qymcad_i18n::tr(if trim.keep.is_none() { "hint-trim" } else { "hint-trim-tool" }),
         31 => qymcad_i18n::tr(if gsel.faces.is_empty() { "hint-surface-replace" } else { "hint-surface-replace-pick" }),
         27 => qymcad_i18n::tr("hint-cut-plane"),
@@ -525,6 +527,7 @@ pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
         37 => pc.recognise.feature.is_some(),                                            // recognise a feature: one is found where it was clicked
         38 => face_gap_ready(pc),                                                        // a size on the body: two faces
         SKETCH_FROM_FACE => sketch_from_face_ready(pc),                                  // a sketch from a face: a flat face
+        SKETCH_FROM_SECTION => sketch_from_section_ready(pc),                            // a sketch from a section: a body of a mesh
         34 => pc.trim.keep.is_some() && pc.trim.tool.is_some(),                          // trim: what is cut and what cuts it
         24 => pc.thread.edge != 0,                                                       // thread: the rim of a cylinder or a hole is picked
 

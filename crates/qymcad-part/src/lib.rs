@@ -6,11 +6,16 @@
 
 mod face_gap;
 mod sketch_from_face;
+mod sketch_from_section;
 mod recognise_feature;
 mod trial;
 pub use sketch_from_face::{
     apply_sketch_from_face_cmd, edit_redrawn, open_redrawn, sketch_from_face_at, sketch_from_face_mode_changed, sketch_from_face_ready, start_sketch_from_face_cmd, JUST_SKETCH, REPLACE,
     SKETCH_FROM_FACE,
+};
+pub use sketch_from_section::{
+    apply_sketch_from_section_cmd, section_asked, section_base, section_preview, sketch_from_section_at, sketch_from_section_plane_changed, sketch_from_section_ready, start_sketch_from_section_cmd,
+    told_pieces, SectionAsked, ON_XY, ON_XZ, ON_YZ, SKETCH_FROM_SECTION,
 };
 pub use face_gap::{apply_face_gap_cmd, edit_face_gap, edit_gap, face_gap_at, face_gap_holds_hole, face_gap_ready, gap_moves, open_face_gap, start_face_gap_cmd, FACE_GAP, MOVE_BOTH, MOVE_ONE, MOVE_OTHER};
 pub use recognise_feature::{

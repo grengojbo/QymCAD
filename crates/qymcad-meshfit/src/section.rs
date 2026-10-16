@@ -100,6 +100,19 @@ pub fn fit_loop(points: &[Point2], fit: &Fit) -> Fitted {
     while pts.len() > 1 && pts[0].dist(pts[pts.len() - 1]) <= fit.tol * 1e-3 {
         pts.pop();
     }
+    // A CORNER ON THE STRAIGHT LINE BETWEEN ITS NEIGHBOURS IS NONE: a plane across a wall of strips cuts each strip's
+    // diagonal too, a corner in the middle of the chord - inside a hole of 20 in 45 strips by 0.024, over the tolerance -
+    // that says nothing of the curve the wall follows
+    let mut k = 0;
+    while pts.len() > 3 && k < pts.len() {
+        let n = pts.len();
+        let three = [pts[(k + n - 1) % n], pts[k], pts[(k + 1) % n]];
+        if off_chord(&three) <= fit.tol * 1e-3 {
+            pts.remove(k);
+        } else {
+            k += 1;
+        }
+    }
     let n = pts.len();
     if n < 3 {
         return Fitted::default();

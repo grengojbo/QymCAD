@@ -101,6 +101,7 @@ pub enum IconId {
     PartRecogniseFeature,
     PartFaceGap,
     PartSketchFromFace,
+    PartSketchFromSection,
 
     // --- 3D Patterns ---
     PartArrayLinear,

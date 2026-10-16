@@ -272,6 +272,61 @@ pub static SKETCH_FROM_FACE: Tool = Tool {
     not_applicable: &[Skip { point: 17, why: "a height the boss cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse" }],
 };
 
+/// The block with its hole cut at any height: a rectangle of 40 x 30 and the circle of the hole, the sketch defined to the
+/// end.
+const fn sectioned(_: f64) -> Outcome {
+    Outcome::Sketch { points: 5, lines: 4, arcs: 0, circles: 1, ellipses: 0, splines: 0, texts: 0, notes: 0, constraints: None, dof: Some(0), box_of: None, size_of: Some([40.0, 30.0]), under: &[] }
+}
+
+/// SKETCH FROM SECTION: the block with its hole brought back as a polyhedron, clicked - cut through its middle, 5 up -
+/// and Enter: a sketch of the rectangle and the circle on a datum plane there, defined to the end. Another offset cuts
+/// it elsewhere, to the same drawing. The tool stays in hand for the next section.
+pub static SKETCH_FROM_SECTION: Tool = Tool {
+    id: "part.sketch-from-section",
+    flow: Flow::Command,
+    title: "f-sketch-from-section",
+    entries: &[Entry::Button("tb-sketch-from-section-hint"), Entry::SearchByArticle],
+    other: Other { entry: Entry::Button("tb-mirror-body-hint"), title: "cmd-mirror" },
+    fixture: Fixture::PolyhedronWithHole,
+    picks: &[Pick::Face([5.0, 5.0, 10.0])],
+    pick_trial: &[Pick::Face([5.0, 5.0, 10.0])],
+    wrong_picks: &[],
+    words: &[],
+    // the plane inside the block, 0.01 off its faces at the least
+    fields: &[Field {
+        caption: "f-section-offset",
+        by_placeholder: false,
+        when: When::Before,
+        class: Class::Length,
+        typical: 5.0,
+        lo: 0.01,
+        hi: 9.99,
+        zero: false,
+        negative: false,
+        outcome: sectioned,
+    }],
+    modes: &[],
+    result: sectioned(5.0),
+    node: "Sketch",
+    inputs: &["Plane"],
+    undo: "f-sketch-from-section",
+    undo_steps: 1,
+    stays: true,
+    upstream: None,
+    dependency: None,
+    contexts: &[],
+    refusal: None,
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
+    help: "part/31-sketch-from-section",
+    not_applicable: &[
+        Skip { point: 13, why: "what the tool lays is a sketch: a double click on it opens the sketch for editing, as any sketch" },
+        Skip { point: 14, why: "nothing of a timeline stands above an imported mesh" },
+        Skip { point: 15, why: "the sketch is a copy of the section, held by nothing of the body: the mesh deleted, the sketch stays as drawn" },
+        Skip { point: 16, why: "the fixture builds its own project from the start: there is no second part to take it in" },
+        Skip { point: 17, why: "an offset off the body is refused by the bounds of its field; the kernel builds nothing here" },
+    ],
+};
+
 /// Any name is two parts: the block split 5 below its top, and the upper piece taken into a part of its own.
 pub(crate) fn two_parts(_: &str) -> Outcome {
     Outcome::Parts { parts: 2, grounded: 0, joints: 0, assemblies: 0 }

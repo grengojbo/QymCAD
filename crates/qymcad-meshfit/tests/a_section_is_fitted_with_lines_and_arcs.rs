@@ -214,3 +214,20 @@ fn a_curve_that_is_no_arc_is_one_spline() {
         found.pieces.iter().map(Piece::kind).collect::<Vec<_>>()
     );
 }
+
+/// A HOLE CUT THROUGH ITS WALL IS A CIRCLE: a wall of a mesh is strips of two triangles, and a plane across them cuts each
+/// strip's diagonal too - a corner in the middle of each chord, inside the circle by its sagitta (0.024 for a hole of 20
+/// in 45 strips), on the straight line between its neighbours. Such a corner says nothing of the curve; read as one, it
+/// made the hole 45 lines.
+#[test]
+fn a_hole_cut_across_its_strips_is_one_circle() {
+    let ring = arc(Round { center: Point2::new(20.0, 15.0), radius: 10.0, from: 0.0, sweep: 2.0 * PI }, 45);
+    let mut cut = Vec::new();
+    for (k, p) in ring.iter().enumerate() {
+        let q = ring[(k + 1) % ring.len()];
+        cut.push(*p);
+        cut.push(Point2::new((p.x + q.x) / 2.0, (p.y + q.y) / 2.0));
+    }
+    let found = fit_loop(&cut, &Fit::for_loop(&cut));
+    assert!(matches!(found.pieces.as_slice(), [Piece::Circle { radius, .. }] if (radius - 10.0).abs() < 0.01), "the hole is found as {:?}", found.pieces.iter().map(Piece::kind).collect::<Vec<_>>());
+}

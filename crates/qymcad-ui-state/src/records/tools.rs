@@ -176,6 +176,24 @@ pub struct RecogniseTool {
     pub redraw: Option<RedrawInHand>,
     /// What the last sketch taken off a face laid, in words, for the status line after Enter.
     pub laid: String,
+    /// The body of a mesh "Sketch from section" took.
+    pub section: Option<SectionInHand>,
+}
+
+/// A BODY HELD BY "SKETCH FROM SECTION" until Enter: the plane it is cut by, the offset and the tolerance are the bar's
+/// and the fields'. `drawn` is the section Enter last drew of it, held so a second Enter does not draw it twice.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SectionInHand {
+    pub body: Id,
+    pub drawn: Option<SectionDrawn>,
+}
+
+/// A SECTION DRAWN: the base plane by the operation of the bar, the offset and the tolerance.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SectionDrawn {
+    pub plane: u8,
+    pub offset: f64,
+    pub tol: f64,
 }
 
 /// A FLAT FACE HELD BY "SKETCH FROM FACE" until Enter: the body, the face, the boss or pocket standing on it (none when

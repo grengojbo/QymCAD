@@ -57,3 +57,6 @@ mod a_hinge_follows_its_parameter;
 
 #[cfg(test)]
 mod a_drawing_is_fully_defined_by_one_command;
+
+#[cfg(test)]
+mod a_mesh_is_drawn_by_its_section;

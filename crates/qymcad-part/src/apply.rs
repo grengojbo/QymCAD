@@ -55,6 +55,7 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) {
             37 => apply_recognise_feature_cmd(pc),
             38 => apply_face_gap_cmd(pc),
             SKETCH_FROM_FACE => apply_sketch_from_face_cmd(pc),
+            SKETCH_FROM_SECTION => apply_sketch_from_section_cmd(pc),
             34 => apply_trim_cmd(pc.project, pc.status, pc.trim),
             27 => apply_split_cmd(pc),
             28 => apply_thicken_cmd(pc),
@@ -83,7 +84,9 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) {
     let made = pc.project.timeline.iter().find(|n| n.kind.body() == Some(body)).map(|n| qymcad_i18n::name(&n.name));
     // A FEATURE MADE EXACT LEAVES THE TOOL IN HAND: a part has its holes by the dozen, and each is one click and Enter
     let again = pc.armed.cmd_kind();
-    let again = (matches!(again, RECOGNISE_FEATURE | SKETCH_FROM_FACE) && pc.cmd.edit.is_none()).then_some(again);
+    let again = (matches!(again, RECOGNISE_FEATURE | SKETCH_FROM_FACE | SKETCH_FROM_SECTION) && pc.cmd.edit.is_none()).then_some(again);
+    // what a section was taken with, read before the clean slate below empties the fields
+    let section_kept = SectionKept { held: pc.recognise.section, op: pc.feat.op, fields: pc.cmd.params.clone() };
     // A CLEAN finish: the command is dropped and the selection is cleared, so neither the gizmo arrows
     // nor the right-hand panel remain
     pc.cmd.open(pc.armed, 0, *pc.mode_3d); // a clean slate, then open
@@ -112,8 +115,31 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) {
             start_sketch_from_face_cmd(pc);
             *pc.status = qymcad_ui_state::Notice::info(format!("{done}. {laid}. {}", qymcad_i18n::tr("msg-sketch-from-face")));
         }
+        // A SKETCH OF A SECTION LEAVES THE TOOL IN HAND on the same body and plane: the next section is another offset
+        Some(SKETCH_FROM_SECTION) => {
+            let done = std::mem::take(pc.status);
+            let laid = std::mem::take(&mut pc.recognise.laid);
+            let SectionKept { held, op, fields } = section_kept;
+            start_sketch_from_section_cmd(pc);
+            pc.feat.op = op;
+            // the fields stand where they were, the keyboard not given to them: Ctrl+Z after Enter is the document's, and
+            // a field holding the keys took it for its own text
+            if held.is_some() && !fields.is_empty() {
+                pc.recognise.section = held;
+                pc.cmd.params = fields;
+                pc.cmd.focus = false;
+            }
+            *pc.status = qymcad_ui_state::Notice::info(format!("{done}. {laid}"));
+        }
         _ => {}
     }
+}
+
+/// What a section was taken with - the body, the plane of the bar, the fields - to take the next one with.
+struct SectionKept {
+    held: Option<qymcad_ui_state::SectionInHand>,
+    op: u8,
+    fields: Vec<qymcad_ui_state::CmdParam>,
 }
 
 pub fn apply_feat_cmd(pc: &mut qymcad_ui_state::PartCtx) {
