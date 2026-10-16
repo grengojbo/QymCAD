@@ -2,7 +2,6 @@
 //!
 //! Renders diagnostics and resolution instructions when multiple packs claim the same theme identifier.
 
-use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{DuplicateConflict, IconPack};
 
 use super::appearance_section::draw_bundle_format_badge;
@@ -16,21 +15,37 @@ pub(crate) fn draw_duplicate_conflict_view(ui: &mut egui::Ui, pack: &IconPack, c
     egui::ScrollArea::vertical().id_salt("mgr_conflict_scroll").auto_shrink([false, false]).show(ui, |ui| {
         ui.horizontal(|ui| {
             let (rect, _) = ui.allocate_exact_size(egui::vec2(48.0, 48.0), egui::Sense::hover());
-            ui.painter().rect_filled(rect, 6.0, ui.visuals().error_fg_color.linear_multiply(0.18));
-            ui.painter().rect_stroke(rect, 6.0, egui::Stroke::new(1.5, ui.visuals().error_fg_color), egui::StrokeKind::Inside);
-            ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, ph::WARNING, egui::FontId::proportional(28.0), ui.visuals().error_fg_color);
+            ui.painter().rect_filled(rect, 6.0, qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error).linear_multiply(0.18));
+            ui.painter().rect_stroke(rect, 6.0, egui::Stroke::new(1.5, qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)), egui::StrokeKind::Inside);
+            ui.painter().text(
+                rect.center(),
+                egui::Align2::CENTER_CENTER,
+                qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Error).unwrap_or_default(),
+                egui::FontId::proportional(28.0),
+                qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error),
+            );
 
             ui.vertical(|ui| {
                 ui.label(egui::RichText::new(name).strong().size(18.0));
                 ui.horizontal(|ui| {
                     draw_bundle_format_badge(ui, pack.format());
-                    egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.20)).corner_radius(3.0).inner_margin(egui::Margin::symmetric(5, 2)).show(ui, |ui| {
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 3.0;
-                            ui.label(egui::RichText::new(ph::WARNING).color(ui.visuals().error_fg_color).small());
-                            ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-conflict-badge")).color(ui.visuals().error_fg_color).small().strong());
+                    egui::Frame::NONE
+                        .fill(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error).linear_multiply(0.20))
+                        .corner_radius(3.0)
+                        .inner_margin(egui::Margin::symmetric(5, 2))
+                        .show(ui, |ui| {
+                            ui.horizontal(|ui| {
+                                ui.spacing_mut().item_spacing.x = 3.0;
+                                ui.label(
+                                    egui::RichText::new(qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Error).unwrap_or_default())
+                                        .color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error))
+                                        .small(),
+                                );
+                                ui.label(
+                                    egui::RichText::new(crate::i18n::tr("icontheme-mgr-conflict-badge")).color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)).small().strong(),
+                                );
+                            });
                         });
-                    });
                 });
             });
         });
@@ -38,13 +53,13 @@ pub(crate) fn draw_duplicate_conflict_view(ui: &mut egui::Ui, pack: &IconPack, c
         ui.add_space(12.0);
 
         egui::Frame::NONE
-            .fill(ui.visuals().error_fg_color.linear_multiply(0.12))
-            .stroke(egui::Stroke::new(1.0, ui.visuals().error_fg_color))
+            .fill(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error).linear_multiply(0.12))
+            .stroke(egui::Stroke::new(1.0, qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)))
             .corner_radius(6.0)
             .inner_margin(egui::Margin::symmetric(12, 10))
             .show(ui, |ui| {
                 ui.vertical(|ui| {
-                    ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-conflict-title")).strong().color(ui.visuals().error_fg_color));
+                    ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-conflict-title")).strong().color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)));
                     ui.add_space(4.0);
                     let desc = if conflict.is_default_theme {
                         crate::i18n::tr1("icontheme-mgr-conflict-default-desc", "id", id)

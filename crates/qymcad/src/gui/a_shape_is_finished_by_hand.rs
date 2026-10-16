@@ -198,7 +198,7 @@ mod tests {
             if shortest < 1.0 || horizontal != 0 {
                 problems.push(format!("{count} line(s): Horizontal over Vertical left the shortest line {shortest:.3} long and {horizontal} Horizontal in the sketch; status {:?}", app.status));
             }
-            if app.status == crate::i18n::tr("sk-constraint-added") {
+            if app.status == qymcad_ui_state::Notice::info(crate::i18n::tr("sk-constraint-added")) {
                 problems.push(format!("{count} line(s): the status says the constraint is added"));
             }
         }
@@ -238,7 +238,7 @@ mod tests {
 
         assert!(Hand::new(&mut app).select2d(&lines), "setup: the three lines are picked again");
         Hand::new(&mut app).constraint(2);
-        if count(&app, true) != 3 || app.status != crate::i18n::tr("sk-constraint-already") {
+        if count(&app, true) != 3 || app.status != qymcad_ui_state::Notice::info(crate::i18n::tr("sk-constraint-already")) {
             problems.push(format!("Vertical again on three vertical lines: {} Vertical; status {:?}", count(&app, true), app.status));
         }
 

@@ -234,7 +234,7 @@ pub(crate) fn window(win: &mut Windows, scheme: &qymcad_ui_state::SchemeUi, mach
             ui.label(tr("claude-intro"));
             ui.add_space(6.0);
             if machine.present == Presence::Missing {
-                ui.colored_label(scheme.pal.warning(), format!("{} {}", ph::WARNING, tr("claude-no-server")));
+                qymcad_ui_state::say(ui, &scheme.pal, &qymcad_ui_state::Notice::warning(tr("claude-no-server")), qymcad_ui_state::NoticeSize::Line);
                 ui.label(egui::RichText::new(crate::crash::without_home(&machine.server.command)).monospace().small());
                 return;
             }
@@ -254,7 +254,7 @@ pub(crate) fn window(win: &mut Windows, scheme: &qymcad_ui_state::SchemeUi, mach
             }
             if !said.text.is_empty() {
                 if said.trouble == Trouble::Some {
-                    ui.colored_label(scheme.pal.warning(), format!("{} {}", ph::WARNING, said.text));
+                    qymcad_ui_state::say(ui, &scheme.pal, &qymcad_ui_state::Notice::warning(said.text.clone()), qymcad_ui_state::NoticeSize::Line);
                 } else {
                     ui.label(format!("{} {}", ph::CHECK_CIRCLE, said.text));
                 }

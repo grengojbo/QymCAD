@@ -3,6 +3,7 @@
 //! Main management interface for activating, reordering priority cascades,
 //! inspecting theme readmes, and handling duplicate theme conflicts.
 
+use qymcad_ui_state::Notice;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{clean_directory_icon, clean_directory_icons, load_default_pack, BundleFormat, CleanIconResult, PackSource, ALL_ICONS, DEFAULT_THEME_ID};
 use qymcad_ui_state::{Settings, WinCtx};
@@ -147,7 +148,8 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                         ui.horizontal(|ui| {
                                             draw_bundle_format_badge(ui, p.format());
                                             if p.is_directory() && wc.set.watched_icon_packs.contains(id) {
-                                                ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icontheme-mgr-watch-this-pack"));
+                                                ui.label(egui::RichText::new(ph::EYE).small().color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning)))
+                                                    .on_hover_text(crate::i18n::tr("icontheme-mgr-watch-this-pack"));
                                             }
                                         });
                                     }
@@ -226,9 +228,15 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                             ui.horizontal(|ui| {
                                 if p.has_id_conflict() {
                                     let (rect, _) = ui.allocate_exact_size(egui::vec2(36.0, 36.0), egui::Sense::hover());
-                                    ui.painter().rect_filled(rect, 4.0, ui.visuals().error_fg_color.linear_multiply(0.18));
-                                    ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, ui.visuals().error_fg_color), egui::StrokeKind::Inside);
-                                    ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, ph::WARNING, egui::FontId::proportional(22.0), ui.visuals().error_fg_color);
+                                    ui.painter().rect_filled(rect, 4.0, qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error).linear_multiply(0.18));
+                                    ui.painter().rect_stroke(rect, 4.0, egui::Stroke::new(1.0, qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)), egui::StrokeKind::Inside);
+                                    ui.painter().text(
+                                        rect.center(),
+                                        egui::Align2::CENTER_CENTER,
+                                        qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Error).unwrap_or_default(),
+                                        egui::FontId::proportional(22.0),
+                                        qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error),
+                                    );
                                 } else {
                                     draw_pack_icon(ui, p, &wc.scheme.pal, 36.0);
                                 }
@@ -238,23 +246,37 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                     ui.horizontal(|ui| {
                                         draw_bundle_format_badge(ui, p.format());
                                         if p.has_id_conflict() {
-                                            egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.20)).corner_radius(3.0).inner_margin(egui::Margin::symmetric(5, 2)).show(ui, |ui| {
-                                                ui.horizontal(|ui| {
-                                                    ui.spacing_mut().item_spacing.x = 3.0;
-                                                    ui.label(egui::RichText::new(ph::WARNING).color(ui.visuals().error_fg_color).small());
-                                                    ui.label(egui::RichText::new(crate::i18n::tr("icontheme-mgr-conflict-badge")).color(ui.visuals().error_fg_color).small().strong());
+                                            egui::Frame::NONE
+                                                .fill(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error).linear_multiply(0.20))
+                                                .corner_radius(3.0)
+                                                .inner_margin(egui::Margin::symmetric(5, 2))
+                                                .show(ui, |ui| {
+                                                    ui.horizontal(|ui| {
+                                                        ui.spacing_mut().item_spacing.x = 3.0;
+                                                        ui.label(
+                                                            egui::RichText::new(qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Error).unwrap_or_default())
+                                                                .color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error))
+                                                                .small(),
+                                                        );
+                                                        ui.label(
+                                                            egui::RichText::new(crate::i18n::tr("icontheme-mgr-conflict-badge"))
+                                                                .color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error))
+                                                                .small()
+                                                                .strong(),
+                                                        );
+                                                    });
                                                 });
-                                            });
                                         }
                                         if p.is_directory() && wc.set.watched_icon_packs.contains(&p.manifest.id) {
-                                            ui.label(egui::RichText::new(ph::EYE).small().color(ui.visuals().warn_fg_color)).on_hover_text(crate::i18n::tr("icontheme-mgr-watch-this-pack"));
+                                            ui.label(egui::RichText::new(ph::EYE).small().color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning)))
+                                                .on_hover_text(crate::i18n::tr("icontheme-mgr-watch-this-pack"));
                                         }
                                     });
                                 });
                                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                                     if p.has_id_conflict() {
-                                        let label = format!("{} {}", ph::WARNING, crate::i18n::tr("icontheme-mgr-conflict-badge"));
-                                        let resp = ui.label(egui::RichText::new(label).color(ui.visuals().error_fg_color).small().strong());
+                                        let label = format!("{} {}", qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Error).unwrap_or_default(), crate::i18n::tr("icontheme-mgr-conflict-badge"));
+                                        let resp = ui.label(egui::RichText::new(label).color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)).small().strong());
                                         Some(resp.rect)
                                     } else {
                                         let label = format!("{} {}", ph::PLUS, crate::i18n::tr("icontheme-mgr-activate-btn"));
@@ -286,17 +308,26 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                     if !discovered.errors.is_empty() {
                         ui.add_space(10.0);
                         ui.separator();
-                        ui.label(egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::tr("icontheme-mgr-rejected-title"))).strong().color(ui.visuals().error_fg_color));
+                        ui.label(
+                            egui::RichText::new(format!("{} {}", qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Error).unwrap_or_default(), crate::i18n::tr("icontheme-mgr-rejected-title")))
+                                .strong()
+                                .color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)),
+                        );
                         ui.add_space(4.0);
                         for err in &discovered.errors {
                             let file_name = err.path.file_name().and_then(|f| f.to_str()).unwrap_or("unknown");
-                            egui::Frame::NONE.fill(ui.visuals().error_fg_color.linear_multiply(0.12)).corner_radius(4.0).inner_margin(egui::Margin::symmetric(6, 4)).show(ui, |ui| {
-                                ui.vertical(|ui| {
-                                    ui.label(egui::RichText::new(file_name).strong());
-                                    let reason = if err.reason == qymcad_ui_state::icons::pack::INVALID_PACKAGE_ERROR { crate::i18n::tr("icontheme-mgr-invalid-package") } else { err.reason.clone() };
-                                    ui.label(egui::RichText::new(reason).small().weak());
+                            egui::Frame::NONE
+                                .fill(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error).linear_multiply(0.12))
+                                .corner_radius(4.0)
+                                .inner_margin(egui::Margin::symmetric(6, 4))
+                                .show(ui, |ui| {
+                                    ui.vertical(|ui| {
+                                        ui.label(egui::RichText::new(file_name).strong());
+                                        let reason =
+                                            if err.reason == qymcad_ui_state::icons::pack::INVALID_PACKAGE_ERROR { crate::i18n::tr("icontheme-mgr-invalid-package") } else { err.reason.clone() };
+                                        ui.label(egui::RichText::new(reason).small().weak());
+                                    });
                                 });
-                            });
                             ui.add_space(3.0);
                         }
                     }
@@ -399,10 +430,14 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                         if invalid_count > 0 {
                             ui.horizontal(|ui| {
                                 ui.label(
-                                    egui::RichText::new(format!("{} {}", ph::WARNING, crate::i18n::trn("icontheme-mgr-hygiene-warning", &[("count", &invalid_count.to_string())])))
-                                        .color(ui.visuals().warn_fg_color)
-                                        .small()
-                                        .strong(),
+                                    egui::RichText::new(format!(
+                                        "{} {}",
+                                        qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Warning).unwrap_or_default(),
+                                        crate::i18n::trn("icontheme-mgr-hygiene-warning", &[("count", &invalid_count.to_string())])
+                                    ))
+                                    .color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning))
+                                    .small()
+                                    .strong(),
                                 );
                             });
                         } else {
@@ -468,7 +503,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                                 qymcad_ui_state::icons::bump_icon_revision(ctx);
                                 apply_icon_themes(wc.set, ctx, &wc.scheme.pal);
                                 ctx.request_repaint();
-                                *wc.status = crate::i18n::tr("icontheme-mgr-reloaded");
+                                *wc.status = Notice::info(crate::i18n::tr("icontheme-mgr-reloaded"));
                             }
                         });
                     } else if pack.format() != BundleFormat::Embedded {
@@ -484,7 +519,7 @@ pub(crate) fn draw_icon_manager_window_in_dirs(ctx: &egui::Context, wc: &mut Win
                 });
                 ui.separator();
                 if let Some(notice) = state.clean_notice.as_ref().filter(|notice| notice.pack_id == pack.manifest.id) {
-                    let color = if notice.is_error { ui.visuals().warn_fg_color } else { ui.visuals().text_color() };
+                    let color = if notice.is_error { qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error) } else { ui.visuals().text_color() };
                     ui.label(egui::RichText::new(&notice.text).small().color(color));
                     if !notice.details.is_empty() {
                         egui::CollapsingHeader::new(crate::i18n::tr("icontheme-mgr-clean-details")).show(ui, |ui| {

@@ -3,7 +3,6 @@
 //! Modal dialog for inspecting icon packs and packaging directory themes
 //! into compressed `.qicons` bundles.
 
-use egui::Color32;
 use egui_phosphor::regular as ph;
 use qymcad_ui_state::icons::{inspect_pack_directory, package_bundle, IconManifest, IconPack, PackageType};
 use std::path::{Path, PathBuf};
@@ -35,6 +34,8 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, wc: &mut WinCtx) {
     if !wc.win.is(WinKind::IconPackager) {
         return;
     }
+    // the outcome of the packing said in the theme's colours: what failed in the error's, what is done in the colour of done
+    let (failed, done) = (qymcad_ui_state::tone_colour(&wc.scheme.pal, qymcad_ui_state::Tone::Error), wc.scheme.pal.ok());
     let state = &mut wc.win.icon_packager;
     let mut open = true;
     let mut cancel_clicked = false;
@@ -79,7 +80,7 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, wc: &mut WinCtx) {
         ui.add_space(8.0);
 
         if let Some(msg) = &state.message {
-            let color = if state.is_error { Color32::RED } else { Color32::GREEN };
+            let color = if state.is_error { failed } else { done };
             ui.label(egui::RichText::new(msg).color(color));
             ui.add_space(4.0);
         }
@@ -199,10 +200,10 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, wc: &mut WinCtx) {
                 if !rep.rejected.is_empty() {
                     ui.add_space(4.0);
                     let title = crate::i18n::tr1("icontheme-packager-rejected-title", "count", &rep.rejected.len().to_string());
-                    ui.label(egui::RichText::new(title).strong().color(Color32::RED));
+                    ui.label(egui::RichText::new(title).strong().color(failed));
                     ui.label(egui::RichText::new(crate::i18n::tr("icontheme-packager-rejected-desc")).small().weak());
                     for rej in &rep.rejected {
-                        ui.label(egui::RichText::new(format!("  - {}: {}", rej.path, rej.reason)).color(ui.visuals().error_fg_color).small());
+                        ui.label(egui::RichText::new(format!("  - {}: {}", rej.path, rej.reason)).color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Error)).small());
                     }
                 }
 
@@ -210,10 +211,10 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, wc: &mut WinCtx) {
                 if !rep.extraneous.is_empty() {
                     ui.add_space(4.0);
                     let title = crate::i18n::tr1("icontheme-packager-extraneous-title", "count", &rep.extraneous.len().to_string());
-                    ui.label(egui::RichText::new(title).strong().color(ui.visuals().warn_fg_color));
+                    ui.label(egui::RichText::new(title).strong().color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning)));
                     ui.label(egui::RichText::new(crate::i18n::tr("icontheme-packager-extraneous-desc")).small().weak());
                     for file in &rep.extraneous {
-                        ui.label(egui::RichText::new(format!("  - {file}")).color(ui.visuals().warn_fg_color).small());
+                        ui.label(egui::RichText::new(format!("  - {file}")).color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning)).small());
                     }
                 }
 
@@ -221,7 +222,7 @@ pub(crate) fn draw_packager_modal(ctx: &egui::Context, wc: &mut WinCtx) {
                 if !rep.included.is_empty() {
                     ui.add_space(4.0);
                     let inc_title = crate::i18n::tr1("icontheme-packager-included-title", "count", &cov_str);
-                    egui::CollapsingHeader::new(egui::RichText::new(inc_title).color(Color32::GREEN)).default_open(rep.rejected.is_empty() && rep.extraneous.is_empty()).show(ui, |ui| {
+                    egui::CollapsingHeader::new(egui::RichText::new(inc_title).color(done)).default_open(rep.rejected.is_empty() && rep.extraneous.is_empty()).show(ui, |ui| {
                         for id in &rep.included {
                             ui.label(egui::RichText::new(format!("  {} {}", ph::CHECK, id.relative_path())).small());
                         }

@@ -22,7 +22,7 @@ struct L {
     corner: Id,
 }
 
-fn point_at(p: &Project, si: usize, x: f64, y: f64) -> Id {
+fn point_at(p: &Project, si: usize, (x, y): (f64, f64)) -> Id {
     p.sketches[si].points.iter().find(|q| (q.x - x).abs() < 1e-9 && (q.y - y).abs() < 1e-9).expect("a point of the L").id
 }
 
@@ -44,7 +44,7 @@ fn l_dimensioned(width: Width) -> L {
         let (a, b) = (corners[k], corners[(k + 1) % corners.len()]);
         p.add_line_entity(si, a.0, a.1, b.0, b.1, Purpose::Real);
     }
-    let ids: Vec<Id> = corners.iter().map(|&(x, y)| point_at(&p, si, x, y)).collect();
+    let ids: Vec<Id> = corners.iter().map(|&(x, y)| point_at(&p, si, (x, y))).collect();
     for k in 0..ids.len() {
         let (a, b) = (ids[k], ids[(k + 1) % ids.len()]);
         let c = if k % 2 == 0 { Constraint::Horizontal { a, b } } else { Constraint::Vertical { a, b } };
