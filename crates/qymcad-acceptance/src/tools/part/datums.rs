@@ -47,8 +47,8 @@ pub static DATUM_PLANE: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
-        (2, "the bar of the datum plane holds no modes: it takes a base and an offset from it"),
-        (17, "a plane at an offset from another always builds: there is no value of the right form the kernel cannot make a plane at"),
+        Skip { point: 2, why: "the bar of the datum plane holds no modes: it takes a base and an offset from it" },
+        Skip { point: 17, why: "a plane at an offset from another always builds: there is no value of the right form the kernel cannot make a plane at" },
     ],
 };
 
@@ -84,9 +84,9 @@ pub static DATUM_AXIS: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
-        (5, "the axis takes no value: it lies along the edge or the cylinder picked"),
-        (6, "the axis takes no value to refuse"),
-        (17, "an axis along an edge always builds: there is no value to give it that the kernel could not make"),
+        Skip { point: 5, why: "the axis takes no value: it lies along the edge or the cylinder picked" },
+        Skip { point: 6, why: "the axis takes no value to refuse" },
+        Skip { point: 17, why: "an axis along an edge always builds: there is no value to give it that the kernel could not make" },
     ],
 };
 
@@ -127,10 +127,10 @@ pub static DATUM_POINT: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
-        (2, "the bar of the datum point holds no modes: it takes three coordinates"),
-        (3, "the point is placed by its coordinates and takes no pick of its own; a vertex clicked only fills them in"),
-        (4, "with nothing to pick there is no wrong pick: a click in space puts the point where it points"),
-        (15, "a point at coordinates stands on nothing of the timeline, so there is nothing to delete under it"),
-        (17, "a point at coordinates always builds"),
+        Skip { point: 2, why: "the bar of the datum point holds no modes: it takes three coordinates" },
+        Skip { point: 3, why: "the point is placed by its coordinates and takes no pick of its own; a vertex clicked only fills them in" },
+        Skip { point: 4, why: "with nothing to pick there is no wrong pick: a click in space puts the point where it points" },
+        Skip { point: 15, why: "a point at coordinates stands on nothing of the timeline, so there is nothing to delete under it" },
+        Skip { point: 17, why: "a point at coordinates always builds" },
     ],
 };

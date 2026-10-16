@@ -50,7 +50,7 @@ pub static EXTRUDE: Tool = Tool {
     refusal: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/01-extrude",
-    not_applicable: &[(17, "a length of the right form over a closed contour always builds a prism: there is nothing for the kernel to refuse")],
+    not_applicable: &[Skip { point: 17, why: "a length of the right form over a closed contour always builds a prism: there is nothing for the kernel to refuse" }],
 };
 
 /// The block with the top front edge rounded to `r`: the edge's quarter of a square taken off, less the quarter disc.
@@ -89,7 +89,7 @@ pub static FILLET: Tool = Tool {
     refusal: Some(12.0),
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/05-fillet",
-    not_applicable: &[(2, "the fillet's bar has no modes: it takes edges and a radius")],
+    not_applicable: &[Skip { point: 2, why: "the fillet's bar has no modes: it takes edges and a radius" }],
 };
 
 /// The block with the top front edge cut by a chamfer of leg `d`: the triangle d^2 / 2 taken off along all 40 mm.
@@ -334,8 +334,5 @@ pub static REVOLVE: Tool = Tool {
     refusal: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/02-revolve",
-    not_applicable: &[(
-        17,
-        "every angle of 1 to 360 degrees turns a contour lying beside its axis into a body; what the kernel cannot build is a contour lying across the axis, which is a matter of what is drawn, not of the value typed",
-    )],
+    not_applicable: &[Skip { point: 17, why: "every angle of 1 to 360 degrees turns a contour lying beside its axis into a body; what the kernel cannot build is a contour lying across the axis, which is a matter of what is drawn, not of the value typed" }],
 };

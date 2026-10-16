@@ -3,12 +3,12 @@
 use super::*;
 
 /// What the items of the Edit menu leave out in a sketch: what they work on is picked before them.
-pub(crate) const EDITS: &[(u8, &str)] = &[
-    (2, "the item has no mode"),
-    (3, "what is copied or cut is picked before the item; its clicks put points"),
-    (4, "a click on empty sheet is a place like any other: there is no wrong click to refuse"),
-    (5, "the item has no field"),
-    (6, "the item has no field to refuse a value in"),
+pub(crate) const EDITS: &[Skip] = &[
+    Skip { point: 2, why: "the item has no mode" },
+    Skip { point: 3, why: "what is copied or cut is picked before the item; its clicks put points" },
+    Skip { point: 4, why: "a click on empty sheet is a place like any other: there is no wrong click to refuse" },
+    Skip { point: 5, why: "the item has no field" },
+    Skip { point: 6, why: "the item has no field to refuse a value in" },
     DRAWS[2],
     DRAWS[3],
     DRAWS[4],

@@ -4,19 +4,19 @@ use super::*;
 
 /// What a constraint leaves out of the contract: it is an action on the geometry picked before it (a person picks,
 /// Shift-picks the second, presses the button), it has no field and no bar, and nothing stands over it but its sketch.
-pub(crate) const CONSTRAINS: &[(u8, &str)] = &[
-    (2, "a constraint has no bar of options: its button does the work"),
-    (3, "the geometry is picked before the button, and the pick is what the result is read on"),
-    (4, "a constraint on geometry it cannot hold is refused in words - that is the matter of the constraint matrix"),
-    (5, "a constraint has no field"),
-    (6, "a constraint has no field to refuse a value in"),
-    (7, "a constraint is laid at once: there is nothing to show before it"),
-    (9, "a constraint is laid at once: there is nothing to cancel, only to undo, which is point 11"),
+pub(crate) const CONSTRAINS: &[Skip] = &[
+    Skip { point: 2, why: "a constraint has no bar of options: its button does the work" },
+    Skip { point: 3, why: "the geometry is picked before the button, and the pick is what the result is read on" },
+    Skip { point: 4, why: "a constraint on geometry it cannot hold is refused in words - that is the matter of the constraint matrix" },
+    Skip { point: 5, why: "a constraint has no field" },
+    Skip { point: 6, why: "a constraint has no field to refuse a value in" },
+    Skip { point: 7, why: "a constraint is laid at once: there is nothing to show before it" },
+    Skip { point: 9, why: "a constraint is laid at once: there is nothing to cancel, only to undo, which is point 11" },
     DRAWS[2],
     DRAWS[3],
     DRAWS[4],
     DRAWS[5],
-    (19, "a constraint is not held, so F1 has no tool in hand to open an article of - and the help writes of no constraint at all"),
+    Skip { point: 19, why: "a constraint is not held, so F1 has no tool in hand to open an article of - and the help writes of no constraint at all" },
 ];
 
 /// CON_HORIZONTAL: the slanted line of the two made level.

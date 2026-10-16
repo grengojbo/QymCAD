@@ -40,7 +40,7 @@ pub static PUSH_FACE: Tool = Tool {
     refusal: Some(-10.0),
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/11-push-face",
-    not_applicable: &[(2, "the bar of push face holds no modes: it takes a flat face and an offset, plus or minus")],
+    not_applicable: &[Skip { point: 2, why: "the bar of push face holds no modes: it takes a flat face and an offset, plus or minus" }],
 };
 
 /// The block with a plate of `thickness` grown on its top: the sides of the plate stand in the sides of the block, so
@@ -81,8 +81,8 @@ pub static THICKEN: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/15-thicken",
     not_applicable: &[
-        (2, "the bar of thicken holds no modes: it takes a face and a thickness, and the plate grows outwards"),
-        (17, "a plate grown on a face always builds: the thickness has no value the kernel cannot make of it"),
+        Skip { point: 2, why: "the bar of thicken holds no modes: it takes a face and a thickness, and the plate grows outwards" },
+        Skip { point: 17, why: "a plate grown on a face always builds: the thickness has no value the kernel cannot make of it" },
     ],
 };
 
@@ -127,8 +127,8 @@ pub static SPLIT_BODY: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/13-split-body",
     not_applicable: &[
-        (2, "the bar of the cut holds no modes: it takes a plane, a datum or a face and an offset from it"),
-        (17, "a plane that cuts the body always cuts it; a plane that misses it is refused in words, which is the point about values"),
+        Skip { point: 2, why: "the bar of the cut holds no modes: it takes a plane, a datum or a face and an offset from it" },
+        Skip { point: 17, why: "a plane that cuts the body always cuts it; a plane that misses it is refused in words, which is the point about values" },
     ],
 };
 
@@ -170,8 +170,8 @@ pub static SPLIT_FACE: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/14-split-face",
     not_applicable: &[
-        (2, "the bar of the face cut holds no modes: it takes a plane, a datum or a face and an offset from it"),
-        (17, "a plane that crosses the body always divides its faces; a plane that misses it is refused in words, which is the point about values"),
+        Skip { point: 2, why: "the bar of the face cut holds no modes: it takes a plane, a datum or a face and an offset from it" },
+        Skip { point: 17, why: "a plane that crosses the body always divides its faces; a plane that misses it is refused in words, which is the point about values" },
     ],
 };
 
@@ -224,5 +224,8 @@ pub static DRAFT: Tool = Tool {
     refusal: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/09-draft",
-    not_applicable: &[(17, "a face tilted by an angle the field accepts always builds: what the kernel could not make of it is a matter of the faces beside it, not of the value typed")],
+    not_applicable: &[Skip {
+        point: 17,
+        why: "a face tilted by an angle the field accepts always builds: what the kernel could not make of it is a matter of the faces beside it, not of the value typed",
+    }],
 };

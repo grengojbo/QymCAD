@@ -41,9 +41,9 @@ pub static MIRROR: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/16-mirror",
     not_applicable: &[
-        (5, "the mirror takes no value: what it makes is settled by the body and the plane clicked"),
-        (6, "the mirror takes no value, so there is none to refuse"),
-        (17, "a body reflected in a plane always builds: there is no value for the kernel to fail on"),
+        Skip { point: 5, why: "the mirror takes no value: what it makes is settled by the body and the plane clicked" },
+        Skip { point: 6, why: "the mirror takes no value, so there is none to refuse" },
+        Skip { point: 17, why: "a body reflected in a plane always builds: there is no value for the kernel to fail on" },
     ],
 };
 
@@ -99,8 +99,8 @@ pub static LINEAR_ARRAY: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/17-linear-array",
     not_applicable: &[
-        (2, "the bar of the pattern holds its count and the direction it goes, not modes that put each other down"),
-        (17, "copies of a body laid along a line always build: what the kernel could not make of them is a matter of where they fall, not of the value typed"),
+        Skip { point: 2, why: "the bar of the pattern holds its count and the direction it goes, not modes that put each other down" },
+        Skip { point: 17, why: "copies of a body laid along a line always build: what the kernel could not make of them is a matter of where they fall, not of the value typed" },
     ],
 };
 
@@ -138,5 +138,5 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     refusal: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/18-circular-array",
-    not_applicable: &[(17, "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed")],
+    not_applicable: &[Skip { point: 17, why: "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed" }],
 };

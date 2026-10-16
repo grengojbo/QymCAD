@@ -195,11 +195,11 @@ mod tests {
                 problems.push(format!("{}: no contract! runs it", t.id));
             }
             let mut seen = Vec::new();
-            for (point, why) in t.not_applicable {
-                if !(1..=19).contains(point) || seen.contains(point) || why.trim().is_empty() {
+            for &crate::contract::Skip { point, why } in t.not_applicable {
+                if !(1..=19).contains(&point) || seen.contains(&point) || why.trim().is_empty() {
                     problems.push(format!("{}: point {point} is left out wrongly (outside 1-19, twice, or without why)", t.id));
                 }
-                seen.push(*point);
+                seen.push(point);
             }
         }
         let ids: Vec<&str> = crate::tools::ALL.iter().map(|t| t.id).collect();

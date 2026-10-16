@@ -43,7 +43,7 @@ pub static LINE: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/01-line",
     not_applicable: &[
-        (2, "the line has no mode of its own: it draws a chain of segments"),
+        Skip { point: 2, why: "the line has no mode of its own: it draws a chain of segments" },
         DRAWS_WITHOUT_FIELDS[0],
         DRAWS_WITHOUT_FIELDS[1],
         DRAWS_WITHOUT_FIELDS[2],
@@ -267,8 +267,8 @@ pub static POINT: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/05-point",
     not_applicable: &[
-        (2, "a point has no mode: one click is the whole of it"),
-        (7, "a point has nothing to show before it is put down: it appears where the click lands"),
+        Skip { point: 2, why: "a point has no mode: one click is the whole of it" },
+        Skip { point: 7, why: "a point has nothing to show before it is put down: it appears where the click lands" },
         DRAWS_WITHOUT_FIELDS[0],
         DRAWS_WITHOUT_FIELDS[1],
         DRAWS_WITHOUT_FIELDS[2],
@@ -398,7 +398,7 @@ pub static CIRCLE3: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/03-circle",
     not_applicable: &[
-        (2, "the circle through three points has no mode: three clicks are the whole of it"),
+        Skip { point: 2, why: "the circle through three points has no mode: three clicks are the whole of it" },
         DRAWS_WITHOUT_FIELDS[0],
         DRAWS_WITHOUT_FIELDS[1],
         DRAWS_WITHOUT_FIELDS[2],
@@ -525,7 +525,7 @@ pub static SLOT: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/07-slot",
     not_applicable: &[
-        (2, "the slot has no mode: a centre line and a width are the whole of it"),
+        Skip { point: 2, why: "the slot has no mode: a centre line and a width are the whole of it" },
         DRAWS_WITHOUT_FIELDS[0],
         DRAWS_WITHOUT_FIELDS[1],
         DRAWS_WITHOUT_FIELDS[2],
@@ -578,7 +578,7 @@ pub static ELLIPSE: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/08-ellipse",
     not_applicable: &[
-        (2, "the ellipse has no mode: a centre and two axes are the whole of it"),
+        Skip { point: 2, why: "the ellipse has no mode: a centre and two axes are the whole of it" },
         DRAWS_WITHOUT_FIELDS[0],
         DRAWS_WITHOUT_FIELDS[1],
         DRAWS_WITHOUT_FIELDS[2],
@@ -631,9 +631,9 @@ pub static SPLINE: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/09-spline",
     not_applicable: &[
-        (2, "the spline has no mode: its nodes are its shape"),
+        Skip { point: 2, why: "the spline has no mode: its nodes are its shape" },
         // decided 25.09: Esc FINISHES a spline on the points clicked so far, as a double click or Enter does
-        (9, "Esc finishes the spline on its points rather than cancelling it - the owner's decision of 25.09"),
+        Skip { point: 9, why: "Esc finishes the spline on its points rather than cancelling it - the owner's decision of 25.09" },
         DRAWS_WITHOUT_FIELDS[0],
         DRAWS_WITHOUT_FIELDS[1],
         DRAWS_WITHOUT_FIELDS[2],

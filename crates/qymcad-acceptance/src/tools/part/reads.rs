@@ -30,31 +30,31 @@ pub static SECTION: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/09-viewport",
     not_applicable: &[
-        (2, "the section's offset and tilts in the bar move the plane; where it cuts is not read yet"),
-        (5, "the section takes its offset from the bar, and where it cuts is not read yet"),
-        (6, "the section takes its offset from the bar, and where it cuts is not read yet"),
-        (11, "a section is the view, not the document: it lays no step of undo"),
-        (12, "a section is the view, not the document: saving and opening does not carry it"),
-        (13, "a section lays no node"),
-        (14, "nothing of a timeline stands above a section"),
-        (15, "a section stands on nothing of the document"),
-        (17, "a plane can always cut the view"),
+        Skip { point: 2, why: "the section's offset and tilts in the bar move the plane; where it cuts is not read yet" },
+        Skip { point: 5, why: "the section takes its offset from the bar, and where it cuts is not read yet" },
+        Skip { point: 6, why: "the section takes its offset from the bar, and where it cuts is not read yet" },
+        Skip { point: 11, why: "a section is the view, not the document: it lays no step of undo" },
+        Skip { point: 12, why: "a section is the view, not the document: saving and opening does not carry it" },
+        Skip { point: 13, why: "a section lays no node" },
+        Skip { point: 14, why: "nothing of a timeline stands above a section" },
+        Skip { point: 15, why: "a section stands on nothing of the document" },
+        Skip { point: 17, why: "a plane can always cut the view" },
     ],
 };
 
 /// What a measure leaves out: it reads, it does not make - no node, no step of undo, nothing saved.
-pub(crate) const READS: &[(u8, &str)] = &[
-    (2, "the measure has no modes: what is clicked decides what is measured"),
-    (5, "the measure takes no value"),
-    (6, "the measure takes no value to refuse"),
-    (7, "the measure answers on the second click: there is nothing to show before it"),
-    (8, "a measure changes nothing and has nothing to apply: its answer stands in the bar as the second element is clicked"),
-    (11, "a measure changes nothing: it lays no step of undo"),
-    (12, "a measure changes nothing: saving and opening carries nothing of it"),
-    (13, "a measure lays no node"),
-    (14, "nothing of a timeline stands above a measure"),
-    (15, "a measure stands on nothing of the document"),
-    (17, "two points can always be measured"),
+pub(crate) const READS: &[Skip] = &[
+    Skip { point: 2, why: "the measure has no modes: what is clicked decides what is measured" },
+    Skip { point: 5, why: "the measure takes no value" },
+    Skip { point: 6, why: "the measure takes no value to refuse" },
+    Skip { point: 7, why: "the measure answers on the second click: there is nothing to show before it" },
+    Skip { point: 8, why: "a measure changes nothing and has nothing to apply: its answer stands in the bar as the second element is clicked" },
+    Skip { point: 11, why: "a measure changes nothing: it lays no step of undo" },
+    Skip { point: 12, why: "a measure changes nothing: saving and opening carries nothing of it" },
+    Skip { point: 13, why: "a measure lays no node" },
+    Skip { point: 14, why: "nothing of a timeline stands above a measure" },
+    Skip { point: 15, why: "a measure stands on nothing of the document" },
+    Skip { point: 17, why: "two points can always be measured" },
 ];
 
 /// MEASURE_3D: the two corners of the front top edge of the block clicked - they are 40 apart, and the status line
@@ -119,12 +119,12 @@ pub static RECOGNISE: Tool = Tool {
     budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/26-recognise",
     not_applicable: &[
-        (5, "recognising takes the tolerances of the bar as they come; the values are the matrix of meshes' cases"),
-        (6, "recognising takes the tolerances of the bar as they come; the values are the matrix of meshes' cases"),
-        (14, "nothing of a timeline stands above an imported mesh"),
-        (15, "the mesh stands on the file it came from, not on a node"),
-        (16, "the fixture builds its own project from the start: there is no second part to take it in"),
-        (17, "a mesh that holds no closed volume is refused by the pick, not by a value"),
+        Skip { point: 5, why: "recognising takes the tolerances of the bar as they come; the values are the matrix of meshes' cases" },
+        Skip { point: 6, why: "recognising takes the tolerances of the bar as they come; the values are the matrix of meshes' cases" },
+        Skip { point: 14, why: "nothing of a timeline stands above an imported mesh" },
+        Skip { point: 15, why: "the mesh stands on the file it came from, not on a node" },
+        Skip { point: 16, why: "the fixture builds its own project from the start: there is no second part to take it in" },
+        Skip { point: 17, why: "a mesh that holds no closed volume is refused by the pick, not by a value" },
     ],
 };
 
@@ -167,9 +167,9 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/28-recognise-feature",
     not_applicable: &[
-        (14, "nothing of a timeline stands above an imported mesh"),
-        (16, "the fixture builds its own project from the start: there is no second part to take it in"),
-        (17, "a hole wider than the block is refused by the bounds of the field; the kernel has nothing else to refuse here"),
+        Skip { point: 14, why: "nothing of a timeline stands above an imported mesh" },
+        Skip { point: 16, why: "the fixture builds its own project from the start: there is no second part to take it in" },
+        Skip { point: 17, why: "a hole wider than the block is refused by the bounds of the field; the kernel has nothing else to refuse here" },
     ],
 };
 
@@ -215,7 +215,7 @@ pub static FACE_GAP: Tool = Tool {
     refusal: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/29-face-gap",
-    not_applicable: &[(17, "a size the faces cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse")],
+    not_applicable: &[Skip { point: 17, why: "a size the faces cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse" }],
 };
 
 /// The bossed block with its boss redrawn `h` high above the top of the block.
@@ -269,7 +269,7 @@ pub static SKETCH_FROM_FACE: Tool = Tool {
     refusal: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/30-sketch-from-face",
-    not_applicable: &[(17, "a height the boss cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse")],
+    not_applicable: &[Skip { point: 17, why: "a height the boss cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse" }],
 };
 
 /// Any name is two parts: the block split 5 below its top, and the upper piece taken into a part of its own.
@@ -315,14 +315,14 @@ pub static PIECE_TO_PART: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/13-split-body",
     not_applicable: &[
-        (2, "the command holds no bar: it asks one name beside the cursor"),
-        (3, "the piece is picked before the command, by a double click; the click taking it after is the command's own case of nothing picked"),
-        (4, "the piece is picked before the command: there is no pick of its own to refuse"),
-        (7, "a part made of a piece is the piece itself: there is nothing to show before it"),
-        (13, "the node of the piece has no command to reopen: it reads the piece, and the cut that made it is edited instead"),
-        (14, "above the piece stand the split and the boss; their values are their own point 14, and the piece follows them"),
-        (16, "a piece is made a part in the part that shows it: there is no second place to take it"),
-        (17, "a piece can always be made a part: the kernel only copies it"),
-        (19, "the command is not held, so F1 has no tool in hand to open an article of"),
+        Skip { point: 2, why: "the command holds no bar: it asks one name beside the cursor" },
+        Skip { point: 3, why: "the piece is picked before the command, by a double click; the click taking it after is the command's own case of nothing picked" },
+        Skip { point: 4, why: "the piece is picked before the command: there is no pick of its own to refuse" },
+        Skip { point: 7, why: "a part made of a piece is the piece itself: there is nothing to show before it" },
+        Skip { point: 13, why: "the node of the piece has no command to reopen: it reads the piece, and the cut that made it is edited instead" },
+        Skip { point: 14, why: "above the piece stand the split and the boss; their values are their own point 14, and the piece follows them" },
+        Skip { point: 16, why: "a piece is made a part in the part that shows it: there is no second place to take it" },
+        Skip { point: 17, why: "a piece can always be made a part: the kernel only copies it" },
+        Skip { point: 19, why: "the command is not held, so F1 has no tool in hand to open an article of" },
     ],
 };

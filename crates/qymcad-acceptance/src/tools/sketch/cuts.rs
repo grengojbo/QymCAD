@@ -4,13 +4,13 @@ use super::*;
 
 /// What a click that cuts geometry leaves: a whole shape made of what was there, with nothing of its own to click
 /// before it, no field and no mode.
-pub(crate) const CUTS: &[(u8, &str)] = &[
-    (2, "the tool has no mode: a click on a piece is the whole of it"),
-    (3, "the piece is taken by the click that cuts it, not by a pick before it"),
-    (4, "a click on empty sheet is answered by the tool itself, in words: see the drawing tools"),
-    (5, "the tool has no field: where it cuts is given by the click"),
-    (6, "the tool has no field to refuse a value in"),
-    (7, "the cut is made by one click: there is nothing drawn between clicks to follow the pointer"),
+pub(crate) const CUTS: &[Skip] = &[
+    Skip { point: 2, why: "the tool has no mode: a click on a piece is the whole of it" },
+    Skip { point: 3, why: "the piece is taken by the click that cuts it, not by a pick before it" },
+    Skip { point: 4, why: "a click on empty sheet is answered by the tool itself, in words: see the drawing tools" },
+    Skip { point: 5, why: "the tool has no field: where it cuts is given by the click" },
+    Skip { point: 6, why: "the tool has no field to refuse a value in" },
+    Skip { point: 7, why: "the cut is made by one click: there is nothing drawn between clicks to follow the pointer" },
     DRAWS[2],
     DRAWS[3],
     DRAWS[4],
@@ -231,10 +231,10 @@ pub static OFFSET: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/20-offset",
     not_applicable: &[
-        (2, "the tool has no mode: a click on a contour is the whole of it"),
-        (3, "the contour is taken by the click that copies it, not by a pick before it"),
-        (4, "a click on empty sheet is answered by the tool itself, in words: see the drawing tools"),
-        (7, "the copy is made by one click: there is nothing drawn between clicks to follow the pointer"),
+        Skip { point: 2, why: "the tool has no mode: a click on a contour is the whole of it" },
+        Skip { point: 3, why: "the contour is taken by the click that copies it, not by a pick before it" },
+        Skip { point: 4, why: "a click on empty sheet is answered by the tool itself, in words: see the drawing tools" },
+        Skip { point: 7, why: "the copy is made by one click: there is nothing drawn between clicks to follow the pointer" },
         DRAWS[2],
         DRAWS[3],
         DRAWS[4],

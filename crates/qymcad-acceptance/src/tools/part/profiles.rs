@@ -3,14 +3,14 @@
 use super::*;
 
 /// What a sweep or a loft leaves out: it works on sketches picked in the tree, and takes no value.
-pub(crate) const FROM_SKETCHES: &[(u8, &str)] = &[
-    (4, "the sections are rows of the tree; a click on empty space there picks nothing to refuse"),
-    (5, "the tool takes no value: the shape is given by the sketches"),
-    (6, "the tool takes no value to refuse"),
-    (14, "the change above is a change of a sketch, which is the sketch's own contract of dimensions"),
-    (15, "the sketches it stands on are deleted from the tree, which is the sketch's own matter"),
-    (16, "the fixture builds its own part from the start: there is no second part to take it in"),
-    (17, "sections that the kernel cannot join are a matter of the sketches, not of a value typed"),
+pub(crate) const FROM_SKETCHES: &[Skip] = &[
+    Skip { point: 4, why: "the sections are rows of the tree; a click on empty space there picks nothing to refuse" },
+    Skip { point: 5, why: "the tool takes no value: the shape is given by the sketches" },
+    Skip { point: 6, why: "the tool takes no value to refuse" },
+    Skip { point: 14, why: "the change above is a change of a sketch, which is the sketch's own contract of dimensions" },
+    Skip { point: 15, why: "the sketches it stands on are deleted from the tree, which is the sketch's own matter" },
+    Skip { point: 16, why: "the fixture builds its own part from the start: there is no second part to take it in" },
+    Skip { point: 17, why: "sections that the kernel cannot join are a matter of the sketches, not of a value typed" },
 ];
 
 /// SWEEP: the square of 10 swept along the straight line of 40 up the front plane - a bar of 10 x 10 x 40.
@@ -121,11 +121,11 @@ pub static THREAD: Tool = Tool {
     budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/10-thread",
     not_applicable: &[
-        (2, "the kinds of thread in the bar (outer, inner, standards) are the matrix of threads' cases"),
-        (14, "the cylinder under the thread is made by the fixture's own extrusion; a change of it is the matrix's matter"),
-        (15, "deleting the extrusion under the thread is the matrix of threads' matter"),
-        (16, "the fixture builds its own part from the start: there is no second part to take it in"),
-        (17, "a thread of another size than the face is refused - that is the matrix of threads' case"),
+        Skip { point: 2, why: "the kinds of thread in the bar (outer, inner, standards) are the matrix of threads' cases" },
+        Skip { point: 14, why: "the cylinder under the thread is made by the fixture's own extrusion; a change of it is the matrix's matter" },
+        Skip { point: 15, why: "deleting the extrusion under the thread is the matrix of threads' matter" },
+        Skip { point: 16, why: "the fixture builds its own part from the start: there is no second part to take it in" },
+        Skip { point: 17, why: "a thread of another size than the face is refused - that is the matrix of threads' case" },
     ],
 };
 
@@ -174,10 +174,10 @@ pub static THREAD_OWN_PITCH: Tool = Tool {
     budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/10-thread",
     not_applicable: &[
-        (2, "the kinds of thread in the bar are the matrix of threads' cases"),
-        (14, "the cylinder under the thread is made by the fixture's own extrusion; a change of it is the matrix's matter"),
-        (15, "deleting the extrusion under the thread is the matrix of threads' matter"),
-        (16, "the fixture builds its own part from the start: there is no second part to take it in"),
-        (17, "a thread of another size than the face is refused - that is the matrix of threads' case"),
+        Skip { point: 2, why: "the kinds of thread in the bar are the matrix of threads' cases" },
+        Skip { point: 14, why: "the cylinder under the thread is made by the fixture's own extrusion; a change of it is the matrix's matter" },
+        Skip { point: 15, why: "deleting the extrusion under the thread is the matrix of threads' matter" },
+        Skip { point: 16, why: "the fixture builds its own part from the start: there is no second part to take it in" },
+        Skip { point: 17, why: "a thread of another size than the face is refused - that is the matrix of threads' case" },
     ],
 };

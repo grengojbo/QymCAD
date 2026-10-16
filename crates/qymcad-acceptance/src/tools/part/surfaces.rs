@@ -36,10 +36,10 @@ pub static FACE_COPY: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/20-face-copy",
     not_applicable: &[
-        (2, "the bar of the face copy holds no modes: it takes the faces to copy and nothing else"),
-        (5, "the face copy takes no value: it repeats the face picked"),
-        (6, "the face copy takes no value to refuse"),
-        (17, "a face the kernel can draw it can copy: there is no value to give it that it could not make"),
+        Skip { point: 2, why: "the bar of the face copy holds no modes: it takes the faces to copy and nothing else" },
+        Skip { point: 5, why: "the face copy takes no value: it repeats the face picked" },
+        Skip { point: 6, why: "the face copy takes no value to refuse" },
+        Skip { point: 17, why: "a face the kernel can draw it can copy: there is no value to give it that it could not make" },
     ],
 };
 
@@ -81,8 +81,8 @@ pub static OFFSET_SURFACE: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/27-offset-surface",
     not_applicable: &[
-        (2, "the bar of the offset holds no modes: the side is the sign of the distance"),
-        (17, "a flat face moves any distance: the kernel refuses only a curved face turned inside out, which the block has none of"),
+        Skip { point: 2, why: "the bar of the offset holds no modes: the side is the sign of the distance" },
+        Skip { point: 17, why: "a flat face moves any distance: the kernel refuses only a curved face turned inside out, which the block has none of" },
     ],
 };
 
@@ -124,10 +124,10 @@ pub static REMOVE_FACE: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/12-remove-face",
     not_applicable: &[
-        (2, "the bar of remove face holds no modes: it takes the faces of the feature to take away"),
-        (5, "remove face takes no value: it takes the faces picked away"),
-        (6, "remove face takes no value to refuse"),
-        (17, "a wall the kernel made it can take away; a face it cannot close over is a matter of the pick, not of a value"),
+        Skip { point: 2, why: "the bar of remove face holds no modes: it takes the faces of the feature to take away" },
+        Skip { point: 5, why: "remove face takes no value: it takes the faces picked away" },
+        Skip { point: 6, why: "remove face takes no value to refuse" },
+        Skip { point: 17, why: "a wall the kernel made it can take away; a face it cannot close over is a matter of the pick, not of a value" },
     ],
 };
 
@@ -165,10 +165,13 @@ pub static BOOLEAN: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/25-boolean",
     not_applicable: &[
-        (5, "the boolean takes no value: its kind is a mode of the bar, and its bodies are picked"),
-        (6, "the boolean takes no value to refuse"),
-        (14, "above it stand the cut that made its two bodies and the boss that grew one into the other; their values are their own point 14, and this one follows them as the result does"),
-        (17, "pieces that only touch are refused in words before a node, by the cut and by the intersection alike (part_booleans)"),
+        Skip { point: 5, why: "the boolean takes no value: its kind is a mode of the bar, and its bodies are picked" },
+        Skip { point: 6, why: "the boolean takes no value to refuse" },
+        Skip {
+            point: 14,
+            why: "above it stand the cut that made its two bodies and the boss that grew one into the other; their values are their own point 14, and this one follows them as the result does",
+        },
+        Skip { point: 17, why: "pieces that only touch are refused in words before a node, by the cut and by the intersection alike (part_booleans)" },
     ],
 };
 
@@ -204,10 +207,10 @@ pub static PATCH: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/22-patch",
     not_applicable: &[
-        (5, "the patch takes no value: its surface is given by the edges picked and the mode"),
-        (6, "the patch takes no value to refuse"),
-        (14, "the hole under it is changed in its own contract, and the disc follows the edge it was spanned on - which point 15 checks from the other side"),
-        (17, "edges that do not close a boundary are refused by the picks, not by a value"),
+        Skip { point: 5, why: "the patch takes no value: its surface is given by the edges picked and the mode" },
+        Skip { point: 6, why: "the patch takes no value to refuse" },
+        Skip { point: 14, why: "the hole under it is changed in its own contract, and the disc follows the edge it was spanned on - which point 15 checks from the other side" },
+        Skip { point: 17, why: "edges that do not close a boundary are refused by the picks, not by a value" },
     ],
 };
 
@@ -239,16 +242,16 @@ pub static SKETCH_ON_FACE: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
-        (2, "the pencil has no bar of modes: a click on a plane, a datum or a face is the whole of it"),
-        (3, "the face is taken by the click that opens the sketch on it: there is no taking it back but leaving the sketch"),
-        (5, "the pencil takes no value"),
-        (6, "the pencil takes no value to refuse"),
-        (7, "the sketch opens on the click: there is nothing to show before it"),
-        (8, "the sketch is opened by the click on the face, and it is left by \"Finish\", not applied with Enter"),
-        (9, "Esc before the click puts the pencil down, which is point 1; after it the sketch is open and left by \"Finish\""),
-        (13, "the sketch is reopened by a double click on its row, which is the sketch's own contract"),
-        (14, "a change above is carried by the sketch on the face, which is the matter of in-context references"),
-        (17, "any flat face can carry a sketch: there is nothing the kernel could refuse"),
+        Skip { point: 2, why: "the pencil has no bar of modes: a click on a plane, a datum or a face is the whole of it" },
+        Skip { point: 3, why: "the face is taken by the click that opens the sketch on it: there is no taking it back but leaving the sketch" },
+        Skip { point: 5, why: "the pencil takes no value" },
+        Skip { point: 6, why: "the pencil takes no value to refuse" },
+        Skip { point: 7, why: "the sketch opens on the click: there is nothing to show before it" },
+        Skip { point: 8, why: "the sketch is opened by the click on the face, and it is left by \"Finish\", not applied with Enter" },
+        Skip { point: 9, why: "Esc before the click puts the pencil down, which is point 1; after it the sketch is open and left by \"Finish\"" },
+        Skip { point: 13, why: "the sketch is reopened by a double click on its row, which is the sketch's own contract" },
+        Skip { point: 14, why: "a change above is carried by the sketch on the face, which is the matter of in-context references" },
+        Skip { point: 17, why: "any flat face can carry a sketch: there is nothing the kernel could refuse" },
     ],
 };
 
@@ -297,9 +300,9 @@ pub static STITCH: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/23-stitch",
     not_applicable: &[
-        (2, "the stitch has no modes: the sheets and the tolerance are the whole of it"),
-        (14, "the change above is a change of the copies it is made of, which is the face copy's own point 14"),
-        (17, "sheets that do not meet are refused by the picks, not by a value"),
+        Skip { point: 2, why: "the stitch has no modes: the sheets and the tolerance are the whole of it" },
+        Skip { point: 14, why: "the change above is a change of the copies it is made of, which is the face copy's own point 14" },
+        Skip { point: 17, why: "sheets that do not meet are refused by the picks, not by a value" },
     ],
 };
 
@@ -333,11 +336,11 @@ pub static REPLACE_FACE: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/21-surface-replace",
     not_applicable: &[
-        (2, "replacing a face has no modes: the face and the surface are the whole of it"),
-        (5, "replacing a face takes no value"),
-        (6, "replacing a face takes no value to refuse"),
-        (14, "the change above is a change of the copy it hands back, which is the face copy's own point 14"),
-        (17, "a surface that does not cover the face is refused by the picks, not by a value"),
+        Skip { point: 2, why: "replacing a face has no modes: the face and the surface are the whole of it" },
+        Skip { point: 5, why: "replacing a face takes no value" },
+        Skip { point: 6, why: "replacing a face takes no value to refuse" },
+        Skip { point: 14, why: "the change above is a change of the copy it hands back, which is the face copy's own point 14" },
+        Skip { point: 17, why: "a surface that does not cover the face is refused by the picks, not by a value" },
     ],
 };
 
@@ -373,10 +376,10 @@ pub static TRIM_SURFACE: Tool = Tool {
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/24-trim",
     not_applicable: &[
-        (2, "the trim has no modes: the side kept and the body to cut with are the whole of it"),
-        (5, "the trim takes no value: where it cuts is given by the body"),
-        (6, "the trim takes no value to refuse"),
-        (14, "the change above is a change of the copy it cuts, which is the face copy's own point 14"),
-        (17, "a body that does not reach the sheet is refused by the picks, not by a value"),
+        Skip { point: 2, why: "the trim has no modes: the side kept and the body to cut with are the whole of it" },
+        Skip { point: 5, why: "the trim takes no value: where it cuts is given by the body" },
+        Skip { point: 6, why: "the trim takes no value to refuse" },
+        Skip { point: 14, why: "the change above is a change of the copy it cuts, which is the face copy's own point 14" },
+        Skip { point: 17, why: "a body that does not reach the sheet is refused by the picks, not by a value" },
     ],
 };

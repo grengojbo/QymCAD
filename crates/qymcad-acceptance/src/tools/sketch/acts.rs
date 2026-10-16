@@ -48,19 +48,19 @@ pub static DELETE: Tool = Tool {
 
 /// What an action leaves out of the contract: it is not held, it takes nothing of its own, has no field and no bar, and
 /// makes nothing between a click and its end.
-pub(crate) const ACTS: &[(u8, &str)] = &[
-    (2, "an action has no bar of options: its way in does the work"),
-    (3, "an action works on what is selected before it; it takes nothing itself"),
-    (4, "an action takes nothing, so there is no wrong pick to refuse"),
-    (5, "the action has no field"),
-    (6, "the action has no field to refuse a value in"),
-    (7, "an action is done at once: there is nothing to show before it"),
-    (9, "an action is done at once: there is nothing to cancel, only to undo, which is point 11"),
+pub(crate) const ACTS: &[Skip] = &[
+    Skip { point: 2, why: "an action has no bar of options: its way in does the work" },
+    Skip { point: 3, why: "an action works on what is selected before it; it takes nothing itself" },
+    Skip { point: 4, why: "an action takes nothing, so there is no wrong pick to refuse" },
+    Skip { point: 5, why: "the action has no field" },
+    Skip { point: 6, why: "the action has no field to refuse a value in" },
+    Skip { point: 7, why: "an action is done at once: there is nothing to show before it" },
+    Skip { point: 9, why: "an action is done at once: there is nothing to cancel, only to undo, which is point 11" },
     DRAWS[2],
     DRAWS[3],
     DRAWS[4],
     DRAWS[5],
-    (19, "an action is not held, so F1 has no tool in hand to open the article of"),
+    Skip { point: 19, why: "an action is not held, so F1 has no tool in hand to open the article of" },
 ];
 
 /// MIRROR: the picked line from (10, 0) to (30, 20) reflected about the upright line through the origin - a copy from
@@ -105,12 +105,12 @@ pub static MIRROR: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/19-mirror",
     not_applicable: &[
-        (2, "the mirror has no mode: what is reflected is picked before it, the axis is clicked"),
-        (3, "the axis is taken by the click that reflects about it, not by a pick before it"),
-        (4, "a click away from a line is answered by the tool itself, in words: see the drawing tools"),
-        (5, "the mirror has no field"),
-        (6, "the mirror has no field to refuse a value in"),
-        (7, "the reflection is made by one click: there is nothing drawn between clicks to follow the pointer"),
+        Skip { point: 2, why: "the mirror has no mode: what is reflected is picked before it, the axis is clicked" },
+        Skip { point: 3, why: "the axis is taken by the click that reflects about it, not by a pick before it" },
+        Skip { point: 4, why: "a click away from a line is answered by the tool itself, in words: see the drawing tools" },
+        Skip { point: 5, why: "the mirror has no field" },
+        Skip { point: 6, why: "the mirror has no field to refuse a value in" },
+        Skip { point: 7, why: "the reflection is made by one click: there is nothing drawn between clicks to follow the pointer" },
         DRAWS[2],
         DRAWS[3],
         DRAWS[4],
@@ -159,11 +159,11 @@ pub static MOVE: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
-        (2, "the tool has no mode: what is moved is picked before it, the base and the target are clicked"),
-        (3, "the base and the target are clicks that put points, not picks of what is there"),
-        (4, "a click on empty sheet is a place like any other: there is no wrong click to refuse"),
-        (5, "the tool has no field: how far is given by the two clicks"),
-        (6, "the tool has no field to refuse a value in"),
+        Skip { point: 2, why: "the tool has no mode: what is moved is picked before it, the base and the target are clicked" },
+        Skip { point: 3, why: "the base and the target are clicks that put points, not picks of what is there" },
+        Skip { point: 4, why: "a click on empty sheet is a place like any other: there is no wrong click to refuse" },
+        Skip { point: 5, why: "the tool has no field: how far is given by the two clicks" },
+        Skip { point: 6, why: "the tool has no field to refuse a value in" },
         DRAWS[2],
         DRAWS[3],
         DRAWS[4],
@@ -212,11 +212,11 @@ pub static COPY: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
-        (2, "the tool has no mode: what is copied is picked before it, the base and the target are clicked"),
-        (3, "the base and the target are clicks that put points, not picks of what is there"),
-        (4, "a click on empty sheet is a place like any other: there is no wrong click to refuse"),
-        (5, "the tool has no field: how far is given by the two clicks"),
-        (6, "the tool has no field to refuse a value in"),
+        Skip { point: 2, why: "the tool has no mode: what is copied is picked before it, the base and the target are clicked" },
+        Skip { point: 3, why: "the base and the target are clicks that put points, not picks of what is there" },
+        Skip { point: 4, why: "a click on empty sheet is a place like any other: there is no wrong click to refuse" },
+        Skip { point: 5, why: "the tool has no field: how far is given by the two clicks" },
+        Skip { point: 6, why: "the tool has no field to refuse a value in" },
         DRAWS[2],
         DRAWS[3],
         DRAWS[4],
@@ -291,10 +291,10 @@ pub static ROTATE: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
-        (2, "the tool has no mode: what is turned is picked before it, the centre is clicked"),
-        (7, "the turn is shown as its angle is typed, after the click on the centre; the contract reads the preview of a drawing by the pointer, which is not where a turn moves"),
-        (3, "the centre is a click that puts a point, not a pick of what is there"),
-        (4, "a click on empty sheet is a centre like any other: there is no wrong click to refuse"),
+        Skip { point: 2, why: "the tool has no mode: what is turned is picked before it, the centre is clicked" },
+        Skip { point: 7, why: "the turn is shown as its angle is typed, after the click on the centre; the contract reads the preview of a drawing by the pointer, which is not where a turn moves" },
+        Skip { point: 3, why: "the centre is a click that puts a point, not a pick of what is there" },
+        Skip { point: 4, why: "a click on empty sheet is a centre like any other: there is no wrong click to refuse" },
         DRAWS[2],
         DRAWS[3],
         DRAWS[4],
@@ -303,11 +303,11 @@ pub static ROTATE: Tool = Tool {
 };
 
 /// What a pattern of the sketch leaves out: it works on the selection made before it, and Enter lays it.
-pub(crate) const PATTERNS: &[(u8, &str)] = &[
-    (2, "the bar of the pattern holds its count and spacing, not modes that put each other down"),
-    (4, "the pattern takes the selection made before it: there is no pick of its own to refuse"),
-    (5, "the count and spacing are numbers of the bar, checked by the pattern matrix"),
-    (6, "the count and spacing are numbers of the bar, checked by the pattern matrix"),
+pub(crate) const PATTERNS: &[Skip] = &[
+    Skip { point: 2, why: "the bar of the pattern holds its count and spacing, not modes that put each other down" },
+    Skip { point: 4, why: "the pattern takes the selection made before it: there is no pick of its own to refuse" },
+    Skip { point: 5, why: "the count and spacing are numbers of the bar, checked by the pattern matrix" },
+    Skip { point: 6, why: "the count and spacing are numbers of the bar, checked by the pattern matrix" },
     DRAWS[2],
     DRAWS[3],
     DRAWS[4],
@@ -356,7 +356,7 @@ pub static LINEAR_PATTERN: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/22-array",
     not_applicable: &[
-        (3, "the pattern takes the selection made before it, and nothing else is clicked"),
+        Skip { point: 3, why: "the pattern takes the selection made before it, and nothing else is clicked" },
         PATTERNS[0],
         PATTERNS[1],
         PATTERNS[2],
@@ -410,7 +410,7 @@ pub static CIRCULAR_PATTERN: Tool = Tool {
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/22-array",
     not_applicable: &[
-        (3, "the centre is a click that puts a point, not a pick of what is there"),
+        Skip { point: 3, why: "the centre is a click that puts a point, not a pick of what is there" },
         PATTERNS[0],
         PATTERNS[1],
         PATTERNS[2],

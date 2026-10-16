@@ -1,26 +1,26 @@
 //! THE MENUS OF THE PROGRAM: the items that show a window, described as actions.
 use crate::contract::fixtures::Fixture;
-use crate::contract::{Other, Budget, Entry, Flow, Outcome, Tool};
+use crate::contract::{Skip, Other, Budget, Entry, Flow, Outcome, Tool};
 
 /// The block as the extrusion makes it: 40 x 30 x 10 from the origin.
 const BLOCK: Outcome = Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] };
 
 /// What an item that opens a window leaves out: it is an action on nothing, and the window is not the document.
-const SHOWS: &[(u8, &str)] = &[
-    (2, "a menu item has no bar of options"),
-    (3, "a menu item takes nothing"),
-    (4, "a menu item takes nothing, so there is no wrong pick to refuse"),
-    (5, "a menu item has no field"),
-    (6, "a menu item has no field to refuse a value in"),
-    (7, "the window opens at once: there is nothing to show before it"),
-    (9, "the window opens at once; closing it is the window's own contract"),
-    (12, "a window of the program is not part of the document: saving and opening does not carry it"),
-    (13, "a window lays no node in a timeline"),
-    (14, "nothing of a timeline stands above a window"),
-    (15, "a window stands on nothing of the document"),
-    (16, "a window of the program opens the same from any part: there is no second place that differs"),
-    (17, "a window always opens: there is nothing the kernel could refuse"),
-    (19, "a menu item is not held, so F1 has no tool in hand to open an article of"),
+const SHOWS: &[Skip] = &[
+    Skip { point: 2, why: "a menu item has no bar of options" },
+    Skip { point: 3, why: "a menu item takes nothing" },
+    Skip { point: 4, why: "a menu item takes nothing, so there is no wrong pick to refuse" },
+    Skip { point: 5, why: "a menu item has no field" },
+    Skip { point: 6, why: "a menu item has no field to refuse a value in" },
+    Skip { point: 7, why: "the window opens at once: there is nothing to show before it" },
+    Skip { point: 9, why: "the window opens at once; closing it is the window's own contract" },
+    Skip { point: 12, why: "a window of the program is not part of the document: saving and opening does not carry it" },
+    Skip { point: 13, why: "a window lays no node in a timeline" },
+    Skip { point: 14, why: "nothing of a timeline stands above a window" },
+    Skip { point: 15, why: "a window stands on nothing of the document" },
+    Skip { point: 16, why: "a window of the program opens the same from any part: there is no second place that differs" },
+    Skip { point: 17, why: "a window always opens: there is nothing the kernel could refuse" },
+    Skip { point: 19, why: "a menu item is not held, so F1 has no tool in hand to open an article of" },
 ];
 
 /// An item of the menus that opens the window of this title, and lays no step of undo.
@@ -64,21 +64,21 @@ shows!(REPORT, "menu.report", &["menu-help", "help-report"], "report-title", "ge
 shows!(CONNECT_CLAUDE, "menu.connect-claude", &["menu-help", "help-connect-claude"], "claude-title", "general/15-claude");
 
 /// What the items of history leave out: they act on the document as it stands, and take nothing.
-const HISTORY: &[(u8, &str)] = &[
-    (2, "a menu item has no bar of options"),
-    (3, "a menu item takes nothing"),
-    (4, "a menu item takes nothing, so there is no wrong pick to refuse"),
-    (5, "a menu item has no field"),
-    (6, "a menu item has no field to refuse a value in"),
-    (7, "the item acts at once: there is nothing to show before it"),
-    (9, "the item acts at once: there is nothing to cancel"),
-    (11, "stepping through the history is what undo and redo are; a step of their own they do not lay"),
-    (13, "an item of the menu lays no node of its own"),
-    (14, "nothing of a timeline stands above a step of history"),
-    (15, "a step of history stands on nothing of the document"),
-    (16, "the history is the document's own: there is no second place that differs"),
-    (17, "going back and forth in the history always builds what was built"),
-    (19, "a menu item is not held, so F1 has no tool in hand to open an article of"),
+const HISTORY: &[Skip] = &[
+    Skip { point: 2, why: "a menu item has no bar of options" },
+    Skip { point: 3, why: "a menu item takes nothing" },
+    Skip { point: 4, why: "a menu item takes nothing, so there is no wrong pick to refuse" },
+    Skip { point: 5, why: "a menu item has no field" },
+    Skip { point: 6, why: "a menu item has no field to refuse a value in" },
+    Skip { point: 7, why: "the item acts at once: there is nothing to show before it" },
+    Skip { point: 9, why: "the item acts at once: there is nothing to cancel" },
+    Skip { point: 11, why: "stepping through the history is what undo and redo are; a step of their own they do not lay" },
+    Skip { point: 13, why: "an item of the menu lays no node of its own" },
+    Skip { point: 14, why: "nothing of a timeline stands above a step of history" },
+    Skip { point: 15, why: "a step of history stands on nothing of the document" },
+    Skip { point: 16, why: "the history is the document's own: there is no second place that differs" },
+    Skip { point: 17, why: "going back and forth in the history always builds what was built" },
+    Skip { point: 19, why: "a menu item is not held, so F1 has no tool in hand to open an article of" },
 ];
 
 /// UNDO: Edit -> Undo on the block - the extrusion is taken back, and no body is left.
@@ -233,22 +233,22 @@ macro_rules! chooses {
 
 /// What an item that puts up a chooser leaves out, besides what every menu item does: the file it writes or reads is
 /// the matter of the formats' own round trips.
-const CHOOSES: &[(u8, &str)] = &[
-    (2, "a menu item has no bar of options"),
-    (3, "a menu item takes nothing"),
-    (4, "a menu item takes nothing, so there is no wrong pick to refuse"),
-    (5, "a menu item has no field; the name of the file is typed in the chooser"),
-    (6, "a menu item has no field to refuse a value in"),
-    (7, "the chooser comes up at once: there is nothing to show before it"),
-    (9, "closing the chooser without a file is the chooser's own matter"),
-    (11, "putting up a chooser lays no step of undo"),
-    (12, "the chooser waits for an answer; the file it writes or reads is the matter of the formats' round trips"),
-    (13, "a menu item lays no node"),
-    (14, "nothing of a timeline stands above a chooser"),
-    (15, "a chooser stands on nothing of the document"),
-    (16, "the chooser comes up the same from any part"),
-    (17, "a chooser always comes up"),
-    (19, "a menu item is not held, so F1 has no tool in hand to open an article of"),
+const CHOOSES: &[Skip] = &[
+    Skip { point: 2, why: "a menu item has no bar of options" },
+    Skip { point: 3, why: "a menu item takes nothing" },
+    Skip { point: 4, why: "a menu item takes nothing, so there is no wrong pick to refuse" },
+    Skip { point: 5, why: "a menu item has no field; the name of the file is typed in the chooser" },
+    Skip { point: 6, why: "a menu item has no field to refuse a value in" },
+    Skip { point: 7, why: "the chooser comes up at once: there is nothing to show before it" },
+    Skip { point: 9, why: "closing the chooser without a file is the chooser's own matter" },
+    Skip { point: 11, why: "putting up a chooser lays no step of undo" },
+    Skip { point: 12, why: "the chooser waits for an answer; the file it writes or reads is the matter of the formats' round trips" },
+    Skip { point: 13, why: "a menu item lays no node" },
+    Skip { point: 14, why: "nothing of a timeline stands above a chooser" },
+    Skip { point: 15, why: "a chooser stands on nothing of the document" },
+    Skip { point: 16, why: "the chooser comes up the same from any part" },
+    Skip { point: 17, why: "a chooser always comes up" },
+    Skip { point: 19, why: "a menu item is not held, so F1 has no tool in hand to open an article of" },
 ];
 
 /// An export to a mesh: first the window that asks its quality ("Export to STL - quality"), before any chooser.
@@ -444,23 +444,23 @@ macro_rules! opens {
 }
 
 /// What an item that opens a submenu leaves out: it shows the items under it, and does nothing else.
-const SUBMENU: &[(u8, &str)] = &[
-    (2, "a menu item has no bar of options"),
-    (3, "a menu item takes nothing"),
-    (4, "a menu item takes nothing, so there is no wrong pick to refuse"),
-    (5, "a menu item has no field"),
-    (6, "a menu item has no field to refuse a value in"),
-    (7, "the submenu opens at once: there is nothing to show before it"),
-    (9, "a submenu is closed by moving off it; that is the menus' own matter"),
-    (10, "a submenu open waits for a choice: its items are the round trips of their own contracts"),
-    (11, "opening a submenu lays no step of undo"),
-    (12, "opening a submenu changes nothing to save"),
-    (13, "a menu item lays no node"),
-    (14, "nothing of a timeline stands above a menu"),
-    (15, "a menu stands on nothing of the document"),
-    (16, "the menus are the same from any part"),
-    (17, "a submenu always opens"),
-    (19, "a menu item is not held, so F1 has no tool in hand to open an article of"),
+const SUBMENU: &[Skip] = &[
+    Skip { point: 2, why: "a menu item has no bar of options" },
+    Skip { point: 3, why: "a menu item takes nothing" },
+    Skip { point: 4, why: "a menu item takes nothing, so there is no wrong pick to refuse" },
+    Skip { point: 5, why: "a menu item has no field" },
+    Skip { point: 6, why: "a menu item has no field to refuse a value in" },
+    Skip { point: 7, why: "the submenu opens at once: there is nothing to show before it" },
+    Skip { point: 9, why: "a submenu is closed by moving off it; that is the menus' own matter" },
+    Skip { point: 10, why: "a submenu open waits for a choice: its items are the round trips of their own contracts" },
+    Skip { point: 11, why: "opening a submenu lays no step of undo" },
+    Skip { point: 12, why: "opening a submenu changes nothing to save" },
+    Skip { point: 13, why: "a menu item lays no node" },
+    Skip { point: 14, why: "nothing of a timeline stands above a menu" },
+    Skip { point: 15, why: "a menu stands on nothing of the document" },
+    Skip { point: 16, why: "the menus are the same from any part" },
+    Skip { point: 17, why: "a submenu always opens" },
+    Skip { point: 19, why: "a menu item is not held, so F1 has no tool in hand to open an article of" },
 ];
 
 opens!(EXPORT_PROJECT, "menu.export-project", "file-export", "STL\u{2026}");

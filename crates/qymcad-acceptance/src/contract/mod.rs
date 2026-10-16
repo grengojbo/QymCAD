@@ -89,7 +89,7 @@ pub struct Tool {
     /// Its article of help, by its path under `docs/help/<language>/` without `.md`.
     pub help: &'static str,
     /// Points of the contract that do not apply, each with why.
-    pub not_applicable: &'static [(u8, &'static str)],
+    pub not_applicable: &'static [Skip],
 }
 
 /// HOW A TOOL IS USED.
@@ -117,6 +117,13 @@ pub enum Finish {
     /// The clicks pick what the tool works on, then the pointer stands at this place of the sheet - the side the
     /// result goes to - and Enter makes it: the offset.
     EnterAt((f64, f64)),
+}
+
+/// A POINT OF THE CONTRACT THAT DOES NOT APPLY to a tool, and why.
+#[derive(Clone, Copy, Debug)]
+pub struct Skip {
+    pub point: u8,
+    pub why: &'static str,
 }
 
 /// ANOTHER TOOL: how it is taken, and the word its bar names it by.
