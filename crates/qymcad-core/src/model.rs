@@ -635,7 +635,7 @@ mod projection;
 mod face_sketch;
 pub use face_sketch::{FaceSketch, FromFace};
 mod section_sketch;
-pub use section_sketch::FromLoops;
+pub use section_sketch::{Fitter, FromLoops, OfSection, SectionAt};
 mod prism;
 pub use prism::{edges_round_outline, Prism, PrismKind, RimBlend, RimCut, Rims};
 mod sketch_define;

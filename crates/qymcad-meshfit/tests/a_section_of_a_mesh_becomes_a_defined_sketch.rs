@@ -96,3 +96,26 @@ fn a_shaken_plate_is_drawn_with_its_own_sizes() {
     let failures = drawn(Shake { amp: 0.02 }, Some(0.06));
     assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
+
+/// CUT 5 ABOVE THE XY PLANE, the sketch lies on a datum plane laid there, in the very frame the section was fitted in -
+/// what the tool shows before Enter is what the sketch holds - and it is defined to the end.
+#[test]
+fn a_section_off_a_base_plane_lies_on_a_datum_plane_there() {
+    use qymcad_core::model::{OfSection, SectionAt};
+    use qymcad_meshfit::section::{fit_section, Within};
+    let body = qymcad_kernel::specimen::extrude_profile(&plate(), 10.0).expect("the plate is built");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&body, 0.05).into_iter().next().expect("the plate is a mesh");
+    let mut p = Project::default();
+    let id = p.alloc_id();
+    p.bodies.push(qymcad_core::model::Body { id, mesh, ..Default::default() });
+    let at = SectionAt { base: BasePlane::XY, offset: 5.0 };
+    let fit = |m: &qymcad_core::geom::Mesh, f: &PlaneFrame| fit_section(m, f, Within::OwnTolerance);
+    let made = p.add_sketch_of_section(OfSection { body: id, at, fit: &fit, name: "Section".into() }).expect("a sketch is laid");
+    assert!(matches!(p.sketches[made.si].plane, SketchPlane::Datum(_)), "the sketch lies on {:?}, not on a datum plane", p.sketches[made.si].plane);
+    let (want, got) = (at.frame(), p.sketch_frame(made.si).expect("the sketch has a frame"));
+    let off = |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| (a[k] - b[k]).abs()).fold(0.0, f64::max);
+    assert!(off(want.origin, got.origin) < 1e-9 && off(want.x, got.x) < 1e-9 && off(want.y, got.y) < 1e-9, "the sketch's frame {got:?} is not the section's {want:?}");
+    assert_eq!(made.defined.free, 0, "the sketch is left free: {:?}", made.defined);
+    let missed = p.add_sketch_of_section(OfSection { body: id, at: SectionAt { base: BasePlane::XY, offset: 50.0 }, fit: &fit, name: "Nothing".into() });
+    assert!(missed.is_none() && p.sketches.len() == 1 && p.planes.len() == 1, "a plane missing the body laid something");
+}

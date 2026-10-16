@@ -645,3 +645,25 @@ fn finish(walk: &[Point2], spans: &[Span], tol: f64) -> Fitted {
     let joins = (0..m).map(|k| join_of(walk, [&spans[k], &spans[(k + 1) % m]])).collect();
     Fitted { pieces, joins }
 }
+
+/// HOW A SECTION IS FITTED: within the tolerance each loop gives by itself, or within one typed.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Within {
+    OwnTolerance,
+    Typed(f64),
+}
+
+/// THE LOOPS A PLANE CUTS `mesh` IN, each fitted (`fit_loop`), in the coordinates of `frame`.
+pub fn fit_section(mesh: &qymcad_core::geom::Mesh, frame: &qymcad_core::feature::PlaneFrame, within: Within) -> Vec<Fitted> {
+    qymcad_core::geom::mesh_section_loops(mesh, frame)
+        .iter()
+        .map(|l| {
+            let own = Fit::for_loop(&l.points);
+            let fit = match within {
+                Within::OwnTolerance => own,
+                Within::Typed(tol) => Fit { tol, ..own },
+            };
+            fit_loop(&l.points, &fit)
+        })
+        .collect()
+}
