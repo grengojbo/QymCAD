@@ -214,7 +214,7 @@ mod normal_tests {
     /// The section cap from a mesh: a closed body on the cutting plane with no B-rep involved, so that a section
     /// does not leave bodies hollow inside.
     mod section_cap_tests {
-        use super::super::{mesh_section_cap, triangulate_with_holes, Mesh, Point2, Point3};
+        use super::super::{mesh_section_cap, mesh_section_loops, triangulate_with_holes, Mesh, Point2, Point3};
 
         /// A box [x0..x1] x [y0..y1] x [z0..z1] as 12 triangles; the normals do not matter for a section.
         fn box_mesh(x0: f64, x1: f64, y0: f64, y1: f64, z0: f64, z1: f64) -> Mesh {
@@ -327,6 +327,21 @@ mod normal_tests {
             let area = cap_area(&tris, [0.0, 1.0, 0.0]);
             let exp = 30.0 * 30.0 - 20.0 * 10.0; // 900 - 200 = 700, with the notch left unfilled.
             assert!((area - exp).abs() < 1e-6, "the cap of a concave profile: {area}, expected {exp}");
+        }
+
+        /// THE LOOP OF A SECTION STANDS IN THE FRAME IT IS ASKED IN: a block of 40 x 30 x 10 at (5, 5, 0) cut at mid height
+        /// by a frame whose X runs along world Y and whose Y runs along -X is a rectangle of 30 by 40, its corners where
+        /// the frame says - (5, -45) to (35, -5).
+        #[test]
+        fn the_loop_of_a_section_stands_in_the_frame_asked() {
+            let m = box_mesh(5.0, 45.0, 5.0, 35.0, 0.0, 10.0);
+            let frame = crate::feature::PlaneFrame { origin: [0.0, 0.0, 5.0], x: [0.0, 1.0, 0.0], y: [-1.0, 0.0, 0.0] };
+            let loops = mesh_section_loops(&m, &frame);
+            assert_eq!(loops.len(), 1, "one loop");
+            let b = loops[0].bbox().expect("the loop has points");
+            let near = |a: f64, w: f64| (a - w).abs() < 1e-9;
+            assert!(near(b.min.x, 5.0) && near(b.max.x, 35.0) && near(b.min.y, -45.0) && near(b.max.y, -5.0), "the loop stands at {b:?}");
+            assert!((loops[0].area().abs() - 1200.0).abs() < 1e-6, "the loop holds 1200 mm^2: {}", loops[0].area());
         }
 
         #[test]

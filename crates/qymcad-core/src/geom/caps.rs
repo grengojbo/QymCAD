@@ -10,8 +10,7 @@ use super::*;
 /// built, and over a thousand bodies a boolean is too expensive anyway. A mesh is always present, so the cap is
 /// computed from it.
 ///
-/// The triangles crossed by the plane give the segments of the slice; the segments are stitched into loops
-/// (`stitch_segments`), the loops are sorted into outer ones and holes by nesting and triangulated
+/// The loops of the slice (`mesh_section_loops`) are sorted into outer ones and holes by nesting and triangulated
 /// (`triangulate_with_holes`). Returns the triangles of the cap in world coordinates.
 pub fn mesh_section_cap(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Vec<[Point3; 3]> {
     let nl = (normal[0] * normal[0] + normal[1] * normal[1] + normal[2] * normal[2]).sqrt();
@@ -28,6 +27,57 @@ pub fn mesh_section_cap(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Vec<
     };
     let u = norm(cross(a, n));
     let v = cross(n, u);
+    let frame = crate::feature::PlaneFrame { origin, x: u, y: v };
+    let loops = mesh_section_loops(mesh, &frame);
+    if loops.is_empty() {
+        return Vec::new();
+    }
+    // Nesting: a loop is a hole when it lies inside an odd number of others, by the parity rule.
+    //
+    // The probe point is deliberately not the centroid: on a concave, C-shaped loop the centroid lies outside the
+    // loop itself, so nesting came out wrong and parts of the cap were filled incorrectly. The probe is a point
+    // known to be inside the loop: the midpoint of a diagonal running inwards from a vertex, verified by testing it
+    // against the loop. If none is found, which means a degenerate loop, it falls back to the centroid.
+    let probe = |c: &Contour| -> Point2 {
+        let n = c.points.len();
+        for i in 0..n {
+            let (prev, cur, next) = (c.points[(i + n - 1) % n], c.points[i], c.points[(i + 1) % n]);
+            // A point just inside the vertex, along the bisector of the adjacent edges.
+            let mid = Point2::new((prev.x + next.x) * 0.5, (prev.y + next.y) * 0.5);
+            let p = Point2::new(cur.x + (mid.x - cur.x) * 0.5, cur.y + (mid.y - cur.y) * 0.5);
+            if c.contains(p) {
+                return p;
+            }
+        }
+        c.centroid()
+    };
+    let probes: Vec<Point2> = loops.iter().map(&probe).collect();
+    let inside = |ip: Point2, ia: f64, outer: &Contour| outer.contains(ip) && outer.area() > ia;
+    let depth: Vec<usize> = loops.iter().enumerate().map(|(i, c)| loops.iter().enumerate().filter(|(j, o)| *j != i && inside(probes[i], c.area(), o)).count()).collect();
+    let mut tris: Vec<[Point3; 3]> = Vec::new();
+    for (i, c) in loops.iter().enumerate() {
+        if !depth[i].is_multiple_of(2) {
+            continue; // A hole; the material around it comes from its parent loop.
+        }
+        // The direct children of this loop are its holes.
+        let holes: Vec<Vec<Point2>> = loops.iter().enumerate().filter(|(j, h)| depth[*j] == depth[i] + 1 && inside(probes[*j], h.area(), c)).map(|(_, h)| h.points.clone()).collect();
+        for t in triangulate_with_holes(&c.points, &holes) {
+            let lift = |p: Point2| Point3::new(origin[0] + u[0] * p.x + v[0] * p.y, origin[1] + u[1] * p.x + v[1] * p.y, origin[2] + u[2] * p.x + v[2] * p.y);
+            tris.push([lift(t[0]), lift(t[1]), lift(t[2])]);
+        }
+    }
+    tris
+}
+
+/// THE LOOPS A PLANE CUTS A MESH IN, in the 2D coordinates of `frame` (its X and Y axes unit and square to each other):
+/// the triangles crossed by the plane give the segments of the slice, stitched into closed loops (`stitch_segments`);
+/// a loop of fewer than three points or of no area is left out. Outer loops and holes alike, in no order.
+pub fn mesh_section_loops(mesh: &Mesh, frame: &crate::feature::PlaneFrame) -> Vec<Contour> {
+    if mesh.tris.is_empty() {
+        return Vec::new();
+    }
+    let (origin, u, v) = (frame.origin, frame.x, frame.y);
+    let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
     let dist = |p: &Point3| (p.x - origin[0]) * n[0] + (p.y - origin[1]) * n[1] + (p.z - origin[2]) * n[2];
     let to2 = |p: Point3| {
         let d = [p.x - origin[0], p.y - origin[1], p.z - origin[2]];
@@ -86,45 +136,7 @@ pub fn mesh_section_cap(mesh: &Mesh, origin: [f64; 3], normal: [f64; 3]) -> Vec<
     if segs.is_empty() {
         return Vec::new();
     }
-    let loops: Vec<Contour> = stitch_segments(segs, tol.max(1e-7) * 10.0).into_iter().filter(|c| c.closed && c.points.len() >= 3 && c.area() > 0.0).collect();
-    if loops.is_empty() {
-        return Vec::new();
-    }
-    // Nesting: a loop is a hole when it lies inside an odd number of others, by the parity rule.
-    //
-    // The probe point is deliberately not the centroid: on a concave, C-shaped loop the centroid lies outside the
-    // loop itself, so nesting came out wrong and parts of the cap were filled incorrectly. The probe is a point
-    // known to be inside the loop: the midpoint of a diagonal running inwards from a vertex, verified by testing it
-    // against the loop. If none is found, which means a degenerate loop, it falls back to the centroid.
-    let probe = |c: &Contour| -> Point2 {
-        let n = c.points.len();
-        for i in 0..n {
-            let (prev, cur, next) = (c.points[(i + n - 1) % n], c.points[i], c.points[(i + 1) % n]);
-            // A point just inside the vertex, along the bisector of the adjacent edges.
-            let mid = Point2::new((prev.x + next.x) * 0.5, (prev.y + next.y) * 0.5);
-            let p = Point2::new(cur.x + (mid.x - cur.x) * 0.5, cur.y + (mid.y - cur.y) * 0.5);
-            if c.contains(p) {
-                return p;
-            }
-        }
-        c.centroid()
-    };
-    let probes: Vec<Point2> = loops.iter().map(&probe).collect();
-    let inside = |ip: Point2, ia: f64, outer: &Contour| outer.contains(ip) && outer.area() > ia;
-    let depth: Vec<usize> = loops.iter().enumerate().map(|(i, c)| loops.iter().enumerate().filter(|(j, o)| *j != i && inside(probes[i], c.area(), o)).count()).collect();
-    let mut tris: Vec<[Point3; 3]> = Vec::new();
-    for (i, c) in loops.iter().enumerate() {
-        if !depth[i].is_multiple_of(2) {
-            continue; // A hole; the material around it comes from its parent loop.
-        }
-        // The direct children of this loop are its holes.
-        let holes: Vec<Vec<Point2>> = loops.iter().enumerate().filter(|(j, h)| depth[*j] == depth[i] + 1 && inside(probes[*j], h.area(), c)).map(|(_, h)| h.points.clone()).collect();
-        for t in triangulate_with_holes(&c.points, &holes) {
-            let lift = |p: Point2| Point3::new(origin[0] + u[0] * p.x + v[0] * p.y, origin[1] + u[1] * p.x + v[1] * p.y, origin[2] + u[2] * p.x + v[2] * p.y);
-            tris.push([lift(t[0]), lift(t[1]), lift(t[2])]);
-        }
-    }
-    tris
+    stitch_segments(segs, tol.max(1e-7) * 10.0).into_iter().filter(|c| c.closed && c.points.len() >= 3 && c.area() > 0.0).collect()
 }
 
 /// Triangulate a polygon with holes by ear clipping with bridges to the holes.
