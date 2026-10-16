@@ -25,6 +25,8 @@ pub(crate) const SKETCH: &str = concat!(
         "\n",
         include_str!("../../../qymcad-sketch/src/dims.rs"),
         "\n",
+        include_str!("../../../qymcad-sketch/src/define.rs"),
+        "\n",
         include_str!("../../../qymcad-sketch/src/drag.rs"),
         "\n",
         include_str!("../../../qymcad-sketch/src/extend.rs"),

@@ -222,6 +222,7 @@ Below is the complete dictionary of icons recognized across the 5 categories:
 | `sketch/construction.svg` | **Construction Toggle:** Toggle construction mode (switches between solid contour lines and dashed reference geometry). |
 | `sketch/fillet.svg` | **Fillet:** Round an acute corner between two intersecting curves with a circular tangent arc. |
 | `sketch/fillet_all.svg` | **Fillet All:** Round all sharp corners of the active contour in one action. |
+| `sketch/fully_define.svg` | **Fully Define:** Lay the relations and the sizes that leave a contour of the sketch no freedom, measured from the origin. |
 | `sketch/chamfer.svg` | **Chamfer:** Cut an intersecting corner with a straight diagonal bevel. |
 | `sketch/trim.svg` | **Trim:** Cut away an intersecting segment of a curve up to adjacent intersections. |
 | `sketch/extend.svg` | **Extend:** Lengthen a curve up to its nearest intersection with neighbouring geometry. |

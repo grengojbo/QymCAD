@@ -208,6 +208,14 @@ pub fn wb_toolbar(bc: &mut qymcad_ui_state::BarCtx, ui: &mut egui::Ui) {
                             qymcad_ui_state::fillet_all_corners(&*bc.project, &mut *bc.corner, &mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status, &*bc.tool_prefs);
                         }
                     }
+                    // "FULLY DEFINE" IS A TOOL IN HAND as "fillet all" is: it takes what is selected or waits for a contour
+                    if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchFullyDefine, &qymcad_i18n::tr("tb-fully-define-hint"), bc.picking.fully_define()) {
+                        let held = bc.picking.fully_define();
+                        qymcad_ui_state::exit_draw_tools(&mut qymcad_ui_state::tools_in!(bc));
+                        if !held {
+                            qymcad_ui_state::start_fully_define(&mut *bc.picking, *bc.sel, &*bc.sel_sk, &mut *bc.status);
+                        }
+                    }
                     if qymcad_ui_state::icon_tool(ui, qymcad_ui_state::IconId::SketchOffset, &qymcad_i18n::tr("tb-offset-hint"), bc.sel_sk.modify == Some(qymcad_ui_state::EditTool::Offset)) {
                         qymcad_ui_state::modify_button(qymcad_ui_state::editing_in!(bc), &mut qymcad_ui_state::tools_in!(bc), *bc.sk_pat, &*bc.tool_prefs, qymcad_ui_state::EditTool::Offset);
                     }

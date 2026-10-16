@@ -286,6 +286,8 @@ fn the_language_setting_survives_a_restart_and_is_applied() {
                 "\n",
                 include_str!("../../../qymcad-ui-state/src/corners.rs"),
                 "\n",
+                include_str!("../../../qymcad-ui-state/src/define.rs"),
+                "\n",
                 include_str!("../../../qymcad-ui-state/src/dims.rs"),
                 "\n",
                 include_str!("../../../qymcad-ui-state/src/edits.rs"),

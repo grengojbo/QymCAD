@@ -98,6 +98,7 @@ pub static ALL: &[&Tool] = &[
     &sketch::CONSTRUCTION,
     &sketch::MEASURE,
     &sketch::FILLET_ALL,
+    &sketch::FULLY_DEFINE,
     &sketch::SELECT,
     &assembly::GROUND,
     &assembly::JOINT,

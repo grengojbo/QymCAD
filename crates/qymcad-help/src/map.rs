@@ -145,6 +145,7 @@ pub const TOOLBAR: &[(&str, &str)] = &[
     ("tb-insert-component-hint", "general/12-library"),
     // rounding ALL the corners of a contour is the same corner tool, only all at once
     ("tb-fillet-all-hint", "sketch/16-corner"),
+    ("tb-fully-define-hint", "sketch/25-fully-define"),
     // construction geometry and the selection arrow are described in the sketch section rather than
     // by articles of their own
     ("tb-construction-hint", "sketch/23-construction"),

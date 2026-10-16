@@ -1042,6 +1042,8 @@ mod sketch_edit;
 pub use sketch_edit::*;
 mod corners;
 pub use corners::*;
+mod define;
+pub use define::*;
 mod tool_steps;
 pub use tool_steps::*;
 mod voice;

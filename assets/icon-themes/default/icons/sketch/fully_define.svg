@@ -1,0 +1,8 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="fully_define">
+<rect id="Shape" x="9" y="9" width="17" height="17" rx="1" fill="var(--icon-dimmed, #7C7C7CFF)" stroke-width="2" stroke="var(--icon-accent, #18F2F2FF)"/>
+<path id="Size across" d="M9 4H26M9 2V6M26 2V6" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-primary, #F26118FF)"/>
+<path id="Size down" d="M4 9V26M2 9H6M2 26H6" stroke-width="2" stroke-linecap="square" stroke="var(--icon-constraint-primary, #F26118FF)"/>
+<path id="Tick" d="M13 17.5L16.5 21L22 14" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" stroke="var(--icon-neutral, #BCBCBCFF)"/>
+</g>
+</svg>

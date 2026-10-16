@@ -7,6 +7,7 @@ use super::*;
 /// the field of the rotation angle at its centre (`sketch_rotate_popup`).
 pub fn sketch_tool_keys(sk: &mut qymcad_ui_state::SketchCtx, ctx: &egui::Context, rect: Rect) {
     offset_on_enter(sk, ctx, rect);
+    define::define_on_enter(sk, ctx);
     // LINES A CORNER TOOL CUT AT A CROSSING, the tool put down with no corner cut, are whole again
     if sk.corner.crossing == qymcad_ui_state::CrossingCut::Left {
         qymcad_ui_state::take_back_last_step(&mut *sk.edits, &mut *sk.project, &mut *sk.regen);
