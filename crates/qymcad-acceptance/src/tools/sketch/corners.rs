@@ -93,7 +93,7 @@ pub static CORNER: Tool = Tool {
     title: "tool-fillet",
     // the search finds this article by its title, and its command takes this tool
     entries: &[Entry::Button("tb-fillet-sketch-hint"), Entry::SearchByArticle],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
     fixture: Fixture::CornerInSketch,
     picks: &[],
     pick_trial: &[],
@@ -215,7 +215,7 @@ pub static CORNER_CHAMFER: Tool = Tool {
     title: "tool-chamfer",
     // searched by its own name: the article is the corner fillet's too, and its title finds the fillet first
     entries: &[Entry::Button("tb-chamfer-sketch-hint"), Entry::Search("cmdname-corner-chamfer")],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
     fixture: Fixture::CornerInSketch,
     picks: &[],
     pick_trial: &[],
@@ -301,7 +301,7 @@ pub static FILLET_ALL: Tool = Tool {
     flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "tool-fillet",
     entries: &[Entry::Button("tb-fillet-all-hint")],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
     fixture: Fixture::RectangleInSketch,
     picks: &[],
     pick_trial: &[],

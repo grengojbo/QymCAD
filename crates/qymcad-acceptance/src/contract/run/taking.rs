@@ -78,9 +78,9 @@ pub(crate) fn entry(tool: &Tool) {
         }
     }
     let mut s = tool.fixture.start();
-    enter(&mut s, &tool.other.0);
+    enter(&mut s, &tool.other.entry);
     take(&mut s, tool);
-    let other = s.word(tool.other.1);
+    let other = s.word(tool.other.title);
     let bar = s.in_hand();
     // an action done with another tool in hand leaves that tool where it was: there is nothing to put it down
     if !matches!(tool.flow, Flow::Action) && (!in_hand(&mut s, tool) || bar.contains(&other)) {

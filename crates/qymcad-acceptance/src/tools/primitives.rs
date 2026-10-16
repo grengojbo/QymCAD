@@ -1,7 +1,7 @@
 //! THE PRIMITIVES DESCRIBED: a box, a cylinder, a sphere, a cone, a torus and a six-sided prism. Each is taken by its
 //! button, takes no picks - its sizes are fields at the geometry - and stands on the table about the origin.
 use crate::contract::fixtures::Fixture;
-use crate::contract::{Budget, Class, Context, Entry, Field, Flow, Outcome, Tool, When};
+use crate::contract::{Other, Budget, Class, Context, Entry, Field, Flow, Outcome, Tool, When};
 
 /// A body of the part with the numbers `volume`, `faces` and `edges`, standing in the box `min`..`max`.
 const fn body(volume: f64, faces: usize, edges: usize, min: [f64; 3], max: [f64; 3]) -> Outcome {
@@ -30,7 +30,7 @@ pub static BOX: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-box",
     entries: &[Entry::Button("tb-box-hint"), Entry::Search("cmd-box")],
-    other: (Entry::Button("tb-cylinder-hint"), "cmd-cylinder"),
+    other: Other { entry: Entry::Button("tb-cylinder-hint"), title: "cmd-cylinder" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -92,7 +92,7 @@ pub static CYLINDER: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-cylinder",
     entries: &[Entry::Button("tb-cylinder-hint"), Entry::Search("cmd-cylinder")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -139,7 +139,7 @@ pub static SPHERE: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-sphere",
     entries: &[Entry::Button("tb-sphere-hint"), Entry::Search("cmd-sphere")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -194,7 +194,7 @@ pub static CONE: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-cone",
     entries: &[Entry::Button("tb-cone-hint"), Entry::Search("cmd-cone")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -247,7 +247,7 @@ pub static TORUS: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-torus",
     entries: &[Entry::Button("tb-torus-hint"), Entry::Search("cmd-torus")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],
@@ -312,7 +312,7 @@ pub static PRISM: Tool = Tool {
     flow: Flow::Command,
     title: "cmd-prism",
     entries: &[Entry::Button("tb-prism-hint"), Entry::Search("cmd-prism")],
-    other: (Entry::Button("tb-box-hint"), "cmd-box"),
+    other: Other { entry: Entry::Button("tb-box-hint"), title: "cmd-box" },
     fixture: Fixture::FirstPart,
     picks: &[],
     pick_trial: &[],

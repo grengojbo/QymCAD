@@ -57,7 +57,7 @@ pub static PROJECT_BODY: Tool = Tool {
     flow: Flow::Drawing(&[(20.0, 0.0)], Finish::LastClick),
     title: "tool-project-body",
     entries: &[Entry::Button("tb-project-body-hint"), Entry::SearchByArticle],
-    other: (Entry::Button("tb-line-hint"), "tool-line"),
+    other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
     fixture: Fixture::SketchOnBlockTop,
     picks: &[],
     pick_trial: &[],

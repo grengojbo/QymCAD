@@ -45,8 +45,8 @@ pub struct Tool {
     pub title: Word,
     /// Every way a person takes it.
     pub entries: &'static [Entry],
-    /// Another tool, taken first to see this one put it down, and the word its bar names it by.
-    pub other: (Entry, Word),
+    /// Another tool, taken first to see this one put it down.
+    pub other: Other,
     /// What is in the window before the tool is taken.
     pub fixture: fixtures::Fixture,
     /// What is clicked for the ordinary result, in order.
@@ -117,6 +117,13 @@ pub enum Finish {
     /// The clicks pick what the tool works on, then the pointer stands at this place of the sheet - the side the
     /// result goes to - and Enter makes it: the offset.
     EnterAt((f64, f64)),
+}
+
+/// ANOTHER TOOL: how it is taken, and the word its bar names it by.
+#[derive(Clone, Copy)]
+pub struct Other {
+    pub entry: Entry,
+    pub title: Word,
 }
 
 /// HOW LONG A TOOL MAY TAKE: applying it, in seconds, and the longest frame on the way, in milliseconds.
