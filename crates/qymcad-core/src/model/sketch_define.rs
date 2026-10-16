@@ -20,6 +20,25 @@ const TENTH: f64 = 0.1;
 /// A solve leaving more than this of the rounded sizes unmet failed them: the sizes as they were are put back.
 const MET: f64 = 1e-6;
 
+/// HOW CLOSE A DRAWING MUST COME TO A RELATION TO BE TAKEN FOR ONE: `turn` for sides along an axis, parallel or
+/// square, as the sine of the angle off; `tangent` likewise for a side or an arc running on into an arc; `same`, in mm,
+/// for lengths, radii and centres taken for one.
+#[derive(Clone, Copy, Debug)]
+pub struct Seen {
+    pub turn: f64,
+    pub tangent: f64,
+    pub same: f64,
+}
+
+impl Seen {
+    /// A face of an exact solid: true to its tolerance.
+    pub const EXACT: Seen = Seen { turn: TURN, tangent: TURN, same: SAME };
+    /// Curves fitted to a mesh: a side 1 deg off the axis is along it (sin 1 deg); a line runs on into an arc within
+    /// 15 deg (sin 15 deg), what the fit itself takes for a smooth join (`qymcad_meshfit::section::SMOOTH_DEG`); 0.05 mm
+    /// is one length - a mesh is written to a few hundredths.
+    pub const MESH: Seen = Seen { turn: 0.017_452, tangent: 0.258_819, same: 0.05 };
+}
+
 /// WHAT A DRAWING IS PLACED FROM: the axes of its sketch, or lines already held - the outline of the face it stands on.
 #[derive(Clone, Debug)]
 pub enum Anchor {
@@ -81,10 +100,10 @@ impl Side {
         d[0] * (p.y - self.from.y) - d[1] * (p.x - self.from.x)
     }
 
-    /// Whether the side runs along the X or the Y axis of the sketch.
-    fn square(&self) -> bool {
+    /// Whether the side runs along the X or the Y axis of the sketch, within `turn`.
+    fn square(&self, turn: f64) -> bool {
         let d = self.dir();
-        d[0].abs() < TURN || d[1].abs() < TURN
+        d[0].abs() < turn || d[1].abs() < turn
     }
 }
 
@@ -156,25 +175,25 @@ enum Judged {
 /// THE RELATIONS THE CURVES SHOW, in the order they are offered: a side along an axis, then sides parallel and sides
 /// meeting square, a side running into an arc along it, arcs running into each other, circles on one centre and of one
 /// radius, sides of one length, and ends standing on one place under two names.
-fn relations(c: &Curves) -> Vec<Constraint> {
+fn relations(c: &Curves, seen: Seen) -> Vec<Constraint> {
     let mut out = Vec::new();
     for s in &c.sides {
         let d = s.dir();
-        if d[1].abs() < TURN {
+        if d[1].abs() < seen.turn {
             out.push(Constraint::Horizontal { a: s.a, b: s.b });
-        } else if d[0].abs() < TURN {
+        } else if d[0].abs() < seen.turn {
             out.push(Constraint::Vertical { a: s.a, b: s.b });
         }
     }
     for (i, s) in c.sides.iter().enumerate() {
         for t in &c.sides[i + 1..] {
-            if s.square() && t.square() {
+            if s.square(seen.turn) && t.square(seen.turn) {
                 continue; // along the axes both: the relation follows from the two
             }
             let shared = s.ends().iter().any(|p| t.ends().contains(p));
-            if s.dir().cross(t.dir()).abs() < TURN {
+            if s.dir().cross(t.dir()).abs() < seen.turn {
                 out.push(Constraint::Parallel { a: s.a, b: s.b, c: t.a, d: t.b });
-            } else if shared && s.dir().dot(t.dir()).abs() < TURN {
+            } else if shared && s.dir().dot(t.dir()).abs() < seen.turn {
                 out.push(Constraint::Perpendicular { a: s.a, b: s.b, c: t.a, d: t.b });
             }
         }
@@ -184,7 +203,7 @@ fn relations(c: &Curves) -> Vec<Constraint> {
         for p in ends {
             let Some(&at) = c.at.get(&p) else { continue };
             for s in c.sides.iter().filter(|s| s.ends().contains(&p)) {
-                if s.dir().dot(r.at.toward(at)).abs() < TURN {
+                if s.dir().dot(r.at.toward(at)).abs() < seen.tangent {
                     out.push(Constraint::Tangent { a: s.a, b: s.b, c: r.centre, r: r.r });
                 }
             }
@@ -196,23 +215,23 @@ fn relations(c: &Curves) -> Vec<Constraint> {
             for p in re.iter().filter(|p| qe.contains(p)) {
                 let Some(&at) = c.at.get(p) else { continue };
                 let (u, v) = (r.at.toward(at), q.at.toward(at));
-                if u.cross(v).abs() < TURN {
+                if u.cross(v).abs() < seen.tangent {
                     out.push(Constraint::CircleTangent { c1: q.centre, c2: r.centre, external: u.dot(v) < 0.0 });
                 }
             }
         }
     }
     for (i, r) in c.rounds.iter().enumerate() {
-        if let Some(q) = c.rounds[..i].iter().find(|q| (q.at.x - r.at.x).hypot(q.at.y - r.at.y) < SAME && q.centre != r.centre) {
+        if let Some(q) = c.rounds[..i].iter().find(|q| (q.at.x - r.at.x).hypot(q.at.y - r.at.y) < seen.same && q.centre != r.centre) {
             out.push(Constraint::Concentric { c1: q.centre, c2: r.centre });
         }
-        if let Some(q) = c.rounds[..i].iter().find(|q| (q.r - r.r).abs() < SAME) {
+        if let Some(q) = c.rounds[..i].iter().find(|q| (q.r - r.r).abs() < seen.same) {
             out.push(Constraint::EqualRadius { c1: q.centre, c2: r.centre });
         }
     }
     // sides of one length last: around arcs held tangent and of one radius, the length follows from them
     for (i, s) in c.sides.iter().enumerate() {
-        if let Some(t) = c.sides[..i].iter().find(|t| (t.len() - s.len()).abs() < SAME) {
+        if let Some(t) = c.sides[..i].iter().find(|t| (t.len() - s.len()).abs() < seen.same) {
             out.push(Constraint::Equal { a: t.a, b: t.b, c: s.a, d: s.b });
         }
     }
@@ -221,7 +240,7 @@ fn relations(c: &Curves) -> Vec<Constraint> {
     ends.dedup();
     for (i, p) in ends.iter().enumerate() {
         let Some(&a) = c.at.get(p) else { continue };
-        if let Some(q) = ends[..i].iter().find(|q| c.at.get(q).is_some_and(|b| (a.x - b.x).hypot(a.y - b.y) < SAME)) {
+        if let Some(q) = ends[..i].iter().find(|q| c.at.get(q).is_some_and(|b| (a.x - b.x).hypot(a.y - b.y) < seen.same)) {
             out.push(Constraint::Coincident { a: *q, b: *p });
         }
     }
@@ -316,7 +335,7 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
     if let Some(&first) = points.first() {
         place(first, &mut out);
     }
-    for s in c.sides.iter().filter(|s| !s.square()) {
+    for s in c.sides.iter().filter(|s| !s.square(TURN)) {
         for l in anchors {
             out.push(Constraint::AngleLines { a: l.a, b: l.b, c: s.a, d: s.b, deg: l.dir().angle_to(s.dir()), expr: String::new(), driven: false, off: 0.0, at: None });
         }
@@ -425,7 +444,12 @@ impl Project {
     /// LAY ON THE CURVES `ents` OF SKETCH `si` THE RELATIONS THEY SHOW, each that takes a freedom away. Answers how many
     /// went on.
     pub fn infer_constraints(&mut self, si: usize, ents: &[Id]) -> usize {
-        let offered = relations(&self.curves_of(si, ents));
+        self.infer_constraints_seen(si, ents, Seen::EXACT)
+    }
+
+    /// The relations the curves show within `seen` (`infer_constraints`).
+    pub fn infer_constraints_seen(&mut self, si: usize, ents: &[Id], seen: Seen) -> usize {
+        let offered = relations(&self.curves_of(si, ents), seen);
         let n = self.lay_independent(si, offered, Judged::WhereSolved);
         if n > 0 {
             self.solve_sketch(si);
@@ -438,7 +462,12 @@ impl Project {
     /// all be met at once - a tangency a tenth of a millimetre would break - they are laid as measured and nothing is
     /// told rounded.
     pub fn fully_define(&mut self, si: usize, ents: &[Id], anchor: &Anchor) -> Defined {
-        let relations = self.infer_constraints(si, ents);
+        self.fully_define_seen(si, ents, anchor, Seen::EXACT)
+    }
+
+    /// `fully_define`, the relations taken within `seen`: curves fitted to a mesh show them only roughly.
+    pub fn fully_define_seen(&mut self, si: usize, ents: &[Id], anchor: &Anchor, seen: Seen) -> Defined {
+        let relations = self.infer_constraints_seen(si, ents, seen);
         let anchors = self.anchor_sides(si, anchor);
         let from = self.sketches.get(si).map_or(0, |s| s.constraints.len());
         let offered = sizes(&self.curves_of(si, ents), &anchors);

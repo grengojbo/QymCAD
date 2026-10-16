@@ -634,10 +634,12 @@ pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
 mod face_sketch;
 pub use face_sketch::{FaceSketch, FromFace};
+mod section_sketch;
+pub use section_sketch::FromLoops;
 mod prism;
 pub use prism::{edges_round_outline, Prism, PrismKind, RimBlend, RimCut, Rims};
 mod sketch_define;
-pub use sketch_define::{Anchor, Defined, Rounded};
+pub use sketch_define::{Anchor, Defined, Rounded, Seen};
 mod hash_ser;
 
 impl Project {}

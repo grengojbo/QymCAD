@@ -8,7 +8,9 @@
 //! fits, as an ellipse a cylinder is cut in at a slant - are one spline through their corners.
 
 use nalgebra::{Matrix3, Vector3};
+use qymcad_core::feature::Winding;
 use qymcad_core::geom::Point2;
+pub use qymcad_core::geom::{Fitted, Join, Piece};
 
 /// A corner turning more than this parts two pieces whatever they fit: 50 deg. A circle drawn in 8 chords turns 45 deg at
 /// each corner and stays one circle; the corner of a rectangle turns 90.
@@ -57,83 +59,6 @@ impl Fit {
     }
 }
 
-/// Which way an arc turns from its start to its end.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Turn {
-    Ccw,
-    Cw,
-}
-
-/// A PIECE OF A FITTED LOOP, in the coordinates of the section.
-#[derive(Clone, Debug, PartialEq)]
-pub enum Piece {
-    Line {
-        from: Point2,
-        to: Point2,
-    },
-    Arc {
-        center: Point2,
-        radius: f64,
-        from: Point2,
-        to: Point2,
-        turn: Turn,
-    },
-    /// The whole loop on one circle.
-    Circle {
-        center: Point2,
-        radius: f64,
-    },
-    /// Through its points; closed when the first and the last are one.
-    Spline(Vec<Point2>),
-}
-
-impl Piece {
-    /// Where the piece begins; a circle has no beginning.
-    pub fn start(&self) -> Option<Point2> {
-        match self {
-            Piece::Line { from, .. } | Piece::Arc { from, .. } => Some(*from),
-            Piece::Spline(p) => p.first().copied(),
-            Piece::Circle { .. } => None,
-        }
-    }
-
-    /// Where the piece ends; a circle has no end.
-    pub fn end(&self) -> Option<Point2> {
-        match self {
-            Piece::Line { to, .. } | Piece::Arc { to, .. } => Some(*to),
-            Piece::Spline(p) => p.last().copied(),
-            Piece::Circle { .. } => None,
-        }
-    }
-
-    /// The kind of the piece, in a word, for messages.
-    pub fn kind(&self) -> &'static str {
-        match self {
-            Piece::Line { .. } => "line",
-            Piece::Arc { .. } => "arc",
-            Piece::Circle { .. } => "circle",
-            Piece::Spline(_) => "spline",
-        }
-    }
-}
-
-/// How two pieces meet.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Join {
-    /// At an angle.
-    Corner,
-    /// Along one tangent.
-    Smooth,
-}
-
-/// A LOOP FITTED: its pieces in order round the loop, each ending where the next begins, and how each meets the next -
-/// `joins[k]` is the join of piece `k` and piece `k + 1`, the last of the last and the first.
-#[derive(Clone, Debug, Default)]
-pub struct Fitted {
-    pub pieces: Vec<Piece>,
-    pub joins: Vec<Join>,
-}
-
 /// A circle in the plane.
 #[derive(Clone, Copy, Debug)]
 struct Circle {
@@ -145,7 +70,7 @@ struct Circle {
 #[derive(Clone, Copy, Debug)]
 enum Shape {
     Line,
-    Arc { circle: Circle, turn: Turn },
+    Arc { circle: Circle, turn: Winding },
     Spline,
 }
 
@@ -206,7 +131,7 @@ pub fn fit_loop(points: &[Point2], fit: &Fit) -> Fitted {
         join_round(&walk, &mut spans, fit);
     }
     free_curves(&walk, &mut spans, begun);
-    finish(&walk, &spans)
+    finish(&walk, &spans, fit.tol)
 }
 
 /// The turn at the middle of three corners in order, radians, positive to the left.
@@ -297,7 +222,7 @@ fn arc_holds(run: &[Point2], tol: f64) -> Option<Shape> {
 /// step back allowed only within what the tolerance moves a corner at that radius - a shaken mesh turns a fine arc's
 /// corners either way by its noise, and read corner by corner it was no arc at all. None for a run turning back, or
 /// going a whole turn round.
-fn going_round(run: &[Point2], circle: Circle, tol: f64) -> Option<Turn> {
+fn going_round(run: &[Point2], circle: Circle, tol: f64) -> Option<Winding> {
     let angle = |p: Point2| (p.y - circle.center.y).atan2(p.x - circle.center.x);
     let step = |a: Point2, b: Point2| {
         let d = angle(b) - angle(a);
@@ -311,7 +236,7 @@ fn going_round(run: &[Point2], circle: Circle, tol: f64) -> Option<Turn> {
     // fit a circle of 64 mm within 0.01, by steps of 0.19 rad and of 0.005 - no arc a mesh draws
     let (least, most) = steps.iter().map(|s| s.abs()).fold((f64::MAX, 0.0_f64), |(lo, hi), s| (lo.min(s), hi.max(s)));
     let even = most <= UNEVEN * least.max(slack);
-    (!back && even && total.abs() < 2.0 * std::f64::consts::PI - 1e-9).then_some(if total >= 0.0 { Turn::Ccw } else { Turn::Cw })
+    (!back && even && total.abs() < 2.0 * std::f64::consts::PI - 1e-9).then_some(if total >= 0.0 { Winding::Ccw } else { Winding::Cw })
 }
 
 /// THE RUNS, EACH REACHED AS FAR AS IT GOES: from where the last ended, as far as one line holds and as far as one arc
@@ -504,7 +429,7 @@ fn tangent(walk: &[Point2], s: &Span, side: Side) -> Point2 {
         Shape::Arc { circle, turn } => {
             let p = if side == Side::End { at(walk, s.to) } else { at(walk, s.from) };
             let r = Point2::new(p.x - circle.center.x, p.y - circle.center.y);
-            unit(if turn == Turn::Ccw { Point2::new(-r.y, r.x) } else { Point2::new(r.y, -r.x) })
+            unit(if turn == Winding::Ccw { Point2::new(-r.y, r.x) } else { Point2::new(r.y, -r.x) })
         }
         Shape::Line => {
             let (a, b) = (at(walk, s.from), at(walk, s.to));
@@ -528,19 +453,167 @@ fn join_of(walk: &[Point2], [a, b]: [&Span; 2]) -> Join {
     }
 }
 
-/// THE PIECES, their ends closed up: where an arc meets a line or a spline, the corner they share is put on the arc's
-/// circle and both end there; where two arcs meet, on the circle of the first.
-fn finish(walk: &[Point2], spans: &[Span]) -> Fitted {
+/// A STRAIGHT LINE: a point on it and its direction, of length one.
+#[derive(Clone, Copy, Debug)]
+struct Straight {
+    at: Point2,
+    dir: Point2,
+}
+
+/// THE LINE NEAREST `pts`: through their mean, along the way they spread most - every corner of a side counts, where
+/// its two ends alone carry the noise of two corners.
+fn straight_of(pts: &[Point2]) -> Straight {
+    let n = pts.len() as f64;
+    let m = Point2::new(pts.iter().map(|p| p.x).sum::<f64>() / n, pts.iter().map(|p| p.y).sum::<f64>() / n);
+    let (mut sxx, mut sxy, mut syy) = (0.0, 0.0, 0.0);
+    for p in pts {
+        let (x, y) = (p.x - m.x, p.y - m.y);
+        sxx += x * x;
+        sxy += x * y;
+        syy += y * y;
+    }
+    let angle = 0.5 * (2.0 * sxy).atan2(sxx - syy);
+    Straight { at: m, dir: Point2::new(angle.cos(), angle.sin()) }
+}
+
+/// Where two lines cross; None for lines parallel within 1e-6.
+fn crossing([a, b]: [Straight; 2]) -> Option<Point2> {
+    let den = a.dir.x * b.dir.y - a.dir.y * b.dir.x;
+    if den.abs() < 1e-6 {
+        return None;
+    }
+    let (dx, dy) = (b.at.x - a.at.x, b.at.y - a.at.y);
+    let s = (dx * b.dir.y - dy * b.dir.x) / den;
+    Some(Point2::new(a.at.x + a.dir.x * s, a.at.y + a.dir.y * s))
+}
+
+/// The foot of `p` on line `l`.
+fn foot(p: Point2, l: Straight) -> Point2 {
+    let s = (p.x - l.at.x) * l.dir.x + (p.y - l.at.y) * l.dir.y;
+    Point2::new(l.at.x + l.dir.x * s, l.at.y + l.dir.y * s)
+}
+
+/// Where a search for a least looks: between `lo` and `hi`.
+#[derive(Clone, Copy)]
+struct Bracket {
+    lo: f64,
+    hi: f64,
+}
+
+/// The least of `f` within `b`, by golden section: 60 steps narrow the span a trillion times.
+fn least(f: impl Fn(f64) -> f64, b: Bracket) -> f64 {
+    let Bracket { mut lo, mut hi } = b;
+    let g = (5.0_f64.sqrt() - 1.0) / 2.0;
+    for _ in 0..60 {
+        let (a, b) = (hi - g * (hi - lo), lo + g * (hi - lo));
+        if f(a) < f(b) {
+            hi = b;
+        } else {
+            lo = a;
+        }
+    }
+    (lo + hi) / 2.0
+}
+
+/// A ROUNDING BETWEEN TWO LINES: the circle tangent to both, and where it touches the line it comes from and the line it
+/// goes on to.
+#[derive(Clone, Copy, Debug)]
+struct Rounding {
+    circle: Circle,
+    touch_in: Point2,
+    touch_out: Point2,
+}
+
+/// The two lines a rounding stands between, each with a point of its own away from the rounding.
+#[derive(Clone, Copy)]
+struct Between {
+    came: Straight,
+    came_from: Point2,
+    goes: Straight,
+    goes_to: Point2,
+}
+
+/// THE ROUNDING NEAREST `pts` TANGENT TO BOTH LINES: one unknown, its radius - or, between parallel lines, where its centre
+/// stands along them. A circle fitted to the few corners of a small rounding alone is off by more than the mesh is: on a
+/// plate shaken by 0.02 the centre of an R3 drawn in 6 chords stood 0.06 off, and a side held tangent to it moved by as
+/// much. `like` is the circle fitted alone, where the search starts from.
+fn rounding(lines: Between, pts: &[Point2], like: Circle) -> Option<Rounding> {
+    let Between { came, came_from, goes, goes_to } = lines;
+    let fit = |c: Circle| pts.iter().map(|p| (p.dist(c.center) - c.radius).powi(2)).sum::<f64>();
+    match crossing([came, goes]) {
+        Some(x) => {
+            let toward = |l: Straight, p: Point2| {
+                let s = (p.x - x.x) * l.dir.x + (p.y - x.y) * l.dir.y;
+                Point2::new(l.dir.x * s.signum(), l.dir.y * s.signum())
+            };
+            let (a, b) = (toward(came, came_from), toward(goes, goes_to));
+            let half = (a.x * b.x + a.y * b.y).clamp(-1.0, 1.0).acos() / 2.0;
+            if half < 1e-3 || half > std::f64::consts::FRAC_PI_2 - 1e-3 {
+                return None;
+            }
+            let wl = ((a.x + b.x).powi(2) + (a.y + b.y).powi(2)).sqrt();
+            let w = Point2::new((a.x + b.x) / wl, (a.y + b.y) / wl);
+            let at = |r: f64| Circle { center: Point2::new(x.x + w.x * r / half.sin(), x.y + w.y * r / half.sin()), radius: r };
+            let r = least(|r| fit(at(r)), Bracket { lo: like.radius / 3.0, hi: like.radius * 3.0 });
+            let reach = r / half.tan();
+            Some(Rounding { circle: at(r), touch_in: Point2::new(x.x + a.x * reach, x.y + a.y * reach), touch_out: Point2::new(x.x + b.x * reach, x.y + b.y * reach) })
+        }
+        None => {
+            // between parallel lines: the radius is half the gap, the centre on the line between them
+            let across = foot(came.at, goes);
+            let r = came.at.dist(across) / 2.0;
+            let mid = Straight { at: Point2::new((came.at.x + across.x) / 2.0, (came.at.y + across.y) / 2.0), dir: came.dir };
+            let start = foot(like.center, mid);
+            let s0 = (start.x - mid.at.x) * mid.dir.x + (start.y - mid.at.y) * mid.dir.y;
+            let at = |s: f64| Circle { center: Point2::new(mid.at.x + mid.dir.x * s, mid.at.y + mid.dir.y * s), radius: r };
+            let s = least(|s| fit(at(s)), Bracket { lo: s0 - 3.0 * r, hi: s0 + 3.0 * r });
+            let c = at(s);
+            Some(Rounding { circle: c, touch_in: foot(c.center, came), touch_out: foot(c.center, goes) })
+        }
+    }
+}
+
+/// THE PIECES, their ends closed up. The lines are drawn through all their corners. An arc standing between two lines
+/// it runs smoothly from and into is the rounding tangent to both (`rounding`), and the lines end where it touches
+/// them; two lines meeting at a corner end where they cross. Elsewhere the corner a piece shares with the next is put
+/// on the circle of an arc beside it - of the first, where both are arcs.
+fn finish(walk: &[Point2], spans: &[Span], tol: f64) -> Fitted {
     let m = spans.len();
     let on_circle = |p: Point2, c: Circle| {
         let d = p.dist(c.center).max(1e-12);
         Point2::new(c.center.x + (p.x - c.center.x) * c.radius / d, c.center.y + (p.y - c.center.y) * c.radius / d)
     };
+    let prev = |k: usize| (k + m - 1) % m;
+    let next = |k: usize| (k + 1) % m;
+    let straights: Vec<Option<Straight>> = spans.iter().map(|s| matches!(s.shape, Shape::Line).then(|| straight_of(&run_of(walk, Reach { from: s.from, to: s.to })))).collect();
+    let roundings: Vec<Option<Rounding>> = (0..m)
+        .map(|k| {
+            let Shape::Arc { circle, .. } = spans[k].shape else { return None };
+            let (Some(came), Some(goes)) = (straights[prev(k)], straights[next(k)]) else { return None };
+            if m < 3 || join_of(walk, [&spans[prev(k)], &spans[k]]) != Join::Smooth || join_of(walk, [&spans[k], &spans[next(k)]]) != Join::Smooth {
+                return None;
+            }
+            let pts = run_of(walk, Reach { from: spans[k].from, to: spans[k].to });
+            let lines = Between { came, came_from: at(walk, spans[prev(k)].from), goes, goes_to: at(walk, spans[next(k)].to) };
+            rounding(lines, &pts, circle).filter(|r| deviation(&pts, r.circle) <= 2.0 * tol)
+        })
+        .collect();
     // the point where span k ends and span k + 1 begins
     let shared: Vec<Point2> = (0..m)
         .map(|k| {
             let p = at(walk, spans[k].to);
-            match (spans[k].shape, spans[(k + 1) % m].shape) {
+            if let Some(r) = roundings[k] {
+                return r.touch_out;
+            }
+            if let Some(r) = roundings[next(k)] {
+                return r.touch_in;
+            }
+            if let (Some(a), Some(b)) = (straights[k], straights[next(k)]) {
+                // two sides at a corner end where they cross; a crossing far off the corner - sides nearly in line -
+                // is no corner of theirs
+                return crossing([a, b]).filter(|x| x.dist(p) <= 10.0 * tol).unwrap_or(p);
+            }
+            match (spans[k].shape, spans[next(k)].shape) {
                 (Shape::Arc { circle, .. }, _) | (_, Shape::Arc { circle, .. }) => on_circle(p, circle),
                 _ => p,
             }
@@ -552,7 +625,10 @@ fn finish(walk: &[Point2], spans: &[Span]) -> Fitted {
             let s = &spans[k];
             match s.shape {
                 Shape::Line => Piece::Line { from, to },
-                Shape::Arc { circle, turn } => Piece::Arc { center: circle.center, radius: circle.radius, from, to, turn },
+                Shape::Arc { circle, turn } => {
+                    let circle = roundings[k].map_or(circle, |r| r.circle);
+                    Piece::Arc { center: circle.center, radius: circle.radius, from, to, winding: turn }
+                }
                 Shape::Spline => {
                     let mut p: Vec<Point2> = (s.from..=s.to).map(|i| at(walk, i)).collect();
                     if let Some(f) = p.first_mut() {

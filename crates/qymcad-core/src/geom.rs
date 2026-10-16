@@ -388,3 +388,5 @@ mod cylinders;
 pub use cylinders::*;
 mod caps;
 pub use caps::*;
+mod pieces;
+pub use pieces::*;
