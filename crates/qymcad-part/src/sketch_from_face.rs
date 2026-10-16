@@ -40,10 +40,10 @@ pub fn start_sketch_from_face_cmd(pc: &mut PartCtx) {
     }
 }
 
-/// Whether face `fi` of body `mesh` is flat: every triangle of it turned as the face is.
-fn flat(pc: &PartCtx, mesh: usize, fi: usize) -> bool {
-    let b = &pc.project.bodies[mesh];
-    let f = &b.faces[fi];
+/// Whether a face of a body is flat: every triangle of it turned as the face is.
+fn flat(pc: &PartCtx, at: qymcad_ui_state::made_by::FaceAt) -> bool {
+    let b = &pc.project.bodies[at.mesh];
+    let f = &b.faces[at.face];
     f.triangles.iter().all(|&t| {
         let [p, q, r] = b.mesh.triangle(t as usize);
         let (u, v) = ([q.x - p.x, q.y - p.y, q.z - p.z], [r.x - p.x, r.y - p.y, r.z - p.z]);
@@ -66,7 +66,7 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         refresh(pc);
         return;
     }
-    if !flat(pc, mesh, fi) {
+    if !flat(pc, qymcad_ui_state::made_by::FaceAt { mesh, face: fi }) {
         *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("error-prism-face-not-flat"));
         return;
     }

@@ -12,19 +12,40 @@ use qymcad_kernel::{OcctKernel, Shape};
 use std::collections::HashMap;
 use std::f64::consts::PI;
 
-fn block(x: f64, y: f64, w: f64, d: f64, z: f64, h: f64) -> Shape {
+/// A box by its corner and its sizes.
+struct Block {
+    x: f64,
+    y: f64,
+    w: f64,
+    d: f64,
+    z: f64,
+    h: f64,
+}
+
+/// A cylinder standing up from (x, y, z), of radius `r` and height `h`.
+struct Post {
+    x: f64,
+    y: f64,
+    r: f64,
+    z: f64,
+    h: f64,
+}
+
+fn block(b: Block) -> Shape {
+    let Block { x, y, w, d, z, h } = b;
     let at = [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z];
     qymcad_kernel::specimen::extrude(&[0.0, 0.0, w, 0.0, w, d, 0.0, d], h).expect("a block").moved(&at).expect("placed")
 }
 
-fn post(x: f64, y: f64, r: f64, z: f64, h: f64) -> Shape {
+fn post(p: Post) -> Shape {
+    let Post { x, y, r, z, h } = p;
     let at = [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z];
     qymcad_kernel::specimen::cylinder(r, h).expect("a cylinder").moved(&at).expect("placed")
 }
 
 /// A plate of 60 x 40 x 5 with a boss of 30 x 20 x 8 from (10, 10) on it.
 fn bossed() -> Shape {
-    block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&block(10.0, 10.0, 30.0, 20.0, 5.0, 8.0), 1).expect("fused")
+    block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }).combined(&block(Block { x: 10.0, y: 10.0, w: 30.0, d: 20.0, z: 5.0, h: 8.0 }), 1).expect("fused")
 }
 
 /// The edges at the corners of the boss of `bossed`, running up its walls.
@@ -77,7 +98,7 @@ fn cases() -> Vec<Case> {
         Case { name: "boss", solid: bossed, clicked: |f| top(13.0)(f), resize: Resize { from: 30.0, to: 40.0 }, gains: 10.0 * 20.0 * 10.0, height: 10.0, height_gains: 30.0 * 20.0 * 2.0 },
         Case {
             name: "pocket",
-            solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 10.0).combined(&block(10.0, 10.0, 30.0, 20.0, 6.0, 5.0), 0).expect("cut"),
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 10.0 }).combined(&block(Block { x: 10.0, y: 10.0, w: 30.0, d: 20.0, z: 6.0, h: 5.0 }), 0).expect("cut"),
             clicked: |f| top(6.0)(f),
             resize: Resize { from: 30.0, to: 40.0 },
             gains: -10.0 * 20.0 * 6.0,
@@ -86,7 +107,7 @@ fn cases() -> Vec<Case> {
         },
         Case {
             name: "round post",
-            solid: || block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&post(30.0, 20.0, 6.0, 5.0, 8.0), 1).expect("fused"),
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }).combined(&post(Post { x: 30.0, y: 20.0, r: 6.0, z: 5.0, h: 8.0 }), 1).expect("fused"),
             clicked: |f| top(13.0)(f),
             resize: Resize { from: 12.0, to: 16.0 },
             gains: PI * (64.0 - 36.0) * 10.0,

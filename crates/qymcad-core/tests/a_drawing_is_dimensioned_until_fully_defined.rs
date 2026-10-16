@@ -27,7 +27,15 @@ fn polygon(p: &mut Project, si: usize, pts: &[[f64; 2]]) -> Vec<Id> {
         .collect()
 }
 
-fn arc(p: &mut Project, si: usize, c: [f64; 2], a: [f64; 2], b: [f64; 2]) -> Id {
+/// An arc counter-clockwise round `c` from `a` towards `b`.
+struct Arc {
+    c: [f64; 2],
+    a: [f64; 2],
+    b: [f64; 2],
+}
+
+fn arc(p: &mut Project, si: usize, r: Arc) -> Id {
+    let Arc { c, a, b } = r;
     p.add_arc_entity(si, Point2::new(c[0], c[1]), Point2::new(a[0], a[1]), Point2::new(b[0], b[1]), Winding::Ccw, Purpose::Real);
     last(p, si)
 }
@@ -37,13 +45,13 @@ fn rounded(p: &mut Project, si: usize) -> Vec<Id> {
     let (x0, y0, x1, y1, r) = (5.0, 7.0, 35.0, 27.0, 3.0);
     vec![
         p.add_line_entity(si, x0 + r, y0, x1 - r, y0, Purpose::Real),
-        arc(p, si, [x1 - r, y0 + r], [x1 - r, y0], [x1, y0 + r]),
+        arc(p, si, Arc { c: [x1 - r, y0 + r], a: [x1 - r, y0], b: [x1, y0 + r] }),
         p.add_line_entity(si, x1, y0 + r, x1, y1 - r, Purpose::Real),
-        arc(p, si, [x1 - r, y1 - r], [x1, y1 - r], [x1 - r, y1]),
+        arc(p, si, Arc { c: [x1 - r, y1 - r], a: [x1, y1 - r], b: [x1 - r, y1] }),
         p.add_line_entity(si, x1 - r, y1, x0 + r, y1, Purpose::Real),
-        arc(p, si, [x0 + r, y1 - r], [x0 + r, y1], [x0, y1 - r]),
+        arc(p, si, Arc { c: [x0 + r, y1 - r], a: [x0 + r, y1], b: [x0, y1 - r] }),
         p.add_line_entity(si, x0, y1 - r, x0, y0 + r, Purpose::Real),
-        arc(p, si, [x0 + r, y0 + r], [x0, y0 + r], [x0 + r, y0]),
+        arc(p, si, Arc { c: [x0 + r, y0 + r], a: [x0, y0 + r], b: [x0 + r, y0] }),
     ]
 }
 
@@ -51,9 +59,9 @@ fn rounded(p: &mut Project, si: usize) -> Vec<Id> {
 fn slot(p: &mut Project, si: usize) -> Vec<Id> {
     vec![
         p.add_line_entity(si, 10.0, 7.0, 30.0, 7.0, Purpose::Real),
-        arc(p, si, [30.0, 10.0], [30.0, 7.0], [30.0, 13.0]),
+        arc(p, si, Arc { c: [30.0, 10.0], a: [30.0, 7.0], b: [30.0, 13.0] }),
         p.add_line_entity(si, 30.0, 13.0, 10.0, 13.0, Purpose::Real),
-        arc(p, si, [10.0, 10.0], [10.0, 13.0], [10.0, 7.0]),
+        arc(p, si, Arc { c: [10.0, 10.0], a: [10.0, 13.0], b: [10.0, 7.0] }),
     ]
 }
 
