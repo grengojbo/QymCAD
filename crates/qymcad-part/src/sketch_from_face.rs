@@ -34,7 +34,7 @@ pub fn start_sketch_from_face_cmd(pc: &mut PartCtx) {
     pc.feat.op = REPLACE;
     pc.cmd.params = Vec::new();
     pc.cmd.focus = false;
-    *pc.status = qymcad_i18n::tr("msg-sketch-from-face");
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-sketch-from-face"));
     if let qymcad_ui_state::Sel::Face(mesh, face) = before {
         sketch_from_face_at(pc, mesh, Some(face));
     }
@@ -67,7 +67,7 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         return;
     }
     if !flat(pc, mesh, fi) {
-        *pc.status = qymcad_i18n::tr("error-prism-face-not-flat");
+        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("error-prism-face-not-flat"));
         return;
     }
     let found = qymcad_ui_state::with_kernel(&mut pc.rebuild(), |project, k| project.prism_at(body, key.id, k));
@@ -97,7 +97,7 @@ fn refresh(pc: &mut PartCtx) {
         pc.gsel.faces_body = None;
         pc.cmd.params = Vec::new();
         pc.cmd.focus = false;
-        *pc.status = qymcad_i18n::tr("msg-sketch-from-face");
+        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-sketch-from-face"));
         return;
     };
     let replace = pc.feat.op == REPLACE && held.prism.is_some();
@@ -108,7 +108,7 @@ fn refresh(pc: &mut PartCtx) {
     };
     pc.gsel.faces_body = Some(held.body);
     let enter = if replace { "msg-sketch-from-face-enter-replace" } else { "msg-sketch-from-face-enter-sketch" };
-    *pc.status = format!("{}. {}", held.told, qymcad_i18n::tr(enter));
+    *pc.status = qymcad_ui_state::Notice::info(format!("{}. {}", held.told, qymcad_i18n::tr(enter)));
     match held.prism.as_ref().filter(|_| replace) {
         Some(p) => {
             let h = pc.cmd.params.iter().find(|f| f.key == "height").map(|f| f.val).unwrap_or(p.height);
@@ -161,7 +161,7 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
         Some(Laid { sketch, node })
     });
     let Some(Laid { sketch, node }) = laid else {
-        *pc.status = qymcad_i18n::tr("msg-sketch-from-face-no-outline");
+        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-face-no-outline"));
         return None;
     };
     if let Some(node) = node {
@@ -201,7 +201,7 @@ pub fn open_redrawn(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool)
     pc.gsel.faces_body = Some(src);
     pc.cmd.params = vec![super::cmd_param_from(&*pc.project, fid, "f-redrawn-height", "height", height, 0.01, 100000.0)];
     pc.cmd.focus = true;
-    *pc.status = qymcad_i18n::tr("msg-edit-redrawn");
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-edit-redrawn"));
 }
 
 /// The height written into a boss or pocket redrawn being edited; a field the tool does not show leaves it as it was.

@@ -30,11 +30,12 @@ pub fn prepare(project: &mut Project, shapes: &mut HashMap<Id, Shape>, params_se
     for gone in project.prune_dangling() {
         shapes.remove(&gone);
     }
-    mark_changed_params_dirty(params_seen, project);
+    let _ = mark_changed_params_dirty(params_seen, project);
 }
 
-/// Mark what reads a parameter whose value is not the one seen at the last rebuild, or that is gone.
-pub fn mark_changed_params_dirty(params_seen: &HashMap<String, f64>, project: &mut Project) {
+/// Mark what reads a parameter whose value is not the one seen at the last rebuild, or that is gone. Answers the names
+/// that changed: a mate counted from one has no node to mark, and the window asks for its placement again.
+pub fn mark_changed_params_dirty(params_seen: &HashMap<String, f64>, project: &mut Project) -> Vec<String> {
     let vars = project.param_map();
     let mut changed: Vec<String> = vars.iter().filter(|(k, v)| params_seen.get(*k).is_none_or(|old| (*old - **v).abs() > 1e-12)).map(|(k, _)| k.clone()).collect();
     // a name that was seen and is gone - a parameter deleted - changes whatever was counted from it
@@ -42,6 +43,7 @@ pub fn mark_changed_params_dirty(params_seen: &HashMap<String, f64>, project: &m
     for name in &changed {
         project.mark_param_dependents_dirty_for(name);
     }
+    changed
 }
 
 /// Everything settled after the kernel has run.

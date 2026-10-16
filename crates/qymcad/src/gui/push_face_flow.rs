@@ -89,7 +89,21 @@ mod tests {
     fn the_feature_is_named_and_shown_in_the_tree() {
         let panels = crate::gui::panels_source::PANELS;
         assert!(crate::gui::render_source::has(panels, "FeatureKind::PushFace { dist, .. } =>"), "the build tree must know the kind of the feature, otherwise the row is not drawn at all");
-        let gui = include_str!("../gui.rs");
+        let gui = concat!(
+            include_str!("file_doors.rs"),
+            "\n",
+            include_str!("gizmo_math.rs"),
+            "\n",
+            include_str!("look.rs"),
+            "\n",
+            include_str!("panel_bits.rs"),
+            "\n",
+            include_str!("startup.rs"),
+            "\n",
+            include_str!("view_anim.rs"),
+            "\n",
+            include_str!("../gui.rs")
+        );
         assert!(crate::gui::render_source::has(gui, "FK::PushFace { .. } => ph::"), "the feature must have an icon");
         assert!(!crate::i18n::tr("feat-name-push-face").is_empty() && crate::i18n::tr("feat-name-push-face") != "feat-name-push-face", "the default name of the feature must have a translation");
         // A REFERENCE TO A FACE LIVES BY TWO DIFFERENT MECHANISMS, and the guard confused them. The
@@ -100,7 +114,21 @@ mod tests {
         //
         // The former edition checked THE SECOND while its message described THE FIRST — and turned red
         // when the second was removed on purpose.
-        let feature = include_str!("../../../qymcad-core/src/feature.rs");
+        let feature = concat!(
+            include_str!("../../../qymcad-core/src/feature/frames.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/feature/kernel.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/feature/kind.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/feature/mates.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/feature/matrix.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/feature/op_types.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/feature.rs")
+        );
         assert!(
             crate::gui::render_source::has(feature, "FeatureKind::Hole { face, .. } | FeatureKind::PushFace { face, .. } => face.remap_descs"),
             "the names in a reference must be translated when a feature is copied, otherwise the copy pulls somebody else's face"
@@ -116,7 +144,21 @@ mod tests {
         // The condition is now twofold: push-face goes by the common path, and the common path itself
         // starts with THE QUERY. Should anybody put the geometry ahead of the name, the guard turns
         // red.
-        let regen = include_str!("../../../qymcad-core/src/model/regen.rs");
+        let regen = concat!(
+            include_str!("../../../qymcad-core/src/model/regen/apply.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/model/regen/prep_bodies.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/model/regen/prep_ops.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/model/regen/prep_profiles.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/model/regen/refs.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/model/regen/run.rs"),
+            "\n",
+            include_str!("../../../qymcad-core/src/model/regen.rs")
+        );
         assert!(
             // The node being rebuilt travels in the pass context now that each kind of feature has a
             // branch of its own; the path itself is the same one.

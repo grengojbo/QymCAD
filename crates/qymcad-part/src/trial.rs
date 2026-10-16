@@ -13,6 +13,7 @@
 //! The trial runs on a worker, the frames keep coming: while it runs the command says it is checking and does not
 //! apply, and the answer takes its place beside the field when it lands. Run on the frame thread a trial of a heavy part
 //! stood the window still for as long as the kernel took.
+use qymcad_ui_state::Notice;
 use qymcad_core::model::Id;
 use qymcad_ui_state::PartCtx;
 use std::sync::{Arc, Mutex};
@@ -256,7 +257,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     let saved = bodies.into_iter().map(|(body, bytes)| qymcad_kernel::imports::SavedBody { body, bytes }).collect();
     live.shapes.extend(qymcad_kernel::imports::restore(saved).into_iter().map(|r| (r.body, r.shape)));
     // a rebuild outside a running window happens at once, here, rather than being handed to a thread of its own
-    let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), String::new(), false);
+    let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), Notice::default(), false);
     let (mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default());
     let mut recognise = qymcad_ui_state::RecogniseTool { feature, gap, ..Default::default() };
     let scheme = qymcad_ui_state::SchemeUi::default();
@@ -313,12 +314,12 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     };
     super::apply_feat_cmd(&mut trial);
     if cmd_failed {
-        return (Some(status), Vec::new());
+        return (Some(status.words), Vec::new());
     }
     let laid: Vec<Id> = project.timeline.iter().map(|n| n.id).filter(|id| !before.contains(id) || Some(*id) == edited).collect();
     // a command that laid nothing refused by itself, and its status says why (a split plane that cuts nothing)
     if laid.is_empty() {
-        return (Some(status), Vec::new());
+        return (Some(status.words), Vec::new());
     }
     let refused = laid.iter().find_map(|id| project.regen_errors.get(id).filter(|e| !e.retryable())).map(qymcad_i18n::error_words::error_text);
     if refused.is_some() {

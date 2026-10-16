@@ -92,9 +92,14 @@ pub fn redrawn_on(project: &mut Project, body: Id, wanted: impl Fn(&qymcad_core:
 /// THE KINDS OF NODE A TIMELINE HOLDS, by the names of the variants of `FeatureKind` as its source declares them. Read
 /// from the source rather than listed by hand: a kind added to the enum is a kind the matrices have not seen, and a
 /// list kept beside the enum would not know of it.
+///
+/// The enum stands in `feature.rs` or in one of its modules in `feature/`: each is read, and the one that declares it is
+/// taken.
 pub fn feature_kinds() -> Vec<String> {
-    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../qymcad-core/src/feature.rs");
-    let text = std::fs::read_to_string(path).expect("the source of the kinds of node");
+    let core = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../qymcad-core/src");
+    let mut files = vec![core.join("feature.rs")];
+    files.extend(std::fs::read_dir(core.join("feature")).into_iter().flatten().flatten().map(|e| e.path()));
+    let text = files.iter().filter_map(|f| std::fs::read_to_string(f).ok()).find(|t| t.contains("pub enum FeatureKind {")).expect("the source of the kinds of node");
     let body = text.split("pub enum FeatureKind {").nth(1).expect("the enum of the kinds of node");
     let mut kinds = Vec::new();
     for line in body.lines() {

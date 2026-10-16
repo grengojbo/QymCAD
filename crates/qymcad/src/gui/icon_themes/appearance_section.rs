@@ -27,9 +27,11 @@ pub(crate) fn apply_icon_themes(set: &Settings, ctx: &egui::Context, palette: &q
 
 /// Render the kind of theme source shown in the manager.
 pub(crate) fn draw_bundle_format_badge(ui: &mut egui::Ui, format: BundleFormat) {
+    // a pack read from a folder is one still being made: it wears the warning's colour of the theme
+    let warn = qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning);
     let visuals = ui.visuals();
     let style = match format {
-        BundleFormat::Directory => BundleBadgeStyle { icon: ph::FOLDER_OPEN, label_key: "bundle-format-folder", bg: visuals.warn_fg_color.linear_multiply(0.18), fg: visuals.warn_fg_color },
+        BundleFormat::Directory => BundleBadgeStyle { icon: ph::FOLDER_OPEN, label_key: "bundle-format-folder", bg: warn.linear_multiply(0.18), fg: warn },
         BundleFormat::Embedded => BundleBadgeStyle { icon: ph::GEAR, label_key: "bundle-format-embedded", bg: visuals.faint_bg_color, fg: visuals.weak_text_color() },
         BundleFormat::Package => BundleBadgeStyle { icon: ph::PACKAGE, label_key: "bundle-format-package", bg: visuals.selection.bg_fill.linear_multiply(0.22), fg: visuals.selection.bg_fill },
     };

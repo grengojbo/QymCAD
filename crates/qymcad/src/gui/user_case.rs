@@ -11,252 +11,17 @@
 #[cfg(test)]
 pub(crate) mod tests {
     use super::super::check_folder::tests::CheckFolder;
-    use super::super::hand::Hand;
-    use super::super::App;
-
-    /// THE SINGLE "EVERYTHING ADDS UP" CHECK - run after every action rather than as a separate test.
-    pub(crate) fn check_all(app: &mut App, step: &str, problems: &mut Vec<String>) {
-        qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
-        // 1. THE GEOMETRY: not a single red node.
-        // WHAT COUNTS AS RED IS WHAT THE PROGRAM COULD NOT EXPLAIN. A named refusal is a conversation: "the
-        // chamfer is larger than the wall", "the fillet has nothing to round". Such a node is legitimate
-        // during work - it is seen and reworked. A nameless `OpFailed` is another matter: that is the program
-        // staying silent, and it remains a finding at every step.
-        let unexplained: std::collections::HashMap<u64, String> =
-            app.project.regen_errors.iter().filter(|(_, e)| matches!(e, qymcad_core::errors::CoreError::OpFailed(_))).map(|(id, e)| (*id, format!("{e:?}"))).collect();
-        if !unexplained.is_empty() {
-            problems.push(format!("[{step}] red nodes WITH NO EXPLANATION: {unexplained:?}"));
-        }
-        // 1b. THE STRUCTURE OF THE DOCUMENT. A file was opened and showed a part that contained both nested
-        // parts and its own build features. No CAD has such a structure, and there was no check for it -
-        // which is how it reached a file. A part either CONTAINS a makeup or IS BUILT.
-        for c in &app.project.components {
-            if !matches!(c.kind, qymcad_core::feature::ComponentKind::Part) {
-                continue;
-            }
-            let nm = crate::i18n::name(&c.name);
-            let inside: Vec<String> = app.project.components.iter().filter(|x| x.parent == Some(c.id)).map(|x| crate::i18n::name(&x.name)).collect();
-            if !inside.is_empty() {
-                problems.push(format!("[{step}] part \"{nm}\" contains other components: {}", inside.join(", ")));
-            }
-        }
-        // 1c. A NODE WITH NO PART. A build feature must belong to a part: there is nowhere to show it in the
-        // tree, and it can be neither found nor deleted. It is caught at the step where it appeared rather
-        // than at the end of the run.
-        for n in &app.project.timeline {
-            // IT EITHER BUILT OR EXPLAINED ITSELF - THERE IS NO THIRD OPTION.
-            //
-            // A node that declares a body must either produce it or leave an error. Silence is the worst
-            // outcome: the row is in the tree, nothing is on screen, and there is nothing to take hold of.
-            // Found by a full rebuild of AN UNCHANGED timeline: a fillet that built the first time
-            // disappeared on the second pass without a single word.
-            // ...AND ONLY WHERE THAT IS EXPECTED. Under a rollback of the history a node is legitimately
-            // unbuilt and has no reason attached - that is not silence but "we have not reached it yet". The
-            // silence of a node whose INPUT is unbuilt is legitimate in the same way: the reason was already
-            // given further up the chain.
-            // ...AND ONE MORE BOUNDARY, crossed once and rewarded with a false alarm: an input may carry A
-            // MESH FROM A PREVIOUS BUILD yet fail to build now - then the reason is named ON IT, and the
-            // silence of the consumer is legitimate. The judgement must go by whether the producer of the
-            // input explained itself, not by whether a mesh exists.
-            let inputs_built = n.kind.inputs().iter().all(|i| {
-                let producer = app.project.timeline.iter().find(|x| x.kind.bodies().contains(i));
-                match producer {
-                    Some(p) => app.project.mesh_index(*i).is_some() && !app.project.regen_errors.contains_key(&p.id),
-                    None => true,
-                }
-            });
-            if !n.suppressed && app.project.rollback.is_none() && inputs_built {
-                for b in n.kind.bodies() {
-                    let built = app.project.mesh_index(b).is_some();
-                    let explained = app.project.regen_errors.contains_key(&n.id);
-                    if !built && !explained {
-                        problems.push(format!("[{step}] node {} \"{}\" did not build body {b} and NAMED NO REASON - the row is in the tree, the screen is empty", n.id, n.name));
-                    }
-                }
-            }
-            // THE PARENT MUST EXIST rather than merely be filled in. The old check caught only `None` and
-            // missed the worst case: a reference to A DELETED part. There is nowhere to show such a node in
-            // the tree (its branch is gone), it can be neither found nor deleted, and a rebuild will honestly
-            // keep counting it.
-            let parent_alive = n.parent.is_some_and(|p| app.project.components.iter().any(|c| c.id == p));
-            if !parent_alive {
-                problems.push(format!("[{step}] node {} \"{}\" sits in the timeline with no live part (parent = {:?}) - there is nowhere to show it in the tree", n.id, n.name, n.parent));
-            }
-        }
-        // 1d. THERE MUST BE NO BODIES IN THE ROOT. A body lives in A PART; in the root assembly it has
-        // nowhere to come from, and opening the tree shows a bare "Body 36" with no part around it.
-        {
-            let root = app.project.root;
-            // by the body's owner, not the node's parent: a pattern of components stands in the assembly and builds
-            // bodies that belong to its copies
-            let orphan: Vec<u64> = app.project.timeline.iter().flat_map(|n| n.kind.bodies().into_iter().filter(move |b| n.owner_of(*b) == Some(root))).collect();
-            // BY THE SAME SIGN THE TREE USES. In the root it shows THE MESHES that no timeline node produces
-            // - the previous check looked for "bodies with no owner" and did not see those.
-            let produced: std::collections::HashSet<u64> = app.project.timeline.iter().flat_map(|n| n.kind.bodies()).collect();
-            let in_root_tree: Vec<u64> = app.project.bodies.iter().map(|b| b.id).filter(|b| !produced.contains(b)).collect();
-            if !in_root_tree.is_empty() {
-                problems.push(format!("[{step}] bodies {in_root_tree:?} are shown IN THE ROOT of the tree - no node produces them"));
-            }
-            let ownerless: Vec<u64> = app
-                .project
-                .bodies
-                .iter()
-                .filter(|b| {
-                    let o = app.project.body_owner(b.id);
-                    o.is_none() || o == Some(root)
-                })
-                .map(|b| b.id)
-                .collect();
-            if !orphan.is_empty() || !ownerless.is_empty() {
-                problems.push(format!("[{step}] bodies with no part: in the root {orphan:?}, with no owner {ownerless:?} - a body must live in A PART, otherwise it hangs by itself in the tree"));
-            }
-        }
-        // 1e. THE NAMES OF PARTS DO NOT REPEAT. Two parts with one name are indistinguishable in the tree:
-        // one gets picked and another gets edited. The instances of an array are legitimately called
-        // "Housing (2)", "(3)" - those are DIFFERENT names and they are fine; what is at issue is exact
-        // matches.
-        {
-            let mut seen: std::collections::HashMap<String, usize> = std::collections::HashMap::new();
-            for c in app.project.components.iter().filter(|c| c.id != app.project.root) {
-                *seen.entry(crate::i18n::name(&c.name)).or_default() += 1;
-            }
-            let dups: Vec<String> = seen.into_iter().filter(|(_, n)| *n > 1).map(|(k, n)| format!("\"{k}\" x{n}")).collect();
-            if !dups.is_empty() {
-                problems.push(format!("[{step}] parts with IDENTICAL names: {} - they cannot be told apart in the tree", dups.join(", ")));
-            }
-        }
-        // 1f. THE REMAINING SECTIONS OF THE TREE, SEEN BY EYE. Opening a document shows everything at once,
-        // and an oddity in any section reads as a fault, however correctly everything is computed.
-        {
-            // A joint with no part: one whose connector points nowhere hangs in the tree as an orphan.
-            let live: std::collections::HashSet<u64> = app.project.components.iter().map(|c| c.id).collect();
-            let dangling: Vec<u64> = app
-                .project
-                .joints
-                .iter()
-                .filter(|j| {
-                    let owner = |c: u64| app.project.connectors.iter().find(|k| k.id == c).map(|k| k.owner);
-                    !owner(j.a).is_some_and(|o| live.contains(&o)) || !owner(j.b).is_some_and(|o| live.contains(&o))
-                })
-                .map(|j| j.id)
-                .collect();
-            if !dangling.is_empty() {
-                problems.push(format!("[{step}] joints {dangling:?} point at parts that do not exist"));
-            }
-
-            // An abandoned sketch: it belongs to no part, and there is nowhere to show it in the tree.
-            let orphan_sk: Vec<u64> = app.project.sketches.iter().filter(|sk| app.project.sketch_owner(sk.id).is_none_or(|o| !live.contains(&o))).map(|sk| sk.id).collect();
-            if !orphan_sk.is_empty() {
-                problems.push(format!("[{step}] sketches {orphan_sk:?} belong to no part"));
-            }
-        }
-        // 1g. WHAT A PERSON SEES ON OPENING A FINISHED FILE. A hidden body in someone else's document looks
-        // like a loss: the part is in the tree and not on screen. A part with not a single body is an empty
-        // row with nothing behind it. A node with no name is the same thing in the timeline.
-        {
-            // A HIDDEN BODY DURING WORK IS NORMAL: that is how a neighbouring part is reached. The check for
-            // ones left hidden stands at the end, on A FINISHED document.
-            // AN EMPTY PART DURING WORK IS NORMAL (the program keeps one from the very start, and building
-            // into it is about to begin). It becomes rubbish only in A FINISHED file, so the check stands at
-            // the end of the scenario rather than at every step.
-            let nameless: Vec<u64> = app.project.timeline.iter().filter(|n| n.name.trim().is_empty()).map(|n| n.id).collect();
-            if !nameless.is_empty() {
-                problems.push(format!("[{step}] nodes with no name: {nameless:?}"));
-            }
-        }
-        // 2. THE TREE ON THE LEFT: every feature has a row, and that row is words rather than a catalogue key
-        for ti in 0..app.project.timeline.len() {
-            if matches!(app.project.timeline[ti].kind, qymcad_core::feature::FeatureKind::Sketch { .. }) {
-                continue; // sketches live in a branch of their own
-            }
-            // THE DATUMS LIVE IN THEIR OWN BRANCH of the tree: their row comes not from the timeline but from
-            // the plane, the axis or the point itself - and that is where to look, otherwise an honest node
-            // appears lost.
-            use qymcad_core::feature::FeatureKind as FKd;
-            let row = match app.project.timeline[ti].kind {
-                FKd::Plane { plane } => app.project.planes.iter().find(|p| p.id == plane).map(|p| format!("· {}", crate::i18n::name(&p.name))).unwrap_or_default(),
-                FKd::DatumAxis { axis } => app.project.datum_axes.iter().find(|a| a.id == axis).map(|a| format!("· {}", crate::i18n::name(&a.name))).unwrap_or_default(),
-                FKd::DatumPoint { point } => app.project.datum_points.iter().find(|q| q.id == point).map(|q| format!("· {}", crate::i18n::name(&q.name))).unwrap_or_default(),
-                _ => crate::gui::panels_tree::feature_row_label(&app.project, ti),
-            };
-            let words = row.split_whitespace().skip(1).collect::<Vec<_>>().join(" ");
-            if words.trim().is_empty() {
-                problems.push(format!("[{step}] node {} ({}) has no row in the tree", app.project.timeline[ti].id, crate::gui::feat_default_name(&app.project.timeline[ti].kind)));
-            } else if !words.contains(' ') && words.contains('-') && words.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit()) {
-                problems.push(format!("[{step}] node {} shows A KEY \"{words}\"", app.project.timeline[ti].id));
-            }
-        }
-        // 3. THE BODIES: "a part is ONE body" is a rule ABOUT A PART, not about the document. An assembly has
-        //    as many bodies as it has parts, and counting them together would declare every assembly broken.
-        let mut per_part: std::collections::HashMap<u64, usize> = std::collections::HashMap::new();
-        for (mi, b) in app.project.bodies.iter().enumerate() {
-            if !qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi) || b.sheet {
-                continue;
-            }
-            if let Some(owner) = app.project.body_owner(b.id) {
-                *per_part.entry(owner).or_default() += 1;
-            }
-        }
-        for (owner, n) in per_part {
-            if n > 1 {
-                let name = app.project.components.iter().find(|c| c.id == owner).map(|c| crate::i18n::name(&c.name)).unwrap_or_default();
-                let who: Vec<String> = app
-                    .project
-                    .bodies
-                    .iter()
-                    .enumerate()
-                    .filter(|(mi, b)| qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), *mi) && !b.sheet && app.project.body_owner(b.id) == Some(owner))
-                    .map(|(_, b)| {
-                        let node = app.project.timeline.iter().find(|n| n.kind.bodies().contains(&b.id));
-                        let red = node.is_some_and(|n| app.project.regen_errors.contains_key(&n.id));
-                        format!("{}({}{})", b.id, node.map(|n| n.name.clone()).unwrap_or_else(|| "no node".into()), if red { ", red" } else { "" })
-                    })
-                    .collect();
-                // A CUT IS A LEGITIMATE EXCEPTION. The "split a body" tool exists precisely so that one body
-                // becomes several, and a cut through the body leaves its pieces bodies of the part the same way;
-                // after them, several bodies in a part are not a fault but work that was done deliberately. Without
-                // this proviso the check would forbid the tools themselves.
-                let was_split =
-                    app.project.timeline.iter().any(|nd| nd.parent == Some(owner) && (matches!(nd.kind, qymcad_core::feature::FeatureKind::SplitBody { .. }) || nd.kind.cut_pieces().len() > 1));
-                if !was_split {
-                    problems.push(format!("[{step}] part \"{name}\" has {n} visible bodies instead of one: {}", who.join(", ")));
-                }
-            }
-        }
-        for (mi, b) in app.project.bodies.iter().enumerate() {
-            if qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(app), mi) && b.mesh.tris.is_empty() {
-                problems.push(format!("[{step}] body {} is visible, but there is nothing to draw", b.id));
-            }
-        }
-        // 4. THE STATUS: the program shows no key where a message belongs
-        let st = app.status.trim();
-        if !st.is_empty() && !st.contains(' ') && st.contains('-') && st.chars().all(|c| c.is_ascii_lowercase() || c == '-' || c.is_ascii_digit()) {
-            problems.push(format!("[{step}] the status line holds A KEY \"{st}\""));
-        }
-    }
-
-    /// Save into `folder` and reopen - and check everything there as well.
-    fn save_and_reopen(app: &mut App, folder: &CheckFolder, step: &str, problems: &mut Vec<String>) -> App {
-        let path = folder.file("user-case.qcad").to_string_lossy().into_owned();
-        crate::gui::set_project_path(&mut app.disk.project_path, &mut app.set, path.clone());
-        app.save_project();
-        app.drain_bg_for_test();
-        match qymcad_io::load_project(&path) {
-            Ok(project) => {
-                let mut fresh = App::default();
-                fresh.finish_project_load(path, project, Vec::new());
-                qymcad_ui_state::rebuild_if_dirty(&mut fresh.rebuild_ctx());
-                let mut p2 = Vec::new();
-                check_all(&mut fresh, &format!("{step} -> after opening"), &mut p2);
-                problems.extend(p2);
-                fresh
-            }
-            Err(e) => {
-                problems.push(format!("[{step}] the saved file does not open: {e}"));
-                App::default()
-            }
-        }
-    }
+    use super::super::{hand::Hand, App};
+    mod check_all;
+    mod save_and_reopen;
+    mod the_faults;
+    mod the_printed_part;
+    mod the_claude;
+    mod the_menu;
+    mod the_section;
+    mod the_view;
+    pub(crate) use check_all::check_all;
+    use save_and_reopen::save_and_reopen;
 
     /// APPLY A TOOL TO THE CURRENT BODY OF A PART - one recipe per tool, for any part.
     ///
@@ -673,7 +438,7 @@ pub(crate) mod tests {
         // NO height at all - not "the plane was chosen badly" but the shape being what it is. A person backs
         // off at that point and does it another way; demanding a node from a tool the core refused in words
         // means demanding the impossible.
-        let named_refusal = app.status == crate::i18n::tr("msg-plane-cuts-nothing");
+        let named_refusal = app.status == qymcad_ui_state::Notice::refusal(crate::i18n::tr("msg-plane-cuts-nothing"));
         if !made && named_refusal {
             return false; // the refusal was named - the step did not happen, but the document is not broken
         }
@@ -736,33 +501,7 @@ pub(crate) mod tests {
         hand.look_at([30.0, 20.0, 10.0], 8.0).tool(1).set("height", 25.0).enter();
         check_all(&mut app, "the housing was extruded", &mut problems);
 
-        // --- CLAUDE IN THE WINDOW: the housing 5 mm taller, and the person taking it back ---
-        {
-            use super::super::bridge_ui::tests::{claude_says, place, reply_of, served, SOCKET};
-            app.set.claude_link = qymcad_ui_state::ClaudeLink::On;
-            let folder = place("user-case");
-            let path = folder.file(SOCKET);
-            super::super::bridge_ui::listen_at(path.clone());
-            let extrude = app.project.timeline.iter().rev().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).map(|n| n.id).expect("the housing's extrusion");
-            let mut hand = Hand::new(&mut app);
-            hand.frame(Vec::new());
-            let did = served(&mut hand, claude_says(&path, vec![("edit_feature", serde_json::json!({ "feature": extrude, "values": { "height": 30 } }))]));
-            if reply_of(&did[0])["ok"] != serde_json::json!(true) {
-                problems.push(format!("[Claude makes the housing taller] the window refused: {}", did[0]));
-            }
-            hand.close_window(); // the frames marked the window live: what they started is waited for, and the mark taken away
-            drop(hand);
-            check_all(&mut app, "Claude made the housing taller through the window", &mut problems);
-            Hand::new(&mut app).undo().close_window();
-            check_all(&mut app, "the person took Claude's change back", &mut problems);
-            let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
-            let top = app.project.bodies.iter().find(|b| b.id == body).map_or(f64::NAN, |b| b.faces.iter().map(|f| f.centroid.z).fold(f64::NEG_INFINITY, f64::max));
-            if (top - 25.0).abs() > 1e-6 {
-                problems.push(format!("[the person took Claude's change back] the housing stands {top} high, not 25"));
-            }
-            app.set.claude_link = qymcad_ui_state::ClaudeLink::Off;
-            Hand::new(&mut app).frame(Vec::new()).close_window(); // the window closes its end of the channel
-        }
+        the_claude::claude_makes_the_housing_taller(&mut app, &mut problems);
 
         // --- FILLETS ON THE VERTICAL EDGES ---
         let body = app.project.timeline.iter().rev().find_map(|n| n.kind.body()).expect("the body");
@@ -839,23 +578,8 @@ pub(crate) mod tests {
             problems.push(format!("[a cut from the sketch on the face] the volume did not decrease: it was {v_before_cut:.1}, it is {after_cut:.1} - the cut did not cut through"));
         }
 
-        // --- UNDO AND REDO FROM THE MENU BAR, in the middle of the work: the step named in the Edit menu goes and
-        // comes back, and the chain after it carries on from the restored document ---
-        let steps = app.disk.edits.undo.len();
-        let named = app.disk.edits.undo.last().map(|s| s.name.clone()).unwrap_or_default();
-        let at_menu = egui::pos2(0.0, 0.0);
-        let mut hand = Hand::new(&mut app);
-        let undone = hand.press_word(&crate::i18n::tr("menu-edit"), at_menu) && hand.press_word(&crate::i18n::tr1("menu-undo-named", "what", &named), at_menu);
-        if !undone || app.disk.edits.undo.len() + 1 != steps {
-            problems.push(format!("[Edit -> Undo] the menu did not take back \"{named}\": {} steps, {steps} before", app.disk.edits.undo.len()));
-        }
-        check_all(&mut app, "the cut was undone from the Edit menu", &mut problems);
-        let mut hand = Hand::new(&mut app);
-        let redone = hand.press_word(&crate::i18n::tr("menu-edit"), at_menu) && hand.press_word(&crate::i18n::tr1("menu-redo-named", "what", &named), at_menu);
-        if !redone || app.disk.edits.undo.len() != steps {
-            problems.push(format!("[Edit -> Redo] the menu did not bring back \"{named}\": {} steps, {steps} before", app.disk.edits.undo.len()));
-        }
-        check_all(&mut app, "the cut was redone from the Edit menu", &mut problems);
+        the_menu::the_last_step_goes_and_comes_back_from_the_menu(&mut app, &mut problems);
+
         // --- A PROJECTION OF THE HOUSING'S SIDE: the outline of the side face projected into a sketch on it, by its button
         // and "Face outline", a line drawn from its top corner. The height of the housing is changed below, and the
         // projection and the line tied to it follow ---
@@ -913,13 +637,11 @@ pub(crate) mod tests {
         if let Some(ti) = app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Extrude { .. })) {
             let nid = app.project.timeline[ti].id;
             app.tree_action(1, ti, nid, None, None);
-            if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
-                p.val = 35.0;
-                p.txt = "35".into();
-            }
+            Hand::new(&mut app).set("height", 35.0);
             app.apply_feat_cmd();
             check_all(&mut app, "the height of the housing was changed to 35", &mut problems);
         }
+        the_faults::a_broken_node_is_counted_and_led_to(&mut app, &mut problems);
         // the projection of the side followed the height, and the line drawn from its corner with it
         if let Some((sid, corner, at)) = projected {
             match app.project.sketch_index(sid) {
@@ -1677,7 +1399,7 @@ pub(crate) mod tests {
                     problems.push(format!("sketch: before the \"{name}\" constraint {pair:?} were clicked and {:?} is selected", hand.app.tools.sel_sk.items));
                 }
                 hand.constraint(code);
-                if app.project.sketches[si].constraints.len() == before && app.status.trim().is_empty() {
+                if app.project.sketches[si].constraints.len() == before && app.status.words.trim().is_empty() {
                     problems.push(format!("sketch: the \"{name}\" constraint did not take and SAID NOTHING about why"));
                 }
                 check_all(&mut app, &format!("sketch: the {name} constraint"), &mut problems);
@@ -1709,7 +1431,7 @@ pub(crate) mod tests {
                 let before = count(&app);
                 crate::gui::fillet_all_corners(&app.project, &mut app.tools.corner, &mut app.tools.picking, app.chosen.sel, &app.tools.sel_sk, &mut app.status, &app.tool_prefs);
                 app.project.regen_sketch(si);
-                if count(&app) == before && app.status.trim().is_empty() {
+                if count(&app) == before && app.status.words.trim().is_empty() {
                     problems.push("sketch: \"round every corner\" silently did nothing".into());
                 }
                 check_all(&mut app, "sketch: rounding every corner", &mut problems);
@@ -1746,7 +1468,7 @@ pub(crate) mod tests {
                     let lines: Vec<u64> = app.project.sketches[si].entities.iter().rev().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).take(3).map(|e| e.id).collect();
                     let (lines0, arcs0) = before(&app);
                     let named: Vec<(u8, u64)> = lines.iter().map(|&id| (1u8, id)).collect();
-                    app.status.clear(); // so that what is said afterwards is said about THIS action
+                    app.status.words.clear(); // so that what is said afterwards is said about THIS action
                     let mut hand = Hand::new(&mut app);
                     if lines.len() < 3 || !hand.sk_corner_set(key, &named, 3.0) {
                         problems.push(format!("sketch: {tool} found no place to click on the lines of the contour"));
@@ -1777,7 +1499,7 @@ pub(crate) mod tests {
                     qymcad_ui_state::set_click_op(&mut qymcad_ui_state::tools_of!(app), &mut app.viewing.mode_3d, op);
                     let mut hand = Hand::new(&mut app);
                     hand.click2d(x, y);
-                    if count(&app) == before && app.status.trim().is_empty() {
+                    if count(&app) == before && app.status.words.trim().is_empty() {
                         problems.push(format!("sketch: \"{name}\" silently did nothing"));
                     }
                     check_all(&mut app, &format!("sketch: {name}"), &mut problems);
@@ -1851,18 +1573,18 @@ pub(crate) mod tests {
                     let Some(source) = ends_of(&app, eid) else { continue };
                     let before = shape_of(&app);
                     let (ids_before, worst_before): (Vec<u64>, f64) = (app.project.sketches[si].entities.iter().map(|e| e.id).collect(), worst(&app));
-                    app.status.clear(); // so that what is said afterwards is said about THIS action
+                    app.status.words.clear(); // so that what is said afterwards is said about THIS action
                     let mut hand = Hand::new(&mut app);
                     if mode == 3 {
                         hand.sk_rotate(on, on, 30.0);
                     } else {
                         hand.sk_move(mode, on, on, (on.0 + shift.0, on.1 + shift.1));
                     }
-                    if shape_of(&app) == before && app.status.trim().is_empty() {
+                    if shape_of(&app) == before && app.status.words.trim().is_empty() {
                         problems.push(format!("sketch: \"{name}\" silently did nothing"));
                     }
                     // WHERE IT LANDED, or the word that it was held.
-                    let held = app.status.contains(&crate::i18n::tr("sk-move-held")) || app.status.contains(&crate::i18n::tr("sk-turn-held"));
+                    let held = app.status.words.contains(&crate::i18n::tr("sk-move-held")) || app.status.words.contains(&crate::i18n::tr("sk-turn-held"));
                     let (m0, sk) = (mid(source), &app.project.sketches[si]);
                     match mode {
                         1 => match ends_of(&app, eid) {
@@ -2169,7 +1891,7 @@ pub(crate) mod tests {
                     let after = dims_now(&app);
                     // A DIMENSION MUST EITHER TAKE OR SAY WHY NOT. A silent "nothing happened" is the worst
                     // outcome: the dimension is believed to be set while it is not there.
-                    if after == before && app.status.trim().is_empty() {
+                    if after == before && app.status.words.trim().is_empty() {
                         problems.push(format!("sketch: the {name} dimension was not created and SAID NOTHING about why"));
                     }
                     if after > before && app.project.sketch_dof(si) >= dof_before {
@@ -3129,47 +2851,7 @@ pub(crate) mod tests {
             check_all(&mut app, "moving a node in the timeline", &mut problems);
         }
 
-        // ── THE SECTION VIEW: LOOK INSIDE AND COME BACK OUT ─────────────────────────────
-        //
-        // A section is a way to look, not an edit: it must leave NOTHING in the document. And it must
-        // turn on by the same button a person uses: the logic used to live inside the panel button
-        // where a hand could not reach it - a check either poked at the fields directly (that is,
-        // checked itself) or did not check at all.
-        {
-            let doc_before = app.project.state_key();
-            let nodes_before = app.project.timeline.len();
-            app.toggle_section();
-            if !app.side.section.pick {
-                problems.push("section: the button was pressed and the plane pick did not start".into());
-            }
-            // the plane is picked by clicking a face - the way a person does it
-            let body = app.project.bodies.iter().find(|b| !b.sheet).map(|b| b.id);
-            if let (Some(body), Some(mi)) = (body, body.and_then(|b| app.project.mesh_index(b))) {
-                let _ = body;
-                if let Some(bb) = app.project.bodies[mi].mesh.bounds() {
-                    let basis = app.viewing.cam.basis();
-                    let top = [(bb.min.x + bb.max.x) * 0.5, (bb.min.y + bb.max.y) * 0.5, bb.max.z];
-                    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(900.0, 700.0));
-                    let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }.at(top).0;
-                    app.viewport_3d_click_at(at, rect, &basis);
-                }
-            }
-            if app.side.section.plane.is_none() {
-                problems.push(format!("section: the click on a face did not set the plane; status: {}", app.status));
-            }
-            // TURNED OFF - AND NOT A TRACE LEFT
-            app.toggle_section();
-            if app.side.section.plane.is_some() || app.side.section.pick {
-                problems.push("section: it was turned off and stayed on".into());
-            }
-            if app.project.timeline.len() != nodes_before {
-                problems.push(format!("the section left a trace in the timeline: there were {nodes_before}, now {}", app.project.timeline.len()));
-            }
-            if app.project.state_key() != doc_before {
-                problems.push("the section changed the document - it is a way to LOOK, not an edit".into());
-            }
-            check_all(&mut app, "the section view", &mut problems);
-        }
+        the_section::the_section_looks_inside_and_comes_back(&mut app, &mut problems);
 
         // ── HIDE AND SHOW, FIND IN THE TREE ─────────────────────────────────────────────
         //
@@ -3386,195 +3068,8 @@ pub(crate) mod tests {
             eprintln!("ASSEMBLY: the slider travelled {went:.3} mm, the driven wheel {:.3} deg", moved_b.abs());
         }
 
-        // ── A PRINTED PART COMES BACK AS A MESH: ITS HOLE MADE EXACT ─────────────────────
-        //
-        // A part come from a printer's file is a mesh: its hole is a ring of flat strips whose size nobody can change. A
-        // plate of 40 x 30 x 10 drilled 10 across, 500 mm off the housing, is written out as such a file and brought in,
-        // made a body as it is, and the wall of its hole clicked with "Recognise feature": one node makes the hole round
-        // and exact, and the diameter typed into it again drives the plate.
-        {
-            use super::super::hand::Hand;
-            let pi = std::f64::consts::PI;
-            use qymcad_kernel::specimen::Specimen;
-            let plate = qymcad_kernel::specimen::extrude(&[500.0, 0.0, 540.0, 0.0, 540.0, 30.0, 500.0, 30.0], 10.0).expect("a plate");
-            let at = [1.0, 0.0, 0.0, 520.0, 0.0, 1.0, 0.0, 15.0, 0.0, 0.0, 1.0, -1.0];
-            let drilled = plate.combined(&qymcad_kernel::specimen::cylinder(5.0, 12.0).expect("a drill").moved(&at).expect("placed"), 0).expect("drilled");
-            let folder = crate::gui::check_folder::tests::CheckFolder::new("user-case-print");
-            let file = folder.file("printed.3mf").to_string_lossy().into_owned();
-            qymcad_io::export_3mf(&[qymcad_kernel::specimen::mesh_merged(&drilled, 0.1).expect("a mesh").mesh], &file).expect("the printer's file is written");
-            // THE WINDOW REBUILDS IN THE BACKGROUND: frames run, as they do by themselves, until nothing is being built
-            let at_rest = |h: &mut Hand| {
-                for _ in 0..600 {
-                    h.frame(Vec::new());
-                    h.app.drain_bg_for_test();
-                    if h.app.regen.busy.is_none() && h.app.regen.bg.is_empty() && !h.app.regen.wanted {
-                        break;
-                    }
-                    std::thread::sleep(std::time::Duration::from_millis(20));
-                }
-            };
-            // the chain goes on where it stood: the view and the context are given back once the plate is done
-            let view = (app.viewing.mode_3d, app.viewing.cam);
-            let mut hand = Hand::new(&mut app);
-            let was = qymcad_ui_state::current_ctx_id(&hand.app.active_path, &hand.app.project);
-            hand.import(&file);
-            at_rest(&mut hand);
-            let mesh = hand.app.project.bodies.last().map(|b| b.id).expect("the mesh came in");
-            if let Some(part) = hand.app.project.body_owner(mesh) {
-                hand.app.enter_component(part);
-            }
-            check_all(hand.app, "the printed plate brought in as a mesh", &mut problems);
-            hand.look_at([520.0, 15.0, 5.0], 8.0);
-            hand.tool(35).frame(Vec::new());
-            hand.click([505.0, 5.0, 10.0]).frame(Vec::new());
-            let as_it_is = crate::i18n::tr("cmd-recognise-asis");
-            hand.press_word(&as_it_is, egui::pos2(0.0, 0.0));
-            hand.enter();
-            at_rest(&mut hand);
-            check_all(hand.app, "the printed plate made a polyhedron", &mut problems);
-            hand.tool(qymcad_part::RECOGNISE_FEATURE).frame(Vec::new());
-            hand.click([520.0, 20.0, 7.0]).frame(Vec::new());
-            if hand.app.params.recognise.feature.is_none() {
-                problems.push(format!("a click on the wall of the printed hole found no feature: {}", hand.app.status));
-            }
-            hand.enter();
-            at_rest(&mut hand);
-            check_all(hand.app, "the printed hole made exact", &mut problems);
-            let remade = hand.app.project.timeline.iter().position(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::Remade { .. }));
-            let volume = |app: &App| {
-                app.project.timeline.iter().rev().find_map(|n| match n.kind {
-                    qymcad_core::feature::FeatureKind::Remade { body, .. } => app.live.shapes.get(&body).map(|s| s.volume()),
-                    _ => None,
-                })
-            };
-            match (remade, volume(hand.app)) {
-                (Some(_), Some(v)) if (v - (12000.0 - pi * 25.0 * 10.0)).abs() < 1.0 => {}
-                (r, v) => problems.push(format!("the printed hole made exact: node {r:?}, the plate holds {v:?} mm^3, not {}", 12000.0 - pi * 25.0 * 10.0)),
-            }
-            // the hole made 6 across by its own row of the tree, as a person changes it
-            if let Some(ti) = remade {
-                hand.key(egui::Key::Escape).frame(Vec::new());
-                let row = super::super::panels_tree::feature_row_label(&hand.app.project, ti);
-                if !hand.double_click_word(&row) {
-                    problems.push(format!("the row {row:?} of the hole made exact is not in the tree"));
-                }
-                hand.set("diameter", 6.0);
-                hand.enter();
-                at_rest(&mut hand);
-                check_all(hand.app, "the diameter of the printed hole changed in the tree", &mut problems);
-                match volume(hand.app) {
-                    Some(v) if (v - (12000.0 - pi * 9.0 * 10.0)).abs() < 1.0 => {}
-                    v => problems.push(format!("the printed hole made 6 across: the plate holds {v:?} mm^3, not {}", 12000.0 - pi * 9.0 * 10.0)),
-                }
-            }
-            hand.key(egui::Key::Escape).frame(Vec::new());
-            // the hole moved 10 from the front side with "Size on body", as a person does it: its wall clicked, then the
-            // front side - 15 from the axis - 10 typed, Enter: the plate holds as much, the wall stands about y = 10
-            hand.tool(qymcad_part::FACE_GAP).frame(Vec::new());
-            hand.click([520.0, 18.0, 9.0]).frame(Vec::new());
-            hand.click([530.0, 0.0, 5.0]).frame(Vec::new());
-            let field = hand.app.tools.cmd.params.iter().find(|p| p.key == "gap").map(|p| p.val);
-            if field.is_none_or(|d| (d - 15.0).abs() > 0.05) {
-                problems.push(format!("\"Size on body\" on the printed hole and the front side stands at {field:?}, not 15: {}", hand.app.status));
-            }
-            let nodes = hand.app.project.timeline.len();
-            hand.set("gap", 10.0);
-            hand.enter();
-            at_rest(&mut hand);
-            check_all(hand.app, "the printed hole moved 10 from the front", &mut problems);
-            let moved = hand.app.project.timeline.last().filter(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::HoleMoved { .. })).map(|n| n.id);
-            let wall_y = moved
-                .and_then(|id| hand.app.project.regen_faces.get(&id))
-                .and_then(|fs| fs.iter().find(|f| f.normal[2].abs() < 0.1 && f.centroid.x > 515.0 && f.centroid.x < 525.0 && f.centroid.y > 1.0 && f.centroid.y < 29.0))
-                .map(|f| f.centroid.y);
-            let held = moved.and_then(|id| hand.app.live.shapes.get(&id)).map(|s| s.volume());
-            match (held, wall_y) {
-                (Some(v), Some(y)) if (v - (12000.0 - pi * 9.0 * 10.0)).abs() < 1.0 && (y - 10.0).abs() < 0.5 && hand.app.project.timeline.len() == nodes + 1 => {}
-                (v, y) => problems.push(format!("the printed hole moved 10 from the front: {v:?} mm^3, its wall about y = {y:?}, {} nodes more", hand.app.project.timeline.len() - nodes)),
-            }
-            hand.key(egui::Key::Escape).frame(Vec::new());
-            // the hole taken off, as a person does it: the tool switched to "Take off" in its bar, the wall clicked, Enter -
-            // the plate whole again, one node more
-            hand.tool(qymcad_part::RECOGNISE_FEATURE).frame(Vec::new());
-            let off = crate::i18n::tr("cmd-remade-off");
-            if !hand.press_word(&off, egui::pos2(0.0, 0.0)) {
-                problems.push(format!("the bar of \"Recognise feature\" offers no {off:?}"));
-            }
-            // the hole is 6 across about (520, 10) now: its far wall is seen just under the top
-            hand.click([520.0, 13.0, 9.0]).frame(Vec::new());
-            if hand.app.params.recognise.feature.is_none() {
-                problems.push(format!("a click on the wall of the printed hole made 6 across found no feature: {}", hand.app.status));
-            }
-            let nodes = hand.app.project.timeline.len();
-            hand.enter();
-            at_rest(&mut hand);
-            check_all(hand.app, "the printed hole taken off", &mut problems);
-            let whole = hand
-                .app
-                .project
-                .timeline
-                .last()
-                .filter(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::RemoveFace { .. }))
-                .and_then(|n| n.kind.body())
-                .and_then(|b| hand.app.live.shapes.get(&b))
-                .map(|s| s.volume());
-            match whole {
-                Some(v) if (v - 12000.0).abs() < 1.0 && hand.app.project.timeline.len() == nodes + 1 => {}
-                v => problems.push(format!("the printed hole taken off: the plate holds {v:?} mm^3 in {} nodes more, not 12000 in one", hand.app.project.timeline.len() - nodes)),
-            }
-            hand.key(egui::Key::Escape).frame(Vec::new());
-            // the plate made 12 thick with "Size on body", as a person does it: its top clicked, the view turned, its
-            // bottom clicked, 12 typed, Enter - the top moves, one node more
-            hand.tool(qymcad_part::FACE_GAP).frame(Vec::new());
-            hand.click([505.0, 5.0, 10.0]).frame(Vec::new());
-            let seen = (hand.app.viewing.cam.yaw, hand.app.viewing.cam.pitch);
-            hand.look_from_below();
-            hand.click([505.0, 5.0, 0.0]).frame(Vec::new());
-            (hand.app.viewing.cam.yaw, hand.app.viewing.cam.pitch) = seen;
-            if hand.app.params.recognise.gap.len() != 2 {
-                problems.push(format!("\"Size on body\" did not take the top and the bottom of the printed plate: {}", hand.app.status));
-            }
-            let nodes = hand.app.project.timeline.len();
-            hand.set("gap", 12.0);
-            hand.enter();
-            at_rest(&mut hand);
-            check_all(hand.app, "the printed plate made 12 thick", &mut problems);
-            let thick = hand
-                .app
-                .project
-                .timeline
-                .last()
-                .filter(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::FaceGap { .. }))
-                .and_then(|n| n.kind.body())
-                .and_then(|b| hand.app.live.shapes.get(&b))
-                .map(|s| s.volume());
-            match thick {
-                Some(v) if (v - 14400.0).abs() < 1.0 && hand.app.project.timeline.len() == nodes + 1 => {}
-                v => problems.push(format!("the printed plate made 12 thick holds {v:?} mm^3 in {} nodes more, not 14400 in one", hand.app.project.timeline.len() - nodes)),
-            }
-            hand.key(egui::Key::Escape).frame(Vec::new());
-            // a sketch taken off the top of the plate with "Sketch from face": nothing stands on it to redraw, so Enter
-            // lays the sketch alone - its outline, fully defined - and the body stays as it is
-            hand.tool(qymcad_part::SKETCH_FROM_FACE).frame(Vec::new());
-            hand.click([505.0, 5.0, 12.0]).frame(Vec::new());
-            let nodes = hand.app.project.timeline.len();
-            let sketches = hand.app.project.sketches.len();
-            hand.enter();
-            at_rest(&mut hand);
-            check_all(hand.app, "a sketch taken off the top of the printed plate", &mut problems);
-            let si = hand.app.project.sketches.len().checked_sub(1).filter(|_| hand.app.project.sketches.len() == sketches + 1);
-            match si.map(|si| hand.app.project.sketch_dof(si)) {
-                Some((0, 0)) if hand.app.project.timeline.len() == nodes + 1 => {}
-                dof => problems.push(format!(
-                    "the sketch taken off the printed plate stands {dof:?} in {} nodes more, not fully defined in one: {}",
-                    hand.app.project.timeline.len() - nodes,
-                    hand.app.status
-                )),
-            }
-            hand.key(egui::Key::Escape).frame(Vec::new());
-            hand.app.enter_component(was);
-            (hand.app.viewing.mode_3d, hand.app.viewing.cam) = view;
-        }
+        the_view::framed_wheeled_to_a_hole_and_turned(&mut app, &mut problems);
+        the_printed_part::a_printed_part_comes_back_as_a_mesh(&mut app, &mut problems);
 
         // ── THE FINAL DOCUMENT TO LOOK AT: it stays in target ───────────────────────────
         let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target").join("user-case.qcad").to_string_lossy().into_owned();

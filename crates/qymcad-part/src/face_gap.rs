@@ -62,7 +62,7 @@ pub fn start_face_gap_cmd(pc: &mut PartCtx) {
     pc.cmd.params = Vec::new();
     // no field takes the keys until two faces are picked: the tool waits for clicks
     pc.cmd.focus = false;
-    *pc.status = qymcad_i18n::tr("msg-face-gap");
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-face-gap"));
 }
 
 /// The key of face `id` of body `body`, as the body stands.
@@ -118,14 +118,14 @@ pub fn face_gap_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         let b = &pc.project.bodies[mesh];
         let found = feature_at(&b.mesh, &b.faces, Pick { face: id, at: [f.centroid.x, f.centroid.y, f.centroid.z] }, 1.0);
         let Some((Found::Hole(h), remake)) = found.ok().and_then(|found| found.remake(&b.faces).map(|r| (found, r))) else {
-            *pc.status = qymcad_i18n::tr("msg-gap-not-flat");
+            *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-gap-not-flat"));
             return;
         };
         let told = qymcad_i18n::tr1("msg-gap-hole", "d", &qymcad_i18n::num(h.diameter, 2));
         pc.recognise.gap.truncate(1);
         if let Some(plane) = pc.recognise.gap.first().and_then(|&g| key_of(pc, body, g)) {
             if !along(&remake.exact, &plane) {
-                *pc.status = qymcad_i18n::tr("msg-hole-gap-across");
+                *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-hole-gap-across"));
                 return;
             }
         }
@@ -139,12 +139,12 @@ pub fn face_gap_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         let Some(other) = key_of(pc, body, id) else { return };
         if let Some(exact) = held {
             if !along(&exact, &other) {
-                *pc.status = qymcad_i18n::tr("msg-hole-gap-across");
+                *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-hole-gap-across"));
                 return;
             }
         } else if let Some(one) = pc.recognise.gap.first().and_then(|&a| key_of(pc, body, a)) {
             if apart(&one, &other).is_none() {
-                *pc.status = qymcad_i18n::tr("msg-gap-not-parallel");
+                *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-gap-not-parallel"));
                 return;
             }
         }
@@ -202,12 +202,12 @@ fn refresh(pc: &mut PartCtx) {
         let d = axis_off(&h.hole.exact, &h.face).unwrap_or_default();
         pc.cmd.params = vec![size_field(d)];
         pc.cmd.focus = true;
-        *pc.status = qymcad_i18n::tr1("msg-hole-gap-picked", "d", &qymcad_i18n::num(d, 2));
+        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr1("msg-hole-gap-picked", "d", &qymcad_i18n::num(d, 2)));
         return;
     }
     if let Some(held) = pc.recognise.feature.as_ref() {
         pc.cmd.params = Vec::new();
-        *pc.status = format!("{}. {}", held.told, qymcad_i18n::tr("msg-hole-gap-face"));
+        *pc.status = qymcad_ui_state::Notice::info(format!("{}. {}", held.told, qymcad_i18n::tr("msg-hole-gap-face")));
         return;
     }
     match (picked(pc), pc.recognise.gap.len()) {
@@ -215,15 +215,15 @@ fn refresh(pc: &mut PartCtx) {
             let d = apart(&p.one, &p.other).unwrap_or_default();
             pc.cmd.params = vec![size_field(d)];
             pc.cmd.focus = true;
-            *pc.status = qymcad_i18n::tr1("msg-gap-picked", "d", &qymcad_i18n::num(d, 2));
+            *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr1("msg-gap-picked", "d", &qymcad_i18n::num(d, 2)));
         }
         (None, 1) => {
             pc.cmd.params = Vec::new();
-            *pc.status = qymcad_i18n::tr("msg-face-gap-second");
+            *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-face-gap-second"));
         }
         _ => {
             pc.cmd.params = Vec::new();
-            *pc.status = qymcad_i18n::tr("msg-face-gap");
+            *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-face-gap"));
         }
     }
 }
@@ -249,7 +249,7 @@ pub fn apply_face_gap_cmd(pc: &mut PartCtx) -> Option<Id> {
     let typed = pc.cmd.params.iter().any(|f| f.key == "gap" && f.txt.trim().parse::<f64>().is_err());
     if let Some(h) = hole_picked(pc) {
         if !typed && axis_off(&h.hole.exact, &h.face).is_some_and(|d| (d - size).abs() < 1e-9) {
-            *pc.status = qymcad_i18n::tr("msg-gap-unchanged");
+            *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-gap-unchanged"));
             return None;
         }
         let node = pc.project.add_hole_moved(h.body, HoleMove { hole: h.hole, face: h.face, size });
@@ -257,11 +257,11 @@ pub fn apply_face_gap_cmd(pc: &mut PartCtx) -> Option<Id> {
         return Some(node);
     }
     let Some(p) = picked(pc) else {
-        *pc.status = qymcad_i18n::tr("msg-face-gap");
+        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-face-gap"));
         return None;
     };
     if !typed && apart(&p.one, &p.other).is_some_and(|d| (d - size).abs() < 1e-9) {
-        *pc.status = qymcad_i18n::tr("msg-gap-unchanged");
+        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-gap-unchanged"));
         return None;
     }
     let node = pc.project.add_face_gap(p.body, Gap { one: p.one, other: p.other, size, moves: gap_moves(pc.feat.op) });
@@ -281,7 +281,7 @@ pub fn open_face_gap(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool
         pc.gsel.faces = super::live_picks(&*pc.project, src, faces, true).into_iter().chain(pc.recognise.gap.iter().copied()).collect();
         pc.gsel.faces_body = Some(src);
         pc.cmd.params = vec![super::cmd_param_from(&*pc.project, fid, "f-gap", "gap", gap, 0.01, 100000.0)];
-        *pc.status = qymcad_i18n::tr("msg-edit-face-gap");
+        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-edit-face-gap"));
         return;
     }
     let FeatureKind::FaceGap { src, ref one, ref other, gap, moves, .. } = *kind else { return };
@@ -294,7 +294,7 @@ pub fn open_face_gap(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool
     pc.gsel.faces_body = Some(src);
     pc.feat.op = op_of(moves);
     pc.cmd.params = vec![super::cmd_param_from(&*pc.project, fid, "f-gap", "gap", gap, 0.01, 100000.0)];
-    *pc.status = qymcad_i18n::tr("msg-edit-face-gap");
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-edit-face-gap"));
 }
 
 /// The size and the face it moves written into a size being edited.

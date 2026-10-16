@@ -150,7 +150,13 @@ pub(crate) fn draw_gallery_icon_row(ui: &mut egui::Ui, p: &GalleryRowParams<'_>)
                         ui.put(preview.shrink(4.0), image);
                     }
                     Err(_) => {
-                        ui.painter().text(preview.center(), egui::Align2::CENTER_CENTER, ph::WARNING, egui::FontId::proportional(22.0), ui.visuals().warn_fg_color);
+                        ui.painter().text(
+                            preview.center(),
+                            egui::Align2::CENTER_CENTER,
+                            qymcad_ui_state::tone_icon(qymcad_ui_state::Tone::Warning).unwrap_or_default(),
+                            egui::FontId::proportional(22.0),
+                            qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning),
+                        );
                     }
                     Ok(None) => {}
                 }
@@ -194,7 +200,7 @@ pub(crate) fn draw_gallery_icon_row(ui: &mut egui::Ui, p: &GalleryRowParams<'_>)
                         }
                         Err(reason) => {
                             let error = format!("{}: {reason}", crate::i18n::tr("icontheme-mgr-gallery-invalid"));
-                            ui.add(egui::Label::new(egui::RichText::new(error).small().color(ui.visuals().warn_fg_color)).wrap());
+                            ui.add(egui::Label::new(egui::RichText::new(error).small().color(qymcad_ui_state::tone_colour_in(ui, qymcad_ui_state::Tone::Warning))).wrap());
                             if p.cleanable && ui.button(format!("{} {}", ph::BROOM, crate::i18n::tr("icontheme-mgr-clean-icon"))).clicked() {
                                 clean_clicked = true;
                             }

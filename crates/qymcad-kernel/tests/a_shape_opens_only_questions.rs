@@ -15,7 +15,12 @@ const QUESTIONS: [&str; 26] = [
 
 #[test]
 fn a_shape_opens_nothing_but_its_questions() {
-    let text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/shape.rs")).expect("the shape reads");
+    // the shape and its modules: the methods of `Shape` stand in `shape/` as well
+    let dir = concat!(env!("CARGO_MANIFEST_DIR"), "/src/shape");
+    let mut text = std::fs::read_to_string(concat!(env!("CARGO_MANIFEST_DIR"), "/src/shape.rs")).expect("the shape reads");
+    for e in std::fs::read_dir(dir).expect("the modules of the shape read").flatten() {
+        text.push_str(&std::fs::read_to_string(e.path()).expect("a module of the shape reads"));
+    }
     let open: Vec<&str> = text.lines().filter_map(|l| l.strip_prefix("    pub fn ")).filter_map(|rest| rest.split('(').next()).collect();
     assert!(open.len() >= 20, "only {} open methods found: the walk does not see the shape", open.len());
     let opened: Vec<&&str> = open.iter().filter(|name| !QUESTIONS.contains(name)).collect();

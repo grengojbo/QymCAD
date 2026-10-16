@@ -74,7 +74,7 @@ mod tests {
         assert!(built.is_some_and(|v| (v - before).abs() < 1e-3 * before), "redrawn the plate holds {built:?} mm^3, not {before}; the node says {said:?}");
         let si = h.app.project.sketches.len() - 1;
         assert_eq!(h.app.project.sketch_dof(si), (0, 0), "the sketch is not fully defined");
-        assert!(h.app.status.contains(&crate::i18n::tr("dof-fully-defined")), "the status does not say the sketch is fully defined: {}", h.app.status);
+        assert!(h.app.status.words.contains(&crate::i18n::tr("dof-fully-defined")), "the status does not say the sketch is fully defined: {}", h.app.status);
         assert_eq!(h.app.tools.armed.cmd_kind(), qymcad_part::SKETCH_FROM_FACE, "the tool did not stay in hand");
     }
 }

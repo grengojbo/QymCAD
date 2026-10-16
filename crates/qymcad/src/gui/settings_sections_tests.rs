@@ -309,8 +309,9 @@ mod applicability_tests {
         let tr = crate::i18n::tr;
         let draw = |drawer: Option<Drawer>| {
             let mut app = App::default();
-            super::super::screen_keys::tests::frame_text(&mut app, move |_, c| {
-                egui::CentralPanel::default().show(c, |ui| crate::gui::panels_windows::drawer_rows(ui, drawer.as_ref(), egui::Color32::RED));
+            super::super::screen_keys::tests::frame_text(&mut app, move |a, c| {
+                let pal = a.scheme.pal.clone();
+                egui::CentralPanel::default().show(c, |ui| crate::gui::panels_windows::drawer_rows(ui, drawer.as_ref(), &pal));
             })
         };
         let slow = draw(Some(Drawer { name: "Microsoft Basic Render Driver".into(), interface: "Direct3D 12".into(), kind: DrawerKind::Processor }));

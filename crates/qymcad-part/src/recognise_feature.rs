@@ -34,7 +34,7 @@ pub fn start_recognise_feature_cmd(pc: &mut PartCtx) {
     // NO FIELD TAKES THE KEYS until a feature is found: the tool waits for a click, and a field in focus kept Ctrl+Z for
     // its own text - the feature just made exact, the tool taken again, could not be undone
     pc.cmd.focus = false;
-    *pc.status = qymcad_i18n::tr("msg-recognise-feature");
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-feature"));
 }
 
 /// A CLICK ON FACE `face` OF BODY `mesh` with the tool in hand: the feature there is found and taken, or the status line
@@ -50,7 +50,7 @@ pub fn recognise_feature_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>, 
         pc.gsel.faces_body = None;
         *pc.sel = qymcad_ui_state::Sel::None;
         pc.cmd.params.retain(|p| p.key == "tol");
-        *pc.status = qymcad_i18n::tr("msg-recognise-feature");
+        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-feature"));
         return;
     }
     let pick = Pick { face: f.id, at: at.unwrap_or([f.centroid.x, f.centroid.y, f.centroid.z]) };
@@ -69,7 +69,7 @@ pub fn recognise_feature_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>, 
         Err(why) => {
             pc.cmd.params = vec![tol_field];
             pc.recognise.feature = None;
-            *pc.status = qymcad_i18n::tr(unfound_key(why));
+            *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr(unfound_key(why)));
         }
     }
 }
@@ -93,7 +93,7 @@ fn fields_for_mode(pc: &mut PartCtx, tol_field: CmdParam) {
     pc.cmd.focus = !sizes.is_empty();
     pc.cmd.params = sizes.into_iter().chain(std::iter::once(tol_field)).collect();
     let then = if exact { "msg-found-then-exact" } else { "msg-found-then-off" };
-    *pc.status = format!("{}. {}", held.told, qymcad_i18n::tr(then));
+    *pc.status = qymcad_ui_state::Notice::info(format!("{}. {}", held.told, qymcad_i18n::tr(then)));
 }
 
 /// A feature found and what the core is to lay down for it.
@@ -143,7 +143,7 @@ pub fn open_remade(pc: &mut PartCtx, fid: Id, src: Id, faces: &qymcad_core::refs
     pc.gsel.faces_body = Some(src);
     let fields: Vec<CmdParam> = sizes(exact).into_iter().map(|z| super::cmd_param_from(&*pc.project, fid, z.label, z.key, z.val, z.lo, z.hi)).collect();
     pc.cmd.params = fields;
-    *pc.status = qymcad_i18n::tr("msg-edit-remade");
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-edit-remade"));
 }
 
 /// The sizes of the fields written into a feature made exact being edited; a field the tool does not show leaves its
@@ -190,7 +190,7 @@ fn unfound_key(why: Unfound) -> &'static str {
 /// or, taken off, its faces removed.
 pub fn apply_recognise_feature_cmd(pc: &mut PartCtx) -> Option<Id> {
     let Some(FeatureInHand { body, mut remake, .. }) = pc.recognise.feature.clone() else {
-        *pc.status = qymcad_i18n::tr("msg-recognise-feature");
+        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-feature"));
         return None;
     };
     if pc.feat.op == TAKE_OFF {

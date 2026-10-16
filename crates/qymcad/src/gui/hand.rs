@@ -16,6 +16,30 @@ pub(super) struct Drag2d {
     pub modifiers: egui::Modifiers,
 }
 
+/// A DRAG OF THE VIEW: from where to where on the screen, by which button and with which keys held.
+#[cfg(test)]
+pub(super) struct ViewDrag {
+    pub button: egui::PointerButton,
+    pub modifiers: egui::Modifiers,
+    pub from: egui::Pos2,
+    pub to: egui::Pos2,
+}
+
+/// A FORMULA TYPED INTO A FIELD OF A COMMAND: the field, and what is typed into it.
+#[cfg(test)]
+pub(super) struct Typed<'a> {
+    pub field: &'a str,
+    pub text: &'a str,
+}
+
+/// A RUN OF WORDS AS THE FRAME PAINTED IT: what it says, where it stands and in which colour.
+#[cfg(test)]
+pub(super) struct PaintedWords {
+    pub text: String,
+    pub rect: egui::Rect,
+    pub colour: egui::Color32,
+}
+
 #[cfg(test)]
 pub(super) struct Hand<'a> {
     pub app: &'a mut super::App,
@@ -32,6 +56,9 @@ thread_local! {
     /// Where the button of each hint was found last, looked at first the next time.
     static SEEN: std::cell::RefCell<std::collections::HashMap<String, egui::Pos2>> = Default::default();
 }
+
+#[cfg(test)]
+mod frame_reads;
 
 #[cfg(test)]
 impl<'a> Hand<'a> {
@@ -242,6 +269,20 @@ impl<'a> Hand<'a> {
         self.win.widgets.iter().find(|w| w.kind == super::window::Kind::Window && w.label == title).map(|w| w.rect)
     }
 
+    /// CLOSE THE WINDOW TITLED `title` INSIDE THE PROGRAM with the cross on its title bar, as a person does when done with
+    /// it. Answers whether such a window with a cross was on screen.
+    pub fn close_titled(&mut self, title: &str) -> bool {
+        let Some(window) = self.window_titled(title) else { return false };
+        // the cross is the framework's own button, and it tells a screen reader what it does in these words
+        let cross = self
+            .win
+            .widgets
+            .iter()
+            .find(|w| w.kind == super::window::Kind::Button && w.label == "Close window" && window.contains(w.rect.center()) && w.rect.center().y < window.min.y + 40.0)
+            .map(|w| w.rect.center());
+        cross.inspect(|at| self.press_screen(*at)).is_some()
+    }
+
     /// DOUBLE-CLICK A POINT OF THE SCREEN: the hand rests over it, then presses and releases twice, each in a frame
     /// of its own - four sixtieths of a second, well inside the time egui allows a double click.
     pub fn double_click_screen(&mut self, at: egui::Pos2) -> &mut Self {
@@ -297,6 +338,60 @@ impl<'a> Hand<'a> {
     /// EVERY WORD THE LAST FRAME WROTE, with where it stands.
     pub fn words_drawn(&self) -> &[(String, egui::Rect)] {
         &self.win.drawn
+    }
+
+    /// WHAT THE LAST FRAME DREW, shape by shape: a sign laid over the window is told by its look.
+    pub fn shapes_drawn(&self) -> &[egui::epaint::ClippedShape] {
+        &self.win.shapes
+    }
+
+    /// EVERY RUN OF WORDS THE NEXT FRAME PAINTS, with its place and its colour: a warning is told from information by
+    /// the colour on screen, which is what a person sees, not by the field behind it.
+    pub fn painted_words(&mut self) -> Vec<PaintedWords> {
+        fn collect(s: &egui::Shape, out: &mut Vec<PaintedWords>) {
+            match s {
+                egui::Shape::Text(t) => {
+                    let section = t.galley.job.sections.first().map(|s| s.format.color).filter(|c| *c != egui::Color32::PLACEHOLDER);
+                    let colour = t.override_text_color.or(section).unwrap_or(t.fallback_color);
+                    out.push(PaintedWords { text: t.galley.text().to_string(), rect: egui::Rect::from_min_size(t.pos, t.galley.size()), colour });
+                }
+                egui::Shape::Vec(v) => v.iter().for_each(|x| collect(x, out)),
+                _ => {}
+            }
+        }
+        self.frame(Vec::new());
+        let mut out = Vec::new();
+        for cs in &self.win.shapes {
+            collect(&cs.shape, &mut out);
+        }
+        out
+    }
+
+    /// THE STATUS LINE AS THE NEXT FRAME PAINTS IT: the runs of words along the bottom of the window.
+    pub fn status_painted(&mut self) -> Vec<PaintedWords> {
+        let bottom = Self::SCREEN.y;
+        self.painted_words().into_iter().filter(|w| w.rect.min.y > bottom - 40.0).collect()
+    }
+
+    /// THE BADGE OF `tone` IN THE STATUS LINE as the next frame paints it: its run of words - the icon of the tone and a
+    /// number - or `None` when the line shows no such badge.
+    pub fn status_badge(&mut self, tone: qymcad_ui_state::Tone) -> Option<PaintedWords> {
+        let icon = qymcad_ui_state::tone_icon(tone)?;
+        self.status_painted().into_iter().find(|w| w.text.strip_prefix(icon).is_some_and(|n| n.trim().parse::<usize>().is_ok()))
+    }
+
+    /// FRAMES UNTIL THE REBUILD A GESTURE STARTED HAS ENDED, a minute at most: a person waits for the card to go
+    /// before reading the line.
+    pub fn settle(&mut self) -> &mut Self {
+        self.frame(Vec::new()); // the frame that notices the document changed and starts its rebuild
+        for _ in 0..1200 {
+            if self.app.regen.busy.is_none() && !self.app.regen.wanted {
+                break;
+            }
+            self.run(egui::Modifiers::default(), Vec::new());
+            std::thread::sleep(std::time::Duration::from_millis(50));
+        }
+        self.frame(Vec::new())
     }
 
     /// WHERE `word` IS WRITTEN, the next frame drawn - the place written first, when it is written in several.
@@ -664,6 +759,15 @@ impl<'a> Hand<'a> {
         self
     }
 
+    /// Type a formula into a field of the command, as into the popup at the geometry - a name of a parameter where
+    /// `set` types a number.
+    pub fn formula(&mut self, typed: Typed) -> &mut Self {
+        if let Some(p) = self.app.tools.cmd.params.iter_mut().find(|p| p.key == typed.field) {
+            p.txt = typed.text.to_string();
+        }
+        self
+    }
+
     /// TURN THE PART to see a face that is not visible from the current side.
     ///
     /// That is what a person does: cannot click the bottom, so they turn the model. Without this part
@@ -754,67 +858,6 @@ impl<'a> Hand<'a> {
             2 => "tb-copy-hint",
             _ => "tb-rotate-hint",
         })
-    }
-
-    /// THE SEGMENTS OF `colour` THE LAST FRAME DREW, where they stand on screen: a dashed line is drawn as its dashes.
-    pub fn segments_in(&self, colour: egui::Color32) -> Vec<[egui::Pos2; 2]> {
-        fn walk(s: &egui::Shape, colour: egui::Color32, out: &mut Vec<[egui::Pos2; 2]>) {
-            match s {
-                egui::Shape::LineSegment { points, stroke } if stroke.color == colour => out.push(*points),
-                egui::Shape::Vec(v) => v.iter().for_each(|x| walk(x, colour, out)),
-                _ => {}
-            }
-        }
-        let mut out = Vec::new();
-        self.win.shapes.iter().for_each(|cs| walk(&cs.shape, colour, &mut out));
-        out
-    }
-
-    /// HOW MANY CORNERS OF FILLED TRIANGLES IN `colour` THE LAST FRAME DREW: a lit face is drawn as its triangles.
-    pub fn mesh_corners_in(&self, colour: egui::Color32) -> usize {
-        fn walk(s: &egui::Shape, colour: egui::Color32) -> usize {
-            match s {
-                egui::Shape::Mesh(m) => m.vertices.iter().filter(|v| v.color == colour).count(),
-                egui::Shape::Vec(v) => v.iter().map(|x| walk(x, colour)).sum(),
-                _ => 0,
-            }
-        }
-        self.win.shapes.iter().map(|cs| walk(&cs.shape, colour)).sum()
-    }
-
-    /// WHETHER THE ROW WHOSE WORDS HOLD `word` STANDS LIT AS SELECTED, the next frame drawn: a filled rectangle in the
-    /// colour of the selection lies under where it is written.
-    pub fn row_lit(&mut self, word: &str) -> bool {
-        fn fills(s: &egui::Shape, at: egui::Pos2, colour: egui::Color32) -> bool {
-            match s {
-                egui::Shape::Rect(r) => r.fill == colour && r.rect.contains(at),
-                egui::Shape::Vec(v) => v.iter().any(|x| fills(x, at, colour)),
-                _ => false,
-            }
-        }
-        self.frame(Vec::new());
-        let colour = self.win.ctx.global_style().visuals.selection.bg_fill;
-        let Some(at) = self.win.drawn.iter().find(|(t, _)| t.contains(word)).map(|(_, r)| r.center()) else { return false };
-        self.win.shapes.iter().any(|cs| fills(&cs.shape, at, colour))
-    }
-
-    /// HOW MANY STROKES OF `colour` THE FRAME DRAWS NEAR THE POINTER, the hand resting over `place` of the sketch: a
-    /// path or a segment with a point within 40 px of it. What follows the pointer is drawn there.
-    pub fn strokes_near2d(&mut self, place: (f64, f64), colour: egui::Color32) -> usize {
-        fn near(s: &egui::Shape, at: egui::Pos2, colour: egui::Color32) -> usize {
-            match s {
-                egui::Shape::Path(p) if p.stroke.color == egui::epaint::ColorMode::Solid(colour) && p.points.iter().any(|q| q.distance(at) < 40.0) => 1,
-                egui::Shape::LineSegment { points, stroke } if stroke.color == colour && points.iter().any(|q| q.distance(at) < 40.0) => 1,
-                egui::Shape::Vec(v) => v.iter().map(|x| near(x, at, colour)).sum(),
-                _ => 0,
-            }
-        }
-        // on the sheet of the sketch, as the other `...2d` hands are: a new hand starts in the 3D view
-        self.app.viewing.mode_3d = false;
-        let at = self.rest_over2d(place);
-        let n = self.win.shapes.iter().map(|cs| near(&cs.shape, at, colour)).sum();
-        self.close_window();
-        n
     }
 
     /// SHIFT AND A CLICK on the sketch: what is under the pointer joins the selection, as a person adds to one. The
@@ -1301,6 +1344,38 @@ impl<'a> Hand<'a> {
             self.frame(vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / steps as f32))]);
         }
         self.frame(vec![press(to, false)])
+    }
+
+    /// A DRAG OF THE VIEW as a person makes it: the hand comes over `from`, presses `button` with `modifiers` held, leads
+    /// in steps of 3 px to `to` and lets go, in whole frames. Which button and which keys turn or move the view is the
+    /// layout's to say (`MouseNav::rotates`, `MouseNav::pans`).
+    pub fn drag_view(&mut self, drag: ViewDrag) -> &mut Self {
+        let ViewDrag { button, modifiers, from, to } = drag;
+        self.win.clock += 1.0;
+        self.frame_holding(modifiers, vec![egui::Event::PointerMoved(from)]);
+        let press = |pos, pressed| egui::Event::PointerButton { pos, button, pressed, modifiers };
+        self.frame_holding(modifiers, vec![press(from, true)]);
+        let steps = ((to - from).length() / 3.0).ceil().max(1.0) as usize;
+        for k in 1..=steps {
+            self.frame_holding(modifiers, vec![egui::Event::PointerMoved(from + (to - from) * (k as f32 / steps as f32))]);
+        }
+        self.frame_holding(modifiers, vec![press(to, false)]);
+        self.frame(Vec::new())
+    }
+
+    /// NOTCHES OF THE WHEEL over a place of the 3D view: forward (`notches` above zero) brings the model nearer.
+    pub fn wheel3d(&mut self, over: egui::Pos2, notches: i32) -> &mut Self {
+        self.frame(vec![egui::Event::PointerMoved(over)]); // the hand comes over the view first
+        for _ in 0..notches.unsigned_abs() {
+            let delta = egui::vec2(0.0, 120.0 * notches.signum() as f32);
+            let wheel = egui::Event::MouseWheel { unit: egui::MouseWheelUnit::Point, delta, phase: egui::TouchPhase::Move, modifiers: Default::default() };
+            self.frame(vec![egui::Event::PointerMoved(over), wheel]);
+            // the wheel is smoothed over frames
+            for _ in 0..10 {
+                self.frame(vec![egui::Event::PointerMoved(over)]);
+            }
+        }
+        self
     }
 
     /// Whether a text field holds the keyboard - a caret blinking in it.
