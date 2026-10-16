@@ -72,7 +72,7 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
     }
     // A FACE OF A MESH IS DRAWN BY ITS FITTED OUTLINE, as a sketch only: its chords become the lines, arcs and circles
     // they follow (`add_sketch_of_face_loops`), and there is no exact boss to redraw
-    if crate::sketch_from_section::from_a_mesh(pc.project, body) {
+    if pc.project.came_from_a_mesh(body) {
         pc.recognise.redraw = Some(RedrawInHand { body, face: key, prism: None, told: qymcad_i18n::tr("msg-sketch-from-face-mesh") });
         refresh(pc);
         return;
@@ -162,7 +162,7 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
     let profile = held.prism.as_ref().map(|p| p.profile.clone()).unwrap_or_default();
     let name = qymcad_i18n::tr1("g-sketch-n", "n", &(pc.project.sketches.len() + 1).to_string());
     let prism = held.prism.clone().filter(|_| replace);
-    if crate::sketch_from_section::from_a_mesh(pc.project, held.body) {
+    if pc.project.came_from_a_mesh(held.body) {
         let fit = |pts: &[qymcad_core::geom::Point2]| qymcad_meshfit::section::fit_loop(pts, &qymcad_meshfit::section::Fit::for_loop(pts));
         let Some(sketch) = pc.project.add_sketch_of_face_loops(qymcad_core::model::OfFace { body: held.body, face: held.face, fit: &fit, name }) else {
             *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-face-no-outline"));

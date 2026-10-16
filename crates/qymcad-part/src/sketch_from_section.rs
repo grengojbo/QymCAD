@@ -3,7 +3,7 @@
 //! (`qymcad_meshfit::section`). Enter lays a sketch of them on that plane - a datum plane laid off the base where the
 //! offset is not none - defined to the end (`Project::add_sketch_of_section`). A mesh has no sketch behind it and no
 //! exact edge to project: its section is the drawing a person would trace.
-use qymcad_core::feature::{BasePlane, FeatureKind};
+use qymcad_core::feature::BasePlane;
 use qymcad_core::geom::{Fitted, Piece};
 use qymcad_core::model::{Id, OfSection, Project, SectionAt};
 use qymcad_meshfit::section::{fit_section, Within};
@@ -62,23 +62,6 @@ pub fn start_sketch_from_section_cmd(pc: &mut PartCtx) {
     }
 }
 
-/// WHETHER A BODY CAME FROM A MESH: the node that made it, or one it was made from, brought a mesh in or sewed one into
-/// a polyhedron. A plate printed and brought back, its hole since made exact, is still drawn by its section; a body of
-/// exact surfaces from the start is drawn better by "Sketch from face" and by a projection.
-pub(crate) fn from_a_mesh(project: &Project, mut body: Id) -> bool {
-    for _ in 0..project.timeline.len() + 1 {
-        let Some(node) = project.timeline.iter().find(|n| n.kind.body() == Some(body)) else { return false };
-        match node.kind {
-            FeatureKind::MeshPiece { .. } | FeatureKind::MeshSolid { .. } => return true,
-            _ => match node.kind.consumed_body() {
-                Some(src) if src != body => body = src,
-                _ => return false,
-            },
-        }
-    }
-    false
-}
-
 /// A number to a tenth: the offset a field opens with reads 5.0, not 4.99999.
 fn tenth(v: f64) -> f64 {
     (v * 10.0).round() / 10.0
@@ -94,12 +77,10 @@ struct Measured {
 }
 
 fn measured(project: &Project, body: Id, base: BasePlane) -> Option<Measured> {
+    let e = project.extent_along(body, base)?;
     let b = project.bodies.get(project.mesh_index(body)?)?.mesh.bounds()?;
-    let (f, d) = (base.frame(), base.offset_direction());
-    let along = |p: [f64; 3]| (p[0] - f.origin[0]) * d[0] + (p[1] - f.origin[1]) * d[1] + (p[2] - f.origin[2]) * d[2];
-    let (lo, hi) = (along([b.min.x, b.min.y, b.min.z]), along([b.max.x, b.max.y, b.max.z]));
     let size = ((b.max.x - b.min.x).powi(2) + (b.max.y - b.min.y).powi(2) + (b.max.z - b.min.z).powi(2)).sqrt();
-    Some(Measured { from: lo.min(hi), to: lo.max(hi), middle: (lo + hi) / 2.0, tol: (size * TOL_SHARE).max(qymcad_meshfit::section::LEAST_TOL) })
+    Some(Measured { from: e.from, to: e.to, middle: (e.from + e.to) / 2.0, tol: (size * TOL_SHARE).max(qymcad_meshfit::section::LEAST_TOL) })
 }
 
 /// A CLICK ON A BODY with the tool in hand: a body of a mesh is taken, cut through its middle, the fields of the offset
@@ -113,7 +94,7 @@ pub fn sketch_from_section_at(pc: &mut PartCtx, mesh: usize) {
         refresh(pc);
         return;
     }
-    if !from_a_mesh(pc.project, body) {
+    if !pc.project.came_from_a_mesh(body) {
         *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-section-exact"));
         return;
     }

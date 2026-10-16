@@ -181,6 +181,8 @@ pub const ALL: &[Tool] = &[
     crate::tools::modify::RECOGNISE_FEATURE,
     crate::tools::modify::FACE_GAP,
     crate::tools::modify::SKETCH_FROM_FACE,
+    crate::tools::section::MESH_SECTION,
+    crate::tools::section::SKETCH_FROM_SECTION,
     crate::tools::timeline::ADD_PART,
     crate::tools::timeline::SET_ACTIVE_PART,
     crate::tools::timeline::DELETE_FEATURE,

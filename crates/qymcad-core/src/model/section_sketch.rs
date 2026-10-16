@@ -59,7 +59,41 @@ pub struct FromLoops<'a> {
     pub name: String,
 }
 
+/// WHERE A BODY BEGINS AND ENDS along the way an offset off a base plane moves.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Extent {
+    pub from: f64,
+    pub to: f64,
+}
+
 impl Project {
+    /// WHETHER A BODY CAME FROM A MESH: the node that made it, or one it was made from, brought a mesh in or sewed one into
+    /// a polyhedron. A plate printed and brought back, its hole since made exact, is still drawn by its section and by
+    /// its faces' fitted outlines; a body of exact surfaces from the start has exact edges to take instead.
+    pub fn came_from_a_mesh(&self, mut body: Id) -> bool {
+        use crate::feature::FeatureKind;
+        for _ in 0..self.timeline.len() + 1 {
+            let Some(node) = self.timeline.iter().find(|n| n.kind.body() == Some(body)) else { return false };
+            match node.kind {
+                FeatureKind::MeshPiece { .. } | FeatureKind::MeshSolid { .. } => return true,
+                _ => match node.kind.consumed_body() {
+                    Some(src) if src != body => body = src,
+                    _ => return false,
+                },
+            }
+        }
+        false
+    }
+
+    /// WHERE `body` BEGINS AND ENDS along the way an offset off `base` moves (`SectionAt`), by the box of its mesh.
+    pub fn extent_along(&self, body: Id, base: BasePlane) -> Option<Extent> {
+        let b = self.bodies.iter().find(|b| b.id == body)?.mesh.bounds()?;
+        let (f, d) = (base.frame(), base.offset_direction());
+        let along = |p: [f64; 3]| (p[0] - f.origin[0]) * d[0] + (p[1] - f.origin[1]) * d[1] + (p[2] - f.origin[2]) * d[2];
+        let (lo, hi) = (along([b.min.x, b.min.y, b.min.z]), along([b.max.x, b.max.y, b.max.z]));
+        Some(Extent { from: lo.min(hi), to: lo.max(hi) })
+    }
+
     /// A SKETCH OF A SECTION OF A BODY'S MESH: the mesh cut and fitted (`OfSection::fit`) in the frame of `at`, a datum
     /// plane laid off the base plane where the offset is not none, and the loops drawn into a sketch on it, defined to
     /// the end (`add_sketch_of_loops`). Answers `None` and lays nothing when the plane misses the body.
