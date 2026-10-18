@@ -56,16 +56,17 @@ struct CreateArgs {
 
 /// The plane the sketch stands on, an offset datum laid first when `offset` asks for one; the datum's distance keeps
 /// its expression.
-fn lay_plane(p: &mut Project, plane: &SketchPlane, offset: Option<&args::Read>) -> SketchPlane {
-    let Some(off) = offset else { return *plane };
+fn lay_plane(p: &mut Project, plane: &SketchPlane, offset: Option<&args::Read>) -> Result<SketchPlane, String> {
+    let Some(off) = offset else { return Ok(*plane) };
     let def = match plane {
         SketchPlane::World(base) => PlaneDef::OffsetBase { base: *base, dist: off.value },
         SketchPlane::Datum(id) => PlaneDef::OffsetPlane { plane: *id, dist: off.value },
         SketchPlane::Face(body, key) => PlaneDef::OffsetFace { body: *body, face: *key, dist: off.value },
     };
     let datum = p.add_plane(WorkPlane { def, ..Default::default() });
-    p.set_feat_dim(datum, "dist", off.expr.clone().unwrap_or_default());
-    SketchPlane::Datum(datum)
+    p.write_feat_formula(&qymcad_core::model::FeatNumber { node: datum, key: "dist" }, &off.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula)
+        .map_err(|e| e.to_string())?;
+    Ok(SketchPlane::Datum(datum))
 }
 
 pub const CREATE_SKETCH: Tool = Tool {
@@ -110,7 +111,7 @@ pub const CREATE_SKETCH: Tool = Tool {
                         p.add_external_face_ref(consumer, *body, *key);
                     }
                 }
-                let stands = lay_plane(p, &plane, offset.as_ref());
+                let stands = lay_plane(p, &plane, offset.as_ref())?;
                 let number = p.sketches.len() + 1;
                 let si = p.new_sketch(format!("name-sketch-n#{number}"));
                 p.sketches[si].plane = stands;

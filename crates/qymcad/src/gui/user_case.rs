@@ -13,15 +13,18 @@ pub(crate) mod tests {
     use super::super::check_folder::tests::CheckFolder;
     use super::super::{hand::Hand, App};
     mod check_all;
+    mod drawing;
     mod save_and_reopen;
     mod the_faults;
     mod the_printed_part;
     mod the_claude;
     mod the_menu;
     mod the_section;
+    mod the_layout;
     mod the_view;
     pub(crate) use check_all::check_all;
     use save_and_reopen::save_and_reopen;
+    use drawing::{drawing, Drawing};
 
     /// APPLY A TOOL TO THE CURRENT BODY OF A PART - one recipe per tool, for any part.
     ///
@@ -463,17 +466,6 @@ pub(crate) mod tests {
         made
     }
 
-    /// A sketch tool by its number, its name in a report, and the clicks it is used with.
-    struct Drawing {
-        tool: u8,
-        name: &'static str,
-        clicks: &'static [(f64, f64)],
-    }
-
-    fn drawing(tool: u8, name: &'static str, clicks: &'static [(f64, f64)]) -> Drawing {
-        Drawing { tool, name, clicks }
-    }
-
     /// SOMEONE WITH A 3D PRINTER MAKES A BOX WITH A LID: the housing, a sketch on a face, holes, fillets, a
     /// shell, a second part, an assembly, a save, and a dimension edited in the middle of it.
     #[test]
@@ -499,7 +491,7 @@ pub(crate) mod tests {
         app.chosen.sel = super::super::Sel::Sketch(si);
         let mut hand = Hand::new(&mut app);
         hand.look_at([30.0, 20.0, 10.0], 8.0).tool(1).set("height", 25.0).enter();
-        check_all(&mut app, "the housing was extruded", &mut problems);
+        the_layout::set_by_hand(&mut app, &mut problems); // the extrusion checked, then the layout set by hand
 
         the_claude::claude_makes_the_housing_taller(&mut app, &mut problems);
 

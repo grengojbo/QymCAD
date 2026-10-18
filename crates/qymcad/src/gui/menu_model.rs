@@ -35,6 +35,8 @@ pub(crate) enum MenuAction {
     Orbit3d,
     FitView,
     Scheme(SchemeChoice),
+    /// A panel of the window shown or hidden, by its key in the shell.
+    Panel(String),
     Settings,
     PartsLibrary,
     Start,
@@ -169,6 +171,7 @@ pub(crate) enum NoteTone {
 pub(crate) enum SubKind {
     Recent,
     Export,
+    Panels,
 }
 
 /// A menu inside a menu.
@@ -248,13 +251,33 @@ pub(crate) struct MenuState {
     pub schemes: Vec<SchemeRow>,
     pub orbit: Checked,
     pub updates: Offered,
+    pub panels: Vec<PanelRow>,
+}
+
+/// A panel as the View menu ticks it: its key in the shell, its name, whether it is shown.
+#[derive(Clone, Debug, PartialEq)]
+pub(crate) struct PanelRow {
+    pub key: String,
+    pub title: String,
+    pub shown: Checked,
 }
 
 #[cfg(test)]
 impl MenuState {
     /// A fresh document: nothing to undo, nothing recent, nothing on the clipboard.
     pub(crate) fn quiet() -> Self {
-        MenuState { undo: Step::None, redo: Step::None, copy: Enabled::No, paste: Enabled::No, rebuild: Enabled::No, recent: Vec::new(), schemes: Vec::new(), orbit: Checked::No, updates: Offered::No }
+        MenuState {
+            undo: Step::None,
+            redo: Step::None,
+            copy: Enabled::No,
+            paste: Enabled::No,
+            rebuild: Enabled::No,
+            recent: Vec::new(),
+            schemes: Vec::new(),
+            orbit: Checked::No,
+            updates: Offered::No,
+            panels: Vec::new(),
+        }
     }
 }
 
@@ -283,7 +306,23 @@ pub(crate) fn menu_state(bc: &BarCtx) -> MenuState {
         // CHECK FOR UPDATES is absent where it cannot work: inside Flatpak there is no network, and a build
         // with no release tag has nothing to compare against.
         updates: if crate::gui::update_ui::available() { Offered::Yes } else { Offered::No },
+        panels: panel_rows(&*bc.set),
     }
+}
+
+/// THE PANELS A PERSON MAY HIDE, as the shell of the window lays them out (`crate::gui::shell`), each ticked when shown.
+fn panel_rows(set: &qymcad_ui_state::Settings) -> Vec<PanelRow> {
+    let shell = crate::gui::shell(set);
+    shell
+        .movable()
+        .into_iter()
+        .filter(|key| shell.hideable(key))
+        .filter_map(|key| {
+            let place = shell.place_of(key)?;
+            let shown = if place.seen == qymcad_shell::Seen::Shown { Checked::Yes } else { Checked::No };
+            Some(PanelRow { key: key.to_string(), title: qymcad_i18n::tr(&format!("panel-{key}")), shown })
+        })
+        .collect()
 }
 
 fn scheme_look(id: &str, light: bool) -> SchemeLook {
@@ -406,6 +445,12 @@ fn view_menu(state: &MenuState) -> TopMenu {
     let mut nodes = vec![
         MenuNode::Check { item: item(MenuAction::Orbit3d, "menu-orbit3d"), checked: state.orbit },
         MenuNode::Item(item(MenuAction::FitView, "menu-fit-view")),
+        // THE PANELS: a tick for each one a person may hide; hidden, it takes no room
+        MenuNode::Sub(SubMenu {
+            kind: SubKind::Panels,
+            caption: qymcad_i18n::tr("menu-panels"),
+            nodes: state.panels.iter().map(|p| MenuNode::Check { item: MenuItem::new(MenuAction::Panel(p.key.clone()), p.title.clone()), checked: p.shown }).collect(),
+        }),
         MenuNode::Separator,
         MenuNode::Note { text: qymcad_i18n::tr("settings-scheme"), tone: NoteTone::Plain },
     ];
@@ -473,6 +518,7 @@ pub(crate) fn apply_menu_action(action: &MenuAction, bc: &mut BarCtx, ctx: &egui
             bc.set.scheme = choice.id.clone();
             qymcad_ui_state::apply_theme(&mut *bc.scheme, &*bc.set, ctx);
         }
+        MenuAction::Panel(key) => crate::gui::panels_windows::toggle_panel(&mut *bc.set, key),
         MenuAction::Settings => {
             bc.win.toggle(WinKind::Settings);
         }

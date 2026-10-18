@@ -154,9 +154,9 @@ pub const LINEAR_PATTERN: Tool = Tool {
                     let expr = r.as_ref().and_then(|r| r.step.expr.clone()).unwrap_or_default();
                     for (k, key) in KEYS[i].iter().enumerate() {
                         let on = r.as_ref().is_some_and(|r| r.along.index() == k);
-                        p.set_feat_dim(node, key, if on { expr.clone() } else { String::new() });
+                        p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: key }, &if on { expr.clone() } else { String::new() }, qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                     }
-                    p.set_feat_dim(node, STEPS[i], expr);
+                    p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: STEPS[i] }, &expr, qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 }
                 Ok(node)
             })
@@ -231,7 +231,7 @@ pub const CIRCULAR_PATTERN: Tool = Tool {
             .doc
             .edit("f-operation", |p| {
                 let node = p.add_circular_array_axis(src, a.count, angle.value, axis);
-                p.set_feat_dim(node, "angle", angle.expr.clone().unwrap_or_default());
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "angle" }, &angle.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(node)
             })
             .map_err(tool::doc_refusal)?;
@@ -453,7 +453,7 @@ pub const SPLIT_BODY: Tool = Tool {
                 if let Some(key) = at.face {
                     p.set_op_face(first, src, key);
                 }
-                p.set_feat_dim(first, "offset", offset.expr.clone().unwrap_or_default());
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: first, key: "offset" }, &offset.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(bodies)
             })
             .map_err(tool::doc_refusal)?;
@@ -488,7 +488,7 @@ pub const PUSH_FACE: Tool = Tool {
             .doc
             .edit("f-push-face", |p| {
                 let node = p.add_push_face(src, key, d.value);
-                p.set_feat_dim(node, "dist", d.expr.clone().unwrap_or_default());
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "dist" }, &d.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(node)
             })
             .map_err(tool::doc_refusal)?;
@@ -562,7 +562,7 @@ pub const FACE_GAP: Tool = Tool {
                 let part = p.body_owner(src);
                 p.set_active_component(part);
                 let node = p.add_face_gap(src, qymcad_core::model::Gap { one, other, size: size.value, moves });
-                p.set_feat_dim(node, "gap", size.expr.clone().unwrap_or_default());
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "gap" }, &size.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(node)
             })
             .map_err(tool::doc_refusal)?;
@@ -646,7 +646,7 @@ pub const SKETCH_FROM_FACE: Tool = Tool {
                     if let Some(qymcad_core::feature::FeatureKind::Redrawn { height: stored, .. }) = p.timeline.iter_mut().find(|n| n.id == *node).map(|n| &mut n.kind) {
                         *stored = h.value;
                     }
-                    p.set_feat_dim(*node, "height", h.expr.clone().unwrap_or_default());
+                    p.write_feat_formula(&qymcad_core::model::FeatNumber { node: *node, key: "height" }, &h.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 }
                 Ok(FromFaceLaid { sketch, node })
             })
@@ -743,8 +743,8 @@ pub const RECOGNISE_FEATURE: Tool = Tool {
                 let part = p.body_owner(src);
                 p.set_active_component(part);
                 let node = p.add_remade_feature(src, remake);
-                p.set_feat_dim(node, key, size.as_ref().and_then(|s| s.expr.clone()).unwrap_or_default());
-                p.set_feat_dim(node, "depth", depth.as_ref().and_then(|s| s.expr.clone()).unwrap_or_default());
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: key }, &size.as_ref().and_then(|s| s.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "depth" }, &depth.as_ref().and_then(|s| s.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(node)
             })
             .map_err(tool::doc_refusal)?;
@@ -792,7 +792,8 @@ fn move_hole(ctx: &mut Ctx, src: qymcad_core::model::Id, face: qymcad_core::feat
             let part = p.body_owner(src);
             p.set_active_component(part);
             let node = p.add_hole_moved(src, qymcad_core::model::HoleMove { hole, face, size: size.value });
-            p.set_feat_dim(node, "gap", size.expr.clone().unwrap_or_default());
+            p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "gap" }, &size.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula)
+                .map_err(|e| e.to_string())?;
             Ok(node)
         })
         .map_err(tool::doc_refusal)?;

@@ -131,7 +131,7 @@ struct RimAt {
 
 /// A rim laid again on a redrawn prism: rounded or cut to its size along `edges`, its faces named after the node.
 fn blend_rim(k: &dyn crate::feature::Kernel, body: Id, rim: crate::model::RimBlend, edges: &[u32], feature: Id) -> Result<crate::geom::Built, crate::errors::CoreError> {
-    let roles = crate::feature::BlendRoles::Named { feature };
+    let roles = crate::feature::BlendRoles::Named { feature, picked: Vec::new() };
     match rim.cut {
         crate::model::RimCut::Round => k.fillet(body, body, rim.size, edges, roles),
         crate::model::RimCut::Chamfer => k.chamfer(body, body, rim.size, edges, roles),
@@ -360,7 +360,7 @@ fn pushed_job(src: Id, body: Id, shifts: Vec<Shift>, carried: Vec<Carried>) -> c
         }
         for c in &carried {
             let edge = parted_by(k, body, c.sides)?;
-            let roles = crate::feature::BlendRoles::Named { feature: c.feature };
+            let roles = crate::feature::BlendRoles::Named { feature: c.feature, picked: Vec::new() };
             built = Some(match c.blend {
                 Blend::Round(radius) => k.fillet(body, body, radius, &[edge], roles)?,
                 Blend::Chamfer(leg) => k.chamfer(body, body, leg, &[edge], roles)?,

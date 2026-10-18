@@ -150,6 +150,7 @@ pub static ALL: &[&Tool] = &[
     &menus::RECENT,
     &menus::RECENT_CLEAR,
     &menus::FIT_VIEW,
+    &menus::PANELS,
     &menus::THEME_LIGHT,
     &menus::THEME_ALUCARD,
     &menus::THEME_DARK,

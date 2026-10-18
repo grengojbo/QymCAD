@@ -211,7 +211,7 @@ pub const EDIT_FEATURE: Tool = Tool {
             .edit("par-edit-step", |p| {
                 for s in &read {
                     match &s.read.expr {
-                        Some(e) => p.set_feat_dim(a.feature, &s.key, e.clone()),
+                        Some(e) => p.write_feat_formula(&qymcad_core::model::FeatNumber { node: a.feature, key: &s.key }, &e.clone(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?,
                         // a number lives in the expression of a feature: that is how the rebuild applies it and how the
                         // window's properties show it (`set_dim_target_value`)
                         None => {

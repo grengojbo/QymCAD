@@ -198,7 +198,9 @@ pub fn apply_recognise_feature_cmd(pc: &mut PartCtx) -> Option<Id> {
     }
     edit_remade(pc.cmd, &mut remake.exact);
     let node = pc.project.add_remade_feature(body, remake);
-    super::store_cmd_exprs(pc.cmd, pc.project, node);
+    if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
+        return super::formula_refused(pc, &e);
+    }
     Some(node)
 }
 

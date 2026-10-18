@@ -204,7 +204,8 @@ fn a_circle_drawn_on_it_is_fully_defined(hand: &mut crate::gui::hand::Hand, si: 
     let n = pts.len().max(1) as f64;
     let middle = pts.iter().fold((0.0, 0.0), |(x, y), p| (x + p.x / n, y + p.y / n));
     hand.sk_tool(3).click2d(middle.0, middle.1).click2d(middle.0 + 3.0, middle.1);
-    hand.sk_tool(0);
+    // the circle tool put down as a person puts it down, by Esc
+    hand.key(egui::Key::Escape);
     let free = hand.app.project.sketch_dof(si).0;
     hand.hover2d(middle.0, middle.1);
     if !hand.press_hint(&crate::i18n::tr("tb-fully-define-hint")) {

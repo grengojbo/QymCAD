@@ -35,6 +35,7 @@ impl Project {
         // of four edges stood green with three after a cut above took the fourth.
         self.regen_warnings.remove(&p.node);
         let partly_lost = if asked_count > 0 { self.edge_refs_lost(p.node, src, &edges.query.picked_descs(), p.emap, p.kernel) } else { 0 };
+        let picked = self.picked_edges(super::apply::BlendOn { node: p.node, src }, edges, p.emap, p.kernel);
         let edges = &self.live_fillet_edges(p.node, src, edges, p.emap, p.kernel);
         let lost_edges = asked_edges && edges.is_empty();
         if partly_lost > 0 && !edges.is_empty() {
@@ -62,11 +63,11 @@ impl Project {
             crate::feature::KernelJob::refused(lost_error)
         } else if !verts.is_empty() && !edges.is_empty() {
             // the faces it makes are named by the bridge, after this node, as a fillet of one radius names them
-            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: picked.clone() };
             crate::feature::KernelJob::new(vec![src], move |k| k.fillet_at_vertices(body, src, radius, &edges, &verts, roles))
         } else {
             // the faces it makes are named by the bridge, after this node
-            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: picked.clone() };
             crate::feature::KernelJob::new(vec![src], move |k| k.fillet(body, src, radius, &edges, roles))
         }
     }
@@ -87,6 +88,7 @@ impl Project {
         // of four edges stood green with three after a cut above took the fourth.
         self.regen_warnings.remove(&p.node);
         let partly_lost = if asked_count > 0 { self.edge_refs_lost(p.node, src, &edges.query.picked_descs(), p.emap, p.kernel) } else { 0 };
+        let picked = self.picked_edges(super::apply::BlendOn { node: p.node, src }, edges, p.emap, p.kernel);
         let edges = &self.live_fillet_edges(p.node, src, edges, p.emap, p.kernel);
         let lost_edges = asked_edges && edges.is_empty();
         if partly_lost > 0 && !edges.is_empty() {
@@ -99,11 +101,11 @@ impl Project {
             crate::feature::KernelJob::refused(lost_error)
         } else if mode != crate::feature::ChamferMode::Symmetric && !edges.is_empty() {
             // the faces it makes are named by the bridge, after this node, as a symmetric chamfer names them
-            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: picked.clone() };
             crate::feature::KernelJob::new(vec![src], move |k| k.chamfer_ex(body, src, dist, ChamferShape { mode, d2, flip, ref_face }, &edges, roles))
         } else {
             // the faces it makes are named by the bridge, after this node: the same rule as for a fillet
-            let roles = crate::feature::BlendRoles::Named { feature: p.node };
+            let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: picked.clone() };
             crate::feature::KernelJob::new(vec![src], move |k| k.chamfer(body, src, dist, &edges, roles))
         }
     }
@@ -168,7 +170,7 @@ impl Project {
                 })
             }
             Exact::Round { sides, radius } => {
-                let roles = crate::feature::BlendRoles::Named { feature: p.node };
+                let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: Vec::new() };
                 let radius = p.dim("radius", radius);
                 crate::feature::KernelJob::new(vec![src], move |k| {
                     k.remove_faces(body, src, &ids)?;
@@ -177,7 +179,7 @@ impl Project {
                 })
             }
             Exact::Chamfer { sides, leg } => {
-                let roles = crate::feature::BlendRoles::Named { feature: p.node };
+                let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: Vec::new() };
                 let leg = p.dim("dist", leg);
                 crate::feature::KernelJob::new(vec![src], move |k| {
                     k.remove_faces(body, src, &ids)?;
@@ -350,7 +352,8 @@ impl Project {
         let feature = p.node;
         crate::feature::KernelJob::new(vec![src], move |k| {
             k.remove_faces(body, src, &ids)?;
-            let mut built = k.combine_region_multi(BodyOp { src: body, op, body }, &sourced.profiles, span, pl, crate::feature::Sides { feature, sources: &sourced.sources })?;
+            let mut built =
+                k.combine_region_multi(BodyOp { src: body, op, body }, &sourced.profiles, span, pl, crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions })?;
             for r in &laid {
                 let edges = crate::model::edges_round_outline(k, body, &pl, r.at, &outline);
                 if edges.is_empty() {
@@ -640,7 +643,7 @@ impl Project {
                 &profiles,
                 crate::feature::ToolSpan { start: 0.0, length: height, ends: crate::feature::ToolEnds::Kept },
                 crate::feature::PLACE_IDENTITY,
-                crate::feature::Sides { feature, sources: &sources },
+                crate::feature::Sides { feature, sources: &sources, regions: &[] },
             )
         })
     }
@@ -729,11 +732,17 @@ impl Project {
             Some(enc) if src == 0 => crate::feature::KernelJob::new(Vec::new(), move |k| {
                 let body_kind = if surface { crate::feature::LoftBody::Sheet } else { crate::feature::LoftBody::Solid };
                 let s = &enc.sections;
-                k.loft(body, crate::feature::LoftSections { data: &s.data, offsets: &s.offsets, places: &s.places }, walls(ruled), body_kind, crate::feature::Sides { feature, sources: &enc.sources })
+                k.loft(
+                    body,
+                    crate::feature::LoftSections { data: &s.data, offsets: &s.offsets, places: &s.places },
+                    walls(ruled),
+                    body_kind,
+                    crate::feature::Sides { feature, sources: &enc.sources, regions: &[] },
+                )
             }),
             Some(enc) => crate::feature::KernelJob::new(vec![src], move |k| {
                 let s = &enc.sections;
-                k.loft_combine(BodyOp { src, op, body }, &s.data, &s.offsets, &s.places, walls(ruled), crate::feature::Sides { feature, sources: &enc.sources })
+                k.loft_combine(BodyOp { src, op, body }, &s.data, &s.offsets, &s.places, walls(ruled), crate::feature::Sides { feature, sources: &enc.sources, regions: &[] })
             }),
             None => crate::feature::KernelJob::refused(crate::errors::CoreError::LoftNeedsTwoSections),
         }

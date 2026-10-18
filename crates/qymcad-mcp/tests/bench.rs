@@ -7,7 +7,7 @@
 //! about these budgets; there the checks are passed over. One at a time: the kernel takes one call at a time, and three
 //! measured at once wait for each other - the bracket took 483 ms beside the others, 30 ms alone.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use qymcad_mcp::server::answer;
 use qymcad_mcp::tool::Ctx;
@@ -20,14 +20,13 @@ fn call(ctx: &mut Ctx, name: &str, arguments: Value) -> Value {
     reply
 }
 
-/// The median of five runs of `work`, each on a document `setup` made afresh.
+/// The median of five runs of `work`, each on a document `setup` made afresh: the work of the program, not the clock
+/// on the wall (`time_budget::cost_of`) - a machine building other work beside the check does not lengthen it.
 fn median(setup: fn() -> Ctx, work: fn(&mut Ctx)) -> Duration {
     let mut times: Vec<Duration> = (0..5)
         .map(|_| {
             let mut ctx = setup();
-            let start = Instant::now();
-            work(&mut ctx);
-            start.elapsed()
+            qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Process, || work(&mut ctx)).cost.work
         })
         .collect();
     times.sort();

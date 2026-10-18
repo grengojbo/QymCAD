@@ -253,7 +253,9 @@ pub fn apply_face_gap_cmd(pc: &mut PartCtx) -> Option<Id> {
             return None;
         }
         let node = pc.project.add_hole_moved(h.body, HoleMove { hole: h.hole, face: h.face, size });
-        super::store_cmd_exprs(pc.cmd, pc.project, node);
+        if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
+            return super::formula_refused(pc, &e);
+        }
         return Some(node);
     }
     let Some(p) = picked(pc) else {
@@ -265,7 +267,9 @@ pub fn apply_face_gap_cmd(pc: &mut PartCtx) -> Option<Id> {
         return None;
     }
     let node = pc.project.add_face_gap(p.body, Gap { one: p.one, other: p.other, size, moves: gap_moves(pc.feat.op) });
-    super::store_cmd_exprs(pc.cmd, pc.project, node);
+    if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
+        return super::formula_refused(pc, &e);
+    }
     Some(node)
 }
 

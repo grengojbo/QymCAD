@@ -91,7 +91,8 @@ fn lay(ctx: &mut Ctx, laying: Laying, add: impl FnOnce(&mut Project) -> Id) -> R
         .edit(laying.step, |p| {
             let node = add(p);
             for d in &laying.dims {
-                p.set_feat_dim(node, d.key, d.read.expr.clone().unwrap_or_default());
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: d.key }, &d.read.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula)
+                    .map_err(|e| e.to_string())?;
             }
             let placed = mat.map_or(node, |m| p.add_move(node, m));
             Ok(Laid { node, body: p.finish_base_body(placed, 1) })

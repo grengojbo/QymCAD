@@ -184,7 +184,9 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
         if let Some(FeatureKind::Redrawn { height: h, .. }) = pc.project.timeline.iter_mut().find(|n| n.id == node).map(|n| &mut n.kind) {
             *h = height;
         }
-        super::store_cmd_exprs(pc.cmd, pc.project, node);
+        if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
+            return super::formula_refused(pc, &e);
+        }
     }
     pc.recognise.laid = told_laid(&sketch);
     node.or(Some(sketch.sketch))

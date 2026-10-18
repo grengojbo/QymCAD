@@ -1050,3 +1050,4 @@ mod voice;
 pub use voice::*;
 mod faults;
 pub use faults::*;
+pub mod catalogue;

@@ -183,6 +183,7 @@ pub(crate) fn symbol_of(action: &MenuAction) -> Option<&'static str> {
             SchemeLook::Dark => "moon",
             SchemeLook::Own => "paintbrush",
         }),
+        MenuAction::Panel(_) => None,
         MenuAction::Settings => Some("gearshape"),
         MenuAction::PartsLibrary => Some("books.vertical"),
         MenuAction::Start => Some("house"),
@@ -199,6 +200,7 @@ pub(crate) fn sub_symbol(kind: SubKind) -> &'static str {
     match kind {
         SubKind::Recent => "clock.arrow.circlepath",
         SubKind::Export => "square.and.arrow.up",
+        SubKind::Panels => "sidebar.left",
     }
 }
 

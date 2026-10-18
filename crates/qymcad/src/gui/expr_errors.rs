@@ -41,8 +41,9 @@ mod tests {
                 ExprError::NotANumber,
                 ExprError::UnexpectedEnd,
                 ExprError::UnknownName("w".into()),
-                ExprError::Cycle("h".into()),
                 ExprError::TooDeep { limit: 256 },
+                ExprError::LeansOnItself("b_len -> a_len -> b_len".into()),
+                ExprError::NameWithoutValue("a_len".into()),
             ] {
                 let msg = crate::gui::error_words::expr_error_text(&e);
                 assert!(!msg.trim().is_empty(), "{code}: {e:?} — an empty message");
@@ -105,7 +106,7 @@ mod tests {
             crate::gui::panels_windows::params_window(&mut a.win_ctx(&mut asks), c);
             a.do_win_asks(asks, c);
         });
-        let want = crate::gui::error_words::expr_error_text(&ExprError::Cycle("h".into()));
+        let want = crate::gui::error_words::expr_error_text(&ExprError::LeansOnItself("h -> h".into()));
         crate::i18n::set_language(&prev);
         assert!(texts.iter().any(|t| t.contains(&want)), "the parameters window does not say that h reads itself \"{want}\": {texts:?}");
         assert!(!texts.iter().any(|t| t.trim() == "20.000"), "the cell shows a number computed from the previous value: {texts:?}");
