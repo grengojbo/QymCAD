@@ -305,8 +305,14 @@ impl<'a> Hand<'a> {
 
     /// THE HINT THAT COMES UP with the pointer resting over `at`: the words a frame of the rest draws more times than the
     /// frame before it did - a hint that repeats a line on screen is drawn a second time.
+    ///
+    /// THE POINTER COMES TO THE BUTTON A SECOND AFTER THE LAST CLICK OR TURN OF THE WHEEL, as a hand does. egui opens no
+    /// hint for a widget clicked less than 0.1 s before the pointer last moved, nor within 0.5 s of a scroll; the hand
+    /// moved in the same instant it clicked the canvas, so the first button it rested over came up empty - the arrow,
+    /// first on the panel of the sketch, was never found after a circle was drawn.
     pub fn hint_at(&mut self, at: egui::Pos2) -> Vec<String> {
         let before: Vec<String> = self.win.drawn.iter().map(|(t, _)| t.clone()).collect();
+        self.win.clock += 1.0;
         self.frame(vec![egui::Event::PointerMoved(at)]);
         self.win.clock += 1.0;
         let mut came: Vec<String> = Vec::new();
