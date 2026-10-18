@@ -7,8 +7,9 @@ use qymcad_core::model::{FromLoops, Project};
 use qymcad_meshfit::section::{fit_loop, Fit, Piece};
 use std::f64::consts::FRAC_PI_2;
 
-/// The plate's outline: a rectangle of 40 x 30 at (5, 5), its corners rounded by 3; and its hole, 10 across at (25, 20).
-fn plate() -> Vec<f64> {
+/// The plate's outline: a rectangle of 40 x 30 at (5, 5), its corners rounded by 3; and its hole, `bore` across at
+/// (25, 20).
+fn plate(bore: f64) -> Vec<f64> {
     let (x0, y0, x1, y1, r) = (5.0, 5.0, 45.0, 35.0, 3.0);
     let p = Point2::new;
     let round =
@@ -24,7 +25,8 @@ fn plate() -> Vec<f64> {
         round(p(x0 + r, y0 + r), 2.0 * FRAC_PI_2),
     ];
     let c = p(25.0, 20.0);
-    let hole = [ProfEdge::Arc { a: p(30.0, 20.0), b: p(20.0, 20.0), center: c, ccw: false }, ProfEdge::Arc { a: p(20.0, 20.0), b: p(30.0, 20.0), center: c, ccw: false }];
+    let h = bore / 2.0;
+    let hole = [ProfEdge::Arc { a: p(c.x + h, c.y), b: p(c.x - h, c.y), center: c, ccw: false }, ProfEdge::Arc { a: p(c.x - h, c.y), b: p(c.x + h, c.y), center: c, ccw: false }];
     encode_loops(&[&outer, &hole])
 }
 
@@ -35,9 +37,10 @@ struct Shake {
     amp: f64,
 }
 
-/// The plate as a mesh, cut at half its height, fitted, and laid as a sketch: the failures it shows.
-fn drawn(shake: Shake, tol: Option<f64>) -> Vec<String> {
-    let body = qymcad_kernel::specimen::extrude_profile(&plate(), 10.0).expect("the plate is built");
+/// The plate as a mesh, cut at half its height, fitted, and laid as a sketch: its sizes from the smallest, or the
+/// failure it shows.
+fn sizes_drawn(bore: f64, shake: Shake, tol: Option<f64>) -> Result<Vec<f64>, String> {
+    let body = qymcad_kernel::specimen::extrude_profile(&plate(bore), 10.0).expect("the plate is built");
     let qymcad_core::geom::Built { mut mesh, .. } = qymcad_kernel::specimen::mesh(&body, 0.05).into_iter().next().expect("the plate is a mesh");
     // each corner shaken by where it stands, not by its number: a mesh repeats a corner for every face it bounds, and the
     // copies must move as one or the mesh is torn
@@ -48,7 +51,6 @@ fn drawn(shake: Shake, tol: Option<f64>) -> Vec<String> {
         v.x += s * a.cos();
         v.y += s * a.sin();
     }
-    let mut failures = Vec::new();
     let frame = PlaneFrame { origin: [0.0, 0.0, 5.0], x: [1.0, 0.0, 0.0], y: [0.0, 1.0, 0.0] };
     let loops = mesh_section_loops(&mesh, &frame);
     assert_eq!(loops.len(), 2, "the outline and the hole");
@@ -61,15 +63,25 @@ fn drawn(shake: Shake, tol: Option<f64>) -> Vec<String> {
         count(|p| matches!(p, Piece::Spline(_))),
     ];
     if found != [4, 4, 1, 0] {
-        return vec![format!("the section is {found:?} lines, arcs, circles and splines, not [4, 4, 1, 0]")];
+        return Err(format!("the section is {found:?} lines, arcs, circles and splines, not [4, 4, 1, 0]"));
     }
     let mut p = Project::default();
     let made = p.add_sketch_of_loops(FromLoops { plane: SketchPlane::World(BasePlane::XY), loops: &fitted, name: "Section".into() }).expect("a sketch is laid");
     if made.defined.free != 0 {
-        failures.push(format!("the sketch is left free: {:?}", made.defined));
+        return Err(format!("the sketch is left free: {:?}", made.defined));
     }
     let mut sizes: Vec<f64> = p.sketches[made.si].constraints.iter().filter_map(|c| c.dim_value()).collect();
     sizes.sort_by(f64::total_cmp);
+    Ok(sizes)
+}
+
+/// The plate with its hole of 10 drawn: the failures it shows.
+fn drawn(shake: Shake, tol: Option<f64>) -> Vec<String> {
+    let sizes = match sizes_drawn(10.0, shake, tol) {
+        Ok(s) => s,
+        Err(e) => return vec![e],
+    };
+    let mut failures = Vec::new();
     for want in [3.0, 10.0, 30.0, 40.0] {
         if !sizes.iter().any(|s| (s - want).abs() < 1e-9) {
             failures.push(format!("no size of {want} among {sizes:?}"));
@@ -103,7 +115,7 @@ fn a_shaken_plate_is_drawn_with_its_own_sizes() {
 fn a_section_off_a_base_plane_lies_on_a_datum_plane_there() {
     use qymcad_core::model::{OfSection, SectionAt};
     use qymcad_meshfit::section::{fit_section, Within};
-    let body = qymcad_kernel::specimen::extrude_profile(&plate(), 10.0).expect("the plate is built");
+    let body = qymcad_kernel::specimen::extrude_profile(&plate(10.0), 10.0).expect("the plate is built");
     let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&body, 0.05).into_iter().next().expect("the plate is a mesh");
     let mut p = Project::default();
     let id = p.alloc_id();
@@ -125,7 +137,7 @@ fn a_section_off_a_base_plane_lies_on_a_datum_plane_there() {
 #[test]
 fn the_top_of_a_mesh_plate_is_drawn_with_its_arcs_and_its_hole() {
     use qymcad_core::model::OfFace;
-    let body = qymcad_kernel::specimen::extrude_profile(&plate(), 10.0).expect("the plate is built");
+    let body = qymcad_kernel::specimen::extrude_profile(&plate(10.0), 10.0).expect("the plate is built");
     let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&body, 0.05).into_iter().next().expect("the plate is a mesh");
     let mut p = Project::default();
     let id = p.alloc_id();
@@ -143,4 +155,24 @@ fn the_top_of_a_mesh_plate_is_drawn_with_its_arcs_and_its_hole() {
     ];
     assert_eq!(found, [4, 4, 1], "the top is drawn as lines, arcs and circles {found:?}");
     assert_eq!(made.defined.free, 0, "the sketch of the top is left free: {:?}", made.defined);
+}
+
+/// A PRINTED HOLE IS DRAWN AT ITS STANDARD BORE: a clearance hole for M5, drawn 5.5, comes out of a printer and its
+/// mesh 5.42 across. A tenth makes it 5.4, which no screw is made for; the nearest bore within 0.15 is 5.5, and the
+/// sketch says so. The same plate with a hole 7.73 across - no bore within 0.15 - keeps the tenth, 7.7.
+#[test]
+fn a_printed_hole_is_drawn_at_its_standard_bore() {
+    struct Hole {
+        measured: f64,
+        laid: f64,
+    }
+    let mut failures = Vec::new();
+    for h in [Hole { measured: 5.42, laid: 5.5 }, Hole { measured: 7.73, laid: 7.7 }] {
+        match sizes_drawn(h.measured, Shake { amp: 0.0 }, None) {
+            Ok(sizes) if sizes.iter().any(|s| (s - h.laid).abs() < 1e-9) => {}
+            Ok(sizes) => failures.push(format!("a hole {} across is not laid {} among {sizes:?}", h.measured, h.laid)),
+            Err(e) => failures.push(format!("a hole {} across: {e}", h.measured)),
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }

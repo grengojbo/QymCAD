@@ -22,21 +22,32 @@ const MET: f64 = 1e-6;
 
 /// HOW CLOSE A DRAWING MUST COME TO A RELATION TO BE TAKEN FOR ONE: `turn` for sides along an axis, parallel or
 /// square, as the sine of the angle off; `tangent` likewise for a side or an arc running on into an arc; `same`, in mm,
-/// for lengths, radii and centres taken for one.
+/// for lengths, radii and centres taken for one. `bores` says what the diameter of a circle is brought to.
 #[derive(Clone, Copy, Debug)]
 pub struct Seen {
     pub turn: f64,
     pub tangent: f64,
     pub same: f64,
+    pub bores: Bores,
+}
+
+/// WHAT THE DIAMETER OF A CIRCLE IS ROUNDED TO.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Bores {
+    /// A tenth, as every other size: a face of an exact solid holds the hole as it was drawn.
+    Tenth,
+    /// The nearest standard bore within 0.15, else a tenth (`crate::geom::rounded_bore`): a printed hole comes out a
+    /// little smaller than drawn and its mesh smaller still - an M5 clearance drawn 5.5 measures 5.42.
+    Standard,
 }
 
 impl Seen {
     /// A face of an exact solid: true to its tolerance.
-    pub const EXACT: Seen = Seen { turn: TURN, tangent: TURN, same: SAME };
+    pub const EXACT: Seen = Seen { turn: TURN, tangent: TURN, same: SAME, bores: Bores::Tenth };
     /// Curves fitted to a mesh: a side 1 deg off the axis is along it (sin 1 deg); a line runs on into an arc within
     /// 15 deg (sin 15 deg), what the fit itself takes for a smooth join (`qymcad_meshfit::section::SMOOTH_DEG`); 0.05 mm
-    /// is one length - a mesh is written to a few hundredths.
-    pub const MESH: Seen = Seen { turn: 0.017_452, tangent: 0.258_819, same: 0.05 };
+    /// is one length - a mesh is written to a few hundredths. A hole is brought to its standard bore.
+    pub const MESH: Seen = Seen { turn: 0.017_452, tangent: 0.258_819, same: 0.05, bores: Bores::Standard };
 }
 
 /// WHAT A DRAWING IS PLACED FROM: the axes of its sketch, or lines already held - the outline of the face it stands on.
@@ -472,21 +483,23 @@ impl Project {
         let from = self.sketches.get(si).map_or(0, |s| s.constraints.len());
         let offered = sizes(&self.curves_of(si, ents), &anchors);
         let sizes = self.lay_independent(si, offered, Judged::AsItStands);
-        let rounded = self.round_sizes(si, from..);
+        let rounded = self.round_sizes(si, from.., seen.bores);
         Defined { relations, sizes, free: self.sketch_dof(si).0, rounded }
     }
 
-    /// The sizes of sketch `si` from constraint `from` on rounded to a tenth and the sketch solved to them; put back as
-    /// they were when the solve cannot meet them all. Answers each size rounded.
-    fn round_sizes(&mut self, si: usize, laid: std::ops::RangeFrom<usize>) -> Vec<Rounded> {
+    /// The sizes of sketch `si` from constraint `from` on rounded to a tenth - the diameter of a circle as `bores` says -
+    /// and the sketch solved to them; put back as they were when the solve cannot meet them all. Answers each size
+    /// rounded.
+    fn round_sizes(&mut self, si: usize, laid: std::ops::RangeFrom<usize>, bores: Bores) -> Vec<Rounded> {
         let from = laid.start;
         let Some(s) = self.sketches.get_mut(si) else { return Vec::new() };
         let was: Vec<Constraint> = s.constraints.clone();
         let points = s.points.clone();
         let mut rounded = Vec::new();
         for c in s.constraints.iter_mut().skip(from) {
+            let a_bore = bores == Bores::Standard && matches!(c, Constraint::Diameter { diam: true, .. });
             if let Some(d) = size_of(c) {
-                let now = (*d / TENTH).round() * TENTH;
+                let now = if a_bore { crate::geom::rounded_bore(*d) } else { (*d / TENTH).round() * TENTH };
                 if (now - *d).abs() > 1e-9 {
                     rounded.push(Rounded { was: *d, now });
                     *d = now;
