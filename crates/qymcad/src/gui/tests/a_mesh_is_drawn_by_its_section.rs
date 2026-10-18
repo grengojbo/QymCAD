@@ -22,7 +22,12 @@ fn a_printed_plate() -> Printed {
     let mut app = App::default();
     let mut hand = Hand::new(&mut app);
     hand.import(&file);
-    at_rest(&mut hand);
+    // THE FILE IS READ AWAY FROM THE WINDOW: the body comes when it comes, as a person waits for it. Measured in a run of
+    // the whole crate, every check beside it: the frames counted out by `at_rest` ran out before the body came in.
+    crate::gui::session::waiting::until("the printer's file to come in", || {
+        at_rest(&mut hand);
+        !hand.app.project.bodies.is_empty()
+    });
     let mesh = hand.app.project.bodies.last().map(|b| b.id).expect("the mesh came in");
     if let Some(part) = hand.app.project.body_owner(mesh) {
         hand.app.enter_component(part);
