@@ -198,8 +198,8 @@ pub const EXTRUDE: Tool = Tool {
                 if node == 0 {
                     return Err("cmd-op-failed".to_string());
                 }
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "height" }, &height.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "down" }, &down.as_ref().and_then(|d| d.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "height" }, &height.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "down" }, &down.as_ref().and_then(|d| d.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 let body = if body.is_none() { p.finish_base_body(node, 1) } else { node };
                 Ok(Laid { node, body })
             })
@@ -304,7 +304,7 @@ pub const REVOLVE: Tool = Tool {
                 if node == 0 {
                     return Err("cmd-op-failed".to_string());
                 }
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "angle" }, &angle.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "angle" }, &angle.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 let body = if with == 0 { p.finish_base_body(node, 1) } else { node };
                 Ok(Laid { node, body })
             })
@@ -357,7 +357,7 @@ pub const FILLET: Tool = Tool {
             .doc
             .edit("f-fillet", |p| {
                 let node = p.add_fillet_ref(body, r.value, edges);
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "radius" }, &r.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "radius" }, &r.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(Laid { node, body: node })
             })
             .map_err(tool::doc_refusal)?;
@@ -420,8 +420,8 @@ pub const CHAMFER: Tool = Tool {
                     // the window lays them from picked edges
                     Some(asym) => p.add_chamfer_ex(body, d.value, qymcad_core::model::ChamferShape { mode: asym.mode, d2: asym.size.value, flip: false, ref_face: 0 }, found.clone()),
                 };
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "dist" }, &d.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "d2" }, &second.as_ref().and_then(|asym| asym.size.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "dist" }, &d.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "d2" }, &second.as_ref().and_then(|asym| asym.size.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(Laid { node, body: node })
             })
             .map_err(tool::doc_refusal)?;
@@ -553,10 +553,10 @@ pub const HOLE: Tool = Tool {
                     Place::Face { key, point } => p.add_hole_at(body, key, point, tool),
                     Place::Sketch(sketch) => p.add_hole_from_sketch(body, sketch, tool, a.direction == Drill::AlongNormal),
                 };
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "diameter" }, &dia.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "depth" }, &depth.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "dia2" }, &recess.as_ref().and_then(|r| r.diameter.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "depth2" }, &recess.as_ref().and_then(|r| r.depth.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "diameter" }, &dia.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "depth" }, &depth.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "dia2" }, &recess.as_ref().and_then(|r| r.diameter.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "depth2" }, &recess.as_ref().and_then(|r| r.depth.expr.clone()).unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(Laid { node, body: node })
             })
             .map_err(tool::doc_refusal)?;
@@ -645,7 +645,7 @@ pub const SHELL: Tool = Tool {
             .doc
             .edit("f-shell", |p| {
                 let node = p.add_shell_mode(body, t.value, faces.clone(), side);
-                p.write_feat_formula(&qymcad_core::model::FeatNumber { node: node, key: "thickness" }, &t.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
+                p.write_feat_formula(&qymcad_core::model::FeatNumber { node, key: "thickness" }, &t.expr.clone().unwrap_or_default(), qymcad_core::model::PlainNumber::ClearsFormula).map_err(|e| e.to_string())?;
                 Ok(Laid { node, body: node })
             })
             .map_err(tool::doc_refusal)?;
