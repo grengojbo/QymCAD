@@ -103,3 +103,64 @@ fn the_top_of_the_printed_plate_is_drawn_with_its_hole_a_circle() {
     assert_eq!((s.entities.len(), circles), (5, 1), "the top is not drawn as its rectangle and its hole: {} curves, {circles} circles", s.entities.len());
     assert_eq!(hand.app.project.sketch_dof(si).0, 0, "the sketch of the top is left free: {}", hand.app.status);
 }
+
+/// THE PLANE CLICKED, NOT ONLY XY, XZ OR YZ: with the body held by its top, a click on its flat front takes the front
+/// for the plane the section is moved off - the offset field opens at the middle of the body along the front's normal,
+/// 15 behind it - and Enter at 5 behind lays the sketch, the plate's 40 x 10 side, on a datum plane off that face, so
+/// the sketch follows the face.
+#[test]
+fn a_flat_face_clicked_is_the_plane_the_section_is_moved_off() {
+    let Printed { mut app, _folder } = a_printed_plate();
+    let mut hand = Hand::new(&mut app);
+    let sketches = hand.app.project.sketches.len();
+    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
+    hand.click([30.0, 0.0, 5.0]).frame(Vec::new());
+    let offset = hand.app.tools.cmd.params.iter().find(|f| f.key == "offset").map(|f| f.val);
+    assert!(offset.is_some_and(|v| (v + 15.0).abs() < 1e-9), "the offset off the front is {offset:?}, not -15: {}", hand.app.status);
+    hand.set("offset", -5.0);
+    hand.key(egui::Key::Enter);
+    at_rest(&mut hand);
+    assert_eq!(hand.app.project.sketches.len(), sketches + 1, "Enter laid no sketch: {}", hand.app.status);
+    let si = hand.app.project.sketches.len() - 1;
+    let qymcad_core::feature::SketchPlane::Datum(plane) = hand.app.project.sketches[si].plane else { panic!("the sketch does not lie on a datum plane: {:?}", hand.app.project.sketches[si].plane) };
+    let def = hand.app.project.planes.iter().find(|p| p.id == plane).map(|p| p.def.clone());
+    assert!(matches!(def, Some(qymcad_core::model::PlaneDef::OffsetFace { dist, .. }) if (dist + 5.0).abs() < 1e-9), "the datum plane is laid as {def:?}, not 5 off the front");
+    let frame = hand.app.project.sketch_frame(si).expect("the sketch has a frame");
+    assert!((frame.origin[1] - 5.0).abs() < 1e-6, "the section is not taken 5 behind the front: {:?}", frame.origin);
+    let s = &hand.app.project.sketches[si];
+    let lines = s.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).count();
+    assert_eq!((s.entities.len(), lines), (4, 4), "the section is not the plate's side of 40 x 10");
+    assert_eq!(hand.app.project.sketch_dof(si).0, 0, "the sketch of the section is left free: {}", hand.app.status);
+    hand.key(egui::Key::Escape);
+}
+
+/// A DATUM PLANE CLICKED with the body held is the plane the section is moved off: one 2 above XY, the field opens at
+/// the middle of the body along it, 3, and the sketch lies on a datum plane off it.
+#[test]
+fn a_datum_plane_clicked_is_the_plane_the_section_is_moved_off() {
+    let Printed { mut app, _folder } = a_printed_plate();
+    let mut hand = Hand::new(&mut app);
+    // laid where a rebuild puts it: a datum plane comes from the timeline already placed
+    let def = qymcad_core::model::PlaneDef::OffsetBase { base: qymcad_core::feature::BasePlane::XY, dist: 2.0 };
+    let datum = hand.app.project.add_plane(qymcad_core::model::WorkPlane { origin: [0.0, 0.0, 2.0], normal: [0.0, 0.0, 1.0], def, ..Default::default() });
+    hand.frame(Vec::new());
+    let sketches = hand.app.project.sketches.len();
+    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
+    let half = qymcad_ui_state::plane_pick_half_size(&hand.app.painting());
+    hand.click([-0.6 * half, -0.6 * half, 2.0]).frame(Vec::new());
+    let offset = hand.app.tools.cmd.params.iter().find(|f| f.key == "offset").map(|f| f.val);
+    assert!(offset.is_some_and(|v| (v - 3.0).abs() < 1e-9), "the offset off the datum plane is {offset:?}, not 3: {}", hand.app.status);
+    hand.key(egui::Key::Enter);
+    at_rest(&mut hand);
+    assert_eq!(hand.app.project.sketches.len(), sketches + 1, "Enter laid no sketch: {}", hand.app.status);
+    let si = hand.app.project.sketches.len() - 1;
+    let qymcad_core::feature::SketchPlane::Datum(plane) = hand.app.project.sketches[si].plane else { panic!("the sketch does not lie on a datum plane") };
+    let def = hand.app.project.planes.iter().find(|p| p.id == plane).map(|p| p.def.clone());
+    assert!(
+        matches!(def, Some(qymcad_core::model::PlaneDef::OffsetPlane { plane: src, dist }) if src == datum && (dist - 3.0).abs() < 1e-9),
+        "the datum plane is laid as {def:?}, not 3 off the one clicked"
+    );
+    hand.key(egui::Key::Escape);
+}

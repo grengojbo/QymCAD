@@ -93,7 +93,7 @@ pub fn face_clicked(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Option
     } else if kind == SKETCH_FROM_FACE {
         sketch_from_face_at(pc, mesh, face);
     } else if kind == SKETCH_FROM_SECTION {
-        sketch_from_section_at(pc, mesh);
+        sketch_from_section_at(pc, mesh, face);
     }
 }
 
@@ -104,6 +104,18 @@ pub fn mirror_plane_click(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymca
         Some(sp) => {
             pc.mirror.plane = (pc.mirror.plane != Some(sp)).then_some(sp);
             *pc.status = Notice::info(qymcad_i18n::tr(if pc.mirror.plane.is_some() { "vp-mirror-plane-picked" } else { "msg-mirror-pick" }));
+        }
+        None => *pc.status = Notice::refusal(qymcad_i18n::tr("vp-miss-plane-short")),
+    }
+}
+
+/// A CLICK WITH DATUM PLANE IN HAND picks the base plane, datum or face the offset is measured from; the same plane
+/// again lets it go.
+pub fn datum_plane_click(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymcad_core::feature::SketchPlane>) {
+    match plane {
+        Some(sp) => {
+            pc.datum.plane_pick = (pc.datum.plane_pick != Some(sp)).then_some(sp);
+            *pc.status = Notice::info(qymcad_i18n::tr(if pc.datum.plane_pick.is_some() { "vp-ref-picked" } else { "hint-plane-offset" }));
         }
         None => *pc.status = Notice::refusal(qymcad_i18n::tr("vp-miss-plane-short")),
     }
@@ -140,8 +152,15 @@ pub fn whole_body_on_double_click(pc: &mut qymcad_ui_state::PartCtx, double: boo
 
 /// A CLICK ON NOTHING: the selection of a face, a body or a component is cleared - and with a command in hand the
 /// click is refused in words, the command's own ask repeated, and what the command has taken stays. Reported
-/// behaviour: a click past the body with a fillet in hand said nothing, the status line as it was.
-pub fn click_on_nothing(pc: &mut qymcad_ui_state::PartCtx) {
+/// behaviour: a click past the body with a fillet in hand said nothing, the status line as it was. `plane` is the base
+/// or datum plane under the pointer: "Sketch from section" takes it for the plane the section is moved off.
+pub fn click_on_nothing(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymcad_core::feature::SketchPlane>) {
+    if pc.armed.cmd_kind() == SKETCH_FROM_SECTION {
+        if let Some(on) = plane.filter(|p| !matches!(p, qymcad_core::feature::SketchPlane::Face(..))) {
+            section_plane_taken(pc, on);
+            return;
+        }
+    }
     if pc.armed.commanding() {
         *pc.status = Notice::refusal(qymcad_i18n::tr1("vp-miss-cmd", "ask", &cmd_hint(&*pc.armed, &*pc.gsel, &*pc.trim)));
         return;

@@ -41,7 +41,7 @@ pub fn start_sketch_from_face_cmd(pc: &mut PartCtx) {
 }
 
 /// Whether a face of a body is flat: every triangle of it turned as the face is.
-fn flat(pc: &PartCtx, at: qymcad_ui_state::made_by::FaceAt) -> bool {
+pub(crate) fn flat(pc: &PartCtx, at: qymcad_ui_state::made_by::FaceAt) -> bool {
     let b = &pc.project.bodies[at.mesh];
     let f = &b.faces[at.face];
     f.triangles.iter().all(|&t| {

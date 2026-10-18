@@ -394,7 +394,8 @@ impl App {
                 }
             }
         } else {
-            qymcad_part::click_on_nothing(&mut self.part_ctx());
+            let plane = pick_sketch_plane_at(&self.painting(), rect, screen);
+            qymcad_part::click_on_nothing(&mut self.part_ctx(), plane);
         }
     }
 }

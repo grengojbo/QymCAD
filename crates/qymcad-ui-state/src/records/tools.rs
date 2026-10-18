@@ -180,18 +180,23 @@ pub struct RecogniseTool {
     pub section: Option<SectionInHand>,
 }
 
-/// A BODY HELD BY "SKETCH FROM SECTION" until Enter: the plane it is cut by, the offset and the tolerance are the bar's
-/// and the fields'. `drawn` is the section Enter last drew of it, held so a second Enter does not draw it twice.
+/// A BODY HELD BY "SKETCH FROM SECTION" until Enter, and `by` the face it was taken by - its place among the body's
+/// faces, since the faces of a mesh carry no ids of their own - clicked again to let it go: the
+/// plane it is cut by is `picked` - a datum plane or another flat face clicked - or else the base plane of the bar; the
+/// offset and the tolerance are the fields'. `drawn` is the section Enter last drew of it, held so a second Enter does
+/// not draw it twice.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SectionInHand {
     pub body: Id,
+    pub by: Option<usize>,
+    pub picked: Option<qymcad_core::feature::SketchPlane>,
     pub drawn: Option<SectionDrawn>,
 }
 
-/// A SECTION DRAWN: the base plane by the operation of the bar, the offset and the tolerance.
+/// A SECTION DRAWN: the plane it was moved off, the offset and the tolerance.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SectionDrawn {
-    pub plane: u8,
+    pub plane: qymcad_core::feature::SketchPlane,
     pub offset: f64,
     pub tol: f64,
 }

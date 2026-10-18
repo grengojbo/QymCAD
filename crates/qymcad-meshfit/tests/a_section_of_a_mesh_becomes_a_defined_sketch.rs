@@ -120,16 +120,92 @@ fn a_section_off_a_base_plane_lies_on_a_datum_plane_there() {
     let mut p = Project::default();
     let id = p.alloc_id();
     p.bodies.push(qymcad_core::model::Body { id, mesh, ..Default::default() });
-    let at = SectionAt { base: BasePlane::XY, offset: 5.0 };
+    let at = SectionAt { on: SketchPlane::World(BasePlane::XY), offset: 5.0 };
     let fit = |m: &qymcad_core::geom::Mesh, f: &PlaneFrame| fit_section(m, f, Within::OwnTolerance);
     let made = p.add_sketch_of_section(OfSection { body: id, at, fit: &fit, name: "Section".into() }).expect("a sketch is laid");
     assert!(matches!(p.sketches[made.si].plane, SketchPlane::Datum(_)), "the sketch lies on {:?}, not on a datum plane", p.sketches[made.si].plane);
-    let (want, got) = (at.frame(), p.sketch_frame(made.si).expect("the sketch has a frame"));
+    let (want, got) = (p.section_frame(&at).expect("the section has a frame"), p.sketch_frame(made.si).expect("the sketch has a frame"));
     let off = |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| (a[k] - b[k]).abs()).fold(0.0, f64::max);
     assert!(off(want.origin, got.origin) < 1e-9 && off(want.x, got.x) < 1e-9 && off(want.y, got.y) < 1e-9, "the sketch's frame {got:?} is not the section's {want:?}");
     assert_eq!(made.defined.free, 0, "the sketch is left free: {:?}", made.defined);
-    let missed = p.add_sketch_of_section(OfSection { body: id, at: SectionAt { base: BasePlane::XY, offset: 50.0 }, fit: &fit, name: "Nothing".into() });
+    let missed = p.add_sketch_of_section(OfSection { body: id, at: SectionAt { on: SketchPlane::World(BasePlane::XY), offset: 50.0 }, fit: &fit, name: "Nothing".into() });
     assert!(missed.is_none() && p.sketches.len() == 1 && p.planes.len() == 1, "a plane missing the body laid something");
+}
+
+/// CUT OFF A DATUM PLANE OR OFF A FACE OF THE BODY ITSELF: a plane clicked, not only XY, XZ or YZ. A datum plane 2 above
+/// XY moved by 3, and the top of the plate moved by -5, both cut the plate at half its height; each sketch lies on a
+/// datum plane laid off what was clicked - off the plane, off the face - so the sketch moves when they move, in the
+/// frame the section was fitted in, and holds the plate's own sizes with no freedom. The body begins and ends along the
+/// face's normal 10 and 0 below it.
+#[test]
+fn a_section_off_a_datum_plane_or_a_face_lies_on_a_datum_plane_off_it() {
+    use qymcad_core::model::{Extent, OfSection, PlaneDef, SectionAt, WorkPlane};
+    use qymcad_meshfit::section::{fit_section, Within};
+    let body = qymcad_kernel::specimen::extrude_profile(&plate(10.0), 10.0).expect("the plate is built");
+    let qymcad_core::geom::Built { mesh, .. } = qymcad_kernel::specimen::mesh(&body, 0.05).into_iter().next().expect("the plate is a mesh");
+    let mut p = Project::default();
+    let id = p.alloc_id();
+    let faces = qymcad_meshfit::raw_faces(&mesh);
+    p.bodies.push(qymcad_core::model::Body { id, mesh, faces, ..Default::default() });
+    let datum = p.add_plane(WorkPlane { origin: [0.0, 0.0, 2.0], normal: [0.0, 0.0, 1.0], ..Default::default() });
+    let top = qymcad_core::feature::FaceKey { index: 0, centroid: [25.0, 20.0, 10.0], normal: [0.0, 0.0, 1.0], id: 0 };
+    let extent = p.extent_along(id, &SketchPlane::Face(id, top)).map(|e| Extent { from: (e.from * 1e6).round() / 1e6, to: (e.to * 1e6).round() / 1e6 });
+    assert_eq!(extent, Some(Extent { from: -10.0, to: 0.0 }), "the plate along the normal of its top");
+    struct Case {
+        name: &'static str,
+        at: SectionAt,
+        def: fn(&PlaneDef) -> bool,
+    }
+    let cases = [
+        Case {
+            name: "a datum plane 2 above XY, moved by 3",
+            at: SectionAt { on: SketchPlane::Datum(datum), offset: 3.0 },
+            def: |d| matches!(d, PlaneDef::OffsetPlane { dist, .. } if (*dist - 3.0).abs() < 1e-12),
+        },
+        Case {
+            name: "the top of the plate, moved by -5",
+            at: SectionAt { on: SketchPlane::Face(id, top), offset: -5.0 },
+            def: |d| matches!(d, PlaneDef::OffsetFace { dist, .. } if (*dist + 5.0).abs() < 1e-12),
+        },
+    ];
+    let fit = |m: &qymcad_core::geom::Mesh, f: &PlaneFrame| fit_section(m, f, Within::OwnTolerance);
+    let off = |a: [f64; 3], b: [f64; 3]| (0..3).map(|k| (a[k] - b[k]).abs()).fold(0.0, f64::max);
+    let mut failures = Vec::new();
+    for c in cases {
+        let Some(want) = p.section_frame(&c.at) else {
+            failures.push(format!("{}: no frame", c.name));
+            continue;
+        };
+        if (want.origin[2] - 5.0).abs() > 1e-9 {
+            failures.push(format!("{}: the section is taken at {:?}, not at the height of 5", c.name, want.origin));
+        }
+        let Some(made) = p.add_sketch_of_section(OfSection { body: id, at: c.at, fit: &fit, name: c.name.into() }) else {
+            failures.push(format!("{}: no sketch laid", c.name));
+            continue;
+        };
+        let SketchPlane::Datum(laid) = p.sketches[made.si].plane else {
+            failures.push(format!("{}: the sketch lies on {:?}, not on a datum plane", c.name, p.sketches[made.si].plane));
+            continue;
+        };
+        let def = p.planes.iter().find(|w| w.id == laid).map(|w| w.def.clone());
+        if !def.as_ref().is_some_and(c.def) {
+            failures.push(format!("{}: the datum plane is laid as {def:?}", c.name));
+        }
+        let got = p.sketch_frame(made.si).expect("the sketch has a frame");
+        if off(want.origin, got.origin) > 1e-9 || off(want.x, got.x) > 1e-9 || off(want.y, got.y) > 1e-9 {
+            failures.push(format!("{}: the sketch's frame {got:?} is not the section's {want:?}", c.name));
+        }
+        if made.defined.free != 0 {
+            failures.push(format!("{}: the sketch is left free: {:?}", c.name, made.defined));
+        }
+        let sizes: Vec<f64> = p.sketches[made.si].constraints.iter().filter_map(|k| k.dim_value()).collect();
+        for want in [10.0, 30.0, 40.0] {
+            if !sizes.iter().any(|s| (s - want).abs() < 1e-9) {
+                failures.push(format!("{}: no size of {want} among {sizes:?}", c.name));
+            }
+        }
+    }
+    assert!(failures.is_empty(), "{}", failures.join("\n"));
 }
 
 /// A FLAT FACE OF A MESH DRAWN BY ITS FITTED OUTLINE: the top of the plate - its outline chords, the rounded corners and

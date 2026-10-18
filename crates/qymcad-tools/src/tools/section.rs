@@ -57,7 +57,8 @@ fn asked(project: &Project, a: SectionArgs) -> Result<Asked, Refusal> {
         PlaneArg::Xz => BasePlane::XZ,
         PlaneArg::Yz => BasePlane::YZ,
     };
-    let extent = project.extent_along(body, base).ok_or_else(|| Refusal::new("no-mesh", "The body has no mesh to cut.", Stage::Validate))?;
+    let on = qymcad_core::feature::SketchPlane::World(base);
+    let extent = project.extent_along(body, &on).ok_or_else(|| Refusal::new("no-mesh", "The body has no mesh to cut.", Stage::Validate))?;
     let offset = match &a.offset {
         Some(o) => o.read(project, "offset")?.value,
         None => (extent.from + extent.to) / 2.0,
@@ -70,7 +71,7 @@ fn asked(project: &Project, a: SectionArgs) -> Result<Asked, Refusal> {
         Some(_) => return Err(Refusal::new("bad-tolerance", "tolerance must be a number over zero.", Stage::Validate)),
         None => Within::OwnTolerance,
     };
-    Ok(Asked { body, at: SectionAt { base, offset }, within })
+    Ok(Asked { body, at: SectionAt { on, offset }, within })
 }
 
 /// A piece in the plane's coordinates, for the answer.
@@ -98,7 +99,7 @@ pub const MESH_SECTION: Tool = Tool {
         let project = ctx.doc.project();
         let Asked { body, at, within } = asked(project, a)?;
         let mesh = &project.bodies.iter().find(|b| b.id == body).ok_or_else(|| Refusal::new("no-mesh", "The body has no mesh to cut.", Stage::Validate))?.mesh;
-        let frame = at.frame();
+        let frame = project.section_frame(&at).ok_or_else(|| Refusal::new("no-mesh", "The body has no mesh to cut.", Stage::Validate))?;
         let found = fit_section(mesh, &frame, within);
         let mut out = answer("body", json!(body));
         out.insert("frame".into(), json!({ "origin": frame.origin, "x": frame.x, "y": frame.y }));

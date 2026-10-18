@@ -2,35 +2,36 @@
 //! (`qymcad_meshfit::section`) laid into a new sketch as curves of its own and defined to the end. A mesh has no sketch
 //! behind it and no exact edge to project; its section is the drawing a person would trace by hand.
 use super::{Anchor, FaceSketch, Id, PlaneDef, Project, Seen, WorkPlane};
-use crate::feature::{BasePlane, Ends, PlaneFrame, Purpose, SketchPlane};
+use crate::feature::{Ends, PlaneFrame, Purpose, SketchPlane};
 use crate::geom::{Fitted, Mesh, Piece};
 
 /// WHAT FINDS THE LOOPS OF A SECTION: the mesh of a body and the frame of the plane cutting it, to the loops fitted in
 /// that frame (`qymcad_meshfit::section`). The core cuts nothing itself: what a mesh is made of is another module's task.
 pub type Fitter = dyn Fn(&Mesh, &PlaneFrame) -> Vec<Fitted>;
 
-/// WHERE A SECTION IS TAKEN: a base plane, moved by `offset` the way a datum plane off it moves
-/// (`BasePlane::offset_direction`).
+/// WHERE A SECTION IS TAKEN: a base plane, a datum plane or a flat face, moved by `offset` the way a datum plane off it
+/// moves - off a base plane along `BasePlane::offset_direction`, off a datum plane or a face along its normal.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SectionAt {
-    pub base: BasePlane,
+    pub on: SketchPlane,
     pub offset: f64,
 }
 
-/// An offset this small is none: the sketch lies on the base plane itself, and no datum plane is laid.
+/// An offset this small is none: the sketch lies on the plane itself, and no datum plane is laid.
 const NO_OFFSET: f64 = 1e-9;
 
-impl SectionAt {
-    /// The frame the section is fitted in and its sketch is drawn in: the base plane's own, or that of the datum plane
-    /// laid off it - one frame, so what the tool shows before Enter is what the sketch holds after it.
-    pub fn frame(&self) -> PlaneFrame {
-        let f = self.base.frame();
-        if self.offset.abs() < NO_OFFSET {
-            return f;
-        }
-        let d = self.base.offset_direction();
-        PlaneFrame::world_aligned([f.origin[0] + d[0] * self.offset, f.origin[1] + d[1] * self.offset, f.origin[2] + d[2] * self.offset], f.normal(), 0.0)
-    }
+/// A plane as a datum plane off it stands: a point of it, its unit normal, the way an offset moves it, and the turn of
+/// its X axis.
+struct Source {
+    origin: [f64; 3],
+    normal: [f64; 3],
+    along: [f64; 3],
+    rot_deg: f64,
+}
+
+fn unit(v: [f64; 3]) -> [f64; 3] {
+    let l = (v[0] * v[0] + v[1] * v[1] + v[2] * v[2]).sqrt().max(1e-12);
+    [v[0] / l, v[1] / l, v[2] / l]
 }
 
 /// WHAT FITS ONE CLOSED LOOP: its corners in order, to its pieces (`qymcad_meshfit::section::fit_loop`).
@@ -85,31 +86,75 @@ impl Project {
         false
     }
 
-    /// WHERE `body` BEGINS AND ENDS along the way an offset off `base` moves (`SectionAt`), by the box of its mesh.
-    pub fn extent_along(&self, body: Id, base: BasePlane) -> Option<Extent> {
-        let b = self.bodies.iter().find(|b| b.id == body)?.mesh.bounds()?;
-        let (f, d) = (base.frame(), base.offset_direction());
-        let along = |p: [f64; 3]| (p[0] - f.origin[0]) * d[0] + (p[1] - f.origin[1]) * d[1] + (p[2] - f.origin[2]) * d[2];
-        let (lo, hi) = (along([b.min.x, b.min.y, b.min.z]), along([b.max.x, b.max.y, b.max.z]));
-        Some(Extent { from: lo.min(hi), to: lo.max(hi) })
+    /// The plane `on` as a datum plane off it would stand (`resolve_plane_into`). None for a datum plane or a body that
+    /// is not there.
+    fn source_of(&self, on: &SketchPlane) -> Option<Source> {
+        match *on {
+            SketchPlane::World(b) => {
+                let f = b.frame();
+                Some(Source { origin: f.origin, normal: f.normal(), along: b.offset_direction(), rot_deg: 0.0 })
+            }
+            SketchPlane::Datum(id) => self.planes.iter().find(|p| p.id == id).map(|p| {
+                let n = unit(p.normal);
+                Source { origin: p.origin, normal: n, along: n, rot_deg: p.rot_deg }
+            }),
+            SketchPlane::Face(body, key) => {
+                self.bodies.iter().find(|b| b.id == body)?;
+                let (c, n) = self.resolve_face(body, &key);
+                let n = unit(n);
+                Some(Source { origin: c, normal: n, along: n, rot_deg: 0.0 })
+            }
+        }
     }
 
-    /// A SKETCH OF A SECTION OF A BODY'S MESH: the mesh cut and fitted (`OfSection::fit`) in the frame of `at`, a datum
-    /// plane laid off the base plane where the offset is not none, and the loops drawn into a sketch on it, defined to
-    /// the end (`add_sketch_of_loops`). Answers `None` and lays nothing when the plane misses the body.
+    /// THE FRAME A SECTION IS FITTED IN AND ITS SKETCH IS DRAWN IN: that of the plane it is taken on, or of the datum
+    /// plane laid off it - one frame, so what the tool shows before Enter is what the sketch holds after it.
+    pub fn section_frame(&self, at: &SectionAt) -> Option<PlaneFrame> {
+        if at.offset.abs() < NO_OFFSET {
+            if let SketchPlane::World(b) = at.on {
+                return Some(b.frame());
+            }
+        }
+        let s = self.source_of(&at.on)?;
+        let o = [s.origin[0] + s.along[0] * at.offset, s.origin[1] + s.along[1] * at.offset, s.origin[2] + s.along[2] * at.offset];
+        Some(PlaneFrame::world_aligned(o, s.normal, s.rot_deg))
+    }
+
+    /// WHERE `body` BEGINS AND ENDS along the way an offset off `on` moves (`SectionAt`), by the corners of its mesh.
+    pub fn extent_along(&self, body: Id, on: &SketchPlane) -> Option<Extent> {
+        let mesh = &self.bodies.iter().find(|b| b.id == body)?.mesh;
+        let s = self.source_of(on)?;
+        let along = |p: &crate::geom::Point3| (p.x - s.origin[0]) * s.along[0] + (p.y - s.origin[1]) * s.along[1] + (p.z - s.origin[2]) * s.along[2];
+        let (lo, hi) = mesh.verts.iter().map(along).fold((f64::MAX, f64::MIN), |(lo, hi), d| (lo.min(d), hi.max(d)));
+        (lo <= hi).then_some(Extent { from: lo, to: hi })
+    }
+
+    /// A SKETCH OF A SECTION OF A BODY'S MESH: the mesh cut and fitted (`OfSection::fit`) in the frame of `at`, and the
+    /// loops drawn into a sketch, defined to the end (`add_sketch_of_loops`). The sketch lies on the plane clicked when
+    /// the offset is none and it is a base or a datum plane; otherwise on a datum plane laid off it - off the base plane,
+    /// the datum plane or the face - which moves with what it was laid off. Answers `None` and lays nothing when the
+    /// plane misses the body.
     pub fn add_sketch_of_section(&mut self, of: OfSection) -> Option<FaceSketch> {
         let OfSection { body, at, fit, name } = of;
         let mesh = self.bodies.iter().find(|b| b.id == body).map(|b| b.mesh.clone())?;
-        let frame = at.frame();
+        let frame = self.section_frame(&at)?;
         let loops = fit(&mesh, &frame);
         if loops.iter().all(|l| l.pieces.is_empty()) {
             return None;
         }
-        let plane = if at.offset.abs() < NO_OFFSET {
-            SketchPlane::World(at.base)
-        } else {
-            let id = self.add_plane(WorkPlane { origin: frame.origin, normal: frame.normal(), def: PlaneDef::OffsetBase { base: at.base, dist: at.offset }, ..Default::default() });
-            SketchPlane::Datum(id)
+        let none = at.offset.abs() < NO_OFFSET;
+        let def = match at.on {
+            SketchPlane::World(_) | SketchPlane::Datum(_) if none => None,
+            SketchPlane::World(base) => Some(PlaneDef::OffsetBase { base, dist: at.offset }),
+            SketchPlane::Datum(plane) => Some(PlaneDef::OffsetPlane { plane, dist: at.offset }),
+            SketchPlane::Face(body, face) => Some(PlaneDef::OffsetFace { body, face, dist: at.offset }),
+        };
+        let plane = match def {
+            None => at.on,
+            Some(def) => {
+                let rot_deg = self.source_of(&at.on).map_or(0.0, |s| s.rot_deg);
+                SketchPlane::Datum(self.add_plane(WorkPlane { origin: frame.origin, normal: frame.normal(), rot_deg, def, ..Default::default() }))
+            }
         };
         self.add_sketch_of_loops(FromLoops { plane, loops: &loops, name })
     }

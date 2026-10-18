@@ -40,7 +40,9 @@ fn a_plate_drawn_by_its_section_and_extruded_holds_what_it_held() {
     let mesh_body = p.alloc_id();
     p.bodies.push(qymcad_core::model::Body { id: mesh_body, mesh, ..Default::default() });
     let fit = |m: &Mesh, f: &PlaneFrame| fit_section(m, f, Within::OwnTolerance);
-    let made = p.add_sketch_of_section(OfSection { body: mesh_body, at: SectionAt { base: BasePlane::XY, offset: 5.0 }, fit: &fit, name: "Section".into() }).expect("a sketch is laid");
+    let made = p
+        .add_sketch_of_section(OfSection { body: mesh_body, at: SectionAt { on: qymcad_core::feature::SketchPlane::World(BasePlane::XY), offset: 5.0 }, fit: &fit, name: "Section".into() })
+        .expect("a sketch is laid");
     assert_eq!(made.defined.free, 0, "the sketch of the section is left free: {:?}", made.defined);
     // the outline taken as the profile, as a click inside the plate takes it - the hole inside it left open
     let outline = p.sketches[made.si].contour_ids.iter().copied().max_by(|a, b| {

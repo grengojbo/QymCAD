@@ -242,4 +242,25 @@ fn a_section_of_the_plate_is_drawn(hand: &mut crate::gui::hand::Hand, problems: 
         problems.push(format!("the section of the printed plate is drawn as {drawn:?} curves and circles with {free} freedoms, not its rectangle fully defined: {}", hand.app.status));
     }
     hand.key(egui::Key::Escape).frame(Vec::new());
+    // and off its front: the body held by its top, the front clicked is the plane the section is moved off - through
+    // the middle, 15 behind it - and the sketch, the plate's side of 40 x 12, lies on a datum plane off the front
+    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.click([505.0, 5.0, 12.0]).frame(Vec::new());
+    hand.click([530.0, 0.0, 6.0]).frame(Vec::new());
+    hand.enter();
+    check_all(hand.app, "the printed plate drawn by its section off its front", problems);
+    let laid = hand.app.project.sketches.len() == sketches + 2;
+    let off_the_front = hand.app.project.sketches.last().filter(|_| laid).and_then(|s| match s.plane {
+        qymcad_core::feature::SketchPlane::Datum(id) => hand.app.project.planes.iter().find(|p| p.id == id).map(|p| matches!(p.def, qymcad_core::model::PlaneDef::OffsetFace { .. })),
+        _ => None,
+    });
+    let side = hand.app.project.sketches.last().filter(|_| laid).map(|s| s.entities.len());
+    let free = hand.app.project.sketch_dof(hand.app.project.sketches.len() - 1).0;
+    if off_the_front != Some(true) || side != Some(4) || free != 0 {
+        problems.push(format!(
+            "the section off the front of the printed plate lies off the front: {off_the_front:?}, is {side:?} curves with {free} freedoms, not the side of 40 x 12 fully defined: {}",
+            hand.app.status
+        ));
+    }
+    hand.key(egui::Key::Escape).frame(Vec::new());
 }

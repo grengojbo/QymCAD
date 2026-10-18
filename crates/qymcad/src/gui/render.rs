@@ -912,7 +912,7 @@ fn draw_section_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter,
     use qymcad_core::geom::{Piece, Point2};
     let Some(held) = pn.recognise.section else { return };
     let asked = qymcad_part::section_asked(held, pn.feat.op, pn.cmd);
-    let frame = asked.at.frame();
+    let Some(frame) = pn.project.section_frame(&asked.at) else { return };
     let lift = |p: Point2| {
         let q = frame.lift(p);
         scr.at([q.x, q.y, q.z]).0

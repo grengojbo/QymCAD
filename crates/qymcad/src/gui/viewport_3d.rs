@@ -557,14 +557,8 @@ impl App {
                         None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane-short")),
                     }
                 } else if self.tools.armed.cmd_kind() == 20 {
-                    // DATUM PLANE: the click picks the base plane, datum or face the offset is measured from
-                    match crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos) {
-                        Some(sp) => {
-                            self.side.datum.plane_pick = (self.side.datum.plane_pick != Some(sp)).then_some(sp); // the same plane again lets it go
-                            self.status = Notice::info(crate::i18n::tr(if self.side.datum.plane_pick.is_some() { "vp-ref-picked" } else { "hint-plane-offset" }));
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane-short")),
-                    }
+                    let plane = crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos);
+                    qymcad_part::datum_plane_click(&mut self.part_ctx(), plane);
                 } else if self.tools.armed.cmd_kind() == 21 && self.side.datum.pt_mode == 1 {
                     // DATUM POINT, "at a vertex": a click on a vertex of the current part makes an ASSOCIATIVE reference
                     let ctx = qymcad_ui_state::current_ctx_id(&self.active_path, &self.project);
