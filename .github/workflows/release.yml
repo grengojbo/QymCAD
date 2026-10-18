@@ -34,6 +34,15 @@ name: release
 
 on:
   workflow_dispatch:
+    # TWO PACKAGES WHILE THE PROGRAM IS BEING WORKED ON, ALL FIVE WHEN ASKED. Left off, the run builds the macOS
+    # package for Apple Silicon and the Windows ones only, and skips the check of the tag, Linux and the Intel mac:
+    # the two that are tried by hand every day, in a third of the time of the five. Ticked, everything is built and
+    # checked as before.
+    inputs:
+      everything:
+        description: "Build every package (Linux, macOS Intel and the tag check too)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write   # to attach the file to a Release on a tag
@@ -43,6 +52,7 @@ jobs:
   # package named by the tag and a program that calls itself the older number in its own About window - and
   # the two are found out by whoever downloads it. Refused here, before anything is built.
   agree:
+    if: inputs.everything
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -66,6 +76,8 @@ jobs:
 
   windows:
     needs: agree
+    # skipped `agree` (a run without everything) lets it build; a refused tag does not
+    if: ${{ !cancelled() && needs.agree.result != 'failure' }}
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
@@ -203,6 +215,7 @@ jobs:
 
   linux:
     needs: agree
+    if: ${{ inputs.everything && needs.agree.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -258,17 +271,15 @@ jobs:
   # is of no use to the other.
   macos:
     needs: agree
+    if: ${{ !cancelled() && needs.agree.result != 'failure' }}
     strategy:
       # One processor failing must not cancel the other: the other one still finishes, saves its kernel
       # to the cache and leaves its package on the run. The Release is not made short by this - `publish`
       # waits for both and does not run when either fails.
       fail-fast: false
       matrix:
-        include:
-          - runner: macos-15
-            arch: arm64
-          - runner: macos-15-intel
-            arch: x86_64
+        # Apple Silicon always; the Intel mac only with everything
+        include: ${{ fromJSON(inputs.everything && '[{"runner":"macos-15","arch":"arm64"},{"runner":"macos-15-intel","arch":"x86_64"}]' || '[{"runner":"macos-15","arch":"arm64"}]') }}
     runs-on: ${{ matrix.runner }}
     steps:
       - uses: actions/checkout@v7
@@ -347,6 +358,8 @@ jobs:
   # costs a minute of downloading and proves the whole path.
   publish:
     needs: [windows, linux, macos]
+    # Linux skipped by a run without everything is no failure; any other job that did not succeed stops the page
+    if: ${{ !cancelled() && needs.windows.result == 'success' && needs.macos.result == 'success' && (needs.linux.result == 'success' || (!inputs.everything && needs.linux.result == 'skipped')) }}
     runs-on: ubuntu-latest
     steps:
       # THE SOURCES ARE NEEDED HERE TOO, for one file: the text that goes onto the release page. This job
@@ -379,8 +392,10 @@ jobs:
           for f in dist/*; do
             [ -f "$f" ] || { echo "!!! not a file, so it cannot be attached: $f"; exit 1; }
           done
+          # three without everything: the Windows two and the one of Apple Silicon
+          want=${{ inputs.everything && 5 || 3 }}
           n=$(ls dist | wc -l)
-          [ "$n" -eq 5 ] || { echo "!!! five packages were expected, $n arrived"; exit 1; }
+          [ "$n" -eq "$want" ] || { echo "!!! $want packages were expected, $n arrived"; exit 1; }
 
       # THE RECORD THE PROGRAM ASKS ABOUT NEW VERSIONS (`ENDPOINT` in crates/qymcad-update): one small file on
       # every release made from a tag, at an address that always names the newest release. Written after the

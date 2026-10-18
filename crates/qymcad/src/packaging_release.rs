@@ -20,20 +20,37 @@ mod tests {
         std::fs::read_to_string(&p).unwrap_or_else(|e| panic!("the release workflow must be readable: {e}"))
     }
 
-    /// How many times each job runs: the rows of its `matrix: include:`, or once without one.
+    /// Which run of the workflow is counted: with the `everything` box ticked, or without it.
+    #[derive(Clone, Copy, PartialEq)]
+    enum Run {
+        Everything,
+        Short,
+    }
+
+    /// How many times each job runs in `run`: the rows of its `matrix: include:`, or once without one; none when
+    /// the job runs only with everything and `run` is the short one.
     ///
     /// A JOB WITH A MATRIX UPLOADS ONCE PER ROW. The macOS job is written once and built for two
     /// processors, so its one upload step hands over two packages - counting steps as written would
-    /// come out one short.
-    fn runs_of_job(job: &[&str]) -> usize {
-        let Some(at) = job.iter().position(|l| l.trim() == "include:") else { return 1 };
+    /// come out one short. Its rows are chosen by the box (`fromJSON(inputs.everything && '[..]' || '[..]')`):
+    /// the list before `||` is the run with everything, the list after it the short one.
+    fn runs_of_job(job: &[&str], run: Run) -> usize {
+        let only_with_everything = job.iter().any(|l| l.trim_start().starts_with("if:") && l.contains("inputs.everything &&") || l.trim() == "if: inputs.everything");
+        if run == Run::Short && only_with_everything {
+            return 0;
+        }
+        let Some(at) = job.iter().position(|l| l.trim_start().starts_with("include:")) else { return 1 };
+        if let Some((full, short)) = job[at].split_once("||") {
+            let rows = if run == Run::Everything { full } else { short };
+            return rows.matches("\"runner\"").count().max(1);
+        }
         let indent = job[at].len() - job[at].trim_start().len();
         job[at + 1..].iter().filter(|l| !l.trim().is_empty()).take_while(|l| l.len() - l.trim_start().len() > indent).filter(|l| l.trim_start().starts_with("- ")).count().max(1)
     }
 
     /// The `with:` block of every `actions/upload-artifact` step, as written, once for every run of its
-    /// job.
-    fn upload_steps() -> Vec<String> {
+    /// job in `run`.
+    fn upload_steps(run: Run) -> Vec<String> {
         let wf = workflow();
         let all: Vec<&str> = wf.lines().collect();
         // a job starts at a two-space key under `jobs:`
@@ -44,7 +61,7 @@ mod tests {
         while let Some((i, l)) = lines.next() {
             if is_job(l) {
                 let end = all[i + 1..].iter().position(|n| is_job(n)).map_or(all.len(), |p| i + 1 + p);
-                runs = runs_of_job(&all[i..end]);
+                runs = runs_of_job(&all[i..end], run);
             }
             if !l.contains("uses: actions/upload-artifact") {
                 continue;
@@ -71,7 +88,7 @@ mod tests {
     #[test]
     fn a_file_uploaded_as_it_is_comes_alone() {
         let mut wrong = Vec::new();
-        for block in upload_steps() {
+        for block in upload_steps(Run::Everything) {
             if !block.contains("archive: false") {
                 continue;
             }
@@ -89,17 +106,32 @@ mod tests {
         assert!(wrong.is_empty(), "the run would stop at the upload, after everything was built:\n{}", wrong.join("\n"));
     }
 
-    /// AND THE PUBLISHING JOB EXPECTS AS MANY PACKAGES AS ARE HANDED OVER.
+    /// AND THE PUBLISHING JOB EXPECTS AS MANY PACKAGES AS ARE HANDED OVER, in a run with everything and in the
+    /// short one.
     ///
-    /// The number there is written out by hand on purpose - a package that silently stopped being built
-    /// is what that step exists to catch - and therefore drifts the moment a package is added.
+    /// The numbers there are written out by hand on purpose - a package that silently stopped being built
+    /// is what that step exists to catch - and therefore drift the moment a package is added or a job is
+    /// left to the run with everything (`want=${{ inputs.everything && 5 || 3 }}`).
     #[test]
     fn the_publishing_job_counts_the_packages_that_are_built() {
-        let uploads = upload_steps().len();
         let wf = workflow();
-        let line = wf.lines().find(|l| l.contains("-eq") && l.contains("packages were expected")).expect("the publishing job no longer counts what arrived");
-        let expected: usize = line.split("-eq").nth(1).and_then(|t| t.split(']').next()).and_then(|t| t.trim().parse().ok()).expect("the count in the publishing job is not a number");
-        assert_eq!(expected, uploads, "the run hands over {uploads} packages and the publishing job waits for {expected}; the Release page would go up short, or the run would stop at the last step");
+        let line = wf.lines().find(|l| l.trim_start().starts_with("want=")).expect("the publishing job no longer counts what arrived");
+        let number = |t: Option<&str>| -> usize { t.and_then(|t| t.trim().trim_end_matches("}}").trim().parse().ok()).expect("a count in the publishing job is not a number") };
+        let full = number(line.split("&&").nth(1).and_then(|t| t.split("||").next()));
+        let short = number(line.split("||").nth(1));
+        struct Counted {
+            run: Run,
+            expected: usize,
+            name: &'static str,
+        }
+        for c in [Counted { run: Run::Everything, expected: full, name: "with everything" }, Counted { run: Run::Short, expected: short, name: "without everything" }] {
+            let uploads = upload_steps(c.run).len();
+            assert_eq!(
+                c.expected, uploads,
+                "the run {} hands over {uploads} packages and the publishing job waits for {}; the Release page would go up short, or the run would stop at the last step",
+                c.name, c.expected
+            );
+        }
     }
 
     /// THE STEP THAT COMPILES THE PROGRAM CARRIES THE TAG.
