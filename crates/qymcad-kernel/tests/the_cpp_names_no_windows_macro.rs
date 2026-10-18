@@ -36,15 +36,31 @@ impl<'a> Code<'a> {
     }
 }
 
+/// Every C++ source the program is built from: the files under `src` of every crate. The generators of data for the
+/// probes, under `tests`, are built by hand and never by the release.
+fn cpp_sources() -> Vec<std::path::PathBuf> {
+    let crates = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).parent().expect("the crates directory");
+    let mut stack: Vec<std::path::PathBuf> = std::fs::read_dir(crates).expect("the crates read").flatten().map(|e| e.path().join("src")).filter(|p| p.is_dir()).collect();
+    let mut out = Vec::new();
+    while let Some(dir) = stack.pop() {
+        for e in std::fs::read_dir(&dir).expect("the sources read").flatten() {
+            let p = e.path();
+            if p.is_dir() {
+                stack.push(p);
+            } else if p.extension().is_some_and(|x| x == "cpp" || x == "h" || x == "hpp") {
+                out.push(p);
+            }
+        }
+    }
+    out
+}
+
 #[test]
 fn no_name_in_the_cpp_is_a_macro_of_the_windows_headers() {
-    let src = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("src");
+    let sources = cpp_sources();
+    assert!(sources.len() > 5, "the C++ of the bridge was not found: {sources:?}");
     let mut found = Vec::new();
-    for e in std::fs::read_dir(&src).expect("the sources read").flatten() {
-        let p = e.path();
-        if !p.extension().is_some_and(|x| x == "cpp" || x == "h" || x == "hpp") {
-            continue;
-        }
+    for p in sources {
         let text = std::fs::read_to_string(&p).expect("a source reads");
         for (k, l) in text.lines().enumerate() {
             for word in MACROS {
