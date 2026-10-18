@@ -390,3 +390,5 @@ mod caps;
 pub use caps::*;
 mod pieces;
 pub use pieces::*;
+mod bores;
+pub use bores::*;

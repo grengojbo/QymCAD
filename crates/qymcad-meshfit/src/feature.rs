@@ -18,6 +18,7 @@ use crate::{cylinder_of, prepare, region_at, weld_tolerance, Prepared, Region, S
 use nalgebra::{Matrix3, Vector3};
 use qymcad_core::feature::FaceKey;
 use qymcad_core::geom::{EdgeFaces, Mesh, MeshFace};
+pub use qymcad_core::geom::{rounded, rounded_bore};
 pub use qymcad_core::model::Reach;
 use qymcad_core::model::{Exact, Remake};
 use std::collections::{HashMap, HashSet};
@@ -245,24 +246,6 @@ fn strips(p: &Prepared, by_face: &HashMap<u32, Vec<u32>>, face_of: &[u32], seed:
         }
     }
     Ok(region)
-}
-
-/// The diameters of holes a size is brought to: the clearance holes for metric screws, fine and medium, and the
-/// drills for tapping them. A printed hole comes out a little smaller than drawn, and its mesh smaller still - a circle
-/// drawn by chords - so a measured 3.36 is the 3.4 it was drawn as.
-const BORES: [f64; 24] = [2.5, 3.0, 3.2, 3.3, 3.4, 4.2, 4.3, 4.5, 5.0, 5.3, 5.5, 6.4, 6.6, 6.8, 8.4, 8.5, 9.0, 10.2, 10.5, 11.0, 13.0, 14.0, 17.0, 18.0];
-
-/// How far a measured diameter may stand from one of `BORES` to be taken for it, in mm.
-const BORE_NEAR: f64 = 0.15;
-
-/// A size measured on a mesh brought to a tenth of a millimetre: what a person typed when the part was drawn.
-pub fn rounded(raw: f64) -> f64 {
-    (raw * 10.0).round() / 10.0
-}
-
-/// A hole's diameter brought to the nearest of `BORES` within `BORE_NEAR`, otherwise to a tenth of a millimetre.
-pub fn rounded_bore(raw: f64) -> f64 {
-    BORES.iter().copied().filter(|b| (b - raw).abs() <= BORE_NEAR).min_by(|a, b| (a - raw).abs().total_cmp(&(b - raw).abs())).unwrap_or_else(|| rounded(raw))
 }
 
 /// An axis: a point on it and its unit direction.
