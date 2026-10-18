@@ -97,6 +97,18 @@ pub fn face_clicked(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Option
     }
 }
 
+/// A CLICK WITH MIRROR IN HAND picks the mirror plane - a base plane, a datum or a face - and Enter applies it; the same
+/// plane again lets it go.
+pub fn mirror_plane_click(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymcad_core::feature::SketchPlane>) {
+    match plane {
+        Some(sp) => {
+            pc.mirror.plane = (pc.mirror.plane != Some(sp)).then_some(sp);
+            *pc.status = Notice::info(qymcad_i18n::tr(if pc.mirror.plane.is_some() { "vp-mirror-plane-picked" } else { "msg-mirror-pick" }));
+        }
+        None => *pc.status = Notice::refusal(qymcad_i18n::tr("vp-miss-plane-short")),
+    }
+}
+
 pub fn take_under_click(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Option<usize>, grip: Option<qymcad_ui_state::Sel>) {
     // WITH NOTHING IN HAND a corner or an edge under the cursor is taken for itself, and a face for itself: the body
     // is a double click away. A command keeps the body (or the face it asks for).

@@ -538,14 +538,8 @@ impl App {
                         self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane"));
                     }
                 } else if self.tools.armed.cmd_kind() == 16 {
-                    // MIRROR: the click picks the mirror PLANE, datum or face (Enter applies it)
-                    match crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos) {
-                        Some(sp) => {
-                            self.params.mirror.plane = (self.params.mirror.plane != Some(sp)).then_some(sp); // the same plane again lets it go
-                            self.status = Notice::info(crate::i18n::tr(if self.params.mirror.plane.is_some() { "vp-mirror-plane-picked" } else { "msg-mirror-pick" }));
-                        }
-                        None => self.status = Notice::refusal(crate::i18n::tr("vp-miss-plane-short")),
-                    }
+                    let plane = crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos);
+                    qymcad_part::mirror_plane_click(&mut self.part_ctx(), plane);
                 } else if self.tools.armed.cmd_kind() == 27 || self.tools.armed.cmd_kind() == 29 {
                     // SPLIT BODY: the click picks the cutting PLANE, datum or face (Enter applies it)
                     match crate::gui::pick::pick_sketch_plane_at(&self.painting(), rect, pos) {
