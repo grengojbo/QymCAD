@@ -150,7 +150,7 @@ pub(crate) fn scene_looks(pn: &qymcad_ui_state::Painting) -> Vec<qymcad_ui_state
             looks.push(qymcad_ui_state::BodyLook { tint: u32::from_le_bytes([b[0], b[1], b[2], 0]), state });
         }
     }
-    if pn.section.plane.is_some() {
+    if pn.cut().plane.is_some() {
         // the caps keep the last row, as they do in `gpu_scene`
         looks.push(qymcad_ui_state::BodyLook { tint: u32::from_le_bytes([224, 168, 92, 0]), state: qymcad_ui_state::LOOK_CAP });
     }
@@ -186,6 +186,7 @@ fn answer_to(block: &mut qymcad_ui_state::SceneBlock, no: u32) {
 }
 
 pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuScene {
+    let cut = pn.cut();
     let smooth = pn.set.shading == qymcad_ui_state::Shading::Smooth;
     if smooth {
         qymcad_ui_state::ensure_vertex_normals(pn.cache, pn.project, pn.regen);
@@ -216,7 +217,7 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
         pn.set.ghost_alpha.hash(&mut h);
         pn.scheme.pal.fingerprint().hash(&mut h);
         // the section cuts the triangles IN THE WORLD, so the block depends on it too
-        if let Some((o, n)) = qymcad_ui_state::section_eff(pn.section) {
+        if let Some((o, n)) = qymcad_ui_state::section_eff(&pn.cut()) {
             for v in o.iter().chain(n.iter()) {
                 v.to_bits().hash(&mut h);
             }
@@ -280,7 +281,7 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
                 answer_to(b, body_no);
                 continue;
             }
-            Some(b) if b.shape == shape && pn.section.plane.is_none() && same_rotation12(&b.at, &wt) => {
+            Some(b) if b.shape == shape && pn.cut().plane.is_none() && same_rotation12(&b.at, &wt) => {
                 stats[1] += 1;
                 let d = [(wt[3] - b.at[3]) as f32, (wt[7] - b.at[7]) as f32, (wt[11] - b.at[11]) as f32];
                 for part in b.parts.iter_mut() {
@@ -323,7 +324,7 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
             };
             let (a, b, c) = (pos_w(tri[0]), pos_w(tri[1]), pos_w(tri[2]));
             // THE SECTION: an HONEST clip of the triangle by the plane (a cut exactly along it, with no needles)
-            let clip = qymcad_ui_state::section_clip_tri(pn.section, [a, b, c]);
+            let clip = qymcad_ui_state::section_clip_tri(&cut, [a, b, c]);
             if !clip.whole && clip.verts.is_empty() {
                 continue; // wholly on the hidden side
             }
@@ -405,9 +406,9 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
     }
     // THE SECTION CAPS: an amber fill, two-sided (the cut is visible from both sides). They belong to no body,
     // so they get a look of their own at the end of the table.
-    if pn.section.plane.is_some() {
+    if pn.cut().plane.is_some() {
         let caps = section_caps_for_frame(pn);
-        if let Some((_, n)) = qymcad_ui_state::section_eff(pn.section) {
+        if let Some((_, n)) = qymcad_ui_state::section_eff(&pn.cut()) {
             // THE CAP IS NUDGED A HAIR INTO THE CUT-AWAY SIDE (the bodies keep the half-space d <= 0, so
             // at d = +eps NOTHING occludes the cap - there is no material left there). It cannot lie exactly
             // in the plane: the thread turns run almost tangent to the cut, their clipped triangles stand in

@@ -164,3 +164,32 @@ fn a_datum_plane_clicked_is_the_plane_the_section_is_moved_off() {
     );
     hand.key(egui::Key::Escape);
 }
+
+/// THE VIEW IS CUT WHERE THE SECTION IS TAKEN, before Enter: with the plate held and cut 5 up, what stands above the
+/// plane is not drawn and the cut is capped - on the software picture and in the scene handed to the card alike - so a
+/// person sees where it cuts. Esc puts the tool away, and the scene is whole again.
+#[test]
+fn the_view_is_cut_where_the_section_is_taken() {
+    let Printed { mut app, _folder } = a_printed_plate();
+    let mut hand = Hand::new(&mut app);
+    let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(700.0, 600.0));
+    let picture = |app: &App| {
+        let basis = app.viewing.cam.basis();
+        qymcad_render::rasterize_3d(&app.painting(), rect, &basis, 1.0, 1.0).expect("a raster")
+    };
+    let scene = |app: &App| crate::gui::render_scene::gpu_scene_flat(&app.painting()).0.len();
+    let differ = |a: &egui::ColorImage, b: &egui::ColorImage| a.pixels.iter().zip(&b.pixels).filter(|(p, q)| p != q).count();
+    let (whole, whole_scene) = (picture(hand.app), scene(hand.app));
+    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
+    let cut = hand.app.painting().cut().plane;
+    assert!(cut.is_some_and(|(o, n)| (o[2] - 5.0).abs() < 1e-9 && (n[2] - 1.0).abs() < 1e-9), "the view is cut at {cut:?}, not 5 up along Z");
+    let (cut_picture, cut_scene) = (picture(hand.app), scene(hand.app));
+    let changed = differ(&whole, &cut_picture);
+    assert!(changed > 2000, "the picture of the plate cut 5 up differs from the whole one in {changed} pixels");
+    assert_ne!(cut_scene, whole_scene, "the scene for the card is not cut: {cut_scene} vertices, as whole");
+    hand.key(egui::Key::Escape).frame(Vec::new());
+    assert!(hand.app.painting().cut().plane.is_none(), "the view stays cut after Esc");
+    // the camera the tool borrowed is given back, so the scene is compared, not the picture
+    assert_eq!(scene(hand.app), whole_scene, "the scene is not whole again after Esc");
+}

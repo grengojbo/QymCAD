@@ -285,7 +285,7 @@ pub fn gpu_scene_key(pn: &Painting) -> u64 {
                                                       // THE COLOURS ARE NOT HERE ANY MORE, and neither is the highlight. Both live in the look table beside the
                                                       // vertices: changing a scheme or moving the pointer over the model rewrites two numbers per body instead
                                                       // of the whole scene. Measured on the reference engine: 739 MB re-uploaded for a change of highlight.
-    if let Some((o, n)) = section_eff(pn.section) {
+    if let Some((o, n)) = section_eff(&pn.cut()) {
         for v in o.iter().chain(n.iter()) {
             v.to_bits().hash(&mut h); // the section moved or turned, so the buffer is rebuilt
         }

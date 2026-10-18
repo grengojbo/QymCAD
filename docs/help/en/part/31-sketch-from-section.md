@@ -10,7 +10,8 @@ revolve it to have the part again, its sizes yours to change.
    once.
 2. Click the body. It is cut through its middle, and the section is drawn on the plane: lines in one colour, arcs and
    circles in another, curves no line and no arc fits (splines) in a third. The bar counts them: **Lines 4, arcs 4,
-   circles 1, splines 0**.
+   circles 1, splines 0**. The view is cut at the plane: what stands beyond it is not drawn, and the cut is filled, so
+   you see where the body is cut. Esc gives the whole view back.
 3. In the bar choose the plane: **XY (table)**, **XZ (front)** or **YZ (side)**. Or click a **datum plane** or a
    **flat face** - of this body or another one: the section is taken off it, and the field starts at the middle of the
    body. Click it again, or choose a plane in the bar, to go back to the bar's plane.

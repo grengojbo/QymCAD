@@ -193,6 +193,31 @@ pub struct SectionInHand {
     pub drawn: Option<SectionDrawn>,
 }
 
+/// The code of "Sketch from section".
+pub const SKETCH_FROM_SECTION: u8 = 40;
+
+/// The base plane the section is taken off, as the operation of the bar (`FeatTarget::op`) holds it.
+pub const ON_XY: u8 = 0;
+pub const ON_XZ: u8 = 1;
+pub const ON_YZ: u8 = 2;
+
+/// The base plane the operation of the bar names.
+pub fn section_base(op: u8) -> qymcad_core::feature::BasePlane {
+    use qymcad_core::feature::BasePlane;
+    match op {
+        ON_XZ => BasePlane::XZ,
+        ON_YZ => BasePlane::YZ,
+        _ => BasePlane::XY,
+    }
+}
+
+impl SectionInHand {
+    /// The plane the section is moved off: the one clicked, or the base plane the bar's operation `op` names.
+    pub fn on(&self, op: u8) -> qymcad_core::feature::SketchPlane {
+        self.picked.unwrap_or(qymcad_core::feature::SketchPlane::World(section_base(op)))
+    }
+}
+
 /// A SECTION DRAWN: the plane it was moved off, the offset and the tolerance.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SectionDrawn {

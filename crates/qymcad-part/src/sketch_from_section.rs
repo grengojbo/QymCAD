@@ -3,7 +3,7 @@
 //! splines it is fitted with (`qymcad_meshfit::section`). Enter lays a sketch of them on that plane - a datum plane
 //! laid off it where the offset is not none - defined to the end (`Project::add_sketch_of_section`). A mesh has no
 //! sketch behind it and no exact edge to project: its section is the drawing a person would trace.
-use qymcad_core::feature::{BasePlane, SketchPlane};
+use qymcad_core::feature::SketchPlane;
 use qymcad_core::geom::{Fitted, Piece};
 use qymcad_core::model::{Id, OfSection, Project, SectionAt};
 use qymcad_meshfit::section::{fit_section, Within};
@@ -11,25 +11,10 @@ use qymcad_ui_state::{CmdParam, PartCtx, SectionDrawn, SectionInHand};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-/// The code of the command.
-pub const SKETCH_FROM_SECTION: u8 = 40;
-
-/// The base plane the section is taken off, as the operation of the bar (`FeatTarget::op`) holds it.
-pub const ON_XY: u8 = 0;
-pub const ON_XZ: u8 = 1;
-pub const ON_YZ: u8 = 2;
+pub use qymcad_ui_state::{section_base, ON_XY, ON_XZ, ON_YZ, SKETCH_FROM_SECTION};
 
 /// The tolerance a body gives by itself, as a share of its size: 2e-4, never under 0.01 mm (`section::Fit::for_loop`).
 const TOL_SHARE: f64 = 2e-4;
-
-/// The base plane the operation of the bar names.
-pub fn section_base(op: u8) -> BasePlane {
-    match op {
-        ON_XZ => BasePlane::XZ,
-        ON_YZ => BasePlane::YZ,
-        _ => BasePlane::XY,
-    }
-}
 
 /// The field of the offset, bounded by the body: a plane at or past its ends cuts nothing - or a face lying in it.
 fn offset_field(val: f64, m: &Measured) -> CmdParam {
@@ -81,11 +66,6 @@ fn measured(project: &Project, body: Id, on: &SketchPlane) -> Option<Measured> {
     let b = project.bodies.get(project.mesh_index(body)?)?.mesh.bounds()?;
     let size = ((b.max.x - b.min.x).powi(2) + (b.max.y - b.min.y).powi(2) + (b.max.z - b.min.z).powi(2)).sqrt();
     Some(Measured { from: e.from, to: e.to, middle: (e.from + e.to) / 2.0, tol: (size * TOL_SHARE).max(qymcad_meshfit::section::LEAST_TOL) })
-}
-
-/// The plane the held section is moved off: the one clicked, or the base plane of the bar.
-fn section_on(held: SectionInHand, op: u8) -> SketchPlane {
-    held.picked.unwrap_or(SketchPlane::World(section_base(op)))
 }
 
 /// A CLICK ON A BODY with the tool in hand: a body of a mesh is taken, cut through its middle, the fields of the offset
@@ -149,7 +129,7 @@ pub fn section_plane_taken(pc: &mut PartCtx, on: SketchPlane) {
 /// The field of the offset opened at the middle of the held body along the way the plane it is moved off moves.
 fn to_the_middle(pc: &mut PartCtx) {
     let Some(held) = pc.recognise.section else { return };
-    if let Some(m) = measured(pc.project, held.body, &section_on(held, pc.feat.op)) {
+    if let Some(m) = measured(pc.project, held.body, &held.on(pc.feat.op)) {
         if let Some(f) = pc.cmd.params.iter_mut().find(|f| f.key == "offset") {
             *f = offset_field(tenth(m.middle), &m);
         }
@@ -186,7 +166,7 @@ pub struct SectionAsked {
 
 /// What the tool in hand asks for, by its bar and fields.
 pub fn section_asked(held: SectionInHand, op: u8, cmd: &qymcad_ui_state::FeatCommand) -> SectionAsked {
-    SectionAsked { body: held.body, at: SectionAt { on: section_on(held, op), offset: qymcad_ui_state::cmd_val(cmd, "offset") }, tol: qymcad_ui_state::cmd_val(cmd, "tol") }
+    SectionAsked { body: held.body, at: SectionAt { on: held.on(op), offset: qymcad_ui_state::cmd_val(cmd, "offset") }, tol: qymcad_ui_state::cmd_val(cmd, "tol") }
 }
 
 /// A preview and what it was worked out for.

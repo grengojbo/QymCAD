@@ -2,10 +2,28 @@
 
 use super::*;
 
+impl Painting<'_> {
+    /// THE CUT THE VIEW IS DRAWN WITH: the section tool's when it is on; else, while "Sketch from section" holds a body
+    /// in 3D, the plane its section is taken at - what stands on the side its normal points to is not drawn and the cut
+    /// is capped, so the place the mesh is cut is seen before Enter. Worked out each frame from what the tool holds,
+    /// never stored: the fields move it, and Esc takes it away with the tool.
+    pub fn cut(&self) -> std::borrow::Cow<'_, SectionTool> {
+        if self.section.plane.is_some() || !self.mode_3d || self.armed.cmd_kind() != SKETCH_FROM_SECTION {
+            return std::borrow::Cow::Borrowed(self.section);
+        }
+        let Some(held) = self.recognise.section else { return std::borrow::Cow::Borrowed(self.section) };
+        let at = qymcad_core::model::SectionAt { on: held.on(self.feat.op), offset: cmd_val(self.cmd, "offset") };
+        match self.project.section_frame(&at) {
+            Some(f) => std::borrow::Cow::Owned(SectionTool { plane: Some((f.origin, f.normal())), ..SectionTool::default() }),
+            None => std::borrow::Cow::Borrowed(self.section),
+        }
+    }
+}
+
 /// THE SECTION CAPS: an exact planar cut of every visible body, in world coordinates, cached by (plane,
 /// geom_rev, visible bodies).
 pub fn section_caps_for_frame(pn: &Painting) -> std::rc::Rc<Vec<qymcad_core::geom::Mesh>> {
-    let Some((o, n)) = section_eff(pn.section) else {
+    let Some((o, n)) = section_eff(&pn.cut()) else {
         return std::rc::Rc::new(Vec::new());
     };
     let key = {

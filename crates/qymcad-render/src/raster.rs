@@ -126,6 +126,7 @@ pub fn interp_color(cols: &[Color32; 3], b0: f32, b1: f32, b2: f32) -> Color32 {
 }
 
 pub fn draw_mesh(pn: &Painting, painter: &egui::Painter, rect: Rect) {
+    let cut = pn.cut();
     let sh = qymcad_ui_state::Sheet { view: pn.view, rect };
     // a top view (or IN THE PLANE of the active sketch when editing on a face or a datum - so that the
     // body lines up with the sketch's coordinates instead of hanging above it). Shading goes by depth
@@ -157,7 +158,7 @@ pub fn draw_mesh(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         for i in 0..mesh.tris.len() {
             let t = mesh.triangle(i);
             // THE SECTION: an honest clip (the CPU path) - 0..2 sub-triangles exactly along the plane
-            let clip = qymcad_ui_state::section_clip_tri(pn.section, [[t[0].x, t[0].y, t[0].z], [t[1].x, t[1].y, t[1].z], [t[2].x, t[2].y, t[2].z]]);
+            let clip = qymcad_ui_state::section_clip_tri(&cut, [[t[0].x, t[0].y, t[0].z], [t[1].x, t[1].y, t[1].z], [t[2].x, t[2].y, t[2].z]]);
             if !clip.whole && clip.verts.is_empty() {
                 continue;
             }
@@ -206,7 +207,7 @@ pub fn draw_mesh(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         }
     }
     // THE SECTION CAPS (the CPU path): an amber fill on top (sorted by depth within the caps)
-    if pn.section.plane.is_some() {
+    if pn.cut().plane.is_some() {
         let caps = section_caps_for_frame(pn);
         let mut ctris: Vec<(f64, [Pos2; 3])> = Vec::new();
         let basis = pn.cam.basis();
