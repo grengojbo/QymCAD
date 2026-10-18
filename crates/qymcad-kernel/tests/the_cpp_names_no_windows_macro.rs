@@ -15,19 +15,25 @@ struct Found {
     word: &'static str,
 }
 
-/// The code of a line without its `//` comment.
-fn code_of(line: &str) -> &str {
-    line.split("//").next().unwrap_or("")
+/// The code of a line, its `//` comment left out.
+struct Code<'a> {
+    text: &'a str,
 }
 
-/// Whether `word` stands alone in `code`: not a part of a longer name.
-fn stands_alone(code: &str, word: &str) -> bool {
-    let is_name = |c: char| c.is_ascii_alphanumeric() || c == '_';
-    code.match_indices(word).any(|(at, _)| {
-        let before = code[..at].chars().next_back();
-        let after = code[at + word.len()..].chars().next();
-        !before.is_some_and(is_name) && !after.is_some_and(is_name)
-    })
+impl<'a> Code<'a> {
+    fn of(line: &'a str) -> Self {
+        Code { text: line.split("//").next().unwrap_or("") }
+    }
+
+    /// Whether `word` stands alone in the code: not a part of a longer name.
+    fn stands_alone(&self, word: &str) -> bool {
+        let is_name = |c: char| c.is_ascii_alphanumeric() || c == '_';
+        self.text.match_indices(word).any(|(at, _)| {
+            let before = self.text[..at].chars().next_back();
+            let after = self.text[at + word.len()..].chars().next();
+            !before.is_some_and(is_name) && !after.is_some_and(is_name)
+        })
+    }
 }
 
 #[test]
@@ -42,7 +48,7 @@ fn no_name_in_the_cpp_is_a_macro_of_the_windows_headers() {
         let text = std::fs::read_to_string(&p).expect("a source reads");
         for (k, l) in text.lines().enumerate() {
             for word in MACROS {
-                if stands_alone(code_of(l), word) {
+                if Code::of(l).stands_alone(word) {
                     found.push(Found { file: p.file_name().unwrap_or_default().to_string_lossy().into_owned(), line: k + 1, word });
                 }
             }
