@@ -830,14 +830,20 @@ fn icon_manager_window_displays_rejected_archives_with_reason() {
     app.win.open(WinKind::IconManager);
     let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(1200.0, 800.0));
     let mut painted = Vec::new();
-    for _ in 0..2 {
+    let frame = |app: &mut crate::gui::App, painted: &mut Vec<String>| {
         let input = egui::RawInput { screen_rect: Some(screen), ..Default::default() };
         let output = ctx.run_ui(input, |ui| draw_icon_manager_window_in_dirs(ui.ctx(), &mut app.win_ctx(&mut Vec::new()), &dirs));
         painted.clear();
         for shape in &output.shapes {
-            crate::gui::screen_keys::tests::collect_text(&shape.shape, &mut painted);
+            crate::gui::screen_keys::tests::collect_text(&shape.shape, painted);
         }
-    }
+    };
+    // THE FOLDER IS READ BY A THREAD OF ITS OWN, and the window draws what it has found so far: a person waits for the
+    // list as the window waits for the thread. Reported by a run of the whole gate, the machine under a load of 5: two
+    // frames drawn at once came before the thread, and the window said "No additional icon themes found".
+    frame(&mut app, &mut painted);
+    crate::gui::session::waiting::until("the theme folder to be read", || theme_discovery_ready(&dirs));
+    frame(&mut app, &mut painted);
 
     assert!(painted.iter().any(|text| text.contains("broken_pack.qicons")), "icon manager window must display rejected archive filename: {painted:?}");
     assert!(painted.iter().any(|text| text.contains(&crate::i18n::tr("icontheme-mgr-rejected-title"))), "icon manager window must display rejected section title: {painted:?}");
