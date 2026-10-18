@@ -190,7 +190,7 @@ pub static FULLY_DEFINE: Tool = Tool {
     id: "sketch.fully-define",
     flow: Flow::Drawing(&[(20.0, 0.0)], Finish::EnterAt((20.0, 15.0))),
     title: "tool-fully-define",
-    entries: &[Entry::Button("tb-fully-define-hint")],
+    entries: &[Entry::Button("tb-fully-define-hint"), Entry::SearchByArticle],
     other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
     fixture: Fixture::RectangleInSketch,
     picks: &[],
