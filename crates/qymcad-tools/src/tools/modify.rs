@@ -29,7 +29,7 @@ fn finite(project: &Project, a: &Amount, field: &str) -> Result<Read, Refusal> {
     a.read(project, field)
 }
 
-fn positive(project: &Project, a: &Amount, field: &str) -> Result<Read, Refusal> {
+pub(crate) fn positive(project: &Project, a: &Amount, field: &str) -> Result<Read, Refusal> {
     let r = a.read(project, field)?;
     if r.value > 0.0 {
         Ok(r)
@@ -44,7 +44,7 @@ fn laid(ctx: &Ctx, node: Id) -> Answer {
 }
 
 /// What a node laid: the feature and the body it made, with the outcome of the document.
-fn laid_node(ctx: &Ctx, node: Id) -> Answer {
+pub(crate) fn laid_node(ctx: &Ctx, node: Id) -> Answer {
     let mut a = answer("feature", json!(node));
     a.insert("body".into(), json!(node));
     outcome(ctx, a)

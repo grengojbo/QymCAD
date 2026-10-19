@@ -177,3 +177,35 @@ fn a_hole_of_a_step_is_made_editable() {
     let plain = call(&mut ctx, "recognise_feature", json!({ "body": made_body, "at": [-15.0, -10.0, 10.0] }));
     assert_eq!(plain["error"]["code"], "no-feature", "a plain face was taken for a feature: {plain}");
 }
+
+/// EVERY FEATURE OF A STEP MADE EDITABLE AT ONCE: the block drilled 10 across, brought back from a STEP, gives one group,
+/// a hole of 10 through, listed and laying nothing; the groups left out, nothing is laid and it says so; a group that is
+/// not there is refused; laid with the size 8, one node drills it 8, and its diameter edited drives it.
+#[test]
+fn every_feature_of_a_step_is_made_editable_at_once() {
+    let dir = out_dir("recognise-all");
+    let mut ctx = Ctx::blank();
+    let _ = ctx.doc.edit("cmd-box", |p| Ok(p.add_box(40.0, 30.0, 10.0))).expect("the block is laid");
+    let drilled = call(&mut ctx, "hole", json!({ "face": "top", "diameter": 10, "depth": 20 }));
+    assert_eq!(drilled["ok"], json!(true), "{drilled}");
+    let step = file(&dir, "drilled.step");
+    let out = call(&mut ctx, "export_cad", json!({ "path": step }));
+    assert_eq!(out["ok"], json!(true), "{out}");
+    let _ = call(&mut ctx, "new_project", json!({}));
+    let back = call(&mut ctx, "import_cad", json!({ "path": step }));
+    let hole = |d: f64| (12000.0 - std::f64::consts::PI * d * d / 4.0 * 10.0).round() as i64;
+    let body = json!({ "body": back["bodies"][0]["id"] });
+
+    let listed = call(&mut ctx, "recognise_all", json!({ "body": body, "then": "list" }));
+    assert_eq!(listed["groups"], json!([{ "group": 0, "kind": "hole", "count": 1, "size": 10.0, "through": true, "taken": true }]), "{listed}");
+    let none = call(&mut ctx, "recognise_all", json!({ "body": body, "skip": [0] }));
+    assert_eq!(none["error"]["code"], "nothing-taken", "{none}");
+    let bad = call(&mut ctx, "recognise_all", json!({ "body": body, "skip": [3] }));
+    assert_eq!(bad["error"]["code"], "bad-group", "{bad}");
+
+    let made = call(&mut ctx, "recognise_all", json!({ "body": body, "sizes": [{ "group": 0, "size": 8 }] }));
+    assert_eq!(made["ok"], json!(true), "{made}");
+    assert_eq!(volumes(&made), [hole(8.0)], "the hole laid is not 8 across: {made}");
+    let wider = call(&mut ctx, "edit_feature", json!({ "feature": made["feature"], "values": { "diameter": 6 } }));
+    assert_eq!(volumes(&wider), [hole(6.0)], "the diameter of the group does not drive the hole: {wider}");
+}

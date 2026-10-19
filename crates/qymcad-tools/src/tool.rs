@@ -179,6 +179,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::modify::SPLIT_BODY,
     crate::tools::modify::PUSH_FACE,
     crate::tools::modify::RECOGNISE_FEATURE,
+    crate::tools::recognise::RECOGNISE_ALL,
     crate::tools::modify::FACE_GAP,
     crate::tools::modify::SKETCH_FROM_FACE,
     crate::tools::section::MESH_SECTION,
