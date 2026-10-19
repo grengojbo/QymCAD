@@ -8,6 +8,7 @@ mod face_gap;
 mod sketch_from_face;
 mod sketch_from_section;
 mod recognise_feature;
+mod recognise_all;
 mod trial;
 pub use sketch_from_face::{
     apply_sketch_from_face_cmd, edit_redrawn, open_redrawn, sketch_from_face_at, sketch_from_face_mode_changed, sketch_from_face_ready, start_sketch_from_face_cmd, JUST_SKETCH, REPLACE,
@@ -21,6 +22,7 @@ pub use face_gap::{apply_face_gap_cmd, edit_face_gap, edit_gap, face_gap_at, fac
 pub use recognise_feature::{
     apply_recognise_feature_cmd, edit_remade, hit_on_face, open_remade, recognise_feature_at, recognise_mode_changed, start_recognise_feature_cmd, MAKE_EXACT, RECOGNISE_FEATURE, TAKE_OFF,
 };
+pub use recognise_all::{apply_recognise_all_cmd, group_told, open_remade_all, recognise_all_at, recognise_all_ready, start_recognise_all_cmd, RECOGNISE_ALL};
 pub use trial::{trial_refusal, Trial};
 
 use egui::{Pos2, Rect};

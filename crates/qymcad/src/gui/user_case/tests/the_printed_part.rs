@@ -186,6 +186,7 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
         a_circle_drawn_on_it_is_fully_defined(&mut hand, si, problems);
     }
     a_section_of_the_plate_is_drawn(&mut hand, problems);
+    every_feature_of_a_step_is_made_exact(&mut hand, problems);
     hand.app.enter_component(was);
     (hand.app.viewing.mode_3d, hand.app.viewing.cam) = view;
 }
@@ -262,4 +263,71 @@ fn a_section_of_the_plate_is_drawn(hand: &mut crate::gui::hand::Hand, problems: 
         ));
     }
     hand.key(egui::Key::Escape).frame(Vec::new());
+}
+
+/// EVERY FEATURE OF A PART COME FROM A STEP MADE EXACT AT ONCE: a plate drilled 4 blind, 5 and 6 through, a corner
+/// rounded 4 and one cut back 3, 600 mm off the housing, comes in from a STEP file; "Recognise all" on it and Enter lay
+/// one node holding what the plate held. The bore of 5 made 5.5 by the node's row in the tree drives that hole alone.
+fn every_feature_of_a_step_is_made_exact(hand: &mut crate::gui::hand::Hand, problems: &mut Vec<String>) {
+    use qymcad_kernel::specimen::Specimen;
+    let exact = crate::gui::tests::every_feature_is_made_exact_by_hand::plate().moved(&[1.0, 0.0, 0.0, 600.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 1.0, 0.0]).expect("placed");
+    let folder = crate::gui::check_folder::tests::CheckFolder::new("user-case-recognise-all");
+    let file = folder.file("plate.step").to_string_lossy().into_owned();
+    qymcad_kernel::write_step_of(&exact, &file).expect("the STEP is written");
+    hand.import(&file);
+    hand.press_word(&crate::i18n::tr("import-scale-import"), egui::pos2(700.0, 450.0));
+    rested(hand);
+    let Some(body) = hand.app.project.bodies.last().map(|b| b.id) else {
+        problems.push("the plate of the STEP did not come in".into());
+        return;
+    };
+    if let Some(part) = hand.app.project.body_owner(body) {
+        hand.app.enter_component(part);
+    }
+    check_all(hand.app, "the plate of the STEP brought in", problems);
+    hand.look_at([630.0, 20.0, 5.0], 6.0);
+    hand.tool(qymcad_part::RECOGNISE_ALL).frame(Vec::new());
+    hand.click([640.0, 32.0, 10.0]).frame(Vec::new());
+    let groups = hand.app.params.recognise.all.as_ref().map_or(0, |a| a.groups.len());
+    if groups != 5 {
+        problems.push(format!("\"Recognise all\" on the plate of the STEP found {groups} groups, not 5: {}", hand.app.status));
+    }
+    let nodes = hand.app.project.timeline.len();
+    hand.enter();
+    rested(hand);
+    check_all(hand.app, "every feature of the plate of the STEP made exact", problems);
+    let volume = |app: &App| app.project.timeline.last().and_then(|n| n.kind.body()).and_then(|b| app.live.shapes.get(&b)).map(|s| s.volume());
+    match volume(hand.app) {
+        Some(v) if (v - exact.volume()).abs() < 1e-3 * exact.volume() && hand.app.project.timeline.len() == nodes + 1 => {}
+        v => problems.push(format!("every feature of the plate made exact: {v:?} mm^3 in {} nodes more, not {} in one", hand.app.project.timeline.len() - nodes, exact.volume())),
+    }
+    // the bore of 5 made 5.5 by the node's own row of the tree, as a person changes it
+    hand.key(egui::Key::Escape).frame(Vec::new());
+    let row = crate::gui::panels_tree::feature_row_label(&hand.app.project, hand.app.project.timeline.len() - 1);
+    if !hand.double_click_word(&row) {
+        problems.push(format!("the row {row:?} of the features made exact is not in the tree"));
+        return;
+    }
+    hand.set("diameter.2", 5.5);
+    hand.enter();
+    rested(hand);
+    check_all(hand.app, "the bore of 5 of the plate of the STEP made 5.5", problems);
+    let want = exact.volume() - std::f64::consts::PI * (2.75f64.powi(2) - 2.5f64.powi(2)) * 10.0;
+    match volume(hand.app) {
+        Some(v) if (v - want).abs() < 1e-3 * want => {}
+        v => problems.push(format!("the bore of 5 made 5.5: the plate holds {v:?} mm^3, not {want}")),
+    }
+    hand.key(egui::Key::Escape).frame(Vec::new());
+}
+
+/// Frames run, as they do by themselves, until nothing is being built.
+fn rested(hand: &mut crate::gui::hand::Hand) {
+    for _ in 0..600 {
+        hand.frame(Vec::new());
+        hand.app.drain_bg_for_test();
+        if hand.app.regen.busy.is_none() && hand.app.regen.bg.is_empty() && !hand.app.regen.wanted {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
 }

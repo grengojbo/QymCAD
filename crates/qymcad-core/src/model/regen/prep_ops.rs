@@ -162,7 +162,7 @@ impl Project {
                 _ => return crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
             }
         }
-        let mut holes = Vec::new();
+        let mut holes: Vec<Drilled> = Vec::new();
         let mut cuts: Vec<Laid> = Vec::new();
         let mut rounds: Vec<Laid> = Vec::new();
         for it in items {
@@ -174,7 +174,7 @@ impl Project {
                     let Ok(c) = self.face_by_ref(p.node, src, &face, "ref-what-hole-face") else { return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound) };
                     let off = (0..3).map(|i| (at[i] - c.centroid[i]) * c.normal[i]).sum::<f64>();
                     let point = [at[0] - off * c.normal[0], at[1] - off * c.normal[1], at[2] - off * c.normal[2]];
-                    holes.push(Drilled { tool, pl: crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12() });
+                    holes.push(Drilled { group: it.group, tool, pl: crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12() });
                 }
                 Exact::Chamfer { sides, leg } => lay_in(&mut cuts, it.group, p.dim(&group_key("dist", it.group), leg), sides),
                 Exact::Round { sides, radius } => lay_in(&mut rounds, it.group, p.dim(&group_key("radius", it.group), radius), sides),
@@ -185,16 +185,17 @@ impl Project {
         let roles = crate::feature::BlendRoles::Named { feature, picked: Vec::new() };
         crate::feature::KernelJob::new(vec![src], move |k| {
             let mut built = k.remove_faces(body, src, &ids)?;
+            // what refuses after the faces are off is told with its group, so the tool can leave that group out
             for h in &holes {
-                built = k.hole(body, body, h.tool, h.pl, feature)?;
+                built = k.hole(body, body, h.tool, h.pl, feature).map_err(|e| in_group(e, h.group))?;
             }
             for c in &cuts {
-                let edges = c.sides.iter().map(|&s| parted_by(k, body, s)).collect::<Result<Vec<u32>, _>>()?;
-                built = k.chamfer(body, body, c.size, &edges, roles.clone())?;
+                let edges = c.sides.iter().map(|&s| parted_by(k, body, s)).collect::<Result<Vec<u32>, _>>().map_err(|e| in_group(e, c.group))?;
+                built = k.chamfer(body, body, c.size, &edges, roles.clone()).map_err(|e| in_group(e, c.group))?;
             }
             for r in &rounds {
-                let edges = r.sides.iter().map(|&s| parted_by(k, body, s)).collect::<Result<Vec<u32>, _>>()?;
-                built = k.fillet(body, body, r.size, &edges, roles.clone())?;
+                let edges = r.sides.iter().map(|&s| parted_by(k, body, s)).collect::<Result<Vec<u32>, _>>().map_err(|e| in_group(e, r.group))?;
+                built = k.fillet(body, body, r.size, &edges, roles.clone()).map_err(|e| in_group(e, r.group))?;
             }
             Ok(built)
         })

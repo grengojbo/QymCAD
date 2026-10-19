@@ -10,6 +10,10 @@
 /// in different places in the phrase.
 pub fn error_text(e: &qymcad_core::errors::CoreError) -> String {
     use qymcad_core::errors::{CoreError as E, ExprError as X};
+    // A GROUP OF FEATURES MADE EXACT says what its own error says: the group is named by the tool, beside its row
+    if let E::InGroup { error, .. } = e {
+        return error_text(error);
+    }
     let mut args = fluent_bundle::FluentArgs::new();
     match e {
         E::SplitPieceCount { got, want } => {

@@ -290,6 +290,21 @@ pub fn trn(key: &str, args: &[(&str, &str)]) -> String {
     tr_args(key, Some(&a))
 }
 
+/// A SUBSTITUTION OF A MESSAGE: the name the catalogue gives it and the value put there.
+pub struct Arg<'a> {
+    pub name: &'a str,
+    pub value: &'a str,
+}
+
+/// A string with any number of substitutions, each named where it is written.
+pub fn tr_with(key: &str, args: &[Arg]) -> String {
+    let mut a = FluentArgs::new();
+    for arg in args {
+        a.set(arg.name.to_string(), arg.value.to_string());
+    }
+    tr_args(key, Some(&a))
+}
+
 /// THE START OF A MESSAGE UP TO THE SUBSTITUTION — for tests that check "was it said" rather than "how".
 ///
 /// A status cannot be compared with a finished phrase when a value is glued into it (a path, a counter):

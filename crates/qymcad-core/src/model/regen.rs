@@ -288,7 +288,7 @@ pub struct Gap {
 }
 
 /// A FEATURE FOUND ON A BODY, TO BE LAID DOWN EXACT: its faces as they stand on the body, and what it is made again as.
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq)]
 pub struct Remake {
     pub faces: Vec<crate::feature::FaceKey>,
     pub exact: Exact,
@@ -473,8 +473,9 @@ struct Made {
     group: u32,
 }
 
-/// A hole of a node made exact, ready to drill: its tool and the frame it is drilled from.
+/// A hole of a node made exact, ready to drill: its group, its tool and the frame it is drilled from.
 struct Drilled {
+    group: u32,
     tool: HoleTool,
     pl: [f64; 12],
 }
@@ -484,6 +485,11 @@ struct Laid {
     group: u32,
     size: f64,
     sides: Vec<crate::geom::EdgeFaces>,
+}
+
+/// `e` told as an error of group `group` of a node made exact.
+fn in_group(e: crate::errors::CoreError, group: u32) -> crate::errors::CoreError {
+    crate::errors::CoreError::InGroup { group, error: Box::new(e) }
 }
 
 /// The edge between `sides` laid into its group's blend, the group made at its first edge.

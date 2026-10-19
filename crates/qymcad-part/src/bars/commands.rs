@@ -373,6 +373,7 @@ pub const PART_COMMANDS: &[Command] = &[
         group: BODY,
         shelf: Shelf::Bar,
     },
+    Command { code: "part.recognise-all", benches: PART, launch: Launch::Feat(41), name_key: "", icon: IconId::PartRecogniseAll, hint_key: "tb-recognise-all-hint", group: BODY, shelf: Shelf::Bar },
     Command { code: "part.face-gap", benches: PART, launch: Launch::Feat(38), name_key: "", icon: IconId::PartFaceGap, hint_key: "tb-face-gap-hint", group: BODY, shelf: Shelf::Bar },
     Command {
         code: "part.sketch-from-face",

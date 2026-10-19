@@ -103,17 +103,17 @@ struct Taken {
 }
 
 /// A field of a size: its caption, its key - the node's dimension - its value and its bounds.
-struct Size {
-    label: &'static str,
-    key: &'static str,
-    val: f64,
-    lo: f64,
-    hi: f64,
+pub(crate) struct Size {
+    pub(crate) label: &'static str,
+    pub(crate) key: &'static str,
+    pub(crate) val: f64,
+    pub(crate) lo: f64,
+    pub(crate) hi: f64,
 }
 
 /// The sizes a person may change: a hole's diameter, and its depth unless it goes through; a rounding's radius; a
 /// chamfer's leg.
-fn sizes(exact: &Exact) -> Vec<Size> {
+pub(crate) fn sizes(exact: &Exact) -> Vec<Size> {
     match *exact {
         Exact::Hole { diameter, depth, reach, .. } => {
             let mut out = vec![Size { label: "f-diameter", key: "diameter", val: diameter, lo: 0.1, hi: 10000.0 }];
@@ -161,7 +161,7 @@ pub fn edit_remade(cmd: &qymcad_ui_state::FeatCommand, items: &mut [RemadeItem])
 }
 
 /// The sizes of one feature from the fields of group `group`.
-fn edit_exact(cmd: &qymcad_ui_state::FeatCommand, exact: &mut Exact, group: u32) {
+pub(crate) fn edit_exact(cmd: &qymcad_ui_state::FeatCommand, exact: &mut Exact, group: u32) {
     let of = |base: &'static str| {
         let key = group_key(base, group);
         cmd.params.iter().any(|p| p.key == key).then(|| qymcad_ui_state::cmd_val(cmd, &key))

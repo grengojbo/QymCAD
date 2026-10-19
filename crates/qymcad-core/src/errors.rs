@@ -443,6 +443,9 @@ pub enum CoreError {
     ThreadFailed,
     /// The faces cannot be removed: the adjacent surfaces do not extend, or the reference is stale.
     RemoveFacesFailed { why: String },
+    /// A group of the features of a node made exact did not lay, for `error`: the group is told so it can be left out,
+    /// and the words are the error's own.
+    InGroup { group: u32, error: Box<CoreError> },
     /// The pattern produced an empty result.
     ArrayEmpty,
     /// The operation produced an empty body.
@@ -464,6 +467,14 @@ impl CoreError {
     /// yet, because the project has only just been opened and the geometry came from the file. Such a node has
     /// to stay dirty and rebuild once its source appears. Everything else is a final refusal, and repeating it
     /// every frame means computing something that cannot succeed, without ever stopping.
+    /// The group of a node made exact the error stands in, if it stands in one.
+    pub fn group(&self) -> Option<u32> {
+        match self {
+            CoreError::InGroup { group, .. } => Some(*group),
+            _ => None,
+        }
+    }
+
     pub fn retryable(&self) -> bool {
         matches!(self, CoreError::SourceBodyNotBuilt | CoreError::BodyANotBuilt | CoreError::BodyBNotBuilt)
     }
@@ -568,6 +579,7 @@ impl CoreError {
             AugerFlightFailed => "error-auger-flight-failed".into(),
             ThreadFailed => "error-thread-failed".into(),
             RemoveFacesFailed { .. } => "error-remove-faces-failed".into(),
+            InGroup { error, .. } => error.key(),
             ArrayEmpty => "error-array-empty".into(),
             EmptyResult => "error-empty-result".into(),
             JointUnsatisfied { .. } => "error-joint-unsatisfied".into(),
@@ -664,6 +676,7 @@ impl std::fmt::Display for CoreError {
             NeedsSolidNotSheet => write!(f, "solid tool on a sheet"),
             DraftFailed { angle } => write!(f, "draft {angle:.1} failed"),
             RemoveFacesFailed { why } => write!(f, "cannot remove faces: {why}"),
+            InGroup { group, error } => write!(f, "group {group}: {error}"),
             Kernel(msg) => write!(f, "{msg}"),
             Expr(e) => write!(f, "{e}"),
             other => write!(f, "{}", other.key()),

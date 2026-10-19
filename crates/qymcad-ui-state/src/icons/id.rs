@@ -99,6 +99,7 @@ pub enum IconId {
     PartTrimSurface,
     PartRecognise,
     PartRecogniseFeature,
+    PartRecogniseAll,
     PartFaceGap,
     PartSketchFromFace,
     PartSketchFromSection,

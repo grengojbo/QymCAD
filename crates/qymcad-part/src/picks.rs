@@ -46,6 +46,7 @@ pub fn start_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
         33 => start_stitch_cmd(pc),
         35 => start_recognise_cmd(pc),
         RECOGNISE_FEATURE => start_recognise_feature_cmd(pc),
+        RECOGNISE_ALL => start_recognise_all_cmd(pc),
         FACE_GAP => start_face_gap_cmd(pc),
         SKETCH_FROM_FACE => start_sketch_from_face_cmd(pc),
         SKETCH_FROM_SECTION => start_sketch_from_section_cmd(pc),
@@ -64,13 +65,13 @@ pub fn start_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
 /// seen was "I clicked the face of the part and it does not work". The tools for which a sheet is lawful (thicken,
 /// replace a face, stitch, trim, patch, copy a face) are not included here - a surface is what they want.
 pub fn solid_only(armed: &qymcad_ui_state::Armed) -> bool {
-    matches!(armed.cmd_kind(), 4 | 5 | 6 | 7 | 23 | 25 | 26 | 27 | 29 | RECOGNISE_FEATURE | FACE_GAP | SKETCH_FROM_FACE | SKETCH_FROM_SECTION)
+    matches!(armed.cmd_kind(), 4 | 5 | 6 | 7 | 23 | 25 | 26 | 27 | 29 | RECOGNISE_FEATURE | RECOGNISE_ALL | FACE_GAP | SKETCH_FROM_FACE | SKETCH_FROM_SECTION)
 }
 
 /// A face is selected under a command that asks for one (the shell, the hole, a feature to recognise) and with nothing
 /// in hand - where a corner or an edge under the cursor goes first; other commands take THE BODY.
 pub fn wants_face(armed: &qymcad_ui_state::Armed) -> bool {
-    matches!(armed.cmd_kind(), 6 | 7 | 23 | 25 | 26 | 28 | 30 | 31 | 36 | RECOGNISE_FEATURE | FACE_GAP | SKETCH_FROM_FACE | SKETCH_FROM_SECTION) || !armed.commanding()
+    matches!(armed.cmd_kind(), 6 | 7 | 23 | 25 | 26 | 28 | 30 | 31 | 36 | RECOGNISE_FEATURE | RECOGNISE_ALL | FACE_GAP | SKETCH_FROM_FACE | SKETCH_FROM_SECTION) || !armed.commanding()
 }
 
 /// A CLICK ON FACE `face` OF BODY `mesh` for the tools that take one face at a click.
@@ -88,6 +89,8 @@ pub fn face_clicked(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Option
     } else if kind == RECOGNISE_FEATURE {
         let at = hit_on_face(pc, mesh, face, rect, screen);
         recognise_feature_at(pc, mesh, face, at);
+    } else if kind == RECOGNISE_ALL {
+        recognise_all_at(pc, mesh, face);
     } else if kind == FACE_GAP {
         face_gap_at(pc, mesh, face);
     } else if kind == SKETCH_FROM_FACE {

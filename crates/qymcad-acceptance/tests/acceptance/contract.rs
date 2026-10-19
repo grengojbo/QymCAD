@@ -139,6 +139,7 @@ contract!(tree_search, qymcad_acceptance::tools::assembly::SEARCH);
 contract!(menu_parameters, qymcad_acceptance::tools::menus::PARAMETERS);
 contract!(recognise, qymcad_acceptance::tools::part::RECOGNISE);
 contract!(recognise_feature, qymcad_acceptance::tools::part::RECOGNISE_FEATURE);
+contract!(recognise_all, qymcad_acceptance::tools::part::RECOGNISE_ALL);
 contract!(face_gap, qymcad_acceptance::tools::part::FACE_GAP);
 contract!(sketch_from_face, qymcad_acceptance::tools::part::SKETCH_FROM_FACE);
 contract!(sketch_from_section, qymcad_acceptance::tools::part::SKETCH_FROM_SECTION);

@@ -297,6 +297,7 @@ Below is the complete dictionary of icons recognized across the 5 categories:
 | `part/trim_surface.svg` | **Trim Surface:** Trim away surface sheet segments using cutting curves or intersecting faces. |
 | `part/recognise.svg` | **Recognize Shapes:** Feature recognition: detect planes, cylinders, and primitives on imported mesh/BREP data. |
 | `part/recognise_feature.svg` | **Recognise Feature:** A hole, a rounding or a chamfer clicked on a body made again exact, its size editable in the tree. |
+| `part/recognise_all.svg` | **Recognise All:** Every hole, rounding and chamfer of a body found at once, in groups of one size, and made again exact by one node, each group's size editable in the tree. |
 | `part/sketch_from_face.svg` | **Sketch from Face:** The outline of a flat face of a body copied into a sketch on it, fully defined; its boss or pocket redrawn by the sketch, the sizes of the sketch driving the body
 | `part/sketch_from_section.svg` | **Sketch from Section:** A body of a mesh cut by a plane, the section fitted with lines, arcs and circles and drawn into a sketch on that plane, fully defined. |
 | `part/face_gap.svg` | **Size on Body:** The distance between two parallel flat faces of a body set by a number, one face or both moved, the size editable in the tree. |

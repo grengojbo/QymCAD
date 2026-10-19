@@ -53,6 +53,7 @@ pub fn apply_feat_cmd_inner(pc: &mut qymcad_ui_state::PartCtx) {
             33 => apply_stitch_cmd(pc.cmd, pc.project, pc.status, pc.stitch_parts),
             35 => apply_recognise_cmd(pc),
             37 => apply_recognise_feature_cmd(pc),
+            RECOGNISE_ALL => apply_recognise_all_cmd(pc),
             38 => apply_face_gap_cmd(pc),
             SKETCH_FROM_FACE => apply_sketch_from_face_cmd(pc),
             SKETCH_FROM_SECTION => apply_sketch_from_section_cmd(pc),

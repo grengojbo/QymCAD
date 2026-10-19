@@ -23,7 +23,7 @@ use std::sync::{Arc, Mutex};
 /// feature made again exact, a rounding of it as wide as its faces allow, and a size between faces. A thread
 /// is judged by the checks the rebuild makes before the kernel instead: a trial of a good thread sweeps its turns, 3 s
 /// and more a frame in a debug build.
-const TRIED: [u8; 12] = [4, 5, 6, 7, 14, 23, 27, 28, 29, 36, 37, 38];
+const TRIED: [u8; 13] = [4, 5, 6, 7, 14, 23, 27, 28, 29, 36, 37, 38, super::RECOGNISE_ALL];
 
 pub use qymcad_ui_state::Trial;
 
@@ -73,9 +73,9 @@ pub fn trial_refusal(pc: &mut PartCtx, ctx: &egui::Context) -> Trial {
     let answer: Arc<Mutex<Option<qymcad_ui_state::TrialAnswer>>> = Arc::new(Mutex::new(None));
     let out = answer.clone();
     qymcad_kernel::worker(move || {
-        // a trial names no field: the command's first one says it
-        let (words, faces) = run_trial(job);
-        let verdict = words.map_or(Trial::Clear, |w| Trial::Refused(first, w));
+        // a trial names no field: the command's first one says it - but "Recognise all" names the group that does not lay
+        let tried = if kind == super::RECOGNISE_ALL { run_all_trial(job) } else { run_trial(job).beside(first) };
+        let (verdict, faces) = (tried.refused.map_or(Trial::Clear, |r| Trial::Refused(r.key, r.words)), tried.faces);
         if let Ok(mut a) = out.lock() {
             *a = Some(qymcad_ui_state::TrialAnswer { verdict, faces: Arc::new(faces) });
         }
@@ -96,7 +96,11 @@ fn state_key(pc: &PartCtx) -> u64 {
     }
     let mut picks: Vec<String> = pc.gsel.edges.iter().map(|e| format!("{e:?}")).chain(pc.gsel.faces.iter().map(|f| format!("{f:?}"))).collect();
     picks.sort();
-    picks.hash(&mut h);
+    // what "Recognise all" lays is the groups and features it takes; the faces it lights follow the pointer
+    match pc.recognise.all.as_ref() {
+        Some(all) if pc.armed.cmd_kind() == super::RECOGNISE_ALL => all.groups.iter().map(|g| format!("{:?}{:?}", g.taking, g.off)).collect::<Vec<_>>().hash(&mut h),
+        _ => picks.hash(&mut h),
+    }
     pc.recognise.gap.hash(&mut h); // the order the faces of a size were taken in: which is the first
     format!("{:?}", (pc.cmd.edit, pc.split.plane, pc.chamfer.mode, *pc.feat, *pc.draft, *pc.hole, *pc.thread, *pc.prim)).hash(&mut h);
     pc.project.state_key().hash(&mut h);
@@ -105,6 +109,7 @@ fn state_key(pc: &PartCtx) -> u64 {
 
 /// EVERYTHING A TRIAL WORKS ON, owned, to be taken to a worker: the document, the tool's state and the bytes of the part's
 /// live bodies.
+#[derive(Clone)]
 struct TrialJob {
     project: qymcad_core::model::Project,
     bodies: Vec<(Id, Vec<u8>)>,
@@ -148,6 +153,8 @@ struct TrialJob {
     /// trial applies.
     feature: Option<qymcad_ui_state::FeatureInHand>,
     gap: Vec<u32>,
+    /// What "Recognise all" found and takes.
+    all: Option<qymcad_ui_state::AllInHand>,
 }
 
 /// Copies of what the command works on, gathered on the frame thread.
@@ -202,13 +209,14 @@ fn gather(pc: &PartCtx) -> TrialJob {
         sketch_ses: *pc.sketch_ses,
         feature: pc.recognise.feature.clone(),
         gap: pc.recognise.gap.clone(),
+        all: pc.recognise.all.clone(),
     }
 }
 
 /// Apply the command to the copies and rebuild them at once, on the worker: the words of what refused, if anything did,
 /// and the triangles of the faces the new node adds - those its body has and the body it works on has not - in the frame
 /// of the context, for the preview.
-fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
+fn run_trial(job: TrialJob) -> Tried {
     let TrialJob {
         mut project,
         bodies,
@@ -250,6 +258,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
         mut sketch_ses,
         feature,
         gap,
+        all,
     } = job;
     let before: std::collections::HashSet<Id> = project.timeline.iter().map(|n| n.id).collect();
     let mut live = qymcad_ui_state::LiveGeom { ready: true, ..Default::default() };
@@ -259,7 +268,7 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     // a rebuild outside a running window happens at once, here, rather than being handed to a thread of its own
     let (mut regen, mut edits, mut status, mut cmd_failed) = (qymcad_ui_state::Rebuilding::default(), qymcad_ui_state::Edits::default(), Notice::default(), false);
     let (mut trim, mut edges, mut cache, mut win) = (Default::default(), Default::default(), Default::default(), Default::default());
-    let mut recognise = qymcad_ui_state::RecogniseTool { feature, gap, ..Default::default() };
+    let mut recognise = qymcad_ui_state::RecogniseTool { feature, gap, all, ..Default::default() };
     let scheme = qymcad_ui_state::SchemeUi::default();
     let edited = cmd.edit;
     let mut trial = PartCtx {
@@ -314,18 +323,17 @@ fn run_trial(job: TrialJob) -> (Option<String>, Vec<[[f64; 3]; 3]>) {
     };
     super::apply_feat_cmd(&mut trial);
     if cmd_failed {
-        return (Some(status.words), Vec::new());
+        return Tried::refused(status.words);
     }
     let laid: Vec<Id> = project.timeline.iter().map(|n| n.id).filter(|id| !before.contains(id) || Some(*id) == edited).collect();
     // a command that laid nothing refused by itself, and its status says why (a split plane that cuts nothing)
     if laid.is_empty() {
-        return (Some(status.words), Vec::new());
+        return Tried::refused(status.words);
     }
-    let refused = laid.iter().find_map(|id| project.regen_errors.get(id).filter(|e| !e.retryable())).map(qymcad_i18n::error_words::error_text);
-    if refused.is_some() {
-        return (refused, Vec::new());
+    if let Some(e) = laid.iter().find_map(|id| project.regen_errors.get(id).filter(|e| !e.retryable())) {
+        return Tried { group: e.group(), ..Tried::refused(qymcad_i18n::error_words::error_text(e)) };
     }
-    (None, new_faces(&project, &active_path, &laid))
+    Tried { refused: None, faces: new_faces(&project, &active_path, &laid), group: None }
 }
 
 /// The triangles of the faces the nodes `laid` add: the faces of their bodies that the bodies they work on do not have.
@@ -346,4 +354,70 @@ fn new_faces(project: &qymcad_core::model::Project, active_path: &[Id], laid: &[
         }
     }
     out
+}
+
+/// What a trial came to: the field refused and why, if anything was, the faces the new node adds, and the group of a
+/// node made exact the refusal stands in.
+#[derive(Default)]
+struct Tried {
+    refused: Option<Refused>,
+    faces: Vec<[[f64; 3]; 3]>,
+    group: Option<u32>,
+}
+
+/// A refusal of a trial: the key of the field it is said beside, and its words.
+struct Refused {
+    key: String,
+    words: String,
+}
+
+impl Tried {
+    /// Refused in `words`, beside no field yet.
+    fn refused(words: String) -> Tried {
+        Tried { refused: Some(Refused { key: String::new(), words }), faces: Vec::new(), group: None }
+    }
+
+    /// The refusal said beside field `key`.
+    fn beside(mut self, key: String) -> Tried {
+        if let Some(r) = self.refused.as_mut() {
+            r.key = key;
+        }
+        self
+    }
+}
+
+/// THE TRIAL OF "RECOGNISE ALL": the groups taken laid together. Refused in a group - the rebuild tells which, its
+/// features laid after the faces of all of them came off - that group is refused, beside its first field, with the
+/// kernel's words. Refused before any group, as the faces come off, each group is left out in turn, and the first whose
+/// leaving out lets the rest lay is the one refused. A chain of roundings is not tried group by group alone: one rounding
+/// of a chain taken off alone has another rounding for a neighbour, and is refused for that. Refused with no group to
+/// blame, the words stand beside no field.
+fn run_all_trial(job: TrialJob) -> Tried {
+    let whole = run_trial(job.clone());
+    let (Some(refused), Some(all)) = (whole.refused.as_ref(), job.all.as_ref()) else { return whole };
+    let taken: Vec<usize> = all.groups.iter().enumerate().filter(|(_, g)| g.taking == qymcad_ui_state::Taking::In && g.off.len() < g.items.len()).map(|(i, _)| i).collect();
+    let blamed = |g: Option<usize>| Tried { refused: Some(Refused { key: first_key(all, g), words: refused.words.clone() }), faces: Vec::new(), group: None };
+    // the node numbers only the groups that go in: its group k is the k-th of them
+    if let Some(g) = whole.group.and_then(|k| taken.get(k as usize).copied()) {
+        return blamed(Some(g));
+    }
+    if taken.len() < 2 {
+        return blamed(taken.first().copied());
+    }
+    for &g in &taken {
+        let mut without = job.clone();
+        if let Some(gr) = without.all.as_mut().and_then(|a| a.groups.get_mut(g)) {
+            gr.taking = qymcad_ui_state::Taking::Out;
+        }
+        if run_trial(without).refused.is_none() {
+            return blamed(Some(g));
+        }
+    }
+    whole
+}
+
+/// The key of the first field of group `g`, as the tool keys it.
+fn first_key(all: &qymcad_ui_state::AllInHand, g: Option<usize>) -> String {
+    let Some((g, exact)) = g.and_then(|g| all.groups.get(g).and_then(|gr| gr.items.first()).map(|r| (g, &r.exact))) else { return String::new() };
+    super::recognise_feature::sizes(exact).first().map(|z| qymcad_core::model::group_key(z.key, g as u32).into_owned()).unwrap_or_default()
 }

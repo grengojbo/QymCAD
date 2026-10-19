@@ -64,7 +64,7 @@ pub fn cmd_anchor_screen(pc: &mut qymcad_ui_state::PartCtx, rect: Rect) -> Optio
         //
         // The shell, the draft, pushing and removing a face, thickening - all belong here. What helps
         // with aiming is not the popup but THE HANDLE: it sits on the geometry and covers nothing.
-        4 | 5 | 6 | 7 | 17 | 18 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | SKETCH_FROM_FACE | SKETCH_FROM_SECTION => {
+        4 | 5 | 6 | 7 | 17 | 18 | 23 | 24 | 25 | 26 | 27 | 28 | 29 | 30 | 31 | 32 | 33 | 34 | 35 | 36 | 37 | 38 | RECOGNISE_ALL | SKETCH_FROM_FACE | SKETCH_FROM_SECTION => {
             let b =
                 pc.recognise.src.or_else(|| pc.stitch_parts.first().copied()).or(pc.trim.keep.map(|(b, _)| b)).or(pc.gsel.faces_body).or_else(|| {
                     qymcad_ui_state::op_target_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: pc.set, scheme: pc.scheme, project: pc.project, active_path: pc.active_path }, *pc.sel)
@@ -244,7 +244,16 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
     let trial = trial_refusal(pc, ctx);
     let checking = trial == Trial::Checking; // the worker has not answered yet: nothing is applied until it has
     let mut refused = trial.refusal();
+    let all = pc.armed.cmd_kind() == RECOGNISE_ALL;
+    if all {
+        crate::recognise_all::trial_said(pc, &trial);
+        if let Some(held) = pc.recognise.all.as_mut() {
+            held.hover = None; // the row the pointer is on says so as it is drawn
+        }
+    }
     let mut params = std::mem::take(&mut pc.cmd.params);
+    // THE ROWS OF "RECOGNISE ALL": a group's row above its first field
+    let rows: Vec<Option<usize>> = (0..params.len()).map(|i| if all { crate::recognise_all::group_at_field(&params, i) } else { None }).collect();
     let mut apply = false;
     // The cancel is taken here and acted on AFTER the popup is drawn: `qymcad_ui_state::cancel_feat_cmd` closes the
     // command whole, and the closure below is still holding its parameters.
@@ -289,6 +298,9 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
             let mut bad: Option<(String, String)> = None;
             let mut enter = false; // Enter was pressed in at least one field
             for (i, p) in params.iter_mut().enumerate() {
+                if let Some(g) = rows[i] {
+                    crate::recognise_all::group_row(pc, ui, g);
+                }
                 if hide_d2 && p.key == "d2" {
                     continue; // d2 is hidden in the symmetric mode
                 }
@@ -373,6 +385,9 @@ pub fn feat_cmd_popup(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, re
         });
     });
     pc.cmd.params = params;
+    if all {
+        crate::recognise_all::light(pc);
+    }
     if cancel {
         qymcad_ui_state::cancel_feat_cmd(pc);
     } else if apply {

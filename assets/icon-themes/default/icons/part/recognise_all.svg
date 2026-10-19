@@ -1,0 +1,9 @@
+<svg width="32" height="32" viewBox="0 0 32 32" fill="none" xmlns="http://www.w3.org/2000/svg">
+<g id="part / recognise all">
+<path id="Plate top" d="M16 9L29 16L16 23L3 16L16 9Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Plate side" d="M3 16V21L16 28L29 21V16L16 23L3 16Z" fill="var(--icon-neutral, #BCBCBCFF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Hole one" d="M8.5 16C8.5 15.1716 9.84315 14.5 11.5 14.5C13.1569 14.5 14.5 15.1716 14.5 16C14.5 16.8284 13.1569 17.5 11.5 17.5C9.84315 17.5 8.5 16.8284 8.5 16Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Hole two" d="M17.5 16C17.5 15.1716 18.8431 14.5 20.5 14.5C22.1569 14.5 23.5 15.1716 23.5 16C23.5 16.8284 22.1569 17.5 20.5 17.5C18.8431 17.5 17.5 16.8284 17.5 16Z" fill="var(--icon-accent, #18F2F2FF)" stroke="var(--icon-stroke, #000000FF)"/>
+<path id="Spark" d="M25 2C25 4.20914 23.2091 6 21 6C23.2091 6 25 7.79086 25 10C25 7.79086 26.7909 6 29 6C26.7909 6 25 4.20914 25 2Z" fill="var(--icon-accent, #18F2F2FF)" stroke-width="1.5" stroke-linejoin="round" stroke="var(--icon-stroke, #000000FF)"/>
+</g>
+</svg>

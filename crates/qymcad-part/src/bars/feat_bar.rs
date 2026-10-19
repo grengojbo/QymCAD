@@ -46,6 +46,7 @@ pub fn feat_command_bar(pc: &mut qymcad_ui_state::PartCtx, ui: &mut egui::Ui) {
             34 => &qymcad_i18n::tr("feat-name-trim"),
             35 => &qymcad_i18n::tr("f-recognise"),
             37 => &qymcad_i18n::tr("f-recognise-feature"),
+            RECOGNISE_ALL => &qymcad_i18n::tr("f-recognise-all"),
             38 => &qymcad_i18n::tr("f-face-gap"),
             SKETCH_FROM_FACE => &qymcad_i18n::tr("f-sketch-from-face"),
             SKETCH_FROM_SECTION => &qymcad_i18n::tr("f-sketch-from-section"),

@@ -141,6 +141,7 @@ pub fn feat_cmd_name(armed: &qymcad_ui_state::Armed, feat: qymcad_ui_state::Feat
         24 => qymcad_i18n::tr("f-thread"),
         35 => qymcad_i18n::tr("f-recognise"),
         37 => qymcad_i18n::tr("f-recognise-feature"),
+        RECOGNISE_ALL => qymcad_i18n::tr("f-recognise-all"),
         38 => qymcad_i18n::tr("f-face-gap"),
         SKETCH_FROM_FACE => qymcad_i18n::tr("f-sketch-from-face"),
         SKETCH_FROM_SECTION => qymcad_i18n::tr("f-sketch-from-section"),
@@ -465,6 +466,7 @@ pub fn cmd_hint(armed: &qymcad_ui_state::Armed, gsel: &qymcad_ui_state::GeomSele
         33 => qymcad_i18n::tr("hint-stitch"),
         35 => qymcad_i18n::tr("hint-recognise"),
         37 => qymcad_i18n::tr("hint-recognise-feature"),
+        RECOGNISE_ALL => qymcad_i18n::tr("hint-recognise-all"),
         38 => qymcad_i18n::tr("hint-face-gap"),
         SKETCH_FROM_FACE => qymcad_i18n::tr("hint-sketch-from-face"),
         SKETCH_FROM_SECTION => qymcad_i18n::tr("hint-sketch-from-section"),
@@ -566,6 +568,7 @@ pub fn cmd_ready(pc: &mut qymcad_ui_state::PartCtx) -> bool {
         32 => pc.edges.body.is_some_and(|b| patch_boundary(&*pc.project, b, &*pc.gsel)), // patch: a boundary of edges
         33 => pc.stitch_parts.len() >= 2,                                                // stitch: at least two sheets
         35 => pc.recognise.src.is_some(),                                                // recognise: one mesh piece is picked
+        RECOGNISE_ALL => recognise_all_ready(pc),                                        // recognise all: a group taken
         37 => pc.recognise.feature.is_some(),                                            // recognise a feature: one is found where it was clicked
         38 => face_gap_ready(pc),                                                        // a size on the body: two faces
         SKETCH_FROM_FACE => sketch_from_face_ready(pc),                                  // a sketch from a face: a flat face

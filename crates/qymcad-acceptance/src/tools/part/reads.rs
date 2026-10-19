@@ -173,6 +173,41 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     ],
 };
 
+/// RECOGNISE ALL: the block with its hole of 20, come in as a mesh and made a polyhedron. A face of it clicked - the body
+/// taken, its one hole found through, a group of one in the list beside it, its diameter brought to 20 in the field -
+/// and Enter makes it again exact as one node: the same block, its hole round, its diameter driving it.
+pub static RECOGNISE_ALL: Tool = Tool {
+    id: "part.recognise-all",
+    flow: Flow::Command,
+    title: "f-recognise-all",
+    entries: &[Entry::Button("tb-recognise-all-hint"), Entry::SearchByArticle],
+    other: Other { entry: Entry::Button("tb-mirror-body-hint"), title: "cmd-mirror" },
+    fixture: Fixture::PolyhedronWithHole,
+    picks: &[Pick::Face([20.0, 25.0, 5.0])],
+    pick_trial: &[Pick::Face([20.0, 25.0, 5.0])],
+    wrong_picks: &[],
+    words: &[],
+    fields: &[Field { caption: "f-diameter", by_placeholder: false, when: When::Before, class: Class::Length, typical: 20.0, lo: 0.1, hi: 29.0, zero: false, negative: false, outcome: drilled_again }],
+    modes: &[],
+    result: drilled_again(20.0),
+    node: "Remade",
+    inputs: &[],
+    undo: "f-recognise-all",
+    undo_steps: 1,
+    stays: false,
+    upstream: None,
+    dependency: Some(Node { kind: "MeshSolid", row: Some("feat-name-mesh-solid") }),
+    contexts: &[],
+    refusal: None,
+    budget: Budget { apply_secs: 30, frame_ms: 2000 },
+    help: "part/32-recognise-all",
+    not_applicable: &[
+        Skip { point: 14, why: "nothing of a timeline stands above an imported mesh" },
+        Skip { point: 16, why: "the fixture builds its own project from the start: there is no second part to take it in" },
+        Skip { point: 17, why: "a hole wider than the block is refused by the bounds of the field; the kernel has nothing else to refuse here" },
+    ],
+};
+
 /// The stepped block with its upper top, the first face picked, moved to stand `d` above its lower top at 10.
 const fn gapped(d: f64) -> Outcome {
     Outcome::Body { volume: 6000.0 + 600.0 * (10.0 + d), faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0 + d] }

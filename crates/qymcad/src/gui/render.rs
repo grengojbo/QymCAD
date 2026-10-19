@@ -339,6 +339,8 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
         draw_remade_preview(pn, painter, &scr);
     } else if pn.armed.cmd_kind() == 38 {
         draw_gap_preview(pn, painter, &scr);
+    } else if pn.armed.cmd_kind() == 41 {
+        draw_remade_all_preview(pn, painter, &scr);
     }
     if pn.armed.cmd_kind() == 39 {
         draw_redraw_preview(pn, painter, &scr);
@@ -929,6 +931,35 @@ fn draw_section_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter,
             Piece::Spline(points) => (points.iter().map(|p| lift(*p)).collect(), pn.scheme.pal.offset_in()),
         };
         painter.add(egui::Shape::line(line, Stroke::new(2.5, col)));
+    }
+}
+
+/// "RECOGNISE ALL" SHOWS WHAT IT TAKES: the faces lit, each in the colour of its kind - holes, chamfers, roundings - so
+/// a feature taken for another kind is seen before Enter.
+fn draw_remade_all_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, scr: &qymcad_ui_state::Screen) {
+    let (Some(all), Some(mi)) = (pn.recognise.all.as_ref(), pn.gsel.faces_body.and_then(|b| pn.project.mesh_index(b))) else { return };
+    let body = &pn.project.bodies[mi];
+    let pal = &pn.scheme.pal;
+    let kind_of = |id: u32| {
+        all.groups.iter().flat_map(|g| g.items.iter()).find(|r| r.faces.iter().any(|f| f.id == id)).map(|r| match r.exact {
+            qymcad_core::model::Exact::Hole { .. } => pal.remove(),
+            qymcad_core::model::Exact::Chamfer { .. } => pal.modify(),
+            qymcad_core::model::Exact::Round { .. } => pal.reference(),
+        })
+    };
+    let mut hm = egui::Mesh::default();
+    for face in body.faces.iter().filter(|f| pn.gsel.faces.contains(&f.id)) {
+        let colour = qymcad_scheme::a(kind_of(face.id).unwrap_or(pal.remove()), 120);
+        for &ti in &face.triangles {
+            let base = hm.vertices.len() as u32;
+            for v in &body.mesh.triangle(ti as usize) {
+                hm.colored_vertex(scr.at([v.x, v.y, v.z]).0, colour);
+            }
+            hm.add_triangle(base, base + 1, base + 2);
+        }
+    }
+    if !hm.is_empty() {
+        painter.add(egui::Shape::mesh(hm));
     }
 }
 

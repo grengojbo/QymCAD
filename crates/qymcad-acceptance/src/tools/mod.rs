@@ -43,6 +43,7 @@ pub static ALL: &[&Tool] = &[
     &part::MEASURE_3D,
     &part::RECOGNISE,
     &part::RECOGNISE_FEATURE,
+    &part::RECOGNISE_ALL,
     &part::FACE_GAP,
     &part::SKETCH_FROM_FACE,
     &part::SKETCH_FROM_SECTION,

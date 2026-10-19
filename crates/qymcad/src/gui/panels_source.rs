@@ -54,6 +54,8 @@ pub(crate) const PANELS: &str = concat!(
         file_break!(),
         include_str!("../../../qymcad-part/src/popups.rs"),
         file_break!(),
+        include_str!("../../../qymcad-part/src/recognise_all.rs"),
+        file_break!(),
         include_str!("../../../qymcad-part/src/reopen.rs"),
         file_break!(),
         include_str!("../../../qymcad-part/src/start.rs"),

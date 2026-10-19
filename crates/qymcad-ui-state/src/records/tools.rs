@@ -178,6 +178,36 @@ pub struct RecogniseTool {
     pub laid: String,
     /// The body of a mesh "Sketch from section" took.
     pub section: Option<SectionInHand>,
+    /// What "Recognise all" found on the body it took.
+    pub all: Option<AllInHand>,
+}
+
+/// THE FEATURES "RECOGNISE ALL" FOUND ON A BODY, in groups of one size, held until Enter: the groups, the curved faces
+/// no feature took - left as they are - and the group the pointer stands on in the list, lit alone.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct AllInHand {
+    pub body: Id,
+    pub groups: Vec<GroupInHand>,
+    pub unfound: usize,
+    pub hover: Option<usize>,
+}
+
+/// A GROUP OF FEATURES OF ONE SIZE IN HAND: the features, those a click in the view left out - by their place in
+/// `items` - and whether the group is taken.
+#[derive(Clone, Debug, PartialEq)]
+pub struct GroupInHand {
+    pub items: Vec<qymcad_core::model::Remake>,
+    pub off: Vec<usize>,
+    pub taking: Taking,
+}
+
+/// Whether a group goes into the node: taken, left out by hand, or left out by the trial with the words why it does not
+/// lay.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Taking {
+    In,
+    Out,
+    Refused(String),
 }
 
 /// A BODY HELD BY "SKETCH FROM SECTION" until Enter, and `by` the face it was taken by - its place among the body's
