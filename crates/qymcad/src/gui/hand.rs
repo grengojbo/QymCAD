@@ -536,9 +536,11 @@ impl<'a> Hand<'a> {
 
     /// WHAT THE TRIAL BUILD SAYS of the command as it stands, waited for the way a person waits for the preview: the
     /// words of its refusal, if it refuses. A trial runs on a worker; a check that ends without waiting for it leaves the
-    /// kernel working while the process exits.
+    /// kernel working while the process exits. It is the window's own trial - the one its frames draw and read - not a
+    /// second one built beside it: measured on a recognised block of 755 faces, a trial refused takes 15 to 45 s in a
+    /// debug build, and two of them in turn held the kernel past the two minutes a check waits.
     pub fn trial_says(&mut self) -> Option<String> {
-        let ctx = egui::Context::default();
+        let ctx = self.win.ctx.clone();
         let mut said = None;
         crate::gui::session::waiting::until("the trial build of the command to answer", || match qymcad_part::trial_refusal(&mut self.app.part_ctx(), &ctx) {
             qymcad_part::Trial::Checking => false,
