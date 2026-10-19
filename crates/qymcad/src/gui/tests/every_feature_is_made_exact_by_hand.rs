@@ -141,6 +141,9 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     assert_eq!(groups(&h).len(), 3, "the list reopened holds not the node's three groups");
 }
 
+/// How long a trial of the recognised block is waited for.
+const HEAVY_TRIAL: std::time::Duration = std::time::Duration::from_secs(480);
+
 /// A printer's file of `s`, written as a person's printer writes it.
 fn printed(s: &Shape, name: &str) -> Written {
     let folder = crate::gui::check_folder::tests::CheckFolder::new(name);
@@ -166,16 +169,18 @@ fn a_group_that_does_not_lay_is_left_out_with_its_reason_and_the_rest_is_laid() 
     h.tool(qymcad_part::RECOGNISE_ALL).click([30.0, 20.0, 10.0]).frame(Vec::new());
     assert!(groups(&h).len() >= 2, "the recognised block gives no groups: {:?}; the program says {}", groups(&h), h.app.status);
     // the trial answers, and the popup reads its answer as it is drawn: a group refused is left out, and the rest is
-    // tried again, until it lays
+    // tried again, until it lays. A trial refused on this body of 755 faces rebuilds it to the group that refuses:
+    // measured 15 to 45 s in a debug build alone, and past the 120 s of an event on a runner of 4 threads under a load
+    // of 11 - the kernel's own work, so the trial is given 480 s
     let mut said = Vec::new();
     for _ in 0..8 {
-        let Some(words) = h.trial_says() else { break };
+        let Some(words) = h.trial_says_within(HEAVY_TRIAL) else { break };
         said.push(words);
         h.frame(Vec::new());
     }
     let out: Vec<Row> = groups(&h).into_iter().filter(|r| matches!(r.taking, Taking::Refused(_))).collect();
     assert!(!out.is_empty() && out.len() < groups(&h).len(), "the trial said {said:?}, and the groups are {:?}", groups(&h));
-    assert!(h.trial_says().is_none(), "with {} groups left out the rest is still refused; the groups are {:?}", out.len(), groups(&h));
+    assert!(h.trial_says_within(HEAVY_TRIAL).is_none(), "with {} groups left out the rest is still refused; the groups are {:?}", out.len(), groups(&h));
     let nodes = h.app.project.timeline.len();
     h.enter();
     at_rest(&mut h);

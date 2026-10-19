@@ -540,9 +540,14 @@ impl<'a> Hand<'a> {
     /// second one built beside it: measured on a recognised block of 755 faces, a trial refused takes 15 to 45 s in a
     /// debug build, and two of them in turn held the kernel past the two minutes a check waits.
     pub fn trial_says(&mut self) -> Option<String> {
+        self.trial_says_within(crate::gui::session::waiting::EVENT_LIMIT)
+    }
+
+    /// The same, the trial given `limit`: a trial of a heavy body is the kernel's work, not a stuck window.
+    pub fn trial_says_within(&mut self, limit: std::time::Duration) -> Option<String> {
         let ctx = self.win.ctx.clone();
         let mut said = None;
-        crate::gui::session::waiting::until("the trial build of the command to answer", || match qymcad_part::trial_refusal(&mut self.app.part_ctx(), &ctx) {
+        crate::gui::session::waiting::until_within("the trial build of the command to answer", limit, || match qymcad_part::trial_refusal(&mut self.app.part_ctx(), &ctx) {
             qymcad_part::Trial::Checking => false,
             qymcad_part::Trial::Refused(_, words) => {
                 said = Some(words);
