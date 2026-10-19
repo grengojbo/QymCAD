@@ -620,7 +620,7 @@ impl Project {
             }
             FeatureKind::Shell { src, thickness, faces, side, body } => (*body, self.prep_shell(p, *src, *thickness, faces, *side, *body)),
             FeatureKind::RemoveFace { src, faces, body } => (*body, self.prep_removeface(p, *src, faces, *body)),
-            FeatureKind::Remade { src, faces, exact, body } => (*body, self.prep_remade(p, *src, faces, exact, *body)),
+            FeatureKind::Remade { src, items, body } => (*body, self.prep_remade(p, *src, items, *body)),
             FeatureKind::PushFace { src, face, dist, body } => (*body, self.prep_pushface(p, *src, face, *dist, *body)),
             FeatureKind::HoleMoved { src, faces, exact, face, gap, body } => (*body, self.prep_holemoved(p, *src, HoleRefs { faces, face }, exact, *gap, *body)),
             FeatureKind::Redrawn { src, faces, base, sketch, height, kind, rims, body } => {

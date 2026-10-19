@@ -577,10 +577,12 @@ pub enum FeatureKind {
     /// Delete faces: the faces named by `faces` are removed from body `src` and the neighbouring ones are
     /// extended, producing `body`. The reference is a query.
     RemoveFace { src: Id, faces: crate::refs::Ref, body: Id },
-    /// A feature found on body `src` made again exact, as one operation: its faces, named by `faces`, taken off - the
-    /// neighbours closing over them - and a hole, a rounding or a chamfer laid down by its own tool on what is left,
-    /// producing `body`. The sizes are the node's dimensions: `diameter` and `depth`, `radius`, `dist`.
-    Remade { src: Id, faces: crate::refs::Ref, exact: crate::model::Exact, body: Id },
+    /// Features found on body `src` made again exact, as one operation: the faces of all of them taken off at once - the
+    /// neighbours closing over them - and then each laid down by its own tool on what is left: the holes, the chamfers,
+    /// the roundings, the larger first, producing `body`. A chain of roundings is taken off whole: one of them alone has
+    /// another rounding beside it, which does not grow over the gap. The sizes are the node's dimensions, one set a
+    /// group (`group_key`): `diameter` and `depth`, `radius`, `dist`.
+    Remade { src: Id, items: Vec<crate::model::RemadeItem>, body: Id },
     /// A SIZE BETWEEN TWO FLAT FACES OF A BODY standing parallel: they are made `gap` apart by pushing `one`, `other` or
     /// both by half (`moves`), the faces beside following as a push carries them. The size stays a number in the tree.
     FaceGap { src: Id, one: crate::refs::Ref, other: crate::refs::Ref, gap: f64, moves: GapMoves, body: Id },
@@ -687,7 +689,15 @@ impl FeatureKind {
     /// `eval_dim`): the list has to match what is applied there, or a driver would name a parameter the
     /// rebuild does not know. Hence one table, living next to the type instead of being rebuilt in the
     /// interface.
-    pub fn dims(&self) -> Vec<(&'static str, f64)> {
+    pub fn dims(&self) -> Vec<crate::model::Dim> {
+        match self {
+            FeatureKind::Remade { items, .. } => crate::model::remade_dims(items),
+            _ => self.fixed_dims().into_iter().map(|(k, value)| crate::model::Dim { key: std::borrow::Cow::Borrowed(k), value }).collect(),
+        }
+    }
+
+    /// The parameters of a feature whose keys are fixed by its kind.
+    fn fixed_dims(&self) -> Vec<(&'static str, f64)> {
         match *self {
             FeatureKind::Extrude { height, down, .. } => vec![("height", height), ("down", down)],
             FeatureKind::Combine { height, down, .. } => vec![("height", height), ("down", down)],
@@ -700,13 +710,6 @@ impl FeatureKind {
             FeatureKind::Prism { r, h, .. } => vec![("r", r), ("h", h)],
             FeatureKind::Fillet { radius, .. } => vec![("radius", radius)],
             FeatureKind::Chamfer { dist, d2, .. } => vec![("dist", dist), ("d2", d2)],
-            // a hole made exact through has no depth to set: it is drilled past the body
-            FeatureKind::Remade { ref exact, .. } => match *exact {
-                crate::model::Exact::Hole { diameter, reach: crate::model::Reach::Through, .. } => vec![("diameter", diameter)],
-                crate::model::Exact::Hole { diameter, depth, .. } => vec![("diameter", diameter), ("depth", depth)],
-                crate::model::Exact::Round { radius, .. } => vec![("radius", radius)],
-                crate::model::Exact::Chamfer { leg, .. } => vec![("dist", leg)],
-            },
             FeatureKind::FaceGap { gap, .. } | FeatureKind::HoleMoved { gap, .. } => vec![("gap", gap)],
             FeatureKind::Redrawn { height, rims, .. } => {
                 let mut v = vec![("height", height)];
@@ -736,7 +739,7 @@ impl FeatureKind {
 
     /// Stored value of a parameter by key. `None` means this feature has no such parameter.
     pub fn dim(&self, key: &str) -> Option<f64> {
-        self.dims().into_iter().find(|(k, _)| *k == key).map(|(_, v)| v)
+        self.dims().into_iter().find(|d| d.key == key).map(|d| d.value)
     }
 
     /// Id of the resulting body (`None` for a sketch or a plane).
@@ -1197,9 +1200,11 @@ impl FeatureKind {
             // does contain the descriptors written into it, and those are what get remapped.
             FeatureKind::Hole { face, .. } | FeatureKind::PushFace { face, .. } => face.remap_descs(&mut |d| m(d)),
             FeatureKind::RemoveFace { faces, .. } => faces.remap_descs(&mut |d| m(d)),
-            FeatureKind::Remade { faces, exact, .. } => {
-                faces.remap_descs(&mut |d| m(d));
-                exact.remap_descs(&mut |d| m(d));
+            FeatureKind::Remade { items, .. } => {
+                for it in items {
+                    it.faces.remap_descs(&mut |d| m(d));
+                    it.exact.remap_descs(&mut |d| m(d));
+                }
             }
             FeatureKind::FaceGap { one, other, .. } => {
                 one.remap_descs(&mut |d| m(d));

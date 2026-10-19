@@ -340,17 +340,32 @@ impl Project {
     /// A feature found on body `src` laid down exact, as one node: its faces removed and a hole, a rounding or a chamfer
     /// made by its own tool on the healed body (`FeatureKind::Remade`). The faces go by their ids, as a pick does.
     pub fn add_remade_feature(&mut self, src: Id, remake: super::Remake) -> Id {
+        self.add_remade_features(src, vec![super::RemakeGroup { items: vec![remake] }])
+    }
+
+    /// FEATURES FOUND ON BODY `src` LAID DOWN EXACT TOGETHER, as one node: the faces of all of them removed at once and
+    /// each made again by its own tool on the healed body, a group sharing its sizes (`FeatureKind::Remade`). The faces
+    /// go by their ids, as a pick does. A node of one feature is named by what it is, one of many by how many.
+    pub fn add_remade_features(&mut self, src: Id, groups: Vec<super::RemakeGroup>) -> Id {
         use crate::feature::{FeatureKind, FeatureNode};
-        let super::Remake { faces, exact } = remake;
+        let mut items = Vec::new();
+        for (g, group) in groups.into_iter().enumerate() {
+            for super::Remake { faces, exact } in group.items {
+                let faces = crate::refs::Ref::picks(&faces.iter().map(|f| f.id).collect::<Vec<_>>());
+                items.push(super::RemadeItem { faces, exact, group: g as u32 });
+            }
+        }
+        let name = match items.as_slice() {
+            [one] => match one.exact {
+                super::Exact::Hole { .. } => "feat-name-remade-hole",
+                super::Exact::Round { .. } => "feat-name-remade-round",
+                super::Exact::Chamfer { .. } => "feat-name-remade-chamfer",
+            },
+            _ => "feat-name-remade-all",
+        };
         let body = self.alloc_id();
         let parent = Some(self.body_parent());
-        let name = match exact {
-            super::Exact::Hole { .. } => "feat-name-remade-hole",
-            super::Exact::Round { .. } => "feat-name-remade-round",
-            super::Exact::Chamfer { .. } => "feat-name-remade-chamfer",
-        };
-        let faces = crate::refs::Ref::picks(&faces.iter().map(|f| f.id).collect::<Vec<_>>());
-        self.push_timeline(FeatureNode { id: body, name: name.into(), kind: FeatureKind::Remade { src, faces, exact, body }, parent, dirty: true, suppressed: false });
+        self.push_timeline(FeatureNode { id: body, name: name.into(), kind: FeatureKind::Remade { src, items, body }, parent, dirty: true, suppressed: false });
         body
     }
 

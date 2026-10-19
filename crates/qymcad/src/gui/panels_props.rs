@@ -728,11 +728,11 @@ pub(crate) fn feature_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::U
     if !dims.is_empty() {
         ui.separator();
         ui.label(egui::RichText::new(crate::i18n::tr("fp-params")).strong());
-        for (key, _) in dims {
+        for qymcad_core::model::Dim { key, .. } in dims {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(key).weak());
+                ui.label(egui::RichText::new(key.as_ref()).weak());
             });
-            qymcad_ui_state::dim_expr_field_in(&mut pr.rebuild(), ui, fid, key, "");
+            qymcad_ui_state::dim_expr_field_in(&mut pr.rebuild(), ui, fid, &key, "");
         }
     }
 }

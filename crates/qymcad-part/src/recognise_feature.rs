@@ -4,7 +4,7 @@
 //! removes its faces (`Project::add_remove_face`): the corner sharp again, the wall whole. What it is is told by
 //! `qymcad_meshfit::feature` from the body's own faces, so a polyhedron made of a mesh, a recognised body and a STEP are
 //! clicked alike. The tool stays in hand for the next feature.
-use qymcad_core::model::{Exact, Id, Remake};
+use qymcad_core::model::{group_key, Exact, Id, RemadeItem, Remake};
 use qymcad_meshfit::feature::{feature_at, Found, Pick, Reach, Unfound};
 use qymcad_ui_state::{CmdParam, FeatureInHand, PartCtx};
 
@@ -133,30 +133,46 @@ fn size_fields(remake: &Remake) -> Vec<CmdParam> {
 }
 
 /// A DOUBLE CLICK ON A FEATURE MADE EXACT reopens the tool on it: the faces it took lit on the body they were taken from,
-/// its sizes in the fields - an expression as it was typed - and Enter changes the node rather than laying another.
-pub fn open_remade(pc: &mut PartCtx, fid: Id, src: Id, faces: &qymcad_core::refs::Ref, exact: &Exact, was_3d: bool) {
+/// its sizes in the fields - an expression as it was typed, one set a group - and Enter changes the node rather than
+/// laying another.
+pub fn open_remade(pc: &mut PartCtx, fid: Id, src: Id, items: &[RemadeItem], was_3d: bool) {
     pc.cmd.open(pc.armed, RECOGNISE_FEATURE, was_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
     *pc.mode_3d = true;
     pc.recognise.feature = None;
-    pc.gsel.faces = super::live_picks(&*pc.project, src, faces, true);
+    pc.gsel.faces = items.iter().flat_map(|it| super::live_picks(&*pc.project, src, &it.faces, true)).collect();
     pc.gsel.faces_body = Some(src);
-    let fields: Vec<CmdParam> = sizes(exact).into_iter().map(|z| super::cmd_param_from(&*pc.project, fid, z.label, z.key, z.val, z.lo, z.hi)).collect();
+    let mut seen = std::collections::HashSet::new();
+    let fields: Vec<CmdParam> = items
+        .iter()
+        .filter(|it| seen.insert(it.group))
+        .flat_map(|it| sizes(&it.exact).into_iter().map(|z| super::cmd_param_from(&*pc.project, fid, z.label, &group_key(z.key, it.group), z.val, z.lo, z.hi)).collect::<Vec<_>>())
+        .collect();
     pc.cmd.params = fields;
     *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-edit-remade"));
 }
 
-/// The sizes of the fields written into a feature made exact being edited; a field the tool does not show leaves its
-/// size as it was.
-pub fn edit_remade(cmd: &qymcad_ui_state::FeatCommand, exact: &mut Exact) {
-    let field = |key: &str| cmd.params.iter().any(|p| p.key == key).then(|| qymcad_ui_state::cmd_val(cmd, key));
+/// The sizes of the fields written into the features made exact being edited, each from the field of its group; a
+/// field the tool does not show leaves its size as it was.
+pub fn edit_remade(cmd: &qymcad_ui_state::FeatCommand, items: &mut [RemadeItem]) {
+    for it in items {
+        edit_exact(cmd, &mut it.exact, it.group);
+    }
+}
+
+/// The sizes of one feature from the fields of group `group`.
+fn edit_exact(cmd: &qymcad_ui_state::FeatCommand, exact: &mut Exact, group: u32) {
+    let of = |base: &'static str| {
+        let key = group_key(base, group);
+        cmd.params.iter().any(|p| p.key == key).then(|| qymcad_ui_state::cmd_val(cmd, &key))
+    };
     match exact {
         Exact::Hole { diameter, depth, .. } => {
-            *diameter = field("diameter").unwrap_or(*diameter);
-            *depth = field("depth").unwrap_or(*depth);
+            *diameter = of("diameter").unwrap_or(*diameter);
+            *depth = of("depth").unwrap_or(*depth);
         }
-        Exact::Round { radius, .. } => *radius = field("radius").unwrap_or(*radius),
-        Exact::Chamfer { leg, .. } => *leg = field("dist").unwrap_or(*leg),
+        Exact::Round { radius, .. } => *radius = of("radius").unwrap_or(*radius),
+        Exact::Chamfer { leg, .. } => *leg = of("dist").unwrap_or(*leg),
     }
 }
 
@@ -196,7 +212,7 @@ pub fn apply_recognise_feature_cmd(pc: &mut PartCtx) -> Option<Id> {
     if pc.feat.op == TAKE_OFF {
         return Some(pc.project.add_remove_face(body, remake.faces));
     }
-    edit_remade(pc.cmd, &mut remake.exact);
+    edit_exact(pc.cmd, &mut remake.exact, 0);
     let node = pc.project.add_remade_feature(body, remake);
     if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
         return super::formula_refused(pc, &e);

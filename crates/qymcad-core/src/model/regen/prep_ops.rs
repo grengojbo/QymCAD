@@ -149,45 +149,55 @@ impl Project {
     /// A FEATURE MADE AGAIN EXACT, in one job: its faces taken off `src` into `body`, then the hole drilled, or the edge
     /// the two sides meet in once healed rounded or chamfered, on `body` itself. That edge is born of the removal and has
     /// no name yet: it is found in the job by the two faces the kernel says it parts.
-    pub(crate) fn prep_remade(&mut self, p: &Pass, src: Id, faces: &crate::refs::Ref, exact: &Exact, body: Id) -> crate::feature::KernelJob {
-        let ids = match self.faces_by_ref(p.node, src, faces, "ref-what-removed-faces") {
-            Ok(ids) if !ids.is_empty() => ids,
-            _ => return crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
-        };
-        match *exact {
-            Exact::Hole { entry, at, diameter, depth, .. } => {
-                let tool = HoleTool { kind: 0, diameter: p.dim("diameter", diameter), depth: p.dim("depth", depth).abs(), dia2: 0.0, depth2: 0.0 };
-                // the hole stands where it was found, brought onto the entry face as it stands now
-                let face = crate::refs::Ref::one(entry.id, crate::refs::Fingerprint { centroid: entry.centroid, normal: entry.normal });
-                let Ok(c) = self.face_by_ref(p.node, src, &face, "ref-what-hole-face") else { return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound) };
-                let off = (0..3).map(|i| (at[i] - c.centroid[i]) * c.normal[i]).sum::<f64>();
-                let point = [at[0] - off * c.normal[0], at[1] - off * c.normal[1], at[2] - off * c.normal[2]];
-                let pl = crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12();
-                let feature = p.node;
-                crate::feature::KernelJob::new(vec![src], move |k| {
-                    k.remove_faces(body, src, &ids)?;
-                    k.hole(body, body, tool, pl, feature)
-                })
-            }
-            Exact::Round { sides, radius } => {
-                let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: Vec::new() };
-                let radius = p.dim("radius", radius);
-                crate::feature::KernelJob::new(vec![src], move |k| {
-                    k.remove_faces(body, src, &ids)?;
-                    let edge = parted_by(k, body, sides)?;
-                    k.fillet(body, body, radius, &[edge], roles)
-                })
-            }
-            Exact::Chamfer { sides, leg } => {
-                let roles = crate::feature::BlendRoles::Named { feature: p.node, picked: Vec::new() };
-                let leg = p.dim("dist", leg);
-                crate::feature::KernelJob::new(vec![src], move |k| {
-                    k.remove_faces(body, src, &ids)?;
-                    let edge = parted_by(k, body, sides)?;
-                    k.chamfer(body, body, leg, &[edge], roles)
-                })
+    /// THE FEATURES OF A NODE MADE EXACT: the faces of all of them taken off at once, then the holes drilled, the chamfers
+    /// cut a group at a time, the roundings laid a group at a time, the larger radius first - a rounding of 2 running
+    /// round a rounding of 4 at a corner was laid after it, and only so does it come out as it was. A group of blends
+    /// is one call of its tool on the edges of all its features: a chain of roundings tangent to each other is laid
+    /// along at once.
+    pub(crate) fn prep_remade(&mut self, p: &Pass, src: Id, items: &[RemadeItem], body: Id) -> crate::feature::KernelJob {
+        let mut ids = Vec::new();
+        for it in items {
+            match self.faces_by_ref(p.node, src, &it.faces, "ref-what-removed-faces") {
+                Ok(found) if !found.is_empty() => ids.extend(found),
+                _ => return crate::feature::KernelJob::refused(crate::errors::CoreError::FacesNotFound),
             }
         }
+        let mut holes = Vec::new();
+        let mut cuts: Vec<Laid> = Vec::new();
+        let mut rounds: Vec<Laid> = Vec::new();
+        for it in items {
+            match it.exact {
+                Exact::Hole { entry, at, diameter, depth, .. } => {
+                    let tool = HoleTool { kind: 0, diameter: p.dim(&group_key("diameter", it.group), diameter), depth: p.dim(&group_key("depth", it.group), depth).abs(), dia2: 0.0, depth2: 0.0 };
+                    // the hole stands where it was found, brought onto the entry face as it stands now
+                    let face = crate::refs::Ref::one(entry.id, crate::refs::Fingerprint { centroid: entry.centroid, normal: entry.normal });
+                    let Ok(c) = self.face_by_ref(p.node, src, &face, "ref-what-hole-face") else { return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound) };
+                    let off = (0..3).map(|i| (at[i] - c.centroid[i]) * c.normal[i]).sum::<f64>();
+                    let point = [at[0] - off * c.normal[0], at[1] - off * c.normal[1], at[2] - off * c.normal[2]];
+                    holes.push(Drilled { tool, pl: crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12() });
+                }
+                Exact::Chamfer { sides, leg } => lay_in(&mut cuts, it.group, p.dim(&group_key("dist", it.group), leg), sides),
+                Exact::Round { sides, radius } => lay_in(&mut rounds, it.group, p.dim(&group_key("radius", it.group), radius), sides),
+            }
+        }
+        rounds.sort_by(|a, b| b.size.total_cmp(&a.size).then(a.group.cmp(&b.group)));
+        let feature = p.node;
+        let roles = crate::feature::BlendRoles::Named { feature, picked: Vec::new() };
+        crate::feature::KernelJob::new(vec![src], move |k| {
+            let mut built = k.remove_faces(body, src, &ids)?;
+            for h in &holes {
+                built = k.hole(body, body, h.tool, h.pl, feature)?;
+            }
+            for c in &cuts {
+                let edges = c.sides.iter().map(|&s| parted_by(k, body, s)).collect::<Result<Vec<u32>, _>>()?;
+                built = k.chamfer(body, body, c.size, &edges, roles.clone())?;
+            }
+            for r in &rounds {
+                let edges = r.sides.iter().map(|&s| parted_by(k, body, s)).collect::<Result<Vec<u32>, _>>()?;
+                built = k.fillet(body, body, r.size, &edges, roles.clone())?;
+            }
+            Ok(built)
+        })
     }
 
     pub(crate) fn prep_patch(&mut self, p: &Pass, src: Id, edges: &crate::refs::Ref, tangent: bool, body: Id) -> crate::feature::KernelJob {
@@ -309,7 +319,7 @@ impl Project {
         }
         let want = if s < 0.0 { -gap } else { gap };
         let at = [at[0] + n[0] * (want - s), at[1] + n[1] * (want - s), at[2] + n[2] * (want - s)];
-        self.prep_remade(p, src, refs.faces, &Exact::Hole { entry, at, diameter, depth, reach }, body)
+        self.prep_remade(p, src, &[RemadeItem { faces: refs.faces.clone(), exact: Exact::Hole { entry, at, diameter, depth, reach }, group: 0 }], body)
     }
 
     /// A boss or a pocket redrawn (`FeatureKind::Redrawn`): its faces taken off `src`, the body healed, and the largest
@@ -383,14 +393,15 @@ impl Project {
 
     /// The roundings and chamfers made exact on the chain body `src` comes from that stand on face `pushed` and still
     /// have their face on `src`. A blend names its two faces as they were on the body it was found on; a later body names
-    /// them anew, so they are found on `src` by their planes.
+    /// them anew, so they are found on `src` by their planes. The face of a blend is the one its node made that meets
+    /// both of them: a node holds several blends.
     fn blends_beside(&mut self, p: &Pass, src: Id, pushed: u32) -> Vec<Carried> {
         use crate::feature::FeatureKind;
-        let mut found: Vec<(Id, Id, Exact)> = Vec::new();
+        let mut found: Vec<Made> = Vec::new();
         let mut cur = src;
         while let Some(n) = self.timeline.iter().find(|n| n.kind.body() == Some(cur) && !n.suppressed) {
-            if let FeatureKind::Remade { src: made_on, exact, .. } = &n.kind {
-                found.push((n.id, *made_on, exact.clone()));
+            if let FeatureKind::Remade { src: made_on, items, .. } = &n.kind {
+                found.extend(items.iter().map(|it| Made { node: n.id, made_on: *made_on, exact: it.exact.clone(), group: it.group }));
             }
             match n.kind.consumed_body() {
                 Some(below) if below != cur => cur = below,
@@ -398,19 +409,22 @@ impl Project {
             }
         }
         let now = self.regen_faces.get(&src).cloned().unwrap_or_default();
+        let edges = self.regen_edges.get(&src).cloned().unwrap_or_default();
         let mut out = Vec::new();
-        for (node, made_on, exact) in found {
+        for Made { node, made_on, exact, group } in found {
             let dims = self.feat_dims.get(&node).cloned();
             let (sides, blend) = match exact {
-                Exact::Round { sides, radius } => (sides, Blend::Round(eval_dim(dims.as_ref(), "radius", radius, p.vars))),
-                Exact::Chamfer { sides, leg } => (sides, Blend::Chamfer(eval_dim(dims.as_ref(), "dist", leg, p.vars))),
+                Exact::Round { sides, radius } => (sides, Blend::Round(eval_dim(dims.as_ref(), &group_key("radius", group), radius, p.vars))),
+                Exact::Chamfer { sides, leg } => (sides, Blend::Chamfer(eval_dim(dims.as_ref(), &group_key("dist", group), leg, p.vars))),
                 Exact::Hole { .. } => continue,
             };
             let then = self.regen_faces.get(&made_on).map(Vec::as_slice).unwrap_or_default();
             let side = |id: u32| then.iter().find(|f| f.id == id).and_then(|f| in_plane_of(f, &now));
             let (Some(one), Some(other)) = (side(sides.one), side(sides.other)) else { continue };
             // the face of the blend is named by the bridge after the node and the edge it was laid on: found by its node
-            let made_by = |f: &&crate::geom::MeshFace| self.names.get(f.id).is_some_and(|g| g.feature == node && g.role == crate::names::Role::Blend);
+            // and by the two faces it meets
+            let meets = |face: u32, side: u32| edges.iter().any(|e| (e.faces.one == face && e.faces.other == side) || (e.faces.one == side && e.faces.other == face));
+            let made_by = |f: &&crate::geom::MeshFace| self.names.get(f.id).is_some_and(|g| g.feature == node && g.role == crate::names::Role::Blend) && meets(f.id, one) && meets(f.id, other);
             if let (true, Some(face)) = (one == pushed || other == pushed, now.iter().find(made_by).map(|f| f.id)) {
                 out.push(Carried { face, sides: crate::geom::EdgeFaces { one, other }, blend, feature: node });
             }

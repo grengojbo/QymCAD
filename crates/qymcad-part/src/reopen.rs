@@ -190,7 +190,7 @@ pub fn start_feat_cmd_edit(pc: &mut qymcad_ui_state::PartCtx, fid: Id) {
             pc.cmd.params = vec![cmd_param_from(&*pc.project, fid, "f-recognise-tol", "tol", tol, 0.1, 1000.0), cmd_param_from(&*pc.project, fid, "f-recognise-sharp", "sharp", sharp, 5.0, 90.0)];
         }
         FeatureKind::MeshSolid { src, .. } => open_recognise_on(pc, src, was_3d, 1),
-        FeatureKind::Remade { src, ref faces, ref exact, .. } => open_remade(pc, fid, src, faces, exact, was_3d),
+        FeatureKind::Remade { src, ref items, .. } => open_remade(pc, fid, src, items, was_3d),
         FeatureKind::FaceGap { .. } | FeatureKind::HoleMoved { .. } => open_face_gap(pc, fid, &node.kind, was_3d),
         FeatureKind::Redrawn { .. } => open_redrawn(pc, fid, &node.kind, was_3d),
         FeatureKind::SplitFace { plane, datum, offset, face, .. } => {

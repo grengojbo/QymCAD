@@ -2775,10 +2775,12 @@ msg-unfound-other = Тут немає отвору, скруглення чи ф
 feat-name-remade-hole = Розпізнаний отвір
 feat-name-remade-round = Розпізнане скруглення
 feat-name-remade-chamfer = Розпізнана фаска
+feat-name-remade-all = Розпізнані елементи
 feat-remade-hole-through = Розпізнаний отвір Ø{ $d } наскрізь
 feat-remade-hole-blind = Розпізнаний отвір Ø{ $d }×{ $depth }
 feat-remade-round = Розпізнане скруглення R{ $r }
 feat-remade-chamfer = Розпізнана фаска { $d }
+feat-remade-all = Розпізнані елементи ({ $n })
 
 # Е2: обрізка поверхні
 tb-trim-surface-hint = Обрізати — відсікти зайве по сусідньому тілу

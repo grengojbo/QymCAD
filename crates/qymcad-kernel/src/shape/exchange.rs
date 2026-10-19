@@ -22,6 +22,20 @@ pub fn step_solids(path: &str) -> Result<Vec<Shape>, String> {
     }
 }
 
+/// Write one body into a STEP file as exact B-rep, where it stands. The units are millimetres. `Err` on a kernel
+/// failure.
+pub fn write_step_of(shape: &Shape, path: &str) -> Result<(), String> {
+    let c = CString::new(path).map_err(|e| e.to_string())?;
+    let ptrs = [shape.ptr as *const QymShape];
+    let mats = qymcad_core::feature::PLACE_IDENTITY;
+    let rc = unsafe { qym_step_write(ptrs.as_ptr(), mats.as_ptr(), ptrs.len(), c.as_ptr()) };
+    if rc == 0 {
+        Ok(())
+    } else {
+        Err(format!("cad-step-write-failed#{rc}"))
+    }
+}
+
 /// Write bodies into a single STEP file as exact B-rep, each with its own 3×4 world transform, which for an
 /// assembly comes from `body_world_transform`. The units are millimetres. `Err` on an empty set or a kernel
 /// failure.

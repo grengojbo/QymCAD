@@ -329,7 +329,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Option<Id> {
                 *tol = rec_tol;
                 *sharp = rec_sharp;
             }
-            FeatureKind::Remade { exact, .. } => edit_remade(&remade_cmd, exact),
+            FeatureKind::Remade { items, .. } => edit_remade(&remade_cmd, items),
             FeatureKind::FaceGap { gap, moves, .. } => edit_face_gap(&remade_cmd, gap_op, gap, moves),
             FeatureKind::HoleMoved { gap, .. } => edit_gap(&remade_cmd, gap),
             FeatureKind::Redrawn { height, .. } => edit_redrawn(&remade_cmd, height),

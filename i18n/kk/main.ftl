@@ -2638,10 +2638,12 @@ msg-unfound-other = Мұнда тесік, дөңгелектеу не фаск�
 feat-name-remade-hole = Танылған тесік
 feat-name-remade-round = Танылған дөңгелектеу
 feat-name-remade-chamfer = Танылған фаска
+feat-name-remade-all = Танылған элементтер
 feat-remade-hole-through = Танылған тесік Ø{ $d } өтпелі
 feat-remade-hole-blind = Танылған тесік Ø{ $d }×{ $depth }
 feat-remade-round = Танылған дөңгелектеу R{ $r }
 feat-remade-chamfer = Танылған фаска { $d }
+feat-remade-all = Танылған элементтер ({ $n })
 
 # Э2: обрезка поверхности
 tb-trim-surface-hint = Қию — артығын көрші дене бойымен кесіп тастау

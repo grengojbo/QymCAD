@@ -2782,10 +2782,12 @@ msg-unfound-other = Здесь нет отверстия, скругления �
 feat-name-remade-hole = Распознанное отверстие
 feat-name-remade-round = Распознанное скругление
 feat-name-remade-chamfer = Распознанная фаска
+feat-name-remade-all = Распознанные элементы
 feat-remade-hole-through = Распознанное отверстие Ø{ $d } насквозь
 feat-remade-hole-blind = Распознанное отверстие Ø{ $d }×{ $depth }
 feat-remade-round = Распознанное скругление R{ $r }
 feat-remade-chamfer = Распознанная фаска { $d }
+feat-remade-all = Распознанные элементы ({ $n })
 
 # Э2: обрезка поверхности
 tb-trim-surface-hint = Обрезать — отсечь лишнее по соседнему телу

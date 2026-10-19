@@ -294,7 +294,7 @@ pub fn trap(o: &Opened, faults: &[String]) -> PathBuf {
 #[derive(Clone)]
 pub enum Edit {
     /// A dimension of a node (`height`, `down`).
-    Feature { node: Id, key: &'static str, value: f64 },
+    Feature { node: Id, key: std::borrow::Cow<'static, str>, value: f64 },
     /// A parameter of the document, by its place in the table.
     Param { index: usize, value: f64 },
     /// A dimension of a sketch, by the entities it is laid on.
@@ -325,8 +325,8 @@ pub fn edits(p: &Project) -> Vec<Edit> {
         if !matches!(n.kind, FeatureKind::Extrude { .. } | FeatureKind::Combine { .. }) {
             continue;
         }
-        for (key, stored) in n.kind.dims() {
-            let value = p.feat_dim_value(n.id, key, stored, &vars);
+        for qymcad_core::model::Dim { key, value: stored } in n.kind.dims() {
+            let value = p.feat_dim_value(n.id, &key, stored, &vars);
             if value.abs() > 1e-9 {
                 out.push(Edit::Feature { node: n.id, key, value });
             }

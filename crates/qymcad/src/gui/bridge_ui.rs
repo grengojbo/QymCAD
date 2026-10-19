@@ -294,7 +294,7 @@ pub(crate) mod tests {
         let node = app.project.timeline.iter().find(|n| qymcad_doc::report::kind_of(&n.kind).starts_with("Extrude")).expect("the plate's extrusion");
         let (key, body) = (node.id, node.kind.body().expect("the extrusion makes a body"));
         let top = |app: &App| app.project.bodies.iter().find(|b| b.id == body).and_then(|b| b.faces.iter().map(|f| f.centroid.z).max_by(f64::total_cmp)).expect("the body has faces");
-        let height = app.project.timeline.iter().find(|n| n.id == key).and_then(|n| n.kind.dims().into_iter().find(|(k, _)| *k == "height").map(|(_, v)| v)).expect("the extrusion has a height");
+        let height = app.project.timeline.iter().find(|n| n.id == key).and_then(|n| n.kind.dims().into_iter().find(|d| d.key == "height").map(|d| d.value)).expect("the extrusion has a height");
         let before = top(&app);
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new());

@@ -99,16 +99,19 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
             let key = if kind == qymcad_core::model::PrismKind::Boss { "feat-redrawn-boss" } else { "feat-redrawn-pocket" };
             format!("{} {}", ph::PENCIL_LINE, crate::i18n::tr1(key, "h", &crate::i18n::num(at("height", height), 1)))
         }
-        // A FEATURE MADE EXACT names what it is and its size, as the tool that made it does
-        FeatureKind::Remade { ref exact, .. } => {
+        // A FEATURE MADE EXACT names what it is and its size, as the tool that made it does; a node of many, how many
+        FeatureKind::Remade { ref items, .. } => {
             use qymcad_core::model::{Exact, Reach};
-            let text = match *exact {
-                Exact::Hole { diameter, reach: Reach::Through, .. } => crate::i18n::tr1("feat-remade-hole-through", "d", &crate::i18n::num(at("diameter", diameter), 1)),
-                Exact::Hole { diameter, depth, .. } => {
-                    crate::i18n::tr2("feat-remade-hole-blind", "d", &crate::i18n::num(at("diameter", diameter), 1), "depth", &crate::i18n::num(at("depth", depth), 1))
-                }
-                Exact::Round { radius, .. } => crate::i18n::tr1("feat-remade-round", "r", &crate::i18n::num(at("radius", radius), 1)),
-                Exact::Chamfer { leg, .. } => crate::i18n::tr1("feat-remade-chamfer", "d", &crate::i18n::num(at("dist", leg), 1)),
+            let text = match items.as_slice() {
+                [one] => match one.exact {
+                    Exact::Hole { diameter, reach: Reach::Through, .. } => crate::i18n::tr1("feat-remade-hole-through", "d", &crate::i18n::num(at("diameter", diameter), 1)),
+                    Exact::Hole { diameter, depth, .. } => {
+                        crate::i18n::tr2("feat-remade-hole-blind", "d", &crate::i18n::num(at("diameter", diameter), 1), "depth", &crate::i18n::num(at("depth", depth), 1))
+                    }
+                    Exact::Round { radius, .. } => crate::i18n::tr1("feat-remade-round", "r", &crate::i18n::num(at("radius", radius), 1)),
+                    Exact::Chamfer { leg, .. } => crate::i18n::tr1("feat-remade-chamfer", "d", &crate::i18n::num(at("dist", leg), 1)),
+                },
+                many => crate::i18n::tr1("feat-remade-all", "n", &many.len().to_string()),
             };
             format!("{} {text}", ph::SPARKLE)
         }

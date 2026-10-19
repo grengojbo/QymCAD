@@ -31,8 +31,8 @@ pub fn sizes(project: &Project, key: Id) -> Value {
         .kind
         .dims()
         .into_iter()
-        .map(|(k, stored)| {
-            let expr = project.feat_dim(key, k).map(str::trim).filter(|e| !e.is_empty());
+        .map(|qymcad_core::model::Dim { key: k, value: stored }| {
+            let expr = project.feat_dim(key, &k).map(str::trim).filter(|e| !e.is_empty());
             let value = expr.and_then(|e| project.eval_expr(e).ok()).unwrap_or(stored);
             let follows = expr.filter(|e| e.parse::<f64>().is_err());
             json!({ "key": k, "value": value, "expr": follows })
@@ -196,7 +196,8 @@ pub const EDIT_FEATURE: Tool = Tool {
         let a: EditArgs = tool::args(arguments)?;
         let project = ctx.doc.project();
         let ti = place(project, a.feature)?;
-        let keys: Vec<&str> = project.timeline[ti].kind.dims().into_iter().map(|(k, _)| k).collect();
+        let dims = project.timeline[ti].kind.dims();
+        let keys: Vec<&str> = dims.iter().map(|d| d.key.as_ref()).collect();
         if a.values.is_empty() {
             return Err(Refusal::new("arguments", "values is empty: nothing to change.", Stage::Validate));
         }

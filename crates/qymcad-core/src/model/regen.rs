@@ -294,6 +294,61 @@ pub struct Remake {
     pub exact: Exact,
 }
 
+/// FEATURES FOUND ON A BODY TO BE LAID DOWN EXACT TOGETHER, ONE SIZE A GROUP: the features of a group share their
+/// sizes in the node, so one field changes them all - three holes of 5 drilled from one plate.
+#[derive(Clone, Debug)]
+pub struct RemakeGroup {
+    pub items: Vec<Remake>,
+}
+
+/// ONE FEATURE OF A NODE MADE EXACT: its faces as the node names them, what it is made again as, and the group whose
+/// sizes it takes (`group_key`).
+#[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct RemadeItem {
+    pub faces: crate::refs::Ref,
+    pub exact: Exact,
+    pub group: u32,
+}
+
+/// A NUMBER OF A NODE A PERSON MAY SET: its key - what an expression and a driver name it by - and the number stored.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Dim {
+    pub key: std::borrow::Cow<'static, str>,
+    pub value: f64,
+}
+
+/// THE KEY OF A SIZE OF GROUP `group`: the size's own name for the first group, so a node of one feature keeps the
+/// names a person typed - `diameter` - and the name with the group's number after a dot for the next - `diameter.2`.
+pub fn group_key(base: &'static str, group: u32) -> std::borrow::Cow<'static, str> {
+    if group == 0 {
+        std::borrow::Cow::Borrowed(base)
+    } else {
+        std::borrow::Cow::Owned(format!("{base}.{}", group + 1))
+    }
+}
+
+/// The sizes of a feature made exact, by their own names: a hole's diameter, and its depth unless it goes through - one
+/// through is drilled past the body - a rounding's radius, a chamfer's leg.
+pub fn exact_sizes(exact: &Exact) -> Vec<Dim> {
+    let dim = |key: &'static str, value: f64| Dim { key: std::borrow::Cow::Borrowed(key), value };
+    match *exact {
+        Exact::Hole { diameter, reach: Reach::Through, .. } => vec![dim("diameter", diameter)],
+        Exact::Hole { diameter, depth, .. } => vec![dim("diameter", diameter), dim("depth", depth)],
+        Exact::Round { radius, .. } => vec![dim("radius", radius)],
+        Exact::Chamfer { leg, .. } => vec![dim("dist", leg)],
+    }
+}
+
+/// The dimensions of a node made exact: the sizes of the first feature of every group, in the order the groups come.
+pub fn remade_dims(items: &[RemadeItem]) -> Vec<Dim> {
+    let mut seen = std::collections::HashSet::new();
+    let of_group = |d: Dim, group: u32| match d.key {
+        std::borrow::Cow::Borrowed(base) => Dim { key: group_key(base, group), value: d.value },
+        std::borrow::Cow::Owned(_) => d,
+    };
+    items.iter().filter(|it| seen.insert(it.group)).flat_map(|it| exact_sizes(&it.exact).into_iter().map(move |d| of_group(d, it.group))).collect()
+}
+
 /// What a found feature is made again as, once its faces are taken off the body.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Exact {
@@ -408,6 +463,35 @@ fn in_plane_of(f: &crate::geom::MeshFace, among: &[crate::geom::MeshFace]) -> Op
         .filter(|g| n[0] * g.normal[0] + n[1] * g.normal[1] + n[2] * g.normal[2] > 1.0 - PLANE_TURN && (level(&g.centroid) - level(&f.centroid)).abs() < PLANE_GAP)
         .min_by(|a, b| gap(a).total_cmp(&gap(b)))
         .map(|g| g.id)
+}
+
+/// A feature made exact on the way down to a pushed face: its node, the body it was found on, what it is and its group.
+struct Made {
+    node: Id,
+    made_on: Id,
+    exact: Exact,
+    group: u32,
+}
+
+/// A hole of a node made exact, ready to drill: its tool and the frame it is drilled from.
+struct Drilled {
+    tool: HoleTool,
+    pl: [f64; 12],
+}
+
+/// A group of blends of a node made exact, ready to lay: its size and the two faces of each edge it goes on.
+struct Laid {
+    group: u32,
+    size: f64,
+    sides: Vec<crate::geom::EdgeFaces>,
+}
+
+/// The edge between `sides` laid into its group's blend, the group made at its first edge.
+fn lay_in(groups: &mut Vec<Laid>, group: u32, size: f64, sides: crate::geom::EdgeFaces) {
+    match groups.iter_mut().find(|g| g.group == group) {
+        Some(g) => g.sides.push(sides),
+        None => groups.push(Laid { group, size, sides: vec![sides] }),
+    }
 }
 
 /// The edge of `body` between the two faces `sides`, as the kernel tells the faces every edge parts.

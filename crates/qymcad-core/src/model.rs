@@ -632,7 +632,10 @@ mod assembly;
 pub use assembly::{ExportMesh, ExportNode, FileGroup, ImportNode};
 pub mod contours;
 mod regen;
-pub use regen::{ArrayAxis, BodyOp, ChamferShape, CombineSpan, Exact, ExtrudeSpan, Gap, HoleMove, HoleTool, Reach, Remake, RevolveAxis, RevolveTurn};
+pub use regen::{
+    exact_sizes, group_key, remade_dims, ArrayAxis, Dim, BodyOp, ChamferShape, CombineSpan, Exact, ExtrudeSpan, Gap, HoleMove, HoleTool, Reach, RemadeItem, Remake, RemakeGroup, RevolveAxis,
+    RevolveTurn,
+};
 mod tess;
 mod timeline;
 mod sketch;

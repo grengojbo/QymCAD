@@ -44,7 +44,8 @@ fn every_tool_exposes_its_numbers() {
         ("circular pattern", FeatureKind::CircularArray { src: 1, count: 3, angle: 360.0, axis: 0, body: 0 }, vec!["angle"]),
     ];
     for (what, kind, keys) in &cases {
-        let have: Vec<&str> = kind.dims().into_iter().map(|(k, _)| k).collect();
+        let dims = kind.dims();
+        let have: Vec<&str> = dims.iter().map(|d| d.key.as_ref()).collect();
         for k in keys {
             assert!(have.contains(k), "{what} does not expose the parameter {k}: {have:?}, so there is nothing to name as a driver");
         }

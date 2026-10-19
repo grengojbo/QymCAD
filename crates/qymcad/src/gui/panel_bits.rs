@@ -181,9 +181,14 @@ pub(crate) fn feat_default_name(kind: &qymcad_core::feature::FeatureKind) -> Str
         FK::Sweep { .. } => "feat-name-sweep".into(),
         FK::PushFace { .. } => "feat-name-push-face".into(),
         FK::RemoveFace { .. } => "feat-name-remove-face".into(),
-        FK::Remade { exact: qymcad_core::model::Exact::Hole { .. }, .. } => "feat-name-remade-hole".into(),
-        FK::Remade { exact: qymcad_core::model::Exact::Round { .. }, .. } => "feat-name-remade-round".into(),
-        FK::Remade { exact: qymcad_core::model::Exact::Chamfer { .. }, .. } => "feat-name-remade-chamfer".into(),
+        FK::Remade { items, .. } => match items.as_slice() {
+            [one] => match one.exact {
+                qymcad_core::model::Exact::Hole { .. } => "feat-name-remade-hole".into(),
+                qymcad_core::model::Exact::Round { .. } => "feat-name-remade-round".into(),
+                qymcad_core::model::Exact::Chamfer { .. } => "feat-name-remade-chamfer".into(),
+            },
+            _ => "feat-name-remade-all".into(),
+        },
         FK::FaceGap { .. } => "feat-name-face-gap".into(),
         FK::HoleMoved { .. } => "feat-name-hole-moved".into(),
         FK::Redrawn { kind: qymcad_core::model::PrismKind::Boss, .. } => "feat-name-redrawn-boss".into(),

@@ -20,7 +20,7 @@ use qymcad_core::feature::FaceKey;
 use qymcad_core::geom::{EdgeFaces, Mesh, MeshFace};
 pub use qymcad_core::geom::{rounded, rounded_bore};
 pub use qymcad_core::model::Reach;
-use qymcad_core::model::{Exact, Remake};
+use qymcad_core::model::{Exact, Remake, RemakeGroup};
 use std::collections::{HashMap, HashSet};
 
 /// AN EDGE OF THE BODY IS NOT CROSSED ABOVE THIS, in degrees. The recognition of a whole mesh stops at 30 deg; here the
@@ -158,8 +158,81 @@ pub fn features_of(mesh: &Mesh, faces: &[MeshFace], tol: f64) -> Everything {
         taken.extend(x.faces().iter().copied());
         found.push(x);
     }
+    for id in body.pieces_of_corners(&mut found) {
+        taken.remove(&id);
+    }
+    let mut found = one_a_edge(found);
     let unfound = body.corners_of_chains(&mut found, &taken);
     Everything { found, unfound }
+}
+
+/// THE FEATURES FOUND, MADE AGAIN EXACT, IN GROUPS OF ONE SIZE: a group holds the features of one kind whose sizes,
+/// brought to what was drawn, are the same - a blind hole its depth as well - so one field changes them all. The holes
+/// come first, then the chamfers, then the roundings, each kind from its smaller size up. A feature naming a face the
+/// body's list does not hold is left out.
+pub fn grouped(found: &[Found], faces: &[MeshFace]) -> Vec<RemakeGroup> {
+    let mut groups: Vec<RemakeGroup> = Vec::new();
+    let mut made: Vec<Remake> = found.iter().filter_map(|f| f.remake(faces)).collect();
+    made.sort_by(|a, b| {
+        let (ka, kb) = (kin(&a.exact), kin(&b.exact));
+        ka.order.cmp(&kb.order).then(ka.size.total_cmp(&kb.size))
+    });
+    for r in made {
+        match groups.iter_mut().find(|g| g.items.first().is_some_and(|first| kin(&first.exact) == kin(&r.exact))) {
+            Some(g) => g.items.push(r),
+            None => groups.push(RemakeGroup { items: vec![r] }),
+        }
+    }
+    groups
+}
+
+/// WHAT A GROUP IS TOLD BY: the place of its kind among the groups - holes, chamfers, roundings - its size, brought to
+/// what was drawn, and the depth of a blind hole; a hole through is drilled past the body whatever its depth.
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct Kin {
+    order: u8,
+    size: f64,
+    depth: Option<f64>,
+}
+
+fn kin(e: &Exact) -> Kin {
+    match *e {
+        Exact::Hole { diameter, depth, reach, .. } => Kin { order: 0, size: diameter, depth: (reach == Reach::Blind).then_some(depth) },
+        Exact::Chamfer { leg, .. } => Kin { order: 1, size: leg, depth: None },
+        Exact::Round { radius, .. } => Kin { order: 2, size: radius, depth: None },
+    }
+}
+
+/// HOW FAR TWO PIECES OF ONE BLEND MAY DIFFER IN SIZE, as a share of it. A rounding drawn with strips is found from
+/// each run of them on its own circle: measured on a rounding of 2, from 1.99 to 2.01.
+const PIECE_SIZE: f64 = 0.05;
+
+/// ONE BLEND AN EDGE: the pieces of one rounding or chamfer - lying between the same two faces, their sizes within
+/// `PIECE_SIZE` - are one, its faces all theirs, its size the first piece's. A rounding running round a corner of a
+/// mesh drawn with strips is found piece by piece, and laid again an edge goes in once.
+fn one_a_edge(found: Vec<Found>) -> Vec<Found> {
+    let same_edge = |a: &EdgeFaces, b: &EdgeFaces| (a.one == b.one && a.other == b.other) || (a.one == b.other && a.other == b.one);
+    let close = |x: f64, y: f64| (x - y).abs() <= PIECE_SIZE * x.max(y);
+    let mut out: Vec<Found> = Vec::new();
+    for f in found {
+        let home = out.iter_mut().find(|g| match (&**g, &f) {
+            (Found::Round(a), Found::Round(b)) => same_edge(&a.sides, &b.sides) && close(a.radius, b.radius),
+            (Found::Chamfer(a), Found::Chamfer(b)) => same_edge(&a.sides, &b.sides) && close(a.leg, b.leg),
+            _ => false,
+        });
+        match (home, f) {
+            (Some(Found::Round(a)), Found::Round(b)) => {
+                a.faces.extend(b.faces);
+                a.faces.sort_unstable();
+            }
+            (Some(Found::Chamfer(a)), Found::Chamfer(b)) => {
+                a.faces.extend(b.faces);
+                a.faces.sort_unstable();
+            }
+            (_, f) => out.push(f),
+        }
+    }
+    out
 }
 
 /// A BODY READ FOR A LOOK AT IT: its mesh prepared, the face of every triangle, the triangles of every face, the
@@ -247,6 +320,32 @@ impl<'a> Body<'a> {
             }
         }
         out
+    }
+
+    /// THE ROUNDINGS THAT ARE PIECES OF A CORNER, taken out of `found` and their faces returned. Where a rounding of a
+    /// chain runs round another, its surface turns about two axes, and a mesh drawn with flat strips - or recognised
+    /// into smaller walls - gives pieces of it that each lie on some cylinder of the radius: measured on a block whose
+    /// upright edges are rounded 4 and whose top edge is rounded 2 all round, 30 such pieces besides the 4 straight
+    /// roundings of 2. A piece has for a side a rounding, another piece, or a facet of the corner smaller across than
+    /// the radius - a rounding of an edge eats at least its radius into each of its two faces. The pieces go back to
+    /// the corner they are of (`corners_of_chains`).
+    fn pieces_of_corners(&self, found: &mut Vec<Found>) -> Vec<u32> {
+        let mut out: Vec<u32> = Vec::new();
+        loop {
+            let curved: HashSet<u32> = found.iter().filter(|f| matches!(f, Found::Round(_))).flat_map(|f| f.faces().iter().copied()).chain(out.iter().copied()).collect();
+            let piece = found.iter().position(|f| match f {
+                Found::Round(r) => [r.sides.one, r.sides.other].iter().any(|s| (curved.contains(s) && !r.faces.contains(s)) || self.across(*s) < r.radius),
+                _ => false,
+            });
+            let Some(i) = piece else { return out };
+            out.extend(found.remove(i).faces().iter().copied());
+        }
+    }
+
+    /// How far apart the two corners of face `f` farthest from each other lie.
+    fn across(&self, f: u32) -> f64 {
+        let corners: Vec<Vector3<f64>> = self.by_face.get(&f).map(Vec::as_slice).unwrap_or_default().iter().flat_map(|&t| self.p.mesh.tris[t as usize]).map(|i| vertex(&self.p, i)).collect();
+        corners.iter().flat_map(|a| corners.iter().map(move |b| (a - b).norm())).fold(0.0, f64::max)
     }
 
     /// THE CORNERS OF THE CHAINS OF ROUNDINGS go with the rounding of the smallest radius they touch; the curved faces

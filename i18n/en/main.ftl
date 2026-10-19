@@ -2782,10 +2782,12 @@ msg-unfound-other = No hole, rounding or chamfer here: click the wall of a hole,
 feat-name-remade-hole = Recognised hole
 feat-name-remade-round = Recognised rounding
 feat-name-remade-chamfer = Recognised chamfer
+feat-name-remade-all = Recognised features
 feat-remade-hole-through = Recognised hole Ø{ $d } through
 feat-remade-hole-blind = Recognised hole Ø{ $d }×{ $depth }
 feat-remade-round = Recognised rounding R{ $r }
 feat-remade-chamfer = Recognised chamfer { $d }
+feat-remade-all = Recognised features ({ $n })
 
 # Э2: обрезка поверхности
 tb-trim-surface-hint = Trim — cut the excess away along a neighbouring body
