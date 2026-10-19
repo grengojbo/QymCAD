@@ -128,37 +128,197 @@ pub enum Unfound {
 /// `tol` multiplies the distance a corner may lie from the surface, as for a recognition: 1 for a body built by a
 /// kernel, more for a rough mesh.
 pub fn feature_at(mesh: &Mesh, faces: &[MeshFace], pick: Pick, tol: f64) -> Result<Found, Unfound> {
-    let p = prepare(mesh, weld_tolerance(mesh));
-    let mut face_of_given = vec![0u32; mesh.tris.len()];
+    Body::new(mesh, faces, tol).at(pick)
+}
+
+/// EVERYTHING FOUND ON A BODY: its features, no face in two of them, and the curved faces none of them took - what
+/// was left as it is.
+#[derive(Clone, Debug, Default)]
+pub struct Everything {
+    pub found: Vec<Found>,
+    pub unfound: Vec<u32>,
+}
+
+/// EVERY HOLE, ROUNDING AND CHAMFER OF THE BODY of `mesh`, each looked for from a face no feature has taken yet, as a
+/// click at its centre would, the body read once for all of them. A rounding of a chain leaves the corners where it
+/// runs round another rounding to no feature: such a corner goes with the rounding of the smallest radius beside it,
+/// the one laid last, which makes it again.
+pub fn features_of(mesh: &Mesh, faces: &[MeshFace], tol: f64) -> Everything {
+    let body = Body::new(mesh, faces, tol);
+    let mut taken: HashSet<u32> = HashSet::new();
+    let mut found: Vec<Found> = Vec::new();
     for f in faces {
-        for &t in &f.triangles {
-            if let Some(slot) = face_of_given.get_mut(t as usize) {
-                *slot = f.id;
+        if taken.contains(&f.id) {
+            continue;
+        }
+        let Ok(x) = body.at(Pick { face: f.id, at: [f.centroid.x, f.centroid.y, f.centroid.z] }) else { continue };
+        if x.faces().iter().any(|id| taken.contains(id)) {
+            continue;
+        }
+        taken.extend(x.faces().iter().copied());
+        found.push(x);
+    }
+    let unfound = body.corners_of_chains(&mut found, &taken);
+    Everything { found, unfound }
+}
+
+/// A BODY READ FOR A LOOK AT IT: its mesh prepared, the face of every triangle, the triangles of every face, the
+/// tolerance of the look.
+struct Body<'a> {
+    p: Prepared,
+    face_of: Vec<u32>,
+    by_face: HashMap<u32, Vec<u32>>,
+    faces: &'a [MeshFace],
+    t: Tolerance,
+}
+
+impl<'a> Body<'a> {
+    fn new(mesh: &Mesh, faces: &'a [MeshFace], tol: f64) -> Body<'a> {
+        let p = prepare(mesh, weld_tolerance(mesh));
+        let mut face_of_given = vec![0u32; mesh.tris.len()];
+        for f in faces {
+            for &t in &f.triangles {
+                if let Some(slot) = face_of_given.get_mut(t as usize) {
+                    *slot = f.id;
+                }
             }
         }
+        let face_of: Vec<u32> = p.origin.iter().map(|&o| face_of_given.get(o as usize).copied().unwrap_or(0)).collect();
+        let mut t = Tolerance::for_mesh(&p);
+        t.distance *= if tol > 0.0 { tol } else { 1.0 };
+        t.sharp_deg = SHARP_DEG;
+        let mut by_face: HashMap<u32, Vec<u32>> = HashMap::new();
+        for (tri, &f) in face_of.iter().enumerate() {
+            by_face.entry(f).or_default().push(tri as u32);
+        }
+        Body { p, face_of, by_face, faces, t }
     }
-    let face_of: Vec<u32> = p.origin.iter().map(|&o| face_of_given.get(o as usize).copied().unwrap_or(0)).collect();
-    let at = Vector3::from(pick.at);
-    let seed = (0..p.mesh.tris.len()).filter(|&t| face_of[t] == pick.face).min_by(|&a, &b| (centroid(&p, a) - at).norm().total_cmp(&(centroid(&p, b) - at).norm())).ok_or(Unfound::NoSurface)?;
-    let mut t = Tolerance::for_mesh(&p);
-    t.distance *= if tol > 0.0 { tol } else { 1.0 };
-    t.sharp_deg = SHARP_DEG;
-    let mut by_face: HashMap<u32, Vec<u32>> = HashMap::new();
-    for (tri, &f) in face_of.iter().enumerate() {
-        by_face.entry(f).or_default().push(tri as u32);
+
+    /// The feature at `pick`.
+    fn at(&self, pick: Pick) -> Result<Found, Unfound> {
+        let p = &self.p;
+        let at = Vector3::from(pick.at);
+        let mine = self.by_face.get(&pick.face).cloned().unwrap_or_default();
+        let seed = mine.iter().map(|&t| t as usize).min_by(|&a, &b| (centroid(p, a) - at).norm().total_cmp(&(centroid(p, b) - at).norm())).ok_or(Unfound::NoSurface)?;
+        let wall = if curved(p, &mine) {
+            round_faces(p, &self.by_face, &self.face_of, pick.face, &self.t)?
+        } else {
+            strips(p, &self.by_face, &self.face_of, seed, pick.face, &self.t)?
+        };
+        let inside: HashSet<u32> = wall.tris.iter().copied().collect();
+        let look = Look { p, face_of: &self.face_of, faces: self.faces, inside: &inside, distance: self.t.distance };
+        match wall.surface {
+            Some(Surface::Cylinder { point, axis, radius }) => look.round_wall(Axis { point: point.into(), dir: Vector3::from(axis).normalize() }, radius, at),
+            Some(Surface::Plane { normal, .. }) => look.slanted(Vector3::from(normal).normalize()),
+            _ => Err(Unfound::Other),
+        }
     }
-    let clicked = by_face.get(&pick.face).cloned().unwrap_or_default();
-    let wall = if curved(&p, &clicked) { round_faces(&p, &by_face, &face_of, pick.face, &t)? } else { strips(&p, &by_face, &face_of, seed, pick.face, &t)? };
-    let inside: HashSet<u32> = wall.tris.iter().copied().collect();
-    let look = Look { p: &p, face_of: &face_of, faces, inside: &inside, distance: t.distance };
-    match wall.surface {
-        Some(Surface::Cylinder { point, axis, radius }) => look.round_wall(Axis { point: point.into(), dir: Vector3::from(axis).normalize() }, radius, at),
-        Some(Surface::Plane { normal, .. }) => look.slanted(Vector3::from(normal).normalize()),
-        _ => Err(Unfound::Other),
+
+    /// The faces across the edges of the triangles of `group`, not in it.
+    fn beside(&self, group: &HashSet<u32>) -> HashSet<u32> {
+        let mut out = HashSet::new();
+        for &f in group {
+            for &tri in self.by_face.get(&f).map(Vec::as_slice).unwrap_or_default() {
+                for &u in &self.p.neighbours[tri as usize] {
+                    let g = if u == NO_NEIGHBOUR { 0 } else { self.face_of[u as usize] };
+                    if g != 0 && !group.contains(&g) {
+                        out.insert(g);
+                    }
+                }
+            }
+        }
+        out
+    }
+
+    /// The faces across the smooth edges of face `f` - its triangle and theirs turned less than the sharp angle - as a
+    /// curved wall goes on across them and a corner of a body does not.
+    fn smoothly_beside(&self, f: u32) -> HashSet<u32> {
+        let cos_sharp = self.t.sharp_deg.to_radians().cos();
+        let mut out = HashSet::new();
+        for &tri in self.by_face.get(&f).map(Vec::as_slice).unwrap_or_default() {
+            for &u in &self.p.neighbours[tri as usize] {
+                if u == NO_NEIGHBOUR || normal(&self.p, tri as usize).dot(&normal(&self.p, u as usize)) < cos_sharp {
+                    continue;
+                }
+                let g = self.face_of[u as usize];
+                if g != 0 && g != f {
+                    out.insert(g);
+                }
+            }
+        }
+        out
+    }
+
+    /// THE CORNERS OF THE CHAINS OF ROUNDINGS go with the rounding of the smallest radius they touch; the curved faces
+    /// left after that are returned. A corner is a group of faces meeting each other across smooth edges, taken by no feature and none of
+    /// them a side of a rounding, curved as a whole - a flat face of the body touching only roundings and their sides
+    /// is no corner - and touching nothing but roundings and their sides, a rounding at least. A corner of a polyhedron
+    /// is a group of flat facets, curved as a whole as an exact corner is.
+    fn corners_of_chains(&self, found: &mut [Found], taken: &HashSet<u32>) -> Vec<u32> {
+        let mut rounds: HashMap<u32, usize> = HashMap::new();
+        let mut sides: HashSet<u32> = HashSet::new();
+        for (i, f) in found.iter().enumerate() {
+            if let Found::Round(r) = f {
+                rounds.extend(r.faces.iter().map(|&id| (id, i)));
+                sides.extend([r.sides.one, r.sides.other]);
+            }
+        }
+        let free: Vec<u32> = self.faces.iter().map(|f| f.id).filter(|id| *id != 0 && !taken.contains(id) && !sides.contains(id)).collect();
+        let mut seen: HashSet<u32> = HashSet::new();
+        let mut unfound = Vec::new();
+        for &start in &free {
+            if !seen.insert(start) {
+                continue;
+            }
+            let mut group = HashSet::from([start]);
+            let mut queue = vec![start];
+            while let Some(f) = queue.pop() {
+                for g in self.smoothly_beside(f) {
+                    if free.contains(&g) && seen.insert(g) {
+                        group.insert(g);
+                        queue.push(g);
+                    }
+                }
+            }
+            let tris: Vec<u32> = group.iter().flat_map(|f| self.by_face.get(f).cloned().unwrap_or_default()).collect();
+            if !curved(&self.p, &tris) {
+                continue;
+            }
+            let round = self.beside(&group);
+            let laid_last = round.iter().filter_map(|g| rounds.get(g).copied()).min_by(|&a, &b| radius_of(&found[a]).total_cmp(&radius_of(&found[b])).then(a.cmp(&b)));
+            match laid_last {
+                Some(i) if round.iter().all(|g| rounds.contains_key(g) || sides.contains(g)) => {
+                    if let Found::Round(r) = &mut found[i] {
+                        r.faces.extend(group.iter().copied());
+                        r.faces.sort_unstable();
+                    }
+                }
+                _ => unfound.extend(group.iter().copied()),
+            }
+        }
+        unfound.sort_unstable();
+        unfound
+    }
+}
+
+/// The radius of a rounding; nothing else is one.
+fn radius_of(f: &Found) -> f64 {
+    match f {
+        Found::Round(r) => r.radius,
+        _ => f64::INFINITY,
     }
 }
 
 impl Found {
+    /// The faces of the body it is made of.
+    pub fn faces(&self) -> &[u32] {
+        match self {
+            Found::Hole(h) => &h.faces,
+            Found::Round(r) => &r.faces,
+            Found::Chamfer(c) => &c.faces,
+        }
+    }
+
     /// The feature made again exact, as the core lays it down (`Project::add_remade_feature`): its faces as keys of
     /// `faces` - the body's own list - and its sizes brought to what was drawn. A hole through is drilled twice its
     /// depth and a millimetre more, so that it still goes through where the body grows thicker above it.
