@@ -154,7 +154,7 @@ crates/qymcad-core/src/model/timeline/delete.rs 0 2 1
 crates/qymcad-core/src/model/timeline/nodes.rs 5 0 2
 crates/qymcad-core/src/model/timeline/order.rs 3 1 1
 crates/qymcad-core/src/model/timeline/state.rs 0 0 1
-crates/qymcad-core/src/names.rs 2 3 0
+crates/qymcad-core/src/names.rs 2 2 0
 crates/qymcad-core/src/offset.rs 3 1 2
 crates/qymcad-core/src/refs/tests.rs 2 1 0
 crates/qymcad-core/src/solver.rs 0 8 0
@@ -355,7 +355,7 @@ crates/qymcad-kernel/src/specimen.rs 4 0 0
 crates/qymcad-kernel/tests/a_history_is_read_one_way.rs 0 2 0
 crates/qymcad-kernel/tests/a_result_is_made_by_the_door.rs 0 2 0
 crates/qymcad-kernel/tests/every_boolean_says_how_it_runs.rs 0 2 0
-crates/qymcad-kernel/tests/every_entry_catches_what_occt_throws.rs 1 0 0
+crates/qymcad-kernel/tests/every_entry_of_the_bridge_is_guarded.rs 1 0 0
 crates/qymcad-kernel/tests/every_try_catches_a_fault.rs 0 2 0
 crates/qymcad-kernel/tests/iges_structure.rs 0 4 0
 crates/qymcad-kernel/tests/only_the_bridge_calls_its_cpp.rs 0 2 0

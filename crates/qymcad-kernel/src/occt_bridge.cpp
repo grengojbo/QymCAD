@@ -969,7 +969,7 @@ TopoDS_Shape unify_monolithic(const TopoDS_Shape& in,
 extern "C" QymDoc* qym_occt_step_read(const char* path, double defl) {
     try {
         QYM_SIGNALS;
-        std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
+        const std::unique_lock<std::recursive_mutex> one_at_a_time = qym_alone(QymShared::Exchange);
         STEPControl_Reader reader;
         if (reader.ReadFile(path) != IFSelect_RetDone) return nullptr;
         reader.TransferRoots();
@@ -991,14 +991,15 @@ extern "C" QymDoc* qym_occt_step_read(const char* path, double defl) {
 // ONE IGES AT A TIME, reading or writing. The IGES side of OCCT keeps its state in process-wide statics - the
 // unit it converts to, the controller the writer registers - and two files at once crash the process
 // (measured: four checks reading and writing in parallel died with SIGSEGV; one at a time they passed). An
-// import runs on a worker thread, so two can meet; they queue here instead.
-std::mutex& xstep_lock() {
-    static std::mutex m;
-    return m;
+// import runs on a worker thread, so two can meet; they queue here instead (`QymShared::Exchange`).
+std::unique_lock<std::recursive_mutex> qym_alone(QymShared what) {
+    static std::recursive_mutex exchange;
+    static std::recursive_mutex blend;
+    return std::unique_lock<std::recursive_mutex>(what == QymShared::Exchange ? exchange : blend);
 }
 
 static TopoDS_Shape iges_shape(const char* path) {
-    std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
+    const std::unique_lock<std::recursive_mutex> one_at_a_time = qym_alone(QymShared::Exchange);
     Interface_Static::SetCVal("xstep.cascade.unit", "MM");
     IGESControl_Reader reader;
     if (reader.ReadFile(path) != IFSelect_RetDone) return TopoDS_Shape();
@@ -1458,7 +1459,7 @@ static bool iges_flat(IGESControl_Reader& reader, const Handle(IGESData_IGESMode
 // (408) the occurrences. Measured on the print head of the report: 79 definitions, 110 instances, 70 solids - the
 // tree its STEP holds. A file with no instance standing on its own is read flat (`iges_flat`), or as before.
 bool iges_tree(const char* path, QymTree& tree, std::vector<TopoDS_Shape>& solids) {
-    std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
+    const std::unique_lock<std::recursive_mutex> one_at_a_time = qym_alone(QymShared::Exchange);
     Interface_Static::SetCVal("xstep.cascade.unit", "MM");
     IGESControl_Reader reader;
     if (reader.ReadFile(path) != IFSelect_RetDone) return false;
@@ -1501,9 +1502,10 @@ extern "C" QymShapeList* qym_iges_solids(const char* path) {
 // file in `unit` ("MM" or "IN"; the coordinates are converted, the model itself is in millimetres). Faces mode:
 // trimmed surfaces, the writer's default and the kind every IGES reader handles. 0 means success.
 extern "C" int qym_iges_write(const QymShape** shapes, const double* mats, size_t n, const char* path, const char* unit) {
+    QYM_AS_HANDED(shapes, "it only reads the bodies, one file at a time (QymShared::Exchange)");
     try {
         QYM_SIGNALS;
-        std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
+        const std::unique_lock<std::recursive_mutex> one_at_a_time = qym_alone(QymShared::Exchange);
         IGESControl_Controller::Init();
         IGESControl_Writer writer(unit, 0);
         for (size_t i = 0; i < n; ++i) {
@@ -1542,7 +1544,7 @@ extern "C" int qym_iges_write(const QymShape** shapes, const double* mats, size_
 // on down; a part puts its solids into the list, moved to where the file places them. The solids therefore come in
 // the order the tree meets them, and the reopening of a document reads them the same way (`qym_step_solids`), so a
 // body's number in its source stays right. The document machinery keeps state of its own, so one file at a time.
-// (one file at a time under `xstep_lock`, the lock IGES holds too)
+// (one file at a time under `QymShared::Exchange`, the lock IGES holds too)
 
 // What the kernel's own writer calls a product it was given no name for: "... STEP translator 7.9 1". That is no
 // name of the author's, so it reads as none and the part is named after its file, as a part of an unnamed file is.
@@ -1672,7 +1674,7 @@ static void walk(const Handle(XCAFDoc_ColorTool)& ct, const TDF_Label& label, in
 }
 
 bool step_tree(const char* path, QymTree& tree, std::vector<TopoDS_Shape>& solids) {
-    std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
+    const std::unique_lock<std::recursive_mutex> one_at_a_time = qym_alone(QymShared::Exchange);
     Interface_Static::SetCVal("xstep.cascade.unit", "MM");
     Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
     Handle(TDocStd_Document) doc;
@@ -1697,8 +1699,9 @@ bool step_tree(const char* path, QymTree& tree, std::vector<TopoDS_Shape>& solid
 // repeats an earlier one (`same_as`) places that one's product again, so the file holds a clone's product once.
 // The nodes come parents first; the arrays are parallel, one entry per node.
 extern "C" int qym_step_write_tree(size_t n, const int64_t* parents, const char* const* names, const double* places, const QymShape* const* shapes, const int64_t* same_as, const float* rgb, const int* has_rgb, const size_t* face_starts, const uint32_t* face_ids, const float* face_rgb, const char* path) {
+    QYM_AS_HANDED(shapes, "it only reads the bodies, one file at a time (QymShared::Exchange)");
     if (n == 0 || !parents || !names || !places || !shapes || !same_as || !rgb || !has_rgb || !face_starts || !path) return 4;
-    std::lock_guard<std::mutex> one_at_a_time(xstep_lock());
+    const std::unique_lock<std::recursive_mutex> one_at_a_time = qym_alone(QymShared::Exchange);
     try {
         QYM_SIGNALS;
         Handle(XCAFApp_Application) app = XCAFApp_Application::GetApplication();
@@ -2490,6 +2493,7 @@ extern "C" QymShape* qym_shape_sew(const QymShape* s, double tol) {
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         BRepBuilderAPI_Sewing sew(tol, Standard_True, Standard_True, Standard_True);
         for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) sew.Add(ex.Current());
         sew.Perform();
@@ -2515,6 +2519,7 @@ extern "C" QymShape* qym_shape_fix_shell(const QymShape* s) {
     if (!s) return nullptr;
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(s);
         ShapeFix_Shape fix(s->shape);
         fix.Perform();
         TopoDS_Shape res = fix.Shape();
@@ -2782,6 +2787,84 @@ extern "C" QymShape* qym_shape_extrude_profile(const double* data, size_t n, dou
         return nullptr;
     }
 }
+// AN ARC OF A PROFILE, the circle it lies on and the name its wall takes: what the seam of a round face made of arcs is
+// placed by (`seams_inside_arcs`).
+struct ProfileArc {
+    gp_Circ circle;
+    gp_Pnt middle;
+    unsigned name;
+};
+
+static std::vector<ProfileArc> profile_arcs(const TopoDS_Shape& face, const TopTools_DataMapOfShapeInteger& esrc) {
+    std::vector<ProfileArc> out;
+    for (TopExp_Explorer ex(face, TopAbs_EDGE); ex.More(); ex.Next()) {
+        // a whole circle is no arc: it was never cut, and its seam stays where its curve starts
+        if (!esrc.IsBound(ex.Current()) || BRep_Tool::IsClosed(TopoDS::Edge(ex.Current()))) continue;
+        Standard_Real f, l;
+        const Handle(Geom_Curve) c = BRep_Tool::Curve(TopoDS::Edge(ex.Current()), f, l);
+        Handle(Geom_Circle) circle = Handle(Geom_Circle)::DownCast(c);
+        if (circle.IsNull()) {
+            if (auto t = Handle(Geom_TrimmedCurve)::DownCast(c)) circle = Handle(Geom_Circle)::DownCast(t->BasisCurve());
+        }
+        if (circle.IsNull()) continue;
+        out.push_back({circle->Circ(), c->Value(0.5 * (f + l)), (unsigned)esrc.Find(ex.Current())});
+    }
+    return out;
+}
+
+// THE SEAM OF A ROUND FACE MADE OF ARCS STANDS IN THE MIDDLE OF AN ARC, not where two arcs met. The lines of a sketch cut
+// a circle into arcs; the profiles merged, the arcs join into one circle, and its one vertex - the seam of the round face
+// the extrusion makes of it - stood where the merging left it: on a point where two arcs met, where the other lines touch
+// the circle and where the walls of later steps come to it. A rounding of an edge there met the seam going straight on
+// from its end and was refused at any radius (measured on a sample: of eight edges rounded R8.6 one was left out after an
+// edit moved the seam of a round post onto it). The arc is chosen by the recipe - the one whose wall takes the smallest
+// name, the order the model numbers walls in (the region, the sketch entity, the piece) - never by length or by the order
+// the kernel hands the edges in; an edit moving the points where the arcs meet moves the seam within its arc. Only a circle
+// standing alone, its vertex shared with no other edge, is closed again: a vertex another edge meets holds the outline
+// together. The name the circle's wall takes stays with it.
+static TopoDS_Shape seams_inside_arcs(const TopoDS_Shape& merged, const std::vector<ProfileArc>& arcs, TopTools_DataMapOfShapeInteger& esrc) {
+    TopTools_IndexedDataMapOfShapeListOfShape v2e;
+    TopExp::MapShapesAndAncestors(merged, TopAbs_VERTEX, TopAbs_EDGE, v2e);
+    BRepTools_ReShape re;
+    std::vector<std::pair<TopoDS_Shape, TopoDS_Shape>> moved; // the circle and the one standing in for it
+    TopTools_MapOfShape seen;
+    for (TopExp_Explorer ex(merged, TopAbs_EDGE); ex.More(); ex.Next()) {
+        const TopoDS_Edge e = TopoDS::Edge(ex.Current());
+        if (!seen.Add(e) || !BRep_Tool::IsClosed(e)) continue;
+        TopoDS_Vertex v0, v1;
+        TopExp::Vertices(e, v0, v1);
+        const int vi = v0.IsNull() ? 0 : v2e.FindIndex(v0);
+        if (vi < 1) continue;
+        TopTools_MapOfShape meeting;
+        for (TopTools_ListIteratorOfListOfShape it(v2e.FindFromIndex(vi)); it.More(); it.Next()) meeting.Add(it.Value());
+        if (meeting.Extent() != 1) continue;
+        Standard_Real f, l;
+        const Handle(Geom_Circle) circle = Handle(Geom_Circle)::DownCast(BRep_Tool::Curve(e, f, l));
+        if (circle.IsNull()) continue;
+        const gp_Circ c = circle->Circ();
+        const ProfileArc* first = nullptr;
+        for (const ProfileArc& a : arcs) {
+            const bool same = a.circle.Location().Distance(c.Location()) < 1e-6 && std::abs(a.circle.Radius() - c.Radius()) < 1e-6 && a.circle.Axis().IsParallel(c.Axis(), 1e-9);
+            if (same && a.name != 0 && (!first || a.name < first->name)) first = &a;
+        }
+        if (!first || BRep_Tool::Pnt(v0).Distance(first->middle) < 1e-7) continue;
+        const gp_Vec to(c.Location(), first->middle);
+        if (to.Magnitude() < 1e-9) continue;
+        const TopoDS_Edge stands_in = BRepBuilderAPI_MakeEdge(gp_Circ(gp_Ax2(c.Location(), c.Axis().Direction(), gp_Dir(to)), c.Radius())).Edge();
+        re.Replace(e.Oriented(TopAbs_FORWARD), stands_in.Oriented(TopAbs_FORWARD));
+        moved.push_back({e, stands_in});
+    }
+    if (moved.empty()) return merged;
+    const TopoDS_Shape out = re.Apply(merged);
+    if (out.IsNull() || !BRepCheck_Analyzer(out).IsValid()) return merged; // no worse than the seam where it was
+    for (const auto& [was, now] : moved) {
+        if (!esrc.IsBound(was)) continue;
+        esrc.Bind(now, esrc.Find(was));
+        esrc.UnBind(was);
+    }
+    return out;
+}
+
 // N EXACT profiles: their FLAT faces are merged by a 2D boolean (Fuse plus UnifySameDomain at Z=0 are
 // dependable, unlike the solid versions), and then the ALREADY SINGLE face is extruded. Touching profiles
 // give one body WITHOUT seam edges (before: N prisms plus N booleans gave doubled seam edges along the line
@@ -2800,11 +2883,13 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
         // hundred holes cut in one node that was 199 booleans and 2.0 seconds of the 2.1 the whole rebuild
         // took. One operation over a list does the same work once - and it is the form that has something for
         // the parallel flag to divide.
+        std::vector<ProfileArc> arcs; // the arcs of every profile, for the seams (`seams_inside_arcs`)
         {
             TopTools_ListOfShape args, tools;
             for (size_t i = 0; i < nprof; ++i) {
                 TopoDS_Face f = build_exact_face_src(data + offsets[i], offsets[i + 1] - offsets[i], &esrc);
                 if (f.IsNull()) return nullptr;
+                for (const ProfileArc& a : profile_arcs(f, esrc)) arcs.push_back(a);
                 if (args.IsEmpty()) args.Append(f);
                 else tools.Append(f);
             }
@@ -2846,6 +2931,7 @@ extern "C" QymShape* qym_shape_extrude_profiles_fused(const double* data, const 
                 merged = uni.Shape();
             }
         } catch (...) {}
+        merged = seams_inside_arcs(merged, arcs, esrc);
         // extrude every resulting face; a single solid goes back as it is, disconnected ones as a compound
         std::vector<TopoDS_Shape> prisms;
         std::vector<TopoDS_Face> profiles;
@@ -3188,6 +3274,7 @@ extern "C" QymShape* qym_shape_bezier_shell(const double* pts, size_t patches, d
 // measurement caught this in a live scenario: the body came out with 26 faces instead of 56, and pushing a
 // face stopped building.
 extern "C" void qym_shape_clear_face_splits(QymShape* s) {
+    QYM_AS_HANDED(s, "it changes the record of names the body holds, not its shape");
     try {
         QYM_SIGNALS;
         if (!s) return;
@@ -3196,7 +3283,69 @@ extern "C" void qym_shape_clear_face_splits(QymShape* s) {
     } QYM_WHY_CATCH("shape_clear_face_splits")
 }
 
+// ONE NAME, ONE EDGE: a name the history gave to several edges of the body - the two pieces of an edge cut by a split of
+// the faces beside it, each taking the name of the whole - is taken from every one of them, and each gets a positional
+// number of its own; the naming of the edges then names each by the pair of faces it runs between, the piece between
+// the faces of the old pair taking the old name back. Renamed by name, two edges wearing one could not be told apart:
+// a rounding picked on the upper piece of an edge took the lower after any rebuild. Returns how many edges were given
+// numbers of their own.
+extern "C" int qym_shape_unshare_edge_ids(QymShape* s) {
+    QYM_AS_HANDED(s, "it changes the record of names the body holds, not its shape");
+    try {
+        QYM_SIGNALS;
+        if (!s) return 0;
+        TopTools_IndexedMapOfShape edges;
+        TopExp::MapShapes(s->shape, TopAbs_EDGE, edges);
+        std::unordered_map<int, int> wearing;
+        for (int i = 1; i <= edges.Extent(); ++i)
+            if (s->eids.IsBound(edges(i))) ++wearing[s->eids.Find(edges(i))];
+        int next = next_local(s->eids), given = 0;
+        for (int i = 1; i <= edges.Extent(); ++i) {
+            if (!s->eids.IsBound(edges(i)) || wearing[s->eids.Find(edges(i))] < 2) continue;
+            s->eids.Bind(edges(i), next++);
+            ++given;
+        }
+        return given;
+    } QYM_WHY_CATCH("shape_unshare_edge_ids")
+    return 0;
+}
+
+// THE FACES ON ONE SURFACE OF THE KERNEL: rows of [the face's id, the id of the first face on its surface] for every face
+// that shares its surface (the same object, at the same place) with another face of the body. The pieces of a split
+// face keep the surface of the face they were cut from, and the history of an operation does not always tell each of
+// them (measured on the filter: a window through a tube widened, the lower half of a wall came with no history). Faces
+// that only lie in one plane hold surfaces of their own and are not told.
+static void faces_on_one_surface_of(const QymShape* s, std::vector<unsigned>& out) {
+    struct Held {
+        Handle(Geom_Surface) surface;
+        TopLoc_Location at;
+        unsigned first;
+        size_t count;
+    };
+    std::vector<Held> surfaces;
+    std::vector<std::pair<unsigned, size_t>> faces;
+    TopTools_MapOfShape seen;
+    for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        if (!seen.Add(ex.Current()) || !s->fids.IsBound(ex.Current())) continue;
+        TopLoc_Location at;
+        Handle(Geom_Surface) su = BRep_Tool::Surface(TopoDS::Face(ex.Current()), at);
+        if (su.IsNull()) continue;
+        const unsigned id = (unsigned)s->fids.Find(ex.Current());
+        size_t k = 0;
+        while (k < surfaces.size() && !(surfaces[k].surface == su && surfaces[k].at.IsEqual(at))) ++k;
+        if (k == surfaces.size()) surfaces.push_back(Held{su, at, id, 0});
+        ++surfaces[k].count;
+        faces.emplace_back(id, k);
+    }
+    for (const auto& [id, k] : faces) {
+        if (surfaces[k].count < 2) continue;
+        out.push_back(id);
+        out.push_back(surfaces[k].first);
+    }
+}
+
 extern "C" size_t qym_shape_face_splits(const QymShape* s, unsigned* out, size_t cap) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s) return 0;
@@ -3216,8 +3365,70 @@ extern "C" size_t qym_shape_face_splits(const QymShape* s, unsigned* out, size_t
     return 0;
 }
 
+// WHICH SIDE OF EACH FACE BESIDE IT A PIECE OF A SPLIT FACE LIES ON, for the pieces named `pieces`: triples (piece,
+// the face beside it, side) into `out` - side 1 where the piece lies on the side the normal of the face beside it points
+// to, 2 on the other, 0 where it cannot be told. Taken at the middle of an edge between the two: the normal of the face
+// beside there (its orientation in the body counted), against the line from there to the centre of the piece. Returns
+// how many triples there are (possibly more than `cap` / 3). A piece is told by this, not by how many pieces there are
+// (`crates/qymcad-kernel/NAMING.md`, "A face split in pieces").
+extern "C" size_t qym_shape_piece_sides(const QymShape* s, const unsigned* pieces, size_t n_pieces, unsigned* out, size_t cap) {
+    QYM_AS_HANDED(s, "it only reads the body");
+    try {
+        QYM_SIGNALS;
+        if (!s || !pieces || n_pieces == 0) return 0;
+        const std::unordered_set<unsigned> wanted(pieces, pieces + n_pieces);
+        TopTools_IndexedDataMapOfShapeListOfShape m;
+        TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, m);
+        std::unordered_map<const TopoDS_TShape*, gp_Pnt> centres;
+        auto centre = [&](const TopoDS_Face& f) {
+            auto it = centres.find(f.TShape().get());
+            if (it != centres.end()) return it->second;
+            GProp_GProps g;
+            BRepGProp::SurfaceProperties(f, g);
+            return centres.emplace(f.TShape().get(), g.CentreOfMass()).first->second;
+        };
+        std::set<std::pair<unsigned, unsigned>> told;
+        size_t n = 0;
+        for (int i = 1; i <= m.Extent(); ++i) {
+            const TopTools_ListOfShape& fs = m.FindFromIndex(i);
+            if (fs.Extent() != 2 || fs.First().IsSame(fs.Last())) continue;
+            const TopoDS_Edge edge = TopoDS::Edge(m.FindKey(i));
+            if (BRep_Tool::Degenerated(edge)) continue;
+            for (int k = 0; k < 2; ++k) {
+                const TopoDS_Face piece = TopoDS::Face(k == 0 ? fs.First() : fs.Last());
+                const TopoDS_Face beside = TopoDS::Face(k == 0 ? fs.Last() : fs.First());
+                if (!s->fids.IsBound(piece) || !s->fids.IsBound(beside)) continue;
+                const unsigned p = (unsigned)s->fids.Find(piece), b = (unsigned)s->fids.Find(beside);
+                if (!wanted.count(p) || !told.insert({p, b}).second) continue;
+                Standard_Real u0, u1;
+                const Handle(Geom2d_Curve) uv = BRep_Tool::CurveOnSurface(edge, beside, u0, u1);
+                unsigned side = 0;
+                if (!uv.IsNull()) {
+                    const gp_Pnt2d at = uv->Value(0.5 * (u0 + u1));
+                    BRepGProp_Face face(beside);
+                    gp_Pnt on;
+                    gp_Vec normal;
+                    face.Normal(at.X(), at.Y(), on, normal);
+                    const gp_Vec to(on, centre(piece));
+                    const double along = normal.Magnitude() > 0.0 && to.Magnitude() > 0.0 ? normal.Normalized().Dot(to.Normalized()) : 0.0;
+                    side = along > 1e-9 ? 1u : along < -1e-9 ? 2u : 0u;
+                }
+                if (out && (n + 1) * 3 <= cap) {
+                    out[n * 3 + 0] = p;
+                    out[n * 3 + 1] = b;
+                    out[n * 3 + 2] = side;
+                }
+                ++n;
+            }
+        }
+        return n;
+    } QYM_WHY_CATCH("shape_piece_sides")
+    return 0;
+}
+
 // Rewrite face names, given pairs of "was -> became".
 extern "C" void qym_shape_rename_faces(QymShape* s, const unsigned* from, const unsigned* to, size_t n) {
+    QYM_AS_HANDED(s, "it changes the record of names the body holds, not its shape");
     try {
         QYM_SIGNALS;
         if (!s || !from || !to || n == 0) return;
@@ -3247,93 +3458,120 @@ extern "C" void qym_shape_rename_faces(QymShape* s, const unsigned* from, const 
 //
 // The stable mark comes from the recipe: WHICH NAMED FACES meet at the edge's ends, apart from its own two.
 // For a slot's upper edge that is the cap, for the lower one the floor: different faces, different names,
-// and none of it depends on numbering. The two SMALLEST such names are returned (0 when there are none), in
-// rows of [the edge's id, name 1, name 2].
-extern "C" size_t qym_shape_edge_end_faces(const QymShape* s, unsigned* out, size_t cap) {
-    try {
-        QYM_SIGNALS;
-        if (!s) return 0;
-        TopTools_IndexedDataMapOfShapeListOfShape e2f, v2f, e2v;
-        TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, e2f);
-        TopExp::MapShapesAndAncestors(s->shape, TopAbs_VERTEX, TopAbs_FACE, v2f);
-        size_t n = 0;
-        for (int i = 1; i <= e2f.Extent(); ++i) {
-            const TopoDS_Shape& e = e2f.FindKey(i);
-            if (!s->eids.IsBound(e)) continue;
-            const TopTools_ListOfShape& own = e2f.FindFromIndex(i);
-            std::set<int> mine;
-            for (TopTools_ListIteratorOfListOfShape it(own); it.More(); it.Next())
-                if (s->fids.IsBound(it.Value())) mine.insert(s->fids.Find(it.Value()));
-            std::set<unsigned> around;
-            for (TopExp_Explorer vx(e, TopAbs_VERTEX); vx.More(); vx.Next()) {
-                const int vi = v2f.FindIndex(vx.Current());
-                if (vi < 1) continue;
-                for (TopTools_ListIteratorOfListOfShape it(v2f.FindFromIndex(vi)); it.More(); it.Next()) {
-                    if (!s->fids.IsBound(it.Value())) continue;
-                    const int id = s->fids.Find(it.Value());
-                    if (!qym_recipe(id) || mine.count(id)) continue;   // positional ones do not count: they drift themselves
-                    around.insert((unsigned)id);
-                }
-            }
-            if ((n + 1) * 3 <= cap && out) {
-                out[n * 3 + 0] = (unsigned)s->eids.Find(e);
-                auto it = around.begin();
-                out[n * 3 + 1] = it == around.end() ? 0u : *it++;
-                out[n * 3 + 2] = it == around.end() ? 0u : *it;
-            }
-            ++n;
+// and none of it depends on numbering. Every face at either end apart from its own two is told, in rows of [the edge's
+// id, the face]; the naming takes the two smallest named ones once the faces have their names.
+static void faces_at_edge_ends_of(const QymShape* s, const TopTools_IndexedDataMapOfShapeListOfShape& e2f, const TopTools_IndexedDataMapOfShapeListOfShape& v2f, std::vector<unsigned>& out) {
+    for (int i = 1; i <= e2f.Extent(); ++i) {
+        const TopoDS_Shape& e = e2f.FindKey(i);
+        if (!s->eids.IsBound(e)) continue;
+        std::set<int> mine;
+        for (TopTools_ListIteratorOfListOfShape it(e2f.FindFromIndex(i)); it.More(); it.Next())
+            if (s->fids.IsBound(it.Value())) mine.insert(s->fids.Find(it.Value()));
+        std::set<unsigned> around;
+        for (TopExp_Explorer vx(e, TopAbs_VERTEX); vx.More(); vx.Next()) {
+            const int vi = v2f.FindIndex(vx.Current());
+            if (vi < 1) continue;
+            for (TopTools_ListIteratorOfListOfShape it(v2f.FindFromIndex(vi)); it.More(); it.Next())
+                if (s->fids.IsBound(it.Value()) && !mine.count(s->fids.Find(it.Value()))) around.insert((unsigned)s->fids.Find(it.Value()));
         }
-        return n;
-    } QYM_WHY_CATCH("shape_edge_end_faces")
-    return 0;
+        const unsigned id = (unsigned)s->eids.Find(e);
+        for (unsigned f : around) {
+            out.push_back(id);
+            out.push_back(f);
+        }
+    }
+}
+
+static void edge_face_pairs_of(const QymShape* s, const TopTools_IndexedDataMapOfShapeListOfShape& m, std::vector<unsigned>& out) {
+    for (int i = 1; i <= m.Extent(); ++i) {
+        const TopoDS_Shape& e = m.FindKey(i);
+        const TopTools_ListOfShape& fs = m.FindFromIndex(i);
+        if (!s->eids.IsBound(e)) continue;
+        // a free edge of a sheet pairs its one face with the face that stood beside it in the body it came from
+        const bool free_edge = fs.Extent() == 1 && s->ebeside.IsBound(e);
+        // AN EDGE LYING INSIDE ONE FACE - internal to it, the face on both of its sides - pairs the face with
+        // itself, as a seam does. An auger flight welded flush with the end of its shaft leaves one in the end
+        // face (0.5 mm, from r = 4.5 to 5): it has one face above it, no pair, and it stayed on a positional
+        // number while every other edge of the body had a name.
+        bool inside_one = false;
+        if (fs.Extent() == 1 && !free_edge) {
+            for (TopExp_Explorer ex(fs.First(), TopAbs_EDGE); ex.More() && !inside_one; ex.Next())
+                inside_one = ex.Current().IsSame(e) && (ex.Current().Orientation() == TopAbs_INTERNAL || ex.Current().Orientation() == TopAbs_EXTERNAL);
+        }
+        if (fs.Extent() != 2 && !free_edge && !inside_one) continue;
+        TopTools_ListIteratorOfListOfShape it(fs);
+        const TopoDS_Shape& f1 = it.Value();
+        if (!s->fids.IsBound(f1)) continue;
+        int second = 0;
+        if (free_edge) {
+            second = s->ebeside.Find(e);
+        } else if (inside_one) {
+            second = s->fids.Find(f1);
+        } else {
+            it.Next();
+            if (!s->fids.IsBound(it.Value())) continue;
+            second = s->fids.Find(it.Value());
+        }
+        out.push_back((unsigned)s->eids.Find(e));
+        out.push_back((unsigned)s->fids.Find(f1));
+        out.push_back((unsigned)second);
+    }
 }
 
 extern "C" size_t qym_shape_edge_face_pairs(const QymShape* s, unsigned* out, size_t cap) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s) return 0;
         TopTools_IndexedDataMapOfShapeListOfShape m;
         TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, m);
-        size_t n = 0;
-        for (int i = 1; i <= m.Extent(); ++i) {
-            const TopoDS_Shape& e = m.FindKey(i);
-            const TopTools_ListOfShape& fs = m.FindFromIndex(i);
-            if (!s->eids.IsBound(e)) continue;
-            // a free edge of a sheet pairs its one face with the face that stood beside it in the body it came from
-            const bool free_edge = fs.Extent() == 1 && s->ebeside.IsBound(e);
-            // AN EDGE LYING INSIDE ONE FACE - internal to it, the face on both of its sides - pairs the face with
-            // itself, as a seam does. An auger flight welded flush with the end of its shaft leaves one in the end
-            // face (0.5 mm, from r = 4.5 to 5): it has one face above it, no pair, and it stayed on a positional
-            // number while every other edge of the body had a name.
-            bool inside_one = false;
-            if (fs.Extent() == 1 && !free_edge) {
-                for (TopExp_Explorer ex(fs.First(), TopAbs_EDGE); ex.More() && !inside_one; ex.Next())
-                    inside_one = ex.Current().IsSame(e) && (ex.Current().Orientation() == TopAbs_INTERNAL || ex.Current().Orientation() == TopAbs_EXTERNAL);
-            }
-            if (fs.Extent() != 2 && !free_edge && !inside_one) continue;
-            TopTools_ListIteratorOfListOfShape it(fs);
-            const TopoDS_Shape& f1 = it.Value();
-            if (!s->fids.IsBound(f1)) continue;
-            int second = 0;
-            if (free_edge) {
-                second = s->ebeside.Find(e);
-            } else if (inside_one) {
-                second = s->fids.Find(f1);
-            } else {
-                it.Next();
-                if (!s->fids.IsBound(it.Value())) continue;
-                second = s->fids.Find(it.Value());
-            }
-            if (out && (n + 1) * 3 <= cap) {
-                out[n * 3 + 0] = (unsigned)s->eids.Find(e);
-                out[n * 3 + 1] = (unsigned)s->fids.Find(f1);
-                out[n * 3 + 2] = (unsigned)second;
-            }
-            ++n;
-        }
-        return n;
+        std::vector<unsigned> rows;
+        edge_face_pairs_of(s, m, rows);
+        if (out) std::copy(rows.begin(), rows.begin() + std::min(rows.size(), cap / 3 * 3), out);
+        return rows.size() / 3;
     } QYM_WHY_CATCH("shape_edge_face_pairs")
     return 0;
+}
+
+// THE EDGES THAT HAVE ONE FACE ON BOTH SIDES - the seam where a round face closes, an edge lying inside a face - and
+// where each comes from: quadruples (edge, kind, along, across). Kind 1: the seam where the surface closes
+// along U (a revolution closes there, at the plane of its profile; a cylinder at the start of its curve); 2: where it
+// closes along V; 3: an edge inside the face. `along` and `across` are where the edge stands on the face, its middle in
+// millionths of the face's range of parameters: for a seam, along it and then across; for an edge inside, along U and
+// then V. The number of such an edge is told by this, never by the order the edges come in
+// (`crates/qymcad-kernel/NAMING.md`, "What a name is").
+static void edges_on_their_face_of(const QymShape* s, const TopTools_IndexedDataMapOfShapeListOfShape& m, std::vector<unsigned>& out) {
+    auto part = [](double v, double lo, double hi) {
+        const double t = hi > lo ? (v - lo) / (hi - lo) : 0.0;
+        return (unsigned)std::llround(std::min(1.0, std::max(0.0, t)) * 1.0e6);
+    };
+    for (int i = 1; i <= m.Extent(); ++i) {
+        const TopoDS_Edge edge = TopoDS::Edge(m.FindKey(i));
+        const TopTools_ListOfShape& fs = m.FindFromIndex(i);
+        if (!s->eids.IsBound(edge) || fs.IsEmpty() || BRep_Tool::Degenerated(edge)) continue;
+        const TopoDS_Face face = TopoDS::Face(fs.First());
+        bool one_face = true;
+        for (TopTools_ListIteratorOfListOfShape it(fs); it.More(); it.Next()) one_face = one_face && it.Value().IsSame(face);
+        if (!one_face) continue;
+        Standard_Real u0, u1, v0, v1;
+        BRepTools::UVBounds(face, u0, u1, v0, v1);
+        Standard_Real a, b;
+        const Handle(Geom2d_Curve) on = BRep_Tool::CurveOnSurface(edge, face, a, b);
+        if (on.IsNull()) continue;
+        const gp_Pnt2d mid = on->Value(0.5 * (a + b));
+        unsigned kind = 3, along = part(mid.X(), u0, u1), across = part(mid.Y(), v0, v1);
+        if (BRep_Tool::IsClosed(edge, face)) {
+            Standard_Real c, d;
+            const Handle(Geom2d_Curve) other = BRep_Tool::CurveOnSurface(TopoDS::Edge(edge.Reversed()), face, c, d);
+            const gp_Pnt2d there = other.IsNull() ? mid : other->Value(0.5 * (c + d));
+            const bool closes_along_u = std::abs(there.X() - mid.X()) >= std::abs(there.Y() - mid.Y());
+            kind = closes_along_u ? 1 : 2;
+            // along the seam first: a seam closing along U runs along V
+            along = closes_along_u ? part(mid.Y(), v0, v1) : part(mid.X(), u0, u1);
+            across = closes_along_u ? part(std::min(mid.X(), there.X()), u0, u1) : part(std::min(mid.Y(), there.Y()), v0, v1);
+        }
+        for (unsigned v : {(unsigned)s->eids.Find(edge), kind, along, across}) out.push_back(v);
+    }
 }
 
 // WHERE EACH NAMED FACE LIES: the point of its surface at the middle of its parametric bounds and the normal there,
@@ -3341,39 +3579,117 @@ extern "C" size_t qym_shape_edge_face_pairs(const QymShape* s, unsigned* out, si
 // mesh moves with the deflection, and a name made from it would move when the quality of the drawing is changed. Not
 // the centre of mass either: integrated exactly over a fitted wall it took 1.4 s of an 11.6 s node for 162 faces,
 // and a body brought in from a file asks it of every face. Calling with null outputs returns the count.
+static void face_places_of(const QymShape* s, std::vector<double>& out) {
+    TopTools_MapOfShape seen;
+    for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
+        if (!seen.Add(ex.Current()) || !s->fids.IsBound(ex.Current())) continue;
+        const TopoDS_Face& f = TopoDS::Face(ex.Current());
+        double u0, u1, v0, v1;
+        BRepTools::UVBounds(f, u0, u1, v0, v1);
+        BRepAdaptor_Surface a(f);
+        gp_Pnt c;
+        gp_Vec du, dv;
+        a.D1(0.5 * (u0 + u1), 0.5 * (v0 + v1), c, du, dv);
+        gp_Vec nrm = du.Crossed(dv);
+        if (nrm.Magnitude() > 1e-12) nrm.Normalize();
+        if (f.Orientation() == TopAbs_REVERSED) nrm.Reverse();
+        for (double v : {(double)s->fids.Find(f), c.X(), c.Y(), c.Z(), nrm.X(), nrm.Y(), nrm.Z()}) out.push_back(v);
+    }
+}
+
 extern "C" size_t qym_shape_face_places(const QymShape* s, unsigned* ids, double* out, size_t cap) {
+    QYM_AS_HANDED(s, "it only reads the body");
     try {
         QYM_SIGNALS;
         if (!s || s->shape.IsNull()) return 0;
-        size_t n = 0;
-        TopTools_MapOfShape seen;
-        for (TopExp_Explorer ex(s->shape, TopAbs_FACE); ex.More(); ex.Next()) {
-            if (!seen.Add(ex.Current()) || !s->fids.IsBound(ex.Current())) continue;
-            if (ids && out && n < cap) {
-                const TopoDS_Face& f = TopoDS::Face(ex.Current());
-                double u0, u1, v0, v1;
-                BRepTools::UVBounds(f, u0, u1, v0, v1);
-                BRepAdaptor_Surface a(f);
-                gp_Pnt c;
-                gp_Vec du, dv;
-                a.D1(0.5 * (u0 + u1), 0.5 * (v0 + v1), c, du, dv);
-                gp_Vec nrm = du.Crossed(dv);
-                if (nrm.Magnitude() > 1e-12) nrm.Normalize();
-                if (f.Orientation() == TopAbs_REVERSED) nrm.Reverse();
-                ids[n] = (unsigned)s->fids.Find(f);
-                const double six[6] = {c.X(), c.Y(), c.Z(), nrm.X(), nrm.Y(), nrm.Z()};
-                std::copy(six, six + 6, out + 6 * n);
-            }
-            ++n;
+        std::vector<double> rows;
+        face_places_of(s, rows);
+        const size_t n = rows.size() / 7;
+        for (size_t k = 0; ids && out && k < std::min(n, cap); ++k) {
+            ids[k] = (unsigned)rows[k * 7];
+            std::copy(rows.begin() + k * 7 + 1, rows.begin() + k * 7 + 7, out + 6 * k);
         }
         return n;
     } QYM_WHY_CATCH("shape_face_places")
     return 0;
 }
 
+// WHERE EACH EDGE STANDS: the point of its curve at the middle of its range, four numbers an edge (its id, x, y, z); a
+// degenerate edge stands at its vertex. A point of the curve, not a polyline: what the naming asks is a place to order
+// edges it cannot tell apart, and a polyline of every edge of the body took 183 ms of 752 ms of the naming of the 18
+// blends of the case example.
+static void edge_middles_of(const QymShape* s, std::vector<double>& out) {
+    TopTools_MapOfShape seen;
+    for (TopExp_Explorer ex(s->shape, TopAbs_EDGE); ex.More(); ex.Next()) {
+        if (!seen.Add(ex.Current()) || !s->eids.IsBound(ex.Current())) continue;
+        const TopoDS_Edge& e = TopoDS::Edge(ex.Current());
+        gp_Pnt at;
+        Standard_Real f, l;
+        TopLoc_Location loc;
+        const Handle(Geom_Curve) c = BRep_Tool::Degenerated(e) ? Handle(Geom_Curve)() : BRep_Tool::Curve(e, loc, f, l);
+        if (!c.IsNull()) {
+            at = c->Value(0.5 * (f + l)).Transformed(loc.Transformation());
+        } else {
+            TopExp_Explorer vx(e, TopAbs_VERTEX);
+            if (vx.More()) at = BRep_Tool::Pnt(TopoDS::Vertex(vx.Current()));
+        }
+        for (double v : {(double)s->eids.Find(e), at.X(), at.Y(), at.Z()}) out.push_back(v);
+    }
+}
+
+// WHAT THE NAMING ASKS OF A BODY, in one walk over it: the places of its faces, the faces on one surface, the pairs of
+// faces of its edges, the faces at the ends of its edges, where each edge stands, and the edges with one face on both
+// sides. Asked one by one, the naming of an operation walked the body six times and drew a polyline of every edge
+// (measured on the 18 blends of the case example: 752 ms of naming, of it 242 ms the faces at the ends of edges and
+// 183 ms the polylines). The parts are read with `qym_naming_facts_part` and the whole let go with
+// `qym_naming_facts_free`.
+struct QymNamingFacts {
+    std::vector<double> part[6];
+};
+
+extern "C" QymNamingFacts* qym_shape_naming_facts(const QymShape* s) {
+    QYM_AS_HANDED(s, "it only reads the body");
+    try {
+        QYM_SIGNALS;
+        if (!s || s->shape.IsNull()) return nullptr;
+        auto facts = std::make_unique<QymNamingFacts>();
+        TopTools_IndexedDataMapOfShapeListOfShape e2f, v2f;
+        TopExp::MapShapesAndAncestors(s->shape, TopAbs_EDGE, TopAbs_FACE, e2f);
+        TopExp::MapShapesAndAncestors(s->shape, TopAbs_VERTEX, TopAbs_FACE, v2f);
+        std::vector<unsigned> rows;
+        auto as_numbers = [&](std::vector<double>& to) {
+            to.assign(rows.begin(), rows.end());
+            rows.clear();
+        };
+        face_places_of(s, facts->part[0]);
+        faces_on_one_surface_of(s, rows);
+        as_numbers(facts->part[1]);
+        edge_face_pairs_of(s, e2f, rows);
+        as_numbers(facts->part[2]);
+        faces_at_edge_ends_of(s, e2f, v2f, rows);
+        as_numbers(facts->part[3]);
+        edge_middles_of(s, facts->part[4]);
+        edges_on_their_face_of(s, e2f, rows);
+        as_numbers(facts->part[5]);
+        return facts.release();
+    } QYM_WHY_CATCH("shape_naming_facts")
+    return nullptr;
+}
+
+// One part of the facts the naming asked (`QymNamingFacts`): how many numbers it holds, copied into `out` up to `cap`.
+extern "C" size_t qym_naming_facts_part(const QymNamingFacts* f, int part, double* out, size_t cap) {
+    if (!f || part < 0 || part >= 6) return 0;
+    const std::vector<double>& v = f->part[part];
+    if (out) std::copy(v.begin(), v.begin() + std::min(v.size(), cap), out);
+    return v.size();
+}
+
+extern "C" void qym_naming_facts_free(QymNamingFacts* f) { delete f; }
+
 // Rewrite edge names, given pairs of "was -> became". Called right after the body is assembled, before
 // anything refers to its edges.
 extern "C" void qym_shape_rename_edges(QymShape* s, const unsigned* from, const unsigned* to, size_t n) {
+    QYM_AS_HANDED(s, "it changes the record of names the body holds, not its shape");
     try {
         QYM_SIGNALS;
         if (!s || !from || !to || n == 0) return;
@@ -3401,6 +3717,7 @@ extern "C" QymShape* qym_shape_fuse_many(const QymShape* const* parts, int n) {
     try {
         QYM_SIGNALS;
         if (!parts || n <= 0 || !parts[0]) return nullptr;
+        QYM_OWN_COPIES(parts, n);
         TopTools_ListOfShape args, tools;
         args.Append(parts[0]->shape);
         for (int i = 1; i < n; ++i) {
@@ -3435,6 +3752,8 @@ extern "C" QymShape* qym_shape_fuse_many(const QymShape* const* parts, int n) {
 extern "C" QymShape* qym_shape_boolean(const QymShape* a, const QymShape* b, int op) {
     try {
         QYM_SIGNALS;
+        QYM_OWN_COPY(a);
+        QYM_OWN_COPY(b);
         if (!a || !b) return why("boolean/asked", a ? "there is no tool body" : "there is no base body"), nullptr;
         // TWO NAME SPACES MERGE rather than being renumbered. Only the BASE's names used to be carried
         // through the history, and everything arriving from the tool got fresh positional numbers — so the

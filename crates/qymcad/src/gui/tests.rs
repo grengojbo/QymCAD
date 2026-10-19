@@ -63,3 +63,15 @@ mod a_mesh_is_drawn_by_its_section;
 
 #[cfg(test)]
 pub(crate) mod every_feature_is_made_exact_by_hand;
+
+#[cfg(test)]
+mod a_cut_through_both_ways_reopens_both_ways;
+
+#[cfg(test)]
+mod a_cut_on_a_datum_follows_its_parameter_in_the_window;
+
+#[cfg(test)]
+mod a_reference_found_as_the_other_piece_is_shown;
+
+#[cfg(test)]
+mod a_reference_lost_by_an_edit_is_shown;

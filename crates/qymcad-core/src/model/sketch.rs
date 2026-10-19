@@ -444,6 +444,16 @@ impl Project {
             _ => None,
         }
     }
+    /// WHAT A SKETCH STANDS ON THAT A REBUILD MAKES: the body of the face it is drawn on, or the datum plane it is drawn
+    /// on; `None` on a plane of the world.
+    pub fn sketch_support(&self, sketch: Id) -> Option<Id> {
+        let si = self.sketch_index(sketch)?;
+        match self.sketches[si].plane {
+            crate::feature::SketchPlane::Face(body, _) => Some(body),
+            crate::feature::SketchPlane::Datum(plane) => Some(plane),
+            _ => None,
+        }
+    }
     /// Settle the sketches before building: a body must not be built from geometry that does not yet satisfy
     /// its own constraints.
     ///
@@ -1005,6 +1015,8 @@ pub(crate) struct PieceKey {
 pub(crate) struct PieceAt {
     key: [i64; 2],
     along: f64,
+    /// The entity crossing the piece at its start, 0 for the piece holding the start of its entity.
+    cut: Id,
 }
 
 /// THE SOURCES OF THE PIECES OF A PROFILE, in their order, and the place (from 1) of every piece among them.
