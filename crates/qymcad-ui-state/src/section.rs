@@ -8,7 +8,7 @@ impl Painting<'_> {
     /// is capped, so the place the mesh is cut is seen before Enter. Worked out each frame from what the tool holds,
     /// never stored: the fields move it, and Esc takes it away with the tool.
     pub fn cut(&self) -> std::borrow::Cow<'_, SectionTool> {
-        if self.section.plane.is_some() || !self.mode_3d || self.armed.cmd_kind() != SKETCH_FROM_SECTION {
+        if self.section.plane.is_some() || !self.mode_3d || self.armed.part_tool() != Some(PartTool::SketchFromSection) {
             return std::borrow::Cow::Borrowed(self.section);
         }
         let Some(held) = self.recognise.section else { return std::borrow::Cow::Borrowed(self.section) };

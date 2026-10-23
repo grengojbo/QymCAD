@@ -16,8 +16,8 @@ fn a_rectangle() -> Drawn {
     let mut app = App::default();
     let si = app.create_sketch_on(SketchPlane::default());
     app.chosen.sel = Sel::Sketch(si);
-    Hand::new(&mut app).sk_tool(2).click2d(5.0, 5.0).click2d(45.0, 35.0).key(egui::Key::Enter);
-    Hand::new(&mut app).sk_tool(0);
+    Hand::new(&mut app).sk_tool(qymcad_ui_state::SketchShape::Rect).click2d(5.0, 5.0).click2d(45.0, 35.0).key(egui::Key::Enter);
+    Hand::new(&mut app).sk_select();
     Drawn { app, si }
 }
 
@@ -53,7 +53,7 @@ fn a_contour_clicked_and_enter_leave_it_no_freedom() {
 #[test]
 fn the_curves_selected_before_the_button_are_taken_at_once() {
     let Drawn { mut app, si } = a_rectangle();
-    let lines: Vec<_> = app.project.sketches[si].entities.iter().map(|e| (1, e.id)).collect();
+    let lines: Vec<_> = app.project.sketches[si].entities.iter().map(|e| qymcad_ui_state::SketchItem { kind: qymcad_ui_state::ItemKind::Curve, id: e.id }).collect();
     let mut hand = Hand::new(&mut app);
     assert!(hand.select2d(&lines), "the four sides are picked");
     hand.hover2d(25.0, 20.0);

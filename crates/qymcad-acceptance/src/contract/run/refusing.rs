@@ -31,13 +31,30 @@ pub(crate) fn wrong_picks(tool: &Tool) {
     if !tool.picks.is_empty() {
         let mut s = tool.fixture.start();
         take(&mut s, tool);
-        let (status, doc) = (s.status(), shape_of(&s.document()));
+        let (status, doc, refused) = (s.status(), shape_of(&s.document()), refusals(&mut s));
         enter_key(&mut s);
         if shape_of(&s.document()) != doc {
             problems.push("Enter with nothing picked changed the document".to_string());
         }
-        if s.status() == status && holds(&mut s, tool) {
-            problems.push(format!("Enter with nothing picked: no words say what is missing - the status line still says {status:?}"));
+        // the words are said where the tool speaks - a tool of the frame - or in the status line
+        if s.status() == status && refusals(&mut s) == refused && holds(&mut s, tool) {
+            problems.push(format!("Enter with nothing picked: no words say what is missing - the status line still says {status:?}, the tool {:?}", s.tool_says()));
+        }
+    }
+    // PICKS RIGHT ONE BY ONE AND WRONG TOGETHER: clicked in order, then Enter - nothing is laid, and the words say why
+    if let Some(super::super::Together { picks, says }) = &tool.refused_together {
+        let mut s = tool.fixture.start();
+        take(&mut s, tool);
+        for p in picks.iter() {
+            click(&mut s, p);
+        }
+        let before = s.document().features.len();
+        enter_key(&mut s);
+        let laid: Vec<String> = s.document().features.iter().skip(before).map(|f| format!("{} {:?}", f.kind, f.error)).collect();
+        let why = s.word(says);
+        let said: Vec<String> = s.tool_says().into_iter().map(|n| n.words).chain(std::iter::once(s.status())).collect();
+        if !laid.is_empty() || !said.iter().any(|w| w.contains(&why)) {
+            problems.push(format!("{picks:?} together, then Enter: laid {laid:?}, said {said:?}, not {why:?}"));
         }
     }
     // MORE PICKED THAN THE TOOL NEEDS: the ordinary picks, then one more of their kind, and Enter.
@@ -312,12 +329,13 @@ pub(crate) fn invalid_values(tool: &Tool) {
             let field = field_of(&mut s, f);
             let apply = s.word("cmd-apply-enter");
             let apply_enabled = s.widgets().iter().any(|w| w.label == apply && w.enabled);
-            // WHY THE VALUE IS REFUSED IS READ WHERE A PERSON READS IT: the words drawn in the box beside the field, and the
-            // hint that comes up over the mark next to it. The box was not read at all: a reason said only as a tooltip
-            // exists while the pointer rests on the glyph beside it, and a person reading back what they typed has
-            // their eyes on the field, not on a mark they have to find first - so the words stand in the box, and a
-            // check that looked for a tooltip and found none reported a tool that says nothing.
-            let mut reason = words_in_the_box(&mut s, &field);
+            // WHY THE VALUE IS REFUSED IS READ WHERE A PERSON READS IT: the words of a tool of the frame, said in the
+            // tone of a refusal on their plate in the corner of the view while the value stands; the words a box of a
+            // drawing of the sketch lays under its field; and the hint that comes up over the mark beside the field. A
+            // reason said only as a tooltip exists while the pointer rests on the glyph, and a person reading back what
+            // they typed does not find a mark first.
+            let mut reason: Vec<String> = s.tool_says().into_iter().filter(|n| n.tone == qymcad::Tone::Refusal).map(|n| n.words).collect();
+            reason.extend(words_in_the_box(&mut s, &field));
             reason.extend(s.hint_at(pos2(field.rect.max.x + 10.0, field.rect.center().y)));
             if f.when == When::Before {
                 finish(&mut s, tool);

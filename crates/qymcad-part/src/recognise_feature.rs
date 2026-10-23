@@ -8,9 +8,6 @@ use qymcad_core::model::{group_key, Exact, Id, RemadeItem, Remake};
 use qymcad_meshfit::feature::{feature_at, Found, Pick, Reach, Unfound};
 use qymcad_ui_state::{CmdParam, FeatureInHand, PartCtx};
 
-/// The code of the command.
-pub const RECOGNISE_FEATURE: u8 = 37;
-
 /// What Enter does with the feature taken (the operation of the bar, `FeatParams::op`): makes it again exact, or takes it
 /// off the body.
 pub const MAKE_EXACT: u8 = 0;
@@ -22,7 +19,7 @@ fn tolerance_field() -> CmdParam {
 }
 
 pub fn start_recognise_feature_cmd(pc: &mut PartCtx) {
-    pc.cmd.open(pc.armed, RECOGNISE_FEATURE, *pc.mode_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::RecogniseFeature, *pc.mode_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore);
     *pc.mode_3d = true;
     pc.gsel.edges.clear();
@@ -136,7 +133,7 @@ fn size_fields(remake: &Remake) -> Vec<CmdParam> {
 /// its sizes in the fields - an expression as it was typed, one set a group - and Enter changes the node rather than
 /// laying another.
 pub fn open_remade(pc: &mut PartCtx, fid: Id, src: Id, items: &[RemadeItem], was_3d: bool) {
-    pc.cmd.open(pc.armed, RECOGNISE_FEATURE, was_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::RecogniseFeature, was_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
     *pc.mode_3d = true;
     pc.recognise.feature = None;
@@ -204,20 +201,19 @@ fn unfound_key(why: Unfound) -> &'static str {
 
 /// APPLY: the feature held laid down exact, with the sizes of the fields - a number, or an expression kept on the node;
 /// or, taken off, its faces removed.
-pub fn apply_recognise_feature_cmd(pc: &mut PartCtx) -> Option<Id> {
+pub fn apply_recognise_feature_cmd(pc: &mut PartCtx) -> Result<Id, qymcad_ui_state::NotApplied> {
     let Some(FeatureInHand { body, mut remake, .. }) = pc.recognise.feature.clone() else {
-        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-feature"));
-        return None;
+        return Err(super::refused("msg-recognise-feature"));
     };
     if pc.feat.op == TAKE_OFF {
-        return Some(pc.project.add_remove_face(body, remake.faces));
+        return Ok(pc.project.add_remove_face(body, remake.faces));
     }
     edit_exact(pc.cmd, &mut remake.exact, 0);
     let node = pc.project.add_remade_feature(body, remake);
     if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
-        return super::formula_refused(pc, &e);
+        return Err(super::formula_refused(&e));
     }
-    Some(node)
+    Ok(node)
 }
 
 /// Where the ray through `screen` meets face `face` of body `mesh`, in the body's own frame; `None` where it misses.

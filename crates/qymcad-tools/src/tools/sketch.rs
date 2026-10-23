@@ -433,10 +433,7 @@ impl Pad<'_> {
     }
 
     fn line_ends(&self, eid: Id) -> Option<[Id; 2]> {
-        self.p.sketches[self.si].entities.iter().find(|e| e.id == eid).and_then(|e| match e.kind {
-            EntityKind::Line { a, b } => Some([a, b]),
-            _ => None,
-        })
+        self.p.sketches[self.si].entities.iter().find(|e| e.id == eid).and_then(|e| e.kind.as_line()).map(|l| [l.a, l.b])
     }
 
     fn last_entity(&self) -> Option<Id> {
@@ -498,8 +495,8 @@ impl Pad<'_> {
                     TurnArg::Cw => Winding::Cw,
                 };
                 self.p.add_arc_entity(si, pt(*centre), pt(*from), pt(*to), winding, purpose.core());
-                let kind = self.last_entity().and_then(|e| self.p.sketches[si].entities.iter().find(|x| x.id == e)).map(|e| e.kind);
-                let Some(EntityKind::Arc { center, a, b, .. }) = kind else { return Err(refused("bad-size", format!("An arc about {centre:?} from {from:?} to {to:?} was not drawn."))) };
+                let arc = self.last_entity().and_then(|e| self.p.sketches[si].entities.iter().find(|x| x.id == e)).and_then(|e| e.kind.as_arc());
+                let Some(qymcad_core::model::ArcParts { center, a, b, .. }) = arc else { return Err(refused("bad-size", format!("An arc about {centre:?} from {from:?} to {to:?} was not drawn."))) };
                 self.name(name, Thing::Circle { centre: center })?;
                 self.sub(name, "c", Thing::Point(center));
                 self.sub(name, "a", Thing::Point(a));
@@ -531,15 +528,7 @@ impl Pad<'_> {
     }
 
     fn circle_centre(&self, eid: Id) -> Result<Id, Refusal> {
-        self.p.sketches[self.si]
-            .entities
-            .iter()
-            .find(|e| e.id == eid)
-            .and_then(|e| match e.kind {
-                EntityKind::Circle { center, .. } | EntityKind::Arc { center, .. } => Some(center),
-                _ => None,
-            })
-            .ok_or_else(|| refused("kernel-panic", "The circle was not laid.".into()))
+        self.p.sketches[self.si].entities.iter().find(|e| e.id == eid).and_then(|e| e.kind.round_centre()).ok_or_else(|| refused("kernel-panic", "The circle was not laid.".into()))
     }
 
     /// WHAT A NAME STANDS FOR: a name of this call, a point or entity key of the sketch, or the frame.
@@ -560,11 +549,11 @@ impl Pad<'_> {
                 if s.points.iter().any(|p| p.id == *k) {
                     return Ok(Thing::Point(*k));
                 }
-                match s.entities.iter().find(|e| e.id == *k).map(|e| e.kind) {
-                    Some(EntityKind::Line { a, b }) => Ok(Thing::Line { ends: [a, b] }),
-                    Some(EntityKind::Circle { center, .. } | EntityKind::Arc { center, .. }) => Ok(Thing::Circle { centre: center }),
-                    _ => Err(refused("unknown-name", format!("{k} is no point, line or circle of sketch {}.", s.id))),
+                let kind = s.entities.iter().find(|e| e.id == *k).map(|e| &e.kind);
+                if let Some(l) = kind.and_then(EntityKind::as_line) {
+                    return Ok(Thing::Line { ends: [l.a, l.b] });
                 }
+                kind.and_then(EntityKind::round_centre).map(|centre| Thing::Circle { centre }).ok_or_else(|| refused("unknown-name", format!("{k} is no point, line or circle of sketch {}.", s.id)))
             }
         }
     }
@@ -593,15 +582,8 @@ impl Pad<'_> {
     /// The radius a circle or an arc has now.
     fn radius_now(&self, centre: Id) -> f64 {
         let s = &self.p.sketches[self.si];
-        let at = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| (p.x, p.y));
-        s.entities
-            .iter()
-            .find_map(|e| match e.kind {
-                EntityKind::Circle { center, r } if center == centre => Some(r),
-                EntityKind::Arc { center, a, .. } if center == centre => at(center).zip(at(a)).map(|(c, p)| (p.0 - c.0).hypot(p.1 - c.1)),
-                _ => None,
-            })
-            .unwrap_or(0.0)
+        let at = |id: Id| s.points.iter().find(|p| p.id == id).map(|p| qymcad_core::geom::Point2::new(p.x, p.y));
+        s.entities.iter().filter(|e| e.kind.round_centre() == Some(centre)).find_map(|e| e.kind.circle_by(&at).map(|c| c.r)).unwrap_or(0.0)
     }
 
     /// The constraint of a relation.
@@ -856,12 +838,13 @@ pub const SKETCH_INFO: Tool = Tool {
             .entities
             .iter()
             .map(|e| {
-                let mut shown = match e.kind {
-                    EntityKind::Line { a, b } => json!({ "kind": "line", "points": [a, b] }),
-                    EntityKind::Arc { center, a, b, .. } => json!({ "kind": "arc", "points": [center, a, b] }),
-                    EntityKind::Circle { center, r } => json!({ "kind": "circle", "points": [center], "radius": r }),
-                    EntityKind::Ellipse { c, ma, mi } => json!({ "kind": "ellipse", "points": [c, ma, mi] }),
-                };
+                // the kind by its own word - "line", "arc" - and the points it stands on, in the order the kind holds them
+                let mut points = Vec::new();
+                e.kind.clone().each_point_mut(|p| points.push(*p));
+                let mut shown = json!({ "kind": e.kind.name_key().rsplit('-').next(), "points": points });
+                if let Some(c) = e.kind.as_circle() {
+                    shown["radius"] = json!(c.r);
+                }
                 shown["key"] = json!(e.id);
                 shown["construction"] = json!(e.construction);
                 shown

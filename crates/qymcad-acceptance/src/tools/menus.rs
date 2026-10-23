@@ -25,12 +25,12 @@ const SHOWS: &[Skip] = &[
 
 /// An item of the menus that opens the window of this title, and lays no step of undo.
 macro_rules! shows {
-    ($name:ident, $id:literal, $path:expr, $title:literal, $help:literal) => {
+    (@by $name:ident, $id:literal, $entries:expr, $title:literal, $help:literal) => {
         pub static $name: Tool = Tool {
             id: $id,
             flow: Flow::Action,
             title: $title,
-            entries: &[Entry::Menu($path)],
+            entries: $entries,
             other: Other { entry: Entry::Button("tb-mirror-body-hint"), title: "cmd-mirror" },
             fixture: Fixture::FirstPart,
             picks: &[],
@@ -49,10 +49,14 @@ macro_rules! shows {
             dependency: None,
             contexts: &[],
             refusal: None,
+            refused_together: None,
             budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: $help,
             not_applicable: SHOWS,
         };
+    };
+    ($name:ident, $id:literal, $path:expr, $title:literal, $help:literal) => {
+        shows!(@by $name, $id, &[Entry::Menu($path)], $title, $help);
     };
 }
 
@@ -62,6 +66,9 @@ shows!(START_SCREEN, "menu.start-screen", &["menu-windows", "win-start"], "start
 shows!(HOTKEYS, "menu.hotkeys", &["menu-help", "help-hotkeys"], "hotkeys-title", "general/10-hotkeys");
 shows!(REPORT, "menu.report", &["menu-help", "help-report"], "report-title", "general/13-report");
 shows!(CONNECT_CLAUDE, "menu.connect-claude", &["menu-help", "help-connect-claude"], "claude-title", "general/15-claude");
+
+// the search of the commands, opened by Ctrl+K: the way into any tool the article of how any tool works starts with
+shows!(@by COMMAND_SEARCH, "menu.command-search", &[Entry::Key(qymcad::Modifiers::COMMAND, qymcad::Key::K)], "cs-title", "general/16-tools");
 
 /// What the items of history leave out: they act on the document as it stands, and take nothing.
 const HISTORY: &[Skip] = &[
@@ -105,6 +112,7 @@ pub static UNDO: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/03-timeline",
     not_applicable: HISTORY,
@@ -134,6 +142,7 @@ pub static REDO: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/03-timeline",
     not_applicable: HISTORY,
@@ -163,6 +172,7 @@ pub static REBUILD: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/03-timeline",
     not_applicable: HISTORY,
@@ -193,6 +203,7 @@ pub static NEW_PROJECT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/08-documents",
     not_applicable: HISTORY,
@@ -224,6 +235,7 @@ macro_rules! chooses {
             dependency: None,
             contexts: &[],
             refusal: None,
+            refused_together: None,
             budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: $help,
             not_applicable: CHOOSES,
@@ -278,6 +290,7 @@ macro_rules! shows_first {
             dependency: None,
             contexts: &[],
             refusal: None,
+            refused_together: None,
             budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: "general/06-import-export",
             not_applicable: CHOOSES,
@@ -324,6 +337,7 @@ macro_rules! asks {
             dependency: None,
             contexts: &[],
             refusal: None,
+            refused_together: None,
             budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: "general/08-documents",
             not_applicable: HISTORY,
@@ -339,6 +353,7 @@ asks!(SAVE_AS_TEMPLATE, "menu.save-as-template", "file-save-as-template", "file-
 
 shows!(DOCUMENT_PROPERTIES, "menu.document-properties", &["menu-file", "file-doc-props"], "doc-props-title", "general/08-documents");
 shows!(ABOUT, "menu.about", &["menu-help", "help-about"], "win-about", "general/14-updates");
+shows!(SUPPORT, "menu.support", &["menu-help", "help-support"], "win-support", "general/01-window");
 asks!(QUIT, "menu.quit", "file-quit", "nav-unsaved-title");
 
 /// An item of View that switches the colours of the window: dark or light, whatever the part holds.
@@ -367,6 +382,7 @@ macro_rules! paints {
             dependency: None,
             contexts: &[],
             refusal: None,
+            refused_together: None,
             budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: "general/07-settings",
             not_applicable: SHOWS,
@@ -405,6 +421,7 @@ pub static PARAMETERS: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/05-parameters",
     not_applicable: SHOWS,
@@ -436,6 +453,7 @@ macro_rules! opens {
             dependency: None,
             contexts: &[],
             refusal: None,
+            refused_together: None,
             budget: Budget { apply_secs: 10, frame_ms: 2000 },
             help: $help,
             not_applicable: SUBMENU,
@@ -493,6 +511,7 @@ pub static RECENT_CLEAR: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/08-documents",
     not_applicable: SUBMENU,
@@ -522,6 +541,7 @@ pub static FIT_VIEW: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/09-viewport",
     not_applicable: SHOWS,

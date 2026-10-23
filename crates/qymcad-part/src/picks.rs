@@ -14,116 +14,58 @@ use super::*;
 /// systems. A click past every contour says so and leaves what is gathered. Reported behaviour: a click on a contour in
 /// 3D changed nothing - neither the picture, nor the bar, nor the status line.
 pub fn profile_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos: egui::Pos2) {
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Loft) {
+        return section_click_3d(pc, rect, pos);
+    }
     let Some(si) = pc.cmd.sketch else { return };
     let basis = pc.cam.basis();
     let hit = qymcad_ui_state::contour_under_3d(&*pc.project, &qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis }, pos, si);
-    match hit {
+    match hit.map(|h| h.id) {
         Some(cid) => {
             if !pc.gsel.profiles.remove(&cid) {
                 pc.gsel.profiles.insert(cid);
             }
-            *pc.status = Notice::info(qymcad_i18n::tr1("sk-profiles-n", "n", &pc.gsel.profiles.len().to_string()));
+            *pc.status = Notice::info(qymcad_i18n::tr1("msg-profiles-n", "n", &pc.gsel.profiles.len().to_string()));
         }
-        None => *pc.status = Notice::refusal(qymcad_i18n::tr("sk-miss-contour")),
+        None => *pc.status = Notice::refusal(qymcad_i18n::tr("msg-miss-contour")),
     }
+}
+
+/// A CLICK IN THE 3D VIEW WHILE A LOFT IS IN HAND takes the contour under it as the contour of its section: among
+/// the sketches of the sections, the one whose contour is caught - by its line first, the section in front of two
+/// seen one behind the other. A pick of that section's contour waiting in the half-sketcher is done with. The words
+/// of an edit stay: the node is still being edited. Reported behaviour: a click on a section in 3D took the face of
+/// the body behind it, and the loft being edited was let go.
+fn section_click_3d(pc: &mut qymcad_ui_state::PartCtx, rect: egui::Rect, pos: egui::Pos2) {
+    let basis = pc.cam.basis();
+    let scr = qymcad_ui_state::Screen { cam: &*pc.cam, set: pc.set, rect, basis: &basis };
+    let mut best: Option<Section> = None;
+    for (at, sid) in pc.loft.sids.iter().enumerate() {
+        let Some(hit) = pc.project.sketch_index(*sid).and_then(|si| qymcad_ui_state::contour_under_3d(&*pc.project, &scr, pos, si)) else { continue };
+        if best.is_none_or(|b| hit.beats_behind(&b.hit)) {
+            best = Some(Section { at, hit });
+        }
+    }
+    let Some(Section { at, hit }) = best else {
+        *pc.status = Notice::refusal(qymcad_i18n::tr("msg-miss-contour"));
+        return;
+    };
+    qymcad_ui_state::set_contour_slot(&mut *pc.loft, &mut *pc.sweep, qymcad_ui_state::ContourSlot::LoftSection(at), hit.id);
+    if pc.picking.contour() == Some(qymcad_ui_state::ContourSlot::LoftSection(at)) {
+        pc.picking.clear();
+    }
+    *pc.status = qymcad_ui_state::contour_picked_words(pc.cmd);
+}
+
+/// A SECTION OF A LOFT caught under the pointer: its place in the list and how its contour lies there.
+#[derive(Clone, Copy)]
+struct Section {
+    at: usize,
+    hit: qymcad_ui_state::ContourUnder,
 }
 
 /// WHAT A CLICK ON A BODY SELECTS: the face under it for the tools that want one, the body otherwise. For the tools
 /// that take a whole body (the patterns of a body) the same body clicked again lets it go.
-/// THE PART COMMAND OF CODE `cmd`, started. The patterns and the datums start by the window's own hand.
-pub fn start_cmd(pc: &mut qymcad_ui_state::PartCtx, cmd: u8) {
-    match cmd {
-        1 | 3 => start_sketch_cmd(pc, cmd),
-        8 => start_sweep_cmd(pc),
-        9 => start_loft_cmd(pc),
-        4..=7 => start_body_cmd(pc, cmd),
-        23 => start_draft_cmd(pc),
-        25 => start_push_face_cmd(pc),
-        26 => start_remove_face_cmd(pc),
-        30 | 36 => start_face_copy_cmd(pc, cmd),
-        31 => start_surface_replace_cmd(pc),
-        32 => start_patch_cmd(pc),
-        33 => start_stitch_cmd(pc),
-        35 => start_recognise_cmd(pc),
-        RECOGNISE_FEATURE => start_recognise_feature_cmd(pc),
-        RECOGNISE_ALL => start_recognise_all_cmd(pc),
-        FACE_GAP => start_face_gap_cmd(pc),
-        SKETCH_FROM_FACE => start_sketch_from_face_cmd(pc),
-        SKETCH_FROM_SECTION => start_sketch_from_section_cmd(pc),
-        34 => start_trim_cmd(pc),
-        27 => start_split_cmd(pc),
-        28 => start_thicken_cmd(pc),
-        29 => start_split_face_cmd(pc),
-        24 => start_thread_cmd(pc),
-        16 => start_mirror_cmd(pc),
-        _ => {}
-    }
-}
-
-/// A TOOL FOR BODIES DOES NOT CATCH ON A SURFACE. A copy of a face lies EXACTLY ON the face of the part, and a click
-/// there landed on the sheet: the shell got a face of a surface and honestly refused (`OpFailed(Shell)`), while what was
-/// seen was "I clicked the face of the part and it does not work". The tools for which a sheet is lawful (thicken,
-/// replace a face, stitch, trim, patch, copy a face) are not included here - a surface is what they want.
-pub fn solid_only(armed: &qymcad_ui_state::Armed) -> bool {
-    matches!(armed.cmd_kind(), 4 | 5 | 6 | 7 | 23 | 25 | 26 | 27 | 29 | RECOGNISE_FEATURE | RECOGNISE_ALL | FACE_GAP | SKETCH_FROM_FACE | SKETCH_FROM_SECTION)
-}
-
-/// A face is selected under a command that asks for one (the shell, the hole, a feature to recognise) and with nothing
-/// in hand - where a corner or an edge under the cursor goes first; other commands take THE BODY.
-pub fn wants_face(armed: &qymcad_ui_state::Armed) -> bool {
-    matches!(armed.cmd_kind(), 6 | 7 | 23 | 25 | 26 | 28 | 30 | 31 | 36 | RECOGNISE_FEATURE | RECOGNISE_ALL | FACE_GAP | SKETCH_FROM_FACE | SKETCH_FROM_SECTION) || !armed.commanding()
-}
-
-/// A CLICK ON FACE `face` OF BODY `mesh` for the tools that take one face at a click.
-///
-/// PUSH FACE: the face is EXACTLY ONE - a click replaces the previous one rather than accumulating a set. Pushing
-/// several faces by one offset means a different result on each of them (their normals differ), and that cannot be
-/// predicted. THICKEN follows the same logic: the face is EXACTLY ONE, and one plate comes out of it. RECOGNISE FEATURE
-/// takes the feature the face belongs to, where the click met it.
-pub fn face_clicked(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Option<usize>, rect: Rect, screen: Pos2) {
-    let kind = pc.armed.cmd_kind();
-    if matches!(kind, 7 | 25 | 26 | 28 | 30 | 36) {
-        let id = face.and_then(|fi| pc.project.bodies.get(mesh).and_then(|b| b.faces.get(fi))).map(|f| f.id);
-        toggle_face(pc, id, matches!(kind, 7 | 25 | 28));
-        place_hole_at(pc, rect, screen);
-    } else if kind == RECOGNISE_FEATURE {
-        let at = hit_on_face(pc, mesh, face, rect, screen);
-        recognise_feature_at(pc, mesh, face, at);
-    } else if kind == RECOGNISE_ALL {
-        recognise_all_at(pc, mesh, face);
-    } else if kind == FACE_GAP {
-        face_gap_at(pc, mesh, face);
-    } else if kind == SKETCH_FROM_FACE {
-        sketch_from_face_at(pc, mesh, face);
-    } else if kind == SKETCH_FROM_SECTION {
-        sketch_from_section_at(pc, mesh, face);
-    }
-}
-
-/// A CLICK WITH MIRROR IN HAND picks the mirror plane - a base plane, a datum or a face - and Enter applies it; the same
-/// plane again lets it go.
-pub fn mirror_plane_click(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymcad_core::feature::SketchPlane>) {
-    match plane {
-        Some(sp) => {
-            pc.mirror.plane = (pc.mirror.plane != Some(sp)).then_some(sp);
-            *pc.status = Notice::info(qymcad_i18n::tr(if pc.mirror.plane.is_some() { "vp-mirror-plane-picked" } else { "msg-mirror-pick" }));
-        }
-        None => *pc.status = Notice::refusal(qymcad_i18n::tr("vp-miss-plane-short")),
-    }
-}
-
-/// A CLICK WITH DATUM PLANE IN HAND picks the base plane, datum or face the offset is measured from; the same plane
-/// again lets it go.
-pub fn datum_plane_click(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymcad_core::feature::SketchPlane>) {
-    match plane {
-        Some(sp) => {
-            pc.datum.plane_pick = (pc.datum.plane_pick != Some(sp)).then_some(sp);
-            *pc.status = Notice::info(qymcad_i18n::tr(if pc.datum.plane_pick.is_some() { "vp-ref-picked" } else { "hint-plane-offset" }));
-        }
-        None => *pc.status = Notice::refusal(qymcad_i18n::tr("vp-miss-plane-short")),
-    }
-}
-
 pub fn take_under_click(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Option<usize>, grip: Option<qymcad_ui_state::Sel>) {
     // WITH NOTHING IN HAND a corner or an edge under the cursor is taken for itself, and a face for itself: the body
     // is a double click away. A command keeps the body (or the face it asks for).
@@ -132,7 +74,7 @@ pub fn take_under_click(pc: &mut qymcad_ui_state::PartCtx, mesh: usize, face: Op
         (None, Some(fi)) => qymcad_ui_state::Sel::Face(mesh, fi),
         (None, None) => qymcad_ui_state::Sel::Mesh(mesh),
     };
-    let again = matches!(pc.armed.cmd_kind(), 17 | 18) && *pc.sel == now;
+    let again = pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::is_a_pattern) && *pc.sel == now;
     *pc.sel = if again { qymcad_ui_state::Sel::None } else { now };
 }
 
@@ -158,7 +100,7 @@ pub fn whole_body_on_double_click(pc: &mut qymcad_ui_state::PartCtx, double: boo
 /// behaviour: a click past the body with a fillet in hand said nothing, the status line as it was. `plane` is the base
 /// or datum plane under the pointer: "Sketch from section" takes it for the plane the section is moved off.
 pub fn click_on_nothing(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymcad_core::feature::SketchPlane>) {
-    if pc.armed.cmd_kind() == SKETCH_FROM_SECTION {
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::SketchFromSection) {
         if let Some(on) = plane.filter(|p| !matches!(p, qymcad_core::feature::SketchPlane::Face(..))) {
             section_plane_taken(pc, on);
             return;
@@ -177,7 +119,7 @@ pub fn click_on_nothing(pc: &mut qymcad_ui_state::PartCtx, plane: Option<qymcad_
 /// into the two shifts from the face's centre along its own axes - the fields at the geometry, so the centre can then
 /// be typed exactly.
 pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2) {
-    let (7, qymcad_ui_state::Sel::Face(mi, fi)) = (pc.armed.cmd_kind(), *pc.sel) else { return };
+    let (Some(qymcad_ui_state::PartTool::Hole), qymcad_ui_state::Sel::Face(mi, fi)) = (pc.armed.part_tool(), *pc.sel) else { return };
     let (Some(body), Some(face)) = (pc.project.mesh_id(mi), pc.project.bodies.get(mi).and_then(|b| b.faces.get(fi))) else { return };
     let (c, n) = ([face.centroid.x, face.centroid.y, face.centroid.z], face.normal);
     // the ray in the body's own frame: the view shows the body through its placement in the context
@@ -186,7 +128,7 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
     let (o, d) = qymcad_ui_state::screen_ray(pc.cam, rect, screen);
     let (lo, ld) = (qymcad_core::feature::apply12(&inv, o), qymcad_core::feature::apply12_dir(&inv, d));
     let Some(local) = qymcad_ui_state::ray_plane(lo, ld, c, n) else { return };
-    let qymcad_doc::ops::FaceOffset { u, v } = qymcad_doc::ops::FaceFrame { centre: c, normal: n }.offset_of(local);
+    let [u, v] = qymcad_core::feature::shift_on_face(qymcad_core::feature::FaceAt { centre: c, normal: n }, local);
     // the same face clicked where the hole already stands (within 0.5 mm) lets it go; anywhere else on it moves the
     // hole there
     let here = (u - qymcad_ui_state::cmd_val(pc.cmd, "off_u")).hypot(v - qymcad_ui_state::cmd_val(pc.cmd, "off_v")) < 0.5;
@@ -200,7 +142,8 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
     for (key, val) in [("off_u", u), ("off_v", v)] {
         if let Some(p) = pc.cmd.params.iter_mut().find(|p| p.key == key) {
             p.val = (val * 1000.0).round() / 1000.0;
-            p.txt = qymcad_i18n::num(p.val, 3);
+            // one way of writing a number in every field: "0", not "0.000"
+            p.txt = qymcad_core::expr::fmt_num(p.val);
         }
     }
 }
@@ -210,13 +153,13 @@ pub fn place_hole_at(pc: &mut qymcad_ui_state::PartCtx, rect: Rect, screen: Pos2
 /// again in the tree stayed the path.
 pub fn sketch_row_again(pc: &mut qymcad_ui_state::PartCtx, si: usize) {
     let Some(sid) = pc.project.sketches.get(si).map(|s| s.id) else { return };
-    match pc.armed.cmd_kind() {
-        8 if pc.sweep.path_sid == sid => {
+    match pc.armed.part_tool() {
+        Some(qymcad_ui_state::PartTool::Sweep) if pc.sweep.path_sid == sid => {
             pc.sweep.path_sid = 0;
             pc.sweep.path_cid = 0;
             pc.sweep.pick_path = true;
         }
-        9 if pc.loft.sids.contains(&sid) => {
+        Some(qymcad_ui_state::PartTool::Loft) if pc.loft.sids.contains(&sid) => {
             let i = pc.loft.sids.iter().position(|s| *s == sid).unwrap_or(0);
             pc.loft.sids.remove(i);
             pc.loft.cids.remove(i);
@@ -225,9 +168,9 @@ pub fn sketch_row_again(pc: &mut qymcad_ui_state::PartCtx, si: usize) {
     }
     // the selection goes back to what the tool stood on before the pick: the profile of the sweep, the last section
     // of the loft left
-    let back = if pc.armed.cmd_kind() == 8 { Some(pc.sweep.prof_sid) } else { pc.loft.sids.last().copied() };
+    let back = if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Sweep) { Some(pc.sweep.prof_sid) } else { pc.loft.sids.last().copied() };
     *pc.sel = back.and_then(|id| pc.project.sketches.iter().position(|s| s.id == id)).map_or(qymcad_ui_state::Sel::None, qymcad_ui_state::Sel::Sketch);
-    if pc.armed.cmd_kind() == 9 {
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Loft) {
         pc.loft.pick_last = back; // the selection moved there by this hand, not by a new pick: nothing to add
     }
 }
@@ -254,7 +197,7 @@ pub fn thread_let_go(pc: &mut qymcad_ui_state::PartCtx, body: Id, rim: u32) -> b
 /// selection. Reported behaviour: a face clicked a second time stayed taken and lit.
 pub fn toggle_face(pc: &mut qymcad_ui_state::PartCtx, id: Option<u32>, only_one: bool) {
     let Some(id) = id else { return };
-    if pc.armed.cmd_kind() == 7 {
+    if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::Hole) {
         return; // a hole's face is taken, moved to or let go by the point clicked - `place_hole_at`
     }
     let taken = pc.gsel.faces.remove(&id);
@@ -331,8 +274,8 @@ pub fn take_sketch_if_waiting(pc: &mut qymcad_ui_state::PartCtx) {
                         // BY KIND, because the four tools that need a sketch open through three different doors. Sending them
                         // all to `start_sketch_cmd` would open an extrude where a loft was asked for.
     match kind {
-        8 => start_sweep_cmd(pc),
-        9 => start_loft_cmd(pc),
+        qymcad_ui_state::PartTool::Sweep => start_sweep_cmd(pc),
+        qymcad_ui_state::PartTool::Loft => start_loft_cmd(pc),
         k => start_sketch_cmd(pc, k),
     }
 }
@@ -361,7 +304,7 @@ pub fn begin_contour_pick(pc: &mut qymcad_ui_state::PartCtx, slot: qymcad_ui_sta
 }
 
 pub fn enter_contour_reselect(pc: &mut qymcad_ui_state::PartCtx) {
-    let Some(si) = pc.cmd.sketch.filter(|_| matches!(pc.armed.cmd_kind(), 1 | 3)) else {
+    let Some(si) = pc.cmd.sketch.filter(|_| pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_profiles)) else {
         return;
     };
     // THE PICKER SHOWS THE SELECTED SKETCH: its regions, the ones taken lit. Reopened for editing, a feature has its
@@ -423,6 +366,9 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
     let edit_src = pc.cmd.edit.and_then(|fid| {
         pc.project.timeline.iter().find(|n| n.id == fid).and_then(|n| match n.kind {
             qymcad_core::feature::FeatureKind::Fillet { src, .. } | qymcad_core::feature::FeatureKind::Chamfer { src, .. } | qymcad_core::feature::FeatureKind::Patch { src, .. } => Some(src),
+            // a sweep runs along edges of the body it was laid on, not of the one it made: its path's, or the body it cuts
+            qymcad_core::feature::FeatureKind::Sweep { along: Some(ref a), .. } => Some(a.body),
+            qymcad_core::feature::FeatureKind::Sweep { src, .. } if src != 0 => Some(src),
             _ => None,
         })
     });
@@ -434,7 +380,7 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
     // body only from the tree selection: press Patch without selecting a part, and not a single edge could be
     // picked. To a person that is "the tool does not work", indistinguishable from having clicked the wrong place.
     let cur = edit_src.or_else(|| qymcad_ui_state::selected_body(&*pc.project, &*pc.sel)).or_else(|| {
-        if matches!(pc.armed.cmd_kind(), 4 | 5 | 32) {
+        if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_edges) {
             qymcad_ui_state::current_body(&qymcad_ui_state::DrawCtx { cam: pc.cam, set: &*pc.set, scheme: pc.scheme, project: &*pc.project, active_path: pc.active_path })
         } else {
             None
@@ -453,7 +399,7 @@ pub fn refresh_edges(pc: &mut qymcad_ui_state::PartCtx) {
         let (polys, ids) = cur
             .and_then(|b| pc.live.shapes.get(&b).map(|s| s.edges_full_smooth()))
             .map(|(p, i, _, sm)| {
-                if matches!(pc.armed.cmd_kind(), 4 | 5) {
+                if pc.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::blends_edges) {
                     // SMOOTH edges (the tangent seams of fillets) are NOT offered for a chamfer or a fillet -
                     // there is nothing there to round, and picking them only piled up red nodes
                     let (mut fp, mut fi) = (Vec::new(), Vec::new());

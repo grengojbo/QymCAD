@@ -7,8 +7,7 @@
 //! and a subassembly at (5, 10, 0) holding a pin at z 5. A plate is a 10 x 20 x 5 box.
 #[cfg(test)]
 mod tests {
-    use crate::gui::a_component_stepped_into_is_not_lit::tests::calm;
-    use crate::gui::check_folder::tests::CheckFolder;
+    use crate::gui::a_component_stepped_into_is_not_lit::tests::{brought_in, calm};
     use crate::gui::import_door::tests::{answer, click, frame, key, running, settle, spot};
     use crate::gui::App;
     use qymcad_core::feature::ComponentKind;
@@ -51,14 +50,29 @@ mod tests {
         a.iter().zip(b).all(|(x, y)| (x - y).abs() < tol)
     }
 
+    /// The name component `id` carries.
+    fn name_of(app: &App, id: Id) -> String {
+        app.project.components.iter().find(|c| c.id == id).map(|c| c.name.clone()).unwrap_or_default()
+    }
+
+    /// THE NAME THE REFERENCE'S ASSEMBLY LANDS UNDER: its own, numbered apart when the root of the document reads the
+    /// same - which it does in a Russian window, the reference being named in Russian. Measured: in a Russian window the
+    /// assembly landed as the name with " (2)", and every check looking it up by the bare name found nothing.
+    fn landed_name(app: &App) -> String {
+        let root = crate::i18n::name(&name_of(app, app.project.root));
+        if root == name(0) {
+            format!("{} (2)", name(0))
+        } else {
+            name(0).to_string()
+        }
+    }
+
     #[test]
     fn a_step_assembly_lands_as_its_tree() {
         let (mut app, ctx) = running();
         let steps = app.disk.edits.undo.len();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx); // the clone's body is built by the rebuild after the reading
-        let root = *named(&app, name(0)).first().unwrap_or_else(|| panic!("no subassembly under the file's name; the tree: {:?}", app.project.components.iter().map(|c| &c.name).collect::<Vec<_>>()));
+        let root = brought_in(&mut app, &ctx, &reference());
+        assert_eq!(name_of(&app, root), landed_name(&app), "the subassembly does not land under the file's name");
         assert_eq!(under(&app, root), [(name(1).to_string(), ComponentKind::Part), (name(1).to_string(), ComponentKind::Part), (name(2).to_string(), ComponentKind::Assembly)]);
         let unit = named(&app, name(2))[0];
         assert_eq!(under(&app, unit), [(name(3).to_string(), ComponentKind::Part)]);
@@ -87,16 +101,12 @@ mod tests {
     #[test]
     fn a_step_assembly_goes_out_as_it_came_in() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = named(&app, name(0))[0];
-        let folder = CheckFolder::new("step-export-as-it-came-in");
-        let (bodies, back) = exported(&mut app, &ctx, &folder, root, "door-out.step");
+        let root = brought_in(&mut app, &ctx, &reference());
+        let (bodies, back) = exported(&mut app, &ctx, root, "door-out.step");
         let roots: Vec<usize> = (0..back.len()).filter(|&i| back[i].parent.is_none()).collect();
         assert_eq!(
             roots.iter().map(|&i| back[i].name.as_str()).collect::<Vec<_>>(),
-            [name(0)],
+            [landed_name(&app)],
             "the subassembly does not go out under its name; the file holds {:?}",
             back.iter().map(|n| &n.name).collect::<Vec<_>>()
         );
@@ -111,14 +121,33 @@ mod tests {
         assert!(app.live.shapes.len() >= 3, "the bodies did not come back to the cache after the write");
     }
 
-    /// Component `id` written into `file` in `folder` as its row's menu writes it, and the file read back: its bodies
-    /// and its tree. Only the system's chooser is stood in for, answered with the path.
-    fn exported(app: &mut App, ctx: &egui::Context, folder: &CheckFolder, id: Id, file: &str) -> (Vec<qymcad_core::geom::Built>, Vec<qymcad_kernel::ImportNode>) {
+    /// AN ASSEMBLY NAMED AS THE ROOT OF THE DOCUMENT READS IS NUMBERED APART, and goes out under the name it carries: in
+    /// a Russian window the root reads the very name the reference's assembly carries, and two rows reading the same
+    /// could not be told apart.
+    #[test]
+    fn an_assembly_named_as_the_root_reads_is_numbered_apart() {
+        let was = qymcad_i18n::language();
+        qymcad_i18n::set_language("ru");
+        let (mut app, ctx) = running();
+        let reads = crate::i18n::name(&name_of(&app, app.project.root));
+        let root = brought_in(&mut app, &ctx, &reference());
+        let carried = name_of(&app, root);
+        let (_, back) = exported(&mut app, &ctx, root, "door-out-numbered.step");
+        qymcad_i18n::set_language(&was);
+        assert_eq!(reads, name(0), "GUARD: the root of the document reads the name of the reference's assembly");
+        assert_eq!(carried, format!("{} (2)", name(0)), "the assembly is not numbered apart from the root reading the same");
+        let roots: Vec<&str> = back.iter().filter(|n| n.parent.is_none()).map(|n| n.name.as_str()).collect();
+        assert_eq!(roots, [carried.as_str()], "the assembly does not go out under the name it carries");
+    }
+
+    /// Component `id` written into `target/step-export/<file>` as its row's menu writes it, and the file read back: its
+    /// bodies and its tree. Only the system's chooser is stood in for, answered with the path.
+    fn exported(app: &mut App, ctx: &egui::Context, id: Id, file: &str) -> (Vec<qymcad_core::geom::Built>, Vec<qymcad_kernel::ImportNode>) {
         let target = qymcad_ui_state::ExportTarget::Component(id);
         let format = qymcad_kernel::ExactFormat::Step;
         let plan = app.export_plan(target);
         let job = crate::gui::io_jobs::ExportJob { format, tree: crate::gui::io_jobs::export_tree_of(&app.project, format, target, &plan.brep), bodies: plan.brep.clone(), note: plan.note(true) };
-        let out = saved(app, ctx, folder.file(file), move |app, path| crate::gui::io_jobs::write_exact_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &job));
+        let out = saved(app, ctx, file, move |app, path| crate::gui::io_jobs::write_exact_to(&mut app.live, &mut app.project, &mut app.regen, &mut app.status, &path, &job));
         let text = std::fs::read(&out).unwrap_or_else(|e| panic!("nothing written: {e}; the status: {}", app.status));
         assert!(text.iter().all(|b| b.is_ascii()), "the names go out as raw UTF-8");
         let qymcad_kernel::ExactTree { bodies, nodes: back, .. } =
@@ -126,9 +155,12 @@ mod tests {
         (bodies, back)
     }
 
-    /// The save chooser answered with `out` and the write that follows waited out. `then` is what the menu hands the
-    /// chooser.
-    fn saved(app: &mut App, ctx: &egui::Context, out: std::path::PathBuf, then: impl FnOnce(&mut App, std::path::PathBuf) + 'static) -> std::path::PathBuf {
+    /// The save chooser answered with `target/step-export/<file>` and the write that follows waited out. `then` is what
+    /// the menu hands the chooser.
+    fn saved(app: &mut App, ctx: &egui::Context, file: &str, then: impl FnOnce(&mut App, std::path::PathBuf) + 'static) -> std::path::PathBuf {
+        let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/step-export"));
+        std::fs::create_dir_all(&dir).expect("a folder for the check");
+        let out = dir.join(file);
         let _ = std::fs::remove_file(&out);
         let (tx, rx) = std::sync::mpsc::channel();
         app.arm_file_ask(rx, then);
@@ -138,13 +170,12 @@ mod tests {
         out
     }
 
-    /// Component `id` written as the mesh file `file` in `folder` from its row's menu and read back by the door's own
-    /// reader.
-    fn exported_mesh(app: &mut App, ctx: &egui::Context, folder: &CheckFolder, id: Id, format: qymcad_ui_state::MeshFormat, file: &str) -> Vec<qymcad_io::NamedMesh> {
+    /// Component `id` written as a mesh file from its row's menu and read back by the door's own reader.
+    fn exported_mesh(app: &mut App, ctx: &egui::Context, id: Id, format: qymcad_ui_state::MeshFormat, file: &str) -> Vec<qymcad_io::NamedMesh> {
         let target = qymcad_ui_state::ExportTarget::Component(id);
         let plan = app.export_plan(target);
         let (bodies, note) = (plan.stl_bodies(), plan.note(false));
-        let out = saved(app, ctx, folder.file(file), move |app, path| {
+        let out = saved(app, ctx, file, move |app, path| {
             let job = crate::gui::io_jobs::mesh_job(&app.project, format, target, bodies, note, 0.1);
             crate::gui::io_jobs::write_mesh_to(qymcad_ui_state::editing_of!(app), &mut app.live, &path, &job)
         });
@@ -173,12 +204,8 @@ mod tests {
     #[test]
     fn a_step_assembly_goes_out_to_gltf_as_its_tree() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = named(&app, name(0))[0];
-        let folder = CheckFolder::new("step-export-gltf");
-        let back = exported_mesh(&mut app, &ctx, &folder, root, qymcad_ui_state::MeshFormat::Glb, "door-out.glb");
+        let root = brought_in(&mut app, &ctx, &reference());
+        let back = exported_mesh(&mut app, &ctx, root, qymcad_ui_state::MeshFormat::Glb, "door-out.glb");
         // THE PLATE'S GREEN TOP FACE GOES OUT GREEN, the rest of it red
         let green = back[0].tri_colors.iter().filter(|c| **c == [26, 204, 26]).count();
         let red = back[0].tri_colors.iter().filter(|c| **c == [204, 26, 26]).count();
@@ -196,7 +223,7 @@ mod tests {
         // BACK IN BY THE DOOR as the tree the file holds: the subassembly with its two plates and the unit holding the
         // pin, every part where it stands. The subassembly is found as the last one in, not by its name, which the
         // original shares.
-        answer(&mut app, &ctx, Want::Anything, &folder.file("door-out.glb").to_string_lossy());
+        answer(&mut app, &ctx, Want::Anything, concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/step-export/door-out.glb"));
         settle(&mut app, &ctx);
         calm(&mut app, &ctx);
         let top = app.project.components.iter().filter(|c| c.parent == Some(app.project.root)).map(|c| c.id).next_back().expect("the file came in");
@@ -224,12 +251,8 @@ mod tests {
     #[test]
     fn a_step_assembly_goes_out_to_3mf_as_its_parts() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, &reference());
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = named(&app, name(0))[0];
-        let folder = CheckFolder::new("step-export-3mf");
-        let back = exported_mesh(&mut app, &ctx, &folder, root, qymcad_ui_state::MeshFormat::ThreeMf, "door-out.3mf");
+        let root = brought_in(&mut app, &ctx, &reference());
+        let back = exported_mesh(&mut app, &ctx, root, qymcad_ui_state::MeshFormat::ThreeMf, "door-out.3mf");
         // THE PLATE'S GREEN TOP FACE GOES OUT GREEN, the rest of it red
         let green = back[0].tri_colors.iter().filter(|c| **c == [26, 204, 26]).count();
         let red = back[0].tri_colors.iter().filter(|c| **c == [204, 26, 26]).count();
@@ -245,7 +268,7 @@ mod tests {
         );
         assert!(near(&bounds(2), &[1.0, 6.0, 5.0, 9.0, 14.0, 17.0], 0.15), "the pin goes out at {:?}", bounds(2));
         // BACK IN BY THE DOOR: a subassembly under the file's name, its parts where the components place them
-        answer(&mut app, &ctx, Want::Anything, &folder.file("door-out.3mf").to_string_lossy());
+        answer(&mut app, &ctx, Want::Anything, concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/step-export/door-out.3mf"));
         settle(&mut app, &ctx);
         calm(&mut app, &ctx);
         let sub =
@@ -271,10 +294,8 @@ mod tests {
     #[test]
     fn an_iges_assembly_lands_as_its_tree() {
         let (mut app, ctx) = running();
-        answer(&mut app, &ctx, Want::Anything, concat!(env!("CARGO_MANIFEST_DIR"), "/../qymcad-kernel/tests/data/assembly.igs"));
-        settle(&mut app, &ctx);
-        calm(&mut app, &ctx);
-        let root = *named(&app, name(0)).first().unwrap_or_else(|| panic!("no subassembly under the file's name; the tree: {:?}", app.project.components.iter().map(|c| &c.name).collect::<Vec<_>>()));
+        let root = brought_in(&mut app, &ctx, concat!(env!("CARGO_MANIFEST_DIR"), "/../qymcad-kernel/tests/data/assembly.igs"));
+        assert_eq!(name_of(&app, root), landed_name(&app), "the subassembly does not land under the file's name");
         assert_eq!(under(&app, root), [(name(1).to_string(), ComponentKind::Part), (name(1).to_string(), ComponentKind::Part), (name(2).to_string(), ComponentKind::Assembly)]);
         let two = named(&app, name(1));
         assert_eq!(app.project.instance_origin(two[1]), two[0], "the second plate is not a clone of the first");
@@ -374,8 +395,7 @@ mod tests {
         let Ok(path) = std::env::var("QYM_CONDOR") else { return };
         let (mut app, ctx, head) = the_head(&path);
         let started = std::time::Instant::now();
-        let folder = CheckFolder::new("step-export-print-head");
-        let (bodies, back) = exported(&mut app, &ctx, &folder, head, "condor-out.step");
+        let (bodies, back) = exported(&mut app, &ctx, head, "condor-out.step");
         eprintln!("written and read back in {:.1} s", started.elapsed().as_secs_f64());
         let mut ours = Vec::new();
         parts(&app, head, &mut ours);
@@ -482,8 +502,7 @@ mod tests {
         let Ok(path) = std::env::var("QYM_CONDOR") else { return };
         let glb = matches!(format, qymcad_ui_state::MeshFormat::Glb);
         let (mut app, ctx, head) = the_head(&path);
-        let folder = CheckFolder::new("step-export-print-head-mesh");
-        let back = exported_mesh(&mut app, &ctx, &folder, head, format, file);
+        let back = exported_mesh(&mut app, &ctx, head, format, file);
         let mut ours = Vec::new();
         parts(&app, head, &mut ours);
         let name_of = |p: Id| app.project.components.iter().find(|c| c.id == p).map(|c| c.name.clone()).unwrap_or_default();

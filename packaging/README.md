@@ -105,11 +105,11 @@ on a tag.
 
 ## macOS (Apple Silicon and Intel)
 
-Two packages, `qymcad-*-macos-arm64.zip` and `qymcad-*-macos-x86_64.zip`, each built natively on a runner
+Two builds, `qymcad-*-macos-arm64` and `qymcad-*-macos-x86_64`, each built natively on a runner
 of its own kind (`macos-15` and `macos-15-intel`). The Intel runner is the last one GitHub offers and is
 supported until August 2027; after that the Intel build has to become a cross-build on Apple Silicon.
 
-The script names the archive after the processor it runs on (`uname -m`); `MACOS_ARCH=arm64|x86_64`
+The script names the packages after the processor it runs on (`uname -m`); `MACOS_ARCH=arm64|x86_64`
 overrides that.
 
 The kernel is built from source exactly as on the other two systems, then:
@@ -122,22 +122,34 @@ cargo build --release --bin qymcad
 bash packaging/macos/bundle.sh
 ```
 
+It leaves `dist/qymcad-*-macos-<arch>.dmg`, the one package for that processor: a disk image that shows the
+signed program beside a link to Applications, with the four notes under them.
+
 **What makes a mac bundle different.** A dylib carries the path it was BUILT at, baked into whatever
 loads it - so a copied library is looked for where it used to live, and the program dies on start. The
 script rewrites those paths to `@rpath` with `install_name_tool` and points `@rpath` at the bundle's own
 `Frameworks`. It then checks that nothing still names the build machine: one path left over means the
 program starts here and nowhere else, and it says so only on somebody else's computer.
 
-**The build carries no Apple signature.** macOS quarantines an unsigned download and refuses to open it:
-"the app is damaged, move it to the Bin". The Control-click-and-Open exception that worked for years is
-gone - recent releases block code with no identified-developer signature in every condition, and a tester
-on a current macOS hit exactly that. What clears it is `xattr -cr` on the `.app`, once per download; the
-notes inside the archive walk a person through it in both languages, step by step, because whoever is not
-told deletes the program instead.
+**The build is not signed by Apple.** `bundle.sh` signs it - with the project's self-signed certificate in
+CI, ad hoc otherwise - so the bundle verifies, but no certificate Apple issued vouches for it. On the first
+launch macOS refuses it: "Apple could not verify QymCAD is free of malware". System Settings -> Privacy &
+Security then lists it with an "Open Anyway" button; one press and the password, and it opens from then on.
+The notes beside the app - one per language of the program - walk a person through that step by step, because whoever is not
+told deletes the program instead. The Terminal steps (`xattr -cr`) were the way round a broken signature,
+which macOS called damaged and offered no button for; with a signature that verifies they are not needed.
 
-Nothing free removes that step: only notarisation does, and notarisation needs the paid Apple Developer
-Program. An ad-hoc signature (`codesign -s -`) does not help a quarantined app either - it is still
-blocked.
+Nothing free removes the step itself: only notarisation does, and notarisation needs the paid Apple
+Developer Program.
+
+**The certificate** is made once, by `packaging/macos/make-signing-cert.sh` on any machine with openssl. It
+asks for a password and writes into `~/.qymcad-signing`, a folder closed to other users: the `.p12`, its base64
+for the `MACOS_CERT_P12` secret, and the public `.crt`; the password is the `MACOS_CERT_PASSWORD` secret. The
+unencrypted key `openssl` writes on the way is removed however the script ends. `OUT=<folder>` names another
+folder, but never one inside a git working tree - the script refuses that, since a key there is one `git add`
+away from being published; `.gitignore` keeps `*.p12`, `*.p12.b64` and `*.key` out as a second line. A new
+certificate is a new identity, and every permission granted under the old one is asked again, so the `.p12`
+and its password are kept.
 
 **The script runs on any machine, not only on a mac.** `crates/qymcad/src/packaging_macos.rs` puts stub
 `otool` and `install_name_tool` on PATH and runs this very script over a sandbox tree, in three shapes:

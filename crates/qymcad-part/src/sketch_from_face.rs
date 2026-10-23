@@ -7,9 +7,6 @@ use qymcad_core::feature::{FaceKey, FeatureKind};
 use qymcad_core::model::{FaceSketch, FromFace, Id, PrismKind, RimBlend, RimCut};
 use qymcad_ui_state::{CmdParam, PartCtx, RedrawInHand};
 
-/// The code of the command.
-pub const SKETCH_FROM_FACE: u8 = 39;
-
 /// What Enter does, as the operation of the bar (`FeatTarget::op`) holds it.
 pub const JUST_SKETCH: u8 = 0;
 pub const REPLACE: u8 = 1;
@@ -24,7 +21,7 @@ fn height_field(val: f64) -> CmdParam {
 /// TAKE THE TOOL: it waits for a click on a flat face, or takes at once the face selected before it.
 pub fn start_sketch_from_face_cmd(pc: &mut PartCtx) {
     let before = *pc.sel;
-    pc.cmd.open(pc.armed, SKETCH_FROM_FACE, *pc.mode_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SketchFromFace, *pc.mode_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore);
     *pc.mode_3d = true;
     pc.gsel.edges.clear();
@@ -37,6 +34,7 @@ pub fn start_sketch_from_face_cmd(pc: &mut PartCtx) {
     *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-sketch-from-face"));
     if let qymcad_ui_state::Sel::Face(mesh, face) = before {
         sketch_from_face_at(pc, mesh, Some(face));
+        pc.gsel.before.spend_object(); // the face selected is the object of the tool, not a click of it
     }
 }
 
@@ -154,8 +152,8 @@ struct Laid {
 /// APPLY: the sketch taken off the face, and with Replace the boss or pocket redrawn by it, its height the field's - a
 /// number, or an expression kept on the node. Answers the body of the node, or the sketch for Sketch only; what was laid
 /// is told in words for the status line after Enter (`RecogniseTool::laid`).
-pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
-    let held = pc.recognise.redraw.clone()?;
+pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Result<Id, qymcad_ui_state::NotApplied> {
+    let held = pc.recognise.redraw.clone().ok_or_else(|| super::refused("msg-sketch-from-face"))?;
     let replace = pc.feat.op == REPLACE;
     let height = qymcad_ui_state::cmd_val(pc.cmd, "height");
     let outline = held.prism.as_ref().map(|p| p.outline.clone()).unwrap_or_default();
@@ -165,11 +163,10 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
     if pc.project.came_from_a_mesh(held.body) {
         let fit = |pts: &[qymcad_core::geom::Point2]| qymcad_meshfit::section::fit_loop(pts, &qymcad_meshfit::section::Fit::for_loop(pts));
         let Some(sketch) = pc.project.add_sketch_of_face_loops(qymcad_core::model::OfFace { body: held.body, face: held.face, fit: &fit, name }) else {
-            *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-face-no-outline"));
-            return None;
+            return Err(super::refused("msg-sketch-from-face-no-outline"));
         };
         pc.recognise.laid = told_laid(&sketch);
-        return Some(sketch.sketch);
+        return Ok(sketch.sketch);
     }
     let laid = qymcad_ui_state::with_kernel(&mut pc.rebuild(), |project, k| {
         let sketch = project.add_sketch_from_face(FromFace { body: held.body, face: held.face, profile: &profile, outline: &outline, name }, k)?;
@@ -177,19 +174,18 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Option<Id> {
         Some(Laid { sketch, node })
     });
     let Some(Laid { sketch, node }) = laid else {
-        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-face-no-outline"));
-        return None;
+        return Err(super::refused("msg-sketch-from-face-no-outline"));
     };
     if let Some(node) = node {
         if let Some(FeatureKind::Redrawn { height: h, .. }) = pc.project.timeline.iter_mut().find(|n| n.id == node).map(|n| &mut n.kind) {
             *h = height;
         }
         if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
-            return super::formula_refused(pc, &e);
+            return Err(super::formula_refused(&e));
         }
     }
     pc.recognise.laid = told_laid(&sketch);
-    node.or(Some(sketch.sketch))
+    Ok(node.unwrap_or(sketch.sketch))
 }
 
 /// What a sketch taken off a face laid, in words (`qymcad_ui_state::told_defined`).
@@ -202,7 +198,7 @@ fn told_laid(s: &FaceSketch) -> String {
 /// outline is the sketch's: a double click on the sketch edits it.
 pub fn open_redrawn(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool) {
     let FeatureKind::Redrawn { src, ref faces, height, .. } = *kind else { return };
-    pc.cmd.open(pc.armed, SKETCH_FROM_FACE, was_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SketchFromFace, was_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
     *pc.mode_3d = true;
     pc.recognise.redraw = None;

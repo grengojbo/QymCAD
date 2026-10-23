@@ -114,8 +114,19 @@ impl Project {
         let crate::feature::FeatureKind::Move { mat, .. } = &mut node.kind else { return false };
         // THE NEW MOVE GOES FIRST: what is being applied now acts on the result of what was applied
         // before. Swapped, a drag after a turn would move along the OLD axes.
+        let was = [mat[3], mat[7], mat[11]];
         *mat = crate::feature::compose12(extra, mat);
+        let now = [mat[3], mat[7], mat[11]];
         node.dirty = true;
+        // A SHIFT HELD BY A FORMULA takes the move made by hand on top of it: left alone, the formula took the part back on
+        // the next rebuild
+        if let Some(dims) = self.feat_dims.get_mut(&body) {
+            for (k, key) in ["dx", "dy", "dz"].into_iter().enumerate() {
+                if let Some(f) = dims.get_mut(key).filter(|f| !f.trim().is_empty() && (now[k] - was[k]).abs() > 1e-12) {
+                    *f = format!("({f}) + {}", crate::expr::fmt_num(now[k] - was[k]));
+                }
+            }
+        }
         true
     }
 
@@ -233,7 +244,29 @@ impl Project {
         self.push_timeline(FeatureNode {
             id: body,
             name: "feat-name-sweep".into(),
-            kind: FeatureKind::Sweep { sketch, profiles, path_sketch, path, src, op, body, pieces: Vec::new() },
+            kind: FeatureKind::Sweep { sketch, profiles, path_sketch, path, along: None, src, op, body, pieces: Vec::new() },
+            parent,
+            dirty: true,
+            suppressed: false,
+        });
+        body
+    }
+
+    /// Sweep the profile contours along edges of a body - `along`, picked by hand - instead of a sketch, with the boolean
+    /// against body `src` as in [`Project::add_sweep_multi_op`]. The picked edges are recorded by name, so the path
+    /// follows them when that body is rebuilt.
+    pub fn add_sweep_along(&mut self, sketch: Id, profiles: Vec<Id>, along: crate::feature::EdgePath, src: Id, op: u8) -> Id {
+        use crate::feature::{FeatureKind, FeatureNode};
+        let body = self.alloc_id();
+        let parent = Some(self.body_parent());
+        let picked = along.edges.query.picked_descs();
+        if !picked.is_empty() {
+            self.capture_edge_refs(body, along.body, &picked);
+        }
+        self.push_timeline(FeatureNode {
+            id: body,
+            name: "feat-name-sweep".into(),
+            kind: FeatureKind::Sweep { sketch, profiles, path_sketch: 0, path: 0, along: Some(along), src, op, body, pieces: Vec::new() },
             parent,
             dirty: true,
             suppressed: false,

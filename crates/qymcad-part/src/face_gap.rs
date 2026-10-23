@@ -8,9 +8,6 @@ use qymcad_core::model::{Exact, Gap, HoleMove, Id};
 use qymcad_meshfit::feature::{feature_at, Found, Pick};
 use qymcad_ui_state::{CmdParam, PartCtx};
 
-/// The code of the command.
-pub const FACE_GAP: u8 = 38;
-
 /// The face a size moves, as the operation of the bar (`FeatTarget::op`) holds it.
 pub const MOVE_ONE: u8 = 0;
 pub const MOVE_OTHER: u8 = 1;
@@ -50,7 +47,7 @@ fn size_field(val: f64) -> CmdParam {
 }
 
 pub fn start_face_gap_cmd(pc: &mut PartCtx) {
-    pc.cmd.open(pc.armed, FACE_GAP, *pc.mode_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::FaceGap, *pc.mode_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore);
     *pc.mode_3d = true;
     pc.gsel.edges.clear();
@@ -244,40 +241,37 @@ pub fn face_gap_holds_hole(pc: &PartCtx) -> bool {
 
 /// APPLY: the two faces made the size of the field apart, by moving the face the bar names - a number, or an expression
 /// kept on the node. A size typed as it stands changes nothing and lays nothing.
-pub fn apply_face_gap_cmd(pc: &mut PartCtx) -> Option<Id> {
+pub fn apply_face_gap_cmd(pc: &mut PartCtx) -> Result<Id, qymcad_ui_state::NotApplied> {
     let size = qymcad_ui_state::cmd_val(pc.cmd, "gap");
     let typed = pc.cmd.params.iter().any(|f| f.key == "gap" && f.txt.trim().parse::<f64>().is_err());
     if let Some(h) = hole_picked(pc) {
         if !typed && axis_off(&h.hole.exact, &h.face).is_some_and(|d| (d - size).abs() < 1e-9) {
-            *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-gap-unchanged"));
-            return None;
+            return Err(super::refused("msg-gap-unchanged"));
         }
         let node = pc.project.add_hole_moved(h.body, HoleMove { hole: h.hole, face: h.face, size });
         if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
-            return super::formula_refused(pc, &e);
+            return Err(super::formula_refused(&e));
         }
-        return Some(node);
+        return Ok(node);
     }
     let Some(p) = picked(pc) else {
-        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-face-gap"));
-        return None;
+        return Err(super::refused("msg-face-gap"));
     };
     if !typed && apart(&p.one, &p.other).is_some_and(|d| (d - size).abs() < 1e-9) {
-        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-gap-unchanged"));
-        return None;
+        return Err(super::refused("msg-gap-unchanged"));
     }
     let node = pc.project.add_face_gap(p.body, Gap { one: p.one, other: p.other, size, moves: gap_moves(pc.feat.op) });
     if let Err(e) = super::store_cmd_exprs(pc.cmd, pc.project, node) {
-        return super::formula_refused(pc, &e);
+        return Err(super::formula_refused(&e));
     }
-    Some(node)
+    Ok(node)
 }
 
 /// A DOUBLE CLICK ON A SIZE reopens the tool on it: its two faces lit on the body they stand on, the face it moves in
 /// the bar, its size in the field - an expression as it was typed - and Enter changes the node rather than laying another.
 pub fn open_face_gap(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool) {
     if let FeatureKind::HoleMoved { src, ref faces, ref face, gap, .. } = *kind {
-        pc.cmd.open(pc.armed, FACE_GAP, was_3d);
+        pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::FaceGap, was_3d);
         qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
         *pc.mode_3d = true;
         pc.recognise.feature = None;
@@ -289,7 +283,7 @@ pub fn open_face_gap(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool
         return;
     }
     let FeatureKind::FaceGap { src, ref one, ref other, gap, moves, .. } = *kind else { return };
-    pc.cmd.open(pc.armed, FACE_GAP, was_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::FaceGap, was_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
     *pc.mode_3d = true;
     let first = |r| super::live_picks(&*pc.project, src, r, true).into_iter().next();

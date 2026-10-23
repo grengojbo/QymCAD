@@ -8,6 +8,9 @@
   after the name of the program, as in every Mac program: the QymCAD menu holds About, **Settings** (Cmd+,) and
   **Quit** (Cmd+Q), the Window menu holds Minimize (Cmd+M) and Zoom. To have them in the window instead, choose
   Settings -> General -> **Menus: in the window**.
+* **The menu**: File, Edit, View, Windows, Help. **Help -> Support the author** (also a button in **Help -> About**)
+  opens the ways to support the program, each a link with its QR code: press a link to open it in the browser, or,
+  if the browser does not open, point a phone camera at its code.
 * Below it — **the path through the document**: `Assembly › Part › Sketch`. It shows where you are, and a click on a
   link takes you back up. Beside it — **Finish** (leave the sketch or the part), **ƒx Parameters**, **Snap** with the
   grid and rotation steps, **In context**.

@@ -243,7 +243,7 @@ fn a_mate_value_a_limit_and_as_built_are_part_of_the_document() {
 #[test]
 fn edits_the_key_used_to_miss_change_it() {
     use qymcad_core::feature::{AnchorRef, FaceKey, Purpose, SketchPlane};
-    use qymcad_core::model::{Constraint, Note, PlaneDef, Spline};
+    use qymcad_core::model::{Constraint, EntityKind, Handle, Note, PlaneDef, SketchEntity};
     let mut bad: Vec<String> = Vec::new();
     let mut check = |label: &str, p: &mut Project, f: &dyn Fn(&mut Project)| {
         let before = p.state_key();
@@ -273,18 +273,23 @@ fn edits_the_key_used_to_miss_change_it() {
     });
     check("the radius of a circle was changed", &mut p, &|p| {
         for e in &mut p.sketches[0].entities {
-            if let qymcad_core::model::EntityKind::Circle { r, .. } = &mut e.kind {
-                *r = 8.0;
-            }
+            e.kind.set_radius(8.0);
         }
     });
     check("a note was written in a sketch", &mut p, &|p| p.sketches[0].notes.push(Note { x: 1.0, y: 2.0, text: "check".into() }));
     check("a note was retyped", &mut p, &|p| p.sketches[0].notes[0].text = "checked".into());
     check("a spline was drawn", &mut p, &|p| {
         let pts: Vec<_> = p.sketches[0].points.iter().take(3).map(|q| q.id).collect();
-        p.sketches[0].splines.push(Spline { points: pts, tangents: vec![None; 3], closed: false, construction: false });
+        let kind = EntityKind::spline(pts, vec![Handle::default(); 3], qymcad_core::feature::Ends::Open);
+        p.sketches[0].entities.push(SketchEntity { id: 9_000_001, kind, construction: false });
     });
-    check("a tangent of a spline was set", &mut p, &|p| p.sketches[0].splines[0].tangents[1] = Some([1.0, 0.0]));
+    check("a tangent of a spline was set", &mut p, &|p| {
+        for e in &mut p.sketches[0].entities {
+            if let Some(sp) = e.kind.as_spline_mut() {
+                sp.handles[1].arrive = Some([1.0, 0.0]);
+            }
+        }
+    });
     check("two points were made level", &mut p, &|p| {
         let (pa, pb) = (p.sketches[0].points[0].id, p.sketches[0].points[1].id);
         p.sketches[0].constraints.push(Constraint::Horizontal { a: pa, b: pb });
@@ -359,6 +364,8 @@ fn what_the_program_writes_does_not_change_the_key() {
     let (pa, pb) = (p.sketches[0].points[0].id, p.sketches[0].points[1].id);
     let axis = p.add_axis_two_points(pa, pb);
     p.sketches[0].texts.push(qymcad_core::model::SketchText { id: 900, x: 0.0, y: 0.0, height: 5.0, angle: 0.0, text: "A".into(), construction: false, glyphs: Vec::new(), font: Default::default() });
+    let top = FaceKey { index: 1, centroid: [5.0, 5.0, 5.0], normal: [0.0, 0.0, 1.0], id: 7 };
+    let hole = p.add_hole_at(body, top, top.centroid, qymcad_core::model::HoleTool { kind: 0, diameter: 3.0, depth: 4.0, dia2: 0.0, depth2: 0.0 });
     let (saved, built) = (p.state_key(), p.rebuild_key());
     // what opening a document runs on it, and what solving and rebuilding a sketch does
     p.settle_loaded();
@@ -382,6 +389,11 @@ fn what_the_program_writes_does_not_change_the_key() {
     // the sketch rebound to its face under the face's new persistent id, as `rebind_lost_face_refs` does
     if let SketchPlane::Face(_, key) = &mut p.sketches[0].plane {
         key.id = 8;
+    }
+    // the rebuild keeps on a hole the shift its formulas came to (`off_u`, `off_v`); reported behaviour: the key counted
+    // it, a rebuild after a parameter changed left the step of undo before the hole moved, and redo put it back
+    if let Some(qymcad_core::feature::FeatureKind::Hole { shift, .. }) = p.timeline.iter_mut().find(|n| n.id == hole).map(|n| &mut n.kind) {
+        *shift = [1.0, 0.0];
     }
     assert_eq!(p.state_key(), saved, "what the rebuild and the solver write is not an edit");
     assert_eq!(p.rebuild_key(), built, "what the rebuild and the solver write is not an edit");

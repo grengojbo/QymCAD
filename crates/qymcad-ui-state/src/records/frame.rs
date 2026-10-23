@@ -211,12 +211,14 @@ pub enum WinKind {
     IconPackager,
     /// The errors and warnings of the document, each with the way to it - opened from the status line.
     Faults,
+    /// The ways to support the author: their links and QR codes (Help -> Support the author, and the About window).
+    Support,
 }
 
 impl WinKind {
     /// EVERY KIND, so that a walk over the windows cannot silently miss one added later. A guard checks that the
     /// count here matches the number of variants declared above.
-    pub const ALL: [WinKind; 15] = [
+    pub const ALL: [WinKind; 16] = [
         WinKind::SaveTemplate,
         WinKind::Start,
         WinKind::DocProps,
@@ -232,6 +234,7 @@ impl WinKind {
         WinKind::IconManager,
         WinKind::IconPackager,
         WinKind::Faults,
+        WinKind::Support,
     ];
 }
 
@@ -371,6 +374,24 @@ pub enum OpenEdit {
     Asking,
     /// Ctrl+Z came while it waited: its window cancels it on its next frame.
     AskingDropped,
+    /// The values of a box at the geometry tried on the document as they are typed: Enter keeps them as one step, Esc
+    /// takes them back with no step.
+    Trying,
+}
+
+/// THE HISTORY OF THE SKETCH OPEN FOR EDITING, inside the history of the document: undo goes no deeper than `floor`, and
+/// closing the sketch folds the steps from `fold_from` up into one step of the document.
+pub struct SketchHistory {
+    pub sketch: Id,
+    /// The first step of the session: the one that made the sketch, when it was made right now, otherwise its first
+    /// edit.
+    pub fold_from: usize,
+    /// The depth undo stops at; None while the operation that opened the sketch is still open (the step making a new
+    /// sketch lands when it closes, and is not undone from inside the sketch).
+    pub floor: Option<usize>,
+    /// The steps to redo the document held when the sketch was opened: inside the sketch redo walks the sketch's
+    /// steps only, and these come back when the session leaves the document as it found it.
+    pub outer_redo: Vec<Step>,
 }
 
 /// UNDO, REDO AND WHAT IS SAVED: the history of the document and how far it has been written to disk.
@@ -386,6 +407,8 @@ pub struct Edits {
     pub depth: usize,
     /// What the open edit is: work in hand or a question waiting for its answer.
     pub open_kind: OpenEdit,
+    /// The history of the sketch being edited, None out of a sketch.
+    pub sketch: Option<SketchHistory>,
     pub committed_key: u64,
     /// The places that change the document past `App::edit` - they are gathered during real work and converted one
     /// at a time. A field rather than a global flag: the debt belongs to the session, not to the process.
@@ -415,6 +438,7 @@ impl Edits {
         self.open = None;
         self.depth = 0;
         self.open_kind = OpenEdit::Working;
+        self.sketch = None;
         self.ready = false;
     }
 }
@@ -428,6 +452,7 @@ impl Default for Edits {
             open: None,
             depth: 0,
             open_kind: OpenEdit::Working,
+            sketch: None,
             committed_key: 0,
             #[cfg(debug_assertions)]
             debt: std::collections::HashSet::new(),

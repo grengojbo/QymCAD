@@ -39,14 +39,14 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
     }
     check_all(hand.app, "the printed plate brought in as a mesh", problems);
     hand.look_at([520.0, 15.0, 5.0], 8.0);
-    hand.tool(35).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::Recognise).frame(Vec::new());
     hand.click([505.0, 5.0, 10.0]).frame(Vec::new());
     let as_it_is = crate::i18n::tr("cmd-recognise-asis");
     hand.press_word(&as_it_is, egui::pos2(0.0, 0.0));
     hand.enter();
     at_rest(&mut hand);
     check_all(hand.app, "the printed plate made a polyhedron", problems);
-    hand.tool(qymcad_part::RECOGNISE_FEATURE).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::RecogniseFeature).frame(Vec::new());
     hand.click([520.0, 20.0, 7.0]).frame(Vec::new());
     if hand.app.params.recognise.feature.is_none() {
         problems.push(format!("a click on the wall of the printed hole found no feature: {}", hand.app.status));
@@ -84,7 +84,7 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
     hand.key(egui::Key::Escape).frame(Vec::new());
     // the hole moved 10 from the front side with "Size on body", as a person does it: its wall clicked, then the
     // front side - 15 from the axis - 10 typed, Enter: the plate holds as much, the wall stands about y = 10
-    hand.tool(qymcad_part::FACE_GAP).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::FaceGap).frame(Vec::new());
     hand.click([520.0, 18.0, 9.0]).frame(Vec::new());
     hand.click([530.0, 0.0, 5.0]).frame(Vec::new());
     let field = hand.app.tools.cmd.params.iter().find(|p| p.key == "gap").map(|p| p.val);
@@ -109,7 +109,7 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
     hand.key(egui::Key::Escape).frame(Vec::new());
     // the hole taken off, as a person does it: the tool switched to "Take off" in its bar, the wall clicked, Enter -
     // the plate whole again, one node more
-    hand.tool(qymcad_part::RECOGNISE_FEATURE).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::RecogniseFeature).frame(Vec::new());
     let off = crate::i18n::tr("cmd-remade-off");
     if !hand.press_word(&off, egui::pos2(0.0, 0.0)) {
         problems.push(format!("the bar of \"Recognise feature\" offers no {off:?}"));
@@ -139,7 +139,7 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
     hand.key(egui::Key::Escape).frame(Vec::new());
     // the plate made 12 thick with "Size on body", as a person does it: its top clicked, the view turned, its
     // bottom clicked, 12 typed, Enter - the top moves, one node more
-    hand.tool(qymcad_part::FACE_GAP).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::FaceGap).frame(Vec::new());
     hand.click([505.0, 5.0, 10.0]).frame(Vec::new());
     let seen = (hand.app.viewing.cam.yaw, hand.app.viewing.cam.pitch);
     hand.look_from_below();
@@ -169,7 +169,7 @@ pub(super) fn a_printed_part_comes_back_as_a_mesh(app: &mut App, problems: &mut 
     hand.key(egui::Key::Escape).frame(Vec::new());
     // a sketch taken off the top of the plate with "Sketch from face": nothing stands on it to redraw, so Enter
     // lays the sketch alone - its outline, fully defined - and the body stays as it is
-    hand.tool(qymcad_part::SKETCH_FROM_FACE).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromFace).frame(Vec::new());
     hand.click([505.0, 5.0, 12.0]).frame(Vec::new());
     let nodes = hand.app.project.timeline.len();
     let sketches = hand.app.project.sketches.len();
@@ -204,8 +204,8 @@ fn a_circle_drawn_on_it_is_fully_defined(hand: &mut crate::gui::hand::Hand, si: 
     let pts = &hand.app.project.sketches[si].points;
     let n = pts.len().max(1) as f64;
     let middle = pts.iter().fold((0.0, 0.0), |(x, y), p| (x + p.x / n, y + p.y / n));
-    hand.sk_tool(3).click2d(middle.0, middle.1).click2d(middle.0 + 3.0, middle.1);
-    hand.sk_tool(0);
+    hand.sk_tool(qymcad_ui_state::SketchShape::Circle).click2d(middle.0, middle.1).click2d(middle.0 + 3.0, middle.1);
+    hand.sk_select();
     let free = hand.app.project.sketch_dof(si).0;
     hand.hover2d(middle.0, middle.1);
     if !hand.press_hint(&crate::i18n::tr("tb-fully-define-hint")) {
@@ -228,13 +228,13 @@ fn a_circle_drawn_on_it_is_fully_defined(hand: &mut crate::gui::hand::Hand, si: 
 /// there, defined to the end. A plate come from a mesh is drawn by its section however much has been done to it since.
 fn a_section_of_the_plate_is_drawn(hand: &mut crate::gui::hand::Hand, problems: &mut Vec<String>) {
     let sketches = hand.app.project.sketches.len();
-    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromSection).frame(Vec::new());
     hand.click([505.0, 5.0, 12.0]).frame(Vec::new());
     hand.enter();
     check_all(hand.app, "the printed plate drawn by its section", problems);
     let laid = hand.app.project.sketches.len() == sketches + 1;
     let drawn = hand.app.project.sketches.last().filter(|_| laid).map(|s| {
-        let circles = s.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).count();
+        let circles = s.entities.iter().filter(|e| e.kind.as_circle().is_some()).count();
         (s.entities.len(), circles)
     });
     let free = hand.app.project.sketch_dof(hand.app.project.sketches.len() - 1).0;
@@ -244,7 +244,7 @@ fn a_section_of_the_plate_is_drawn(hand: &mut crate::gui::hand::Hand, problems: 
     hand.key(egui::Key::Escape).frame(Vec::new());
     // and off its front: the body held by its top, the front clicked is the plane the section is moved off - through
     // the middle, 15 behind it - and the sketch, the plate's side of 40 x 12, lies on a datum plane off the front
-    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromSection).frame(Vec::new());
     hand.click([505.0, 5.0, 12.0]).frame(Vec::new());
     hand.click([530.0, 0.0, 6.0]).frame(Vec::new());
     hand.enter();
@@ -286,7 +286,7 @@ fn every_feature_of_a_step_is_made_exact(hand: &mut crate::gui::hand::Hand, prob
     }
     check_all(hand.app, "the plate of the STEP brought in", problems);
     hand.look_at([630.0, 20.0, 5.0], 6.0);
-    hand.tool(qymcad_part::RECOGNISE_ALL).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::RecogniseAll).frame(Vec::new());
     hand.click([640.0, 32.0, 10.0]).frame(Vec::new());
     let groups = hand.app.params.recognise.all.as_ref().map_or(0, |a| a.groups.len());
     if groups != 5 {

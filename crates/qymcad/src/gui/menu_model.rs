@@ -47,6 +47,8 @@ pub(crate) enum MenuAction {
     ConnectClaude,
     Report,
     About,
+    /// The ways to support the author.
+    Support,
 }
 
 /// A colour scheme the View menu offers: its stable identifier and how it is marked.
@@ -481,6 +483,7 @@ fn help_menu(state: &MenuState) -> TopMenu {
     nodes.push(MenuNode::Item(item(MenuAction::ConnectClaude, "help-connect-claude")));
     nodes.push(MenuNode::Item(item(MenuAction::Report, "help-report")));
     nodes.push(MenuNode::Item(item(MenuAction::About, "help-about")));
+    nodes.push(MenuNode::Item(item(MenuAction::Support, "help-support")));
     top(MenuRole::Help, nodes)
 }
 
@@ -534,6 +537,7 @@ pub(crate) fn apply_menu_action(action: &MenuAction, bc: &mut BarCtx, ctx: &egui
         MenuAction::ConnectClaude => bc.win.open(WinKind::Claude),
         MenuAction::Report => bc.win.open(WinKind::Report),
         MenuAction::About => bc.win.open(WinKind::About),
+        MenuAction::Support => bc.win.open(WinKind::Support),
     }
 }
 
@@ -702,6 +706,8 @@ mod tests {
     fn the_menu_undoes_the_step_it_names() {
         let mut app = App::default();
         app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        // the sketch closed: inside one undo stops at its first step, the step that opened it
+        app.finish_sketch_edit();
         let steps = app.disk.edits.undo.len();
         let name = app.disk.edits.undo.last().expect("setup: making a sketch is a step").name.clone();
         let mut hand = Hand::new(&mut app);

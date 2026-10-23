@@ -166,7 +166,7 @@ mod cores {
         assert!(built >= 2, "the places that build a kernel for work are no longer found by this check ({built})");
         assert_eq!(built, told, "a rebuild builds a kernel without saying how many cores it may take");
         // the rebuild of the document module says it only when the caller hands the number over: the window always does
-        let runs: Vec<&str> = ui.lines().filter(|l| !l.trim_start().starts_with("//") && l.contains("qymcad_doc::regen::run(")).collect();
+        let runs: Vec<&str> = ui.lines().filter(|l| !l.trim_start().starts_with("//") && (l.contains("qymcad_doc::regen::run(") || l.contains("qymcad_doc::regen::run_unless("))).collect();
         assert!(!runs.is_empty(), "the window's rebuild through the document module is no longer found by this check");
         for l in runs {
             assert!(l.contains("Some(rc.set.kernel_threads)"), "the window rebuilds without handing over how many cores the kernel may take: {}", l.trim());

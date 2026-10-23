@@ -27,6 +27,7 @@ pub static SECTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/09-viewport",
     not_applicable: &[
@@ -82,6 +83,7 @@ pub static MEASURE_3D: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/11-measure",
     not_applicable: READS,
@@ -103,8 +105,8 @@ pub static RECOGNISE: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "cmd-recognise-exact", clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] }) },
-        Mode { word: "cmd-recognise-asis", clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 }) },
+        Mode { word: "cmd-recognise-exact", arg: None, clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 10.0] }) },
+        Mode { word: "cmd-recognise-asis", arg: None, clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 }) },
     ]],
     result: Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 },
     node: "MeshRecognised", // the node of the timeline is named by what it holds: a mesh recognised
@@ -116,6 +118,7 @@ pub static RECOGNISE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/26-recognise",
     not_applicable: &[
@@ -151,8 +154,8 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     words: &[],
     fields: &[Field { caption: "f-diameter", by_placeholder: false, when: When::Before, class: Class::Length, typical: 20.0, lo: 0.1, hi: 29.0, zero: false, negative: false, outcome: drilled_again }],
     modes: &[&[
-        Mode { word: "cmd-remade-exact", clicks: None, outcome: Some(drilled_again(20.0)) },
-        Mode { word: "cmd-remade-off", clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 }) },
+        Mode { word: "cmd-remade-exact", arg: None, clicks: None, outcome: Some(drilled_again(20.0)) },
+        Mode { word: "cmd-remade-off", arg: None, clicks: None, outcome: Some(Outcome::Bodies { count: 1, volume: 12000.0, largest: 12000.0 }) },
     ]],
     result: drilled_again(20.0),
     node: "Remade",
@@ -164,12 +167,14 @@ pub static RECOGNISE_FEATURE: Tool = Tool {
     dependency: Some(Node { kind: "MeshSolid", row: Some("feat-name-mesh-solid") }),
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/28-recognise-feature",
     not_applicable: &[
         Skip { point: 14, why: "nothing of a timeline stands above an imported mesh" },
         Skip { point: 16, why: "the fixture builds its own project from the start: there is no second part to take it in" },
         Skip { point: 17, why: "a hole wider than the block is refused by the bounds of the field; the kernel has nothing else to refuse here" },
+        Skip { point: 27, why: "the first row of its box is the tolerance the mesh is read with: the node made exact keeps no tolerance to reopen" },
     ],
 };
 
@@ -199,6 +204,7 @@ pub static RECOGNISE_ALL: Tool = Tool {
     dependency: Some(Node { kind: "MeshSolid", row: Some("feat-name-mesh-solid") }),
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/32-recognise-all",
     not_applicable: &[
@@ -228,9 +234,9 @@ pub static FACE_GAP: Tool = Tool {
     words: &[],
     fields: &[Field { caption: "f-gap", by_placeholder: false, when: When::After, class: Class::Length, typical: 8.0, lo: 0.01, hi: 100000.0, zero: false, negative: false, outcome: gapped }],
     modes: &[&[
-        Mode { word: "cmd-gap-one", clicks: None, outcome: Some(gapped(8.0)) },
-        Mode { word: "cmd-gap-other", clicks: None, outcome: Some(Outcome::Body { volume: 13200.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 15.0] }) },
-        Mode { word: "cmd-gap-both", clicks: None, outcome: Some(Outcome::Body { volume: 15000.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 16.5] }) },
+        Mode { word: "cmd-gap-one", arg: None, clicks: None, outcome: Some(gapped(8.0)) },
+        Mode { word: "cmd-gap-other", arg: None, clicks: None, outcome: Some(Outcome::Body { volume: 13200.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 15.0] }) },
+        Mode { word: "cmd-gap-both", arg: None, clicks: None, outcome: Some(Outcome::Body { volume: 15000.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 16.5] }) },
     ]],
     result: gapped(8.0),
     node: "FaceGap",
@@ -248,9 +254,13 @@ pub static FACE_GAP: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/29-face-gap",
-    not_applicable: &[Skip { point: 17, why: "a size the faces cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse" }],
+    not_applicable: &[
+        Skip { point: 17, why: "a size the faces cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse" },
+        Skip { point: 27, why: "the field opens at the distance the faces stand at: that number given back by a formula moves nothing, and a node that moves nothing is no result" },
+    ],
 };
 
 /// The bossed block with its boss redrawn `h` high above the top of the block.
@@ -285,7 +295,10 @@ pub static SKETCH_FROM_FACE: Tool = Tool {
         outcome: redrawn,
     }],
     // a mode taken leaves the height as found: the boss redrawn as it stood, or only its sketch laid - one body either way
-    modes: &[&[Mode { word: "cmd-sketch-replace", clicks: None, outcome: Some(redrawn(5.0)) }, Mode { word: "cmd-sketch-only", clicks: None, outcome: Some(redrawn(5.0)) }]],
+    modes: &[&[
+        Mode { word: "cmd-sketch-replace", arg: None, clicks: None, outcome: Some(redrawn(5.0)) },
+        Mode { word: "cmd-sketch-only", arg: None, clicks: None, outcome: Some(redrawn(5.0)) },
+    ]],
     result: redrawn(5.0),
     node: "Redrawn",
     inputs: &["Sketch"],
@@ -302,6 +315,7 @@ pub static SKETCH_FROM_FACE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/30-sketch-from-face",
     not_applicable: &[Skip { point: 17, why: "a height the boss cannot stand at is refused by the bounds of its field; past them there is nothing for the kernel to refuse" }],
@@ -351,6 +365,7 @@ pub static SKETCH_FROM_SECTION: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/31-sketch-from-section",
     not_applicable: &[
@@ -402,6 +417,7 @@ pub static PIECE_TO_PART: Tool = Tool {
     dependency: Some(Node { kind: "SplitBody", row: Some("feat-name-split-body") }),
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/13-split-body",
     not_applicable: &[

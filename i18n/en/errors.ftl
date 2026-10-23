@@ -129,6 +129,7 @@ error-sweep-profile-missing = The sweep profile was not found
 error-sweep-path-missing = The sweep path was not found
 error-no-isolated-points-for-holes = The sketch has no isolated points to place holes at
 error-no-points-for-holes = No points to place holes at
+error-recess-not-wider = Recess Ø{ $recess } is not wider than the hole Ø{ $hole }: set the recess wider than the hole
 
 ## Reference planes
 
@@ -186,7 +187,7 @@ error-thread-not-its-size = A thread of Ø{ $nominal } does not fit a face of Ø
 warn-edges-dropped = { $dropped } of the { $asked } edges could not be taken and are left sharp; the rest are done — double-click the node to pick other edges or another size
 warn-ref-found-by-place = A reference of this step was not found by its name: it was taken by its position, or as the other piece of the face it was cut from — check that the right face or edge is taken, then press Accept in the properties, or pick it again
 warn-import-kept-as-it-came = The body brought in from the file did not pass the checks and could not be repaired, so it is kept exactly as the file holds it; an operation on it may refuse — open the file in the program that made it and export it again, or check its tolerance
-warn-built-stepped-back = Built a hair short of its size, by no more than 0.001%: at exactly this size a face disappears whole — if the exact size matters, make it slightly smaller or larger than that face
+warn-built-stepped-back = Built a hair short of its size, by no more than 0.001%: at exactly this size a face disappears whole — if the exact size matters, make it slightly smaller than that face
 error-thread-removed-nothing = The thread removed nothing ({ $before } -> { $after } mm³) — check the chosen face, pitch and length
 error-thread-failed = The thread did not build (check pitch, length and diameter)
 error-auger-rim-not-found = The shaft rim (a circular edge) was not found
@@ -342,6 +343,8 @@ io-svg-write-failed = SVG: writing failed: { $v }
 io-dxf-empty-sketch = DXF: the sketch is empty
 io-dxf-write-failed = DXF: writing failed: { $v }
 error-edges-not-found = Not one of the { $asked } named edges is left in the body. Their names came from an operation higher in the timeline and it has changed — pick the edges again.
+error-path-edges-lost = The path lost { $lost } of its { $asked } edges: the body they were on was rebuilt without them — pick the edges of the path again
+error-path-edges-apart = The edges of the path do not join end to end into one chain — pick edges that follow one another
 error-described-edges-not-found = The edges were picked through a face or an edge that is no longer in the body: an operation higher in the timeline has changed it — pick the edges again.
 error-op-failed-patch = A surface will not span these edges
 error-shell-thickness-over-round = A { $t } mm wall is thicker than the smallest round on the body ({ $r } mm): the offset consumes it entirely and the shell cannot be built. Use a wall thinner than { $r } mm or enlarge the round

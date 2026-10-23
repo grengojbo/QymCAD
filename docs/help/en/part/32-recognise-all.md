@@ -11,8 +11,8 @@ a STEP, on a recognised body and on a body made of a mesh.
    is taken at once.
 3. What was found is lit, and a list of groups appears beside the body: **Holes Ø5 through: 3**, **Chamfers 1: 4**,
    **Roundings R2: 8**. Each group has a size field, a number or a formula.
-4. Untick a group that should be left alone. A click on a feature in the view leaves out only that feature; a second
-   click takes it back. Point at a row to light that group alone.
+4. Press the name of a group that should be left alone: it goes dark and is not taken; a second press takes it back.
+   A click on a feature in the view leaves out only that feature; a second click takes it back.
 5. **Enter** makes what is taken exact; **Esc** cancels.
 
 ## What comes out
@@ -28,9 +28,9 @@ a STEP, on a recognised body and on a body made of a mesh.
 
 - **No hole, rounding or chamfer was found on this body** - the body has no round walls and no slanted faces between
   two faces. Recognise a mesh body first.
-- **... does not lay: ...** beside a group - the program could not lay that group and has unticked it; the rest is made.
+- **... does not lay: ...** under the list - the program could not lay that group and has left it out; the rest is made.
   Such a group can be made on its own afterwards: [Recognise feature](part/28-recognise-feature) on one of its
   features, or [Fillet](part/05-fillet) or [Chamfer](part/06-chamfer).
 - **Curved faces left as they are** - some curved faces were not recognised as a hole, a rounding or a chamfer: they
   stay as they are.
-- **Nothing is taken** - tick at least one group or click a feature.
+- **Nothing is taken** - press the name of at least one group or click a feature.

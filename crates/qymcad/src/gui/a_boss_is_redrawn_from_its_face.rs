@@ -53,7 +53,7 @@ mod tests {
         }
         let before = h.app.live.shapes.get(&body).map(|s| s.volume()).expect("the plate is live");
         h.look_at([25.0, 20.0, 10.0], 6.0).frame(Vec::new());
-        h.tool(qymcad_part::SKETCH_FROM_FACE).click([25.0, 20.0, 13.0]).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).click([25.0, 20.0, 13.0]).frame(Vec::new());
         assert!(h.app.params.recognise.redraw.as_ref().is_some_and(|r| r.prism.is_some()), "the top of the boss clicked found no boss: {}", h.app.status);
         // what Enter takes off is seen before it: the faces of the boss filled
         let lit = h.app.scheme.pal.selected();
@@ -75,6 +75,6 @@ mod tests {
         let si = h.app.project.sketches.len() - 1;
         assert_eq!(h.app.project.sketch_dof(si), (0, 0), "the sketch is not fully defined");
         assert!(h.app.status.words.contains(&crate::i18n::tr("dof-fully-defined")), "the status does not say the sketch is fully defined: {}", h.app.status);
-        assert_eq!(h.app.tools.armed.cmd_kind(), qymcad_part::SKETCH_FROM_FACE, "the tool did not stay in hand");
+        assert_eq!(h.app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::SketchFromFace), "the tool did not stay in hand");
     }
 }

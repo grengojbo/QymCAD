@@ -65,8 +65,8 @@ pub static PROJECT_BODY: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-edge", clicks: None, outcome: Some(PROJECTED_EDGE) },
-        Mode { word: "opt-face-outline", clicks: Some(&[(20.0, 15.0)]), outcome: Some(PROJECTED_FACE) },
+        Mode { word: "opt-edge", arg: None, clicks: None, outcome: Some(PROJECTED_EDGE) },
+        Mode { word: "opt-face-outline", arg: None, clicks: Some(&[(20.0, 15.0)]), outcome: Some(PROJECTED_FACE) },
     ]],
     result: PROJECTED_EDGE,
     node: "Sketch",
@@ -78,6 +78,7 @@ pub static PROJECT_BODY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // one tool, one article: the projection of edges and of a body are the same tool (the owner's word of 26.09)
     help: "sketch/15-project",

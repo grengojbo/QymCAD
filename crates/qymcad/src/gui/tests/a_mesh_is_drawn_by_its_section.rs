@@ -54,7 +54,7 @@ fn the_plate_clicked_and_enter_lay_a_sketch_of_its_section() {
     let Printed { mut app, _folder } = a_printed_plate();
     let mut hand = Hand::new(&mut app);
     let sketches = hand.app.project.sketches.len();
-    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromSection).frame(Vec::new());
     hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
     // before Enter: the section counted in the bar, nothing laid
     use qymcad_core::geom::{Fitted, Piece, Point2};
@@ -73,7 +73,7 @@ fn the_plate_clicked_and_enter_lay_a_sketch_of_its_section() {
     for want in [10.0, 30.0, 40.0] {
         assert!(sizes.iter().any(|s| (s - want).abs() < 1e-9), "no size of {want} among {sizes:?}");
     }
-    assert_eq!(hand.app.tools.armed.cmd_kind(), qymcad_part::SKETCH_FROM_SECTION, "the tool did not stay in hand");
+    assert_eq!(hand.app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::SketchFromSection), "the tool did not stay in hand");
     // ENTER AGAIN DRAWS NOTHING TWICE, and another offset is the next section with the fields held - the body and the
     // plane. Reported by the contract: the fields were read after the command was emptied, and the second Enter cut the
     // body at 0 with a tolerance of 0, along its bottom face: 49 lines.
@@ -85,7 +85,7 @@ fn the_plate_clicked_and_enter_lay_a_sketch_of_its_section() {
     at_rest(&mut hand);
     assert_eq!(hand.app.project.sketches.len(), sketches + 2, "another offset laid no sketch: {}", hand.app.status);
     let again = &hand.app.project.sketches[sketches + 1];
-    let circles = again.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).count();
+    let circles = again.entities.iter().filter(|e| e.kind.as_circle().is_some()).count();
     assert_eq!((again.entities.len(), circles), (5, 1), "the second section is not the rectangle and the hole");
     hand.key(egui::Key::Escape);
 }
@@ -97,14 +97,14 @@ fn the_top_of_the_printed_plate_is_drawn_with_its_hole_a_circle() {
     let Printed { mut app, _folder } = a_printed_plate();
     let mut hand = Hand::new(&mut app);
     let sketches = hand.app.project.sketches.len();
-    hand.tool(qymcad_part::SKETCH_FROM_FACE).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromFace).frame(Vec::new());
     hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
     hand.key(egui::Key::Enter);
     at_rest(&mut hand);
     assert_eq!(hand.app.project.sketches.len(), sketches + 1, "Enter laid no sketch: {}", hand.app.status);
     let si = hand.app.project.sketches.len() - 1;
     let s = &hand.app.project.sketches[si];
-    let circles = s.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Circle { .. })).count();
+    let circles = s.entities.iter().filter(|e| e.kind.as_circle().is_some()).count();
     assert_eq!((s.entities.len(), circles), (5, 1), "the top is not drawn as its rectangle and its hole: {} curves, {circles} circles", s.entities.len());
     assert_eq!(hand.app.project.sketch_dof(si).0, 0, "the sketch of the top is left free: {}", hand.app.status);
 }
@@ -118,7 +118,7 @@ fn a_flat_face_clicked_is_the_plane_the_section_is_moved_off() {
     let Printed { mut app, _folder } = a_printed_plate();
     let mut hand = Hand::new(&mut app);
     let sketches = hand.app.project.sketches.len();
-    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromSection).frame(Vec::new());
     hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
     hand.click([30.0, 0.0, 5.0]).frame(Vec::new());
     let offset = hand.app.tools.cmd.params.iter().find(|f| f.key == "offset").map(|f| f.val);
@@ -134,7 +134,7 @@ fn a_flat_face_clicked_is_the_plane_the_section_is_moved_off() {
     let frame = hand.app.project.sketch_frame(si).expect("the sketch has a frame");
     assert!((frame.origin[1] - 5.0).abs() < 1e-6, "the section is not taken 5 behind the front: {:?}", frame.origin);
     let s = &hand.app.project.sketches[si];
-    let lines = s.entities.iter().filter(|e| matches!(e.kind, qymcad_core::model::EntityKind::Line { .. })).count();
+    let lines = s.entities.iter().filter(|e| e.kind.as_line().is_some()).count();
     assert_eq!((s.entities.len(), lines), (4, 4), "the section is not the plate's side of 40 x 10");
     assert_eq!(hand.app.project.sketch_dof(si).0, 0, "the sketch of the section is left free: {}", hand.app.status);
     hand.key(egui::Key::Escape);
@@ -151,7 +151,7 @@ fn a_datum_plane_clicked_is_the_plane_the_section_is_moved_off() {
     let datum = hand.app.project.add_plane(qymcad_core::model::WorkPlane { origin: [0.0, 0.0, 2.0], normal: [0.0, 0.0, 1.0], def, ..Default::default() });
     hand.frame(Vec::new());
     let sketches = hand.app.project.sketches.len();
-    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromSection).frame(Vec::new());
     hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
     let half = qymcad_ui_state::plane_pick_half_size(&hand.app.painting());
     hand.click([-0.6 * half, -0.6 * half, 2.0]).frame(Vec::new());
@@ -185,7 +185,7 @@ fn the_view_is_cut_where_the_section_is_taken() {
     let scene = |app: &App| crate::gui::render_scene::gpu_scene_flat(&app.painting()).0.len();
     let differ = |a: &egui::ColorImage, b: &egui::ColorImage| a.pixels.iter().zip(&b.pixels).filter(|(p, q)| p != q).count();
     let (whole, whole_scene) = (picture(hand.app), scene(hand.app));
-    hand.tool(qymcad_part::SKETCH_FROM_SECTION).frame(Vec::new());
+    hand.tool(qymcad_ui_state::PartTool::SketchFromSection).frame(Vec::new());
     hand.click([5.0, 5.0, 10.0]).frame(Vec::new());
     let cut = hand.app.painting().cut().plane;
     assert!(cut.is_some_and(|(o, n)| (o[2] - 5.0).abs() < 1e-9 && (n[2] - 1.0).abs() < 1e-9), "the view is cut at {cut:?}, not 5 up along Z");

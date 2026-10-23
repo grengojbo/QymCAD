@@ -46,6 +46,13 @@ pub fn private_sample(name: &str) -> Option<String> {
 
 /// DOES THE SKETCH SAY IT HOLDS MORE THAN IT NEEDS: the line of its panel that counts the redundant constraints whose
 /// values agree - the program's own word that they are kept as references, not an error.
+/// THE FIELDS OF VALUES ON SCREEN, the fields of the names of drivers beside them left out: a box lays its value and,
+/// in the same row, the name a formula reads it by - the name shows its own grey words.
+pub fn value_fields(s: &mut qymcad::Session) -> Vec<qymcad::Widget> {
+    let name = s.word("sk-name-placeholder");
+    s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField && w.placeholder != name).collect()
+}
+
 pub fn says_redundant(s: &mut qymcad::Session) -> bool {
     let line = s.word("sk-redundant-n");
     let lead = line.split('{').next().unwrap_or_default().trim().to_string();
@@ -54,7 +61,7 @@ pub fn says_redundant(s: &mut qymcad::Session) -> bool {
 
 /// WHAT A PERSON BUILDS FIRST, built the way a person builds it: every step a gesture in the window.
 pub mod build {
-    use qymcad::{pos2, Key, Modifiers, PointerButton, Session};
+    use qymcad::{pos2, Key, Modifiers, PointerButton, Rect, Session};
 
     /// THE PART OF A FIRST START, OPEN FOR BUILDING: the start screen put away with Esc, the part entered with a
     /// double click on its row in the tree.
@@ -183,13 +190,19 @@ pub mod build {
         // the row is sought beside the table's own button: the same name can stand elsewhere, in a field that uses it
         let add = s.word("par-add");
         let near = s.find(&add, pos2(640.0, 400.0)).map_or(pos2(640.0, 400.0), |r| r.center());
-        let row = s.find(name, near).unwrap_or_else(|| panic!("the table shows no parameter {name:?}; on screen: {:?}", s.words()));
-        let field = s
-            .widgets()
-            .into_iter()
-            .filter(|w| w.kind == qymcad::Kind::TextField && w.rect.center().y > row.min.y && w.rect.center().y < row.max.y && w.rect.min.x > row.max.x)
-            .min_by(|a, b| a.rect.min.x.total_cmp(&b.rect.min.x))
-            .unwrap_or_else(|| panic!("the row of {name:?} has no field to write an expression in; on screen: {:?}", s.words()));
+        // OF THE PLACES THE NAME IS WRITTEN, the one with a field after it on its line: the formula of a field of a box or
+        // of the properties may read the same name
+        let fields: Vec<qymcad::Widget> = s.widgets().into_iter().filter(|w| w.kind == qymcad::Kind::TextField).collect();
+        let after = |row: &qymcad::Rect| {
+            fields.iter().filter(|w| w.rect.center().y > row.min.y && w.rect.center().y < row.max.y && w.rect.min.x > row.max.x).min_by(|a, b| a.rect.min.x.total_cmp(&b.rect.min.x)).cloned()
+        };
+        let rows: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(w, _)| w == name).map(|(_, r)| r).collect();
+        let field = rows
+            .iter()
+            .filter_map(|r| after(r).map(|f| (r.center().distance(near), f)))
+            .min_by(|a, b| a.0.total_cmp(&b.0))
+            .map(|(_, f)| f)
+            .unwrap_or_else(|| panic!("the table shows no parameter {name:?} with a field to write an expression in; on screen: {:?}", s.words()));
         s.click(field.rect.center()).chord(qymcad::Modifiers::COMMAND, Key::A).type_text(expr).key(Key::Enter);
         let title = s.word("win-params");
         s.close_window(&title);
@@ -203,6 +216,24 @@ pub mod build {
         s.press_hint(&delete);
         let title = s.word("win-params");
         s.close_window(&title);
+    }
+
+    /// Open the right-button menu on `row` and answer what stands in it under `key`, and whether it may be pressed.
+    pub fn menu_item(s: &mut Session, row: Rect, key: &str) -> qymcad::Widget {
+        s.click_with(row.center(), PointerButton::Secondary, Modifiers::default());
+        let word = s.word(key);
+        s.widgets()
+            .into_iter()
+            .filter(|w| w.label.contains(&word))
+            .min_by(|a, b| a.rect.center().distance(row.center()).total_cmp(&b.rect.center().distance(row.center())))
+            .unwrap_or_else(|| panic!("the menu of the row offers no {word:?}; on screen: {:?}", s.words()))
+    }
+
+    /// Press what stands under `key` in the right-button menu of `row`.
+    pub fn press_in_the_menu(s: &mut Session, row: Rect, key: &str) {
+        let item = menu_item(s, row, key);
+        assert!(item.enabled, "{:?} of the menu cannot be pressed", item.label);
+        s.click(item.rect.center());
     }
 
     /// OPEN THE PROJECT AT `path` as a person does: File, Open project, past the question about unsaved work if it
@@ -246,6 +277,22 @@ pub mod build {
         s.press_word(&finish);
         let extrude = s.word("tb-extrude-hint");
         s.press_hint(&extrude).key(Key::Enter);
+    }
+
+    /// THE NODE OPENED AGAIN BY A DOUBLE CLICK ON ITS ROW IN THE TREE: the one row left of the canvas that holds the
+    /// words `row` begins with - the words before its first number, "Hole" of "Hole 6x15".
+    ///
+    /// # Panics
+    /// When no row, or more than one, begins so.
+    pub fn reopen(s: &mut Session, row: &str) {
+        s.key(Key::Escape);
+        let line = s.word(row);
+        let lead = line.split('{').next().unwrap_or_default().trim().to_string();
+        // the tree, left of the canvas and above the status line, which may say the same word
+        let canvas = s.canvas();
+        let rows: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(w, r)| r.max.x < canvas.min.x && r.max.y < canvas.max.y && w.contains(&lead)).map(|(_, r)| r).collect();
+        let [at] = rows.as_slice() else { panic!("the row of the node, beginning {lead:?}, is not one row of the tree: {rows:?}") };
+        s.double_click(at.center());
     }
 }
 

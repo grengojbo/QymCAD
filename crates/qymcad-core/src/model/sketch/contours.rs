@@ -195,7 +195,7 @@ impl Project {
             return false;
         }
         let Some((ox, oy)) = s.points.iter().find(|p| p.id == origin).map(|p| (p.x, p.y)) else { return false };
-        let used = s.entities.iter().any(|e| entity_points(e).contains(&origin)) || s.splines.iter().any(|sp| sp.points.contains(&origin));
+        let used = s.entities.iter().any(|e| entity_points(e).contains(&origin));
         if !used {
             return false; // nobody's geometry - nothing to separate
         }
@@ -204,14 +204,11 @@ impl Project {
         s.points.push(SketchPoint { id: fresh, x: ox, y: oy });
         let (guides, frame) = (s.axis_pts, s.frame);
         for e in &mut s.entities {
-            remap_entity_point(e, origin, fresh);
-        }
-        for sp in &mut s.splines {
-            for id in &mut sp.points {
+            e.kind.each_point_mut(|id| {
                 if *id == origin {
                     *id = fresh;
                 }
-            }
+            });
         }
         for c in &mut s.constraints {
             // `Fixed` on the origin stays on the origin; so does anything naming the frame or an axis
@@ -275,7 +272,7 @@ impl Project {
         // Two such centres must not be stitched into one node, or their radii collapse and concentric circles
         // drawn from one coordinate break. The check runs against the current state of the entities, so it
         // accounts for the remappings already done in this loop.
-        let is_center = |ents: &[SketchEntity], pid: Id| ents.iter().any(|e| matches!(e.kind, EntityKind::Circle { center, .. } | EntityKind::Arc { center, .. } if center == pid));
+        let is_center = |ents: &[SketchEntity], pid: Id| ents.iter().any(|e| e.kind.round_centre() == Some(pid));
         // System points (the origin and the axis endpoints) must not be merged: they lie between 1 and sqrt(2)
         // apart while the tolerance of the line tool reaches 2.0, so merging would consume the axes and tear the
         // dimensions measured to them.
@@ -313,9 +310,42 @@ impl Project {
         }
         if merged > 0 {
             // Drop degenerate zero-length lines and the constraints they orphan.
-            s.entities.retain(|e| !matches!(e.kind, EntityKind::Line { a, b } if a == b));
+            s.entities.retain(|e| !e.kind.as_line().is_some_and(|l| l.a == l.b));
             self.regen_sketch(si);
         }
         merged
     }
+
+    /// TWO ENDS OF CURVES MADE ONE POINT - `tied.gone` given up for `tied.kept` - when a coincidence ties them: the
+    /// corner they make is a corner as a point both curves end at is, and a fillet, a chamfer and a contour take it so.
+    /// Two ends tied by a coincidence are one point, as a professional CAD merges them. Answers whether they were
+    /// joined: not two ends of curves, both ends of one curve, or a point that cannot move - of the frame of the sketch
+    /// or of a projection, which holds what is tied to it through the parameters - and they are left as they stood.
+    ///
+    /// Reported behaviour: two lines, their ends tied by a coincidence, could not be rounded or chamfered in the corner
+    /// they made - the corner was two points, and no curve ended at either with another.
+    pub fn join_ends(&mut self, si: usize, tied: TiedEnds) -> bool {
+        let TiedEnds { kept, gone } = tied;
+        let Some(s) = self.sketches.get_mut(si) else { return false };
+        let ends_of = |p: Id| s.entities.iter().filter(|e| crate::model::entity_ends(e).is_some_and(|[x, y]| x == p || y == p)).map(|e| e.id).collect::<Vec<Id>>();
+        let at_kept = ends_of(kept);
+        let at_gone = ends_of(gone);
+        let fixed = s.immovable_points();
+        if kept == gone || at_kept.is_empty() || at_gone.is_empty() || at_kept.iter().any(|e| at_gone.contains(e)) || fixed.contains(&kept) || fixed.contains(&gone) {
+            return false;
+        }
+        remap_point_id(s, gone, kept);
+        s.points.retain(|p| p.id != gone);
+        // the coincidence that tied them now ties a point to itself
+        s.constraints.retain(|c| !matches!(c, Constraint::Coincident { a: x, b: y } if x == y));
+        self.regen_sketch(si);
+        true
+    }
+}
+
+/// TWO ENDS OF CURVES A COINCIDENCE TIES, to be one point: the one kept, and the one given up for it.
+#[derive(Clone, Copy, Debug)]
+pub struct TiedEnds {
+    pub kept: Id,
+    pub gone: Id,
 }

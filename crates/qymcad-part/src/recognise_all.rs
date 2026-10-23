@@ -7,13 +7,10 @@ use qymcad_core::model::{group_key, Exact, Id, Reach, RemadeItem, Remake, Remake
 use qymcad_meshfit::feature::{features_of, grouped};
 use qymcad_ui_state::{AllInHand, CmdParam, GroupInHand, PartCtx, Taking};
 
-/// The code of the command.
-pub const RECOGNISE_ALL: u8 = 41;
-
 /// TAKE THE TOOL: it waits for a click on a body, or takes at once the body of the face selected before it.
 pub fn start_recognise_all_cmd(pc: &mut PartCtx) {
     let before = *pc.sel;
-    pc.cmd.open(pc.armed, RECOGNISE_ALL, *pc.mode_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::RecogniseAll, *pc.mode_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore);
     *pc.mode_3d = true;
     pc.gsel.edges.clear();
@@ -25,6 +22,7 @@ pub fn start_recognise_all_cmd(pc: &mut PartCtx) {
     *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-all"));
     if let qymcad_ui_state::Sel::Face(mesh, _) | qymcad_ui_state::Sel::Mesh(mesh) = before {
         recognise_all_at(pc, mesh, None);
+        pc.gsel.before.spend_object(); // the face selected is the object of the tool, not a click of it
     }
 }
 
@@ -58,7 +56,7 @@ pub fn recognise_all_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         return;
     }
     let groups = groups.into_iter().map(|g| GroupInHand { items: g.items, off: Vec::new(), taking: Taking::In }).collect();
-    pc.recognise.all = Some(AllInHand { body, groups, unfound: everything.unfound.len(), hover: None });
+    pc.recognise.all = Some(AllInHand { body, groups, unfound: everything.unfound.len() });
     pc.cmd.params = fields_of(pc.recognise.all.as_ref());
     light(pc);
     say_found(pc);
@@ -106,10 +104,7 @@ fn taken(gr: &GroupInHand) -> impl Iterator<Item = &Remake> {
 /// THE FACES LIT: those of every feature that goes in, or of the group the pointer stands on alone.
 pub fn light(pc: &mut PartCtx) {
     let Some(all) = pc.recognise.all.as_ref().filter(|_| pc.cmd.edit.is_none()) else { return };
-    let lit: Vec<u32> = match all.hover.and_then(|g| all.groups.get(g)) {
-        Some(gr) => gr.items.iter().flat_map(|r| r.faces.iter().map(|f| f.id)).collect(),
-        None => all.groups.iter().flat_map(taken).flat_map(|r| r.faces.iter().map(|f| f.id)).collect(),
-    };
+    let lit: Vec<u32> = all.groups.iter().flat_map(taken).flat_map(|r| r.faces.iter().map(|f| f.id)).collect();
     pc.gsel.faces = lit.into_iter().collect();
     pc.gsel.faces_body = Some(all.body);
 }
@@ -156,13 +151,6 @@ pub fn group_told(gr: &GroupInHand) -> String {
     }
 }
 
-/// THE GROUP WHOSE FIELDS BEGIN AT FIELD `i` of the command, if one does: the row of the list drawn above them.
-pub fn group_at_field(params: &[CmdParam], i: usize) -> Option<usize> {
-    let g = group_of_key(&params.get(i)?.key)?;
-    let before = i.checked_sub(1).and_then(|j| params.get(j)).and_then(|p| group_of_key(&p.key));
-    (before != Some(g)).then_some(g)
-}
-
 /// The group a field's key names: none for the first group's bare name, the number after the dot less one for the next.
 fn group_of_key(key: &str) -> Option<usize> {
     match key.split_once('.') {
@@ -171,37 +159,40 @@ fn group_of_key(key: &str) -> Option<usize> {
     }
 }
 
-/// THE ROW OF GROUP `g` in the list beside the body: its tick, what it is, and - left out by the trial - why. The pointer
-/// on it lights the group alone. A node reopened shows what it holds, without ticks.
-pub fn group_row(pc: &mut PartCtx, ui: &mut egui::Ui, g: usize) {
+/// THE LIST BESIDE THE BODY, a section of the box a group: its switch named by what it is, then the fields of its
+/// sizes. A node reopened shows what it holds, without switches.
+pub(crate) fn group_sections(pc: &PartCtx) -> Vec<qymcad_ui_state::Section> {
+    use qymcad_ui_state::{AsLit, Opt, OptKey, Row, Section};
+    let Some(all) = pc.recognise.all.as_ref() else { return Vec::new() };
     let edit = pc.cmd.edit.is_some();
-    let pal = pc.scheme.pal.clone();
-    let Some(all) = pc.recognise.all.as_mut() else { return };
-    let Some(gr) = all.groups.get_mut(g) else { return };
-    let told = group_told(gr);
-    let row = ui.horizontal(|ui| {
-        if edit {
-            ui.label(egui::RichText::new(&told).strong());
-            return false;
-        }
-        let mut ticked = gr.taking == Taking::In;
-        let changed = ui.checkbox(&mut ticked, "").changed();
-        ui.label(egui::RichText::new(&told).strong());
-        if changed {
-            gr.taking = if ticked { Taking::In } else { Taking::Out };
-            gr.off.clear();
-        }
-        changed
-    });
-    if let Taking::Refused(why) = &gr.taking {
-        qymcad_ui_state::say(ui, &pal, &qymcad_ui_state::Notice::refusal(why.clone()), qymcad_ui_state::NoticeSize::Small);
+    all.groups
+        .iter()
+        .enumerate()
+        .map(|(g, gr)| {
+            let told = group_told(gr);
+            let head = if edit { Opt::Readout(told) } else { Opt::switch(OptKey::at("group", g), told, (gr.taking == Taking::In).lit()) };
+            let fields = pc.cmd.params.iter().filter(|p| group_of_key(&p.key) == Some(g)).map(|p| Row::new(qymcad_ui_state::field_caption(p)).field(&p.key));
+            Section::plain(std::iter::once(Row::new(String::new()).opt(head)).chain(fields).collect())
+        })
+        .collect()
+}
+
+/// WHY A GROUP IS LEFT OUT by the trial, a refusal each, said under the box.
+pub(crate) fn groups_refused(pc: &PartCtx) -> Vec<qymcad_ui_state::Notice> {
+    let Some(all) = pc.recognise.all.as_ref() else { return Vec::new() };
+    all.groups.iter().filter_map(|gr| if let Taking::Refused(why) = &gr.taking { Some(qymcad_ui_state::Notice::refusal(why.clone())) } else { None }).collect()
+}
+
+/// THE SWITCH OF GROUP `g` pressed: the group taken whole, or left out whole.
+pub(crate) fn group_switched(pc: &mut PartCtx, g: usize) {
+    if pc.cmd.edit.is_some() {
+        return;
     }
-    if row.response.hovered() || row.response.contains_pointer() {
-        all.hover = Some(g);
-    }
-    if row.inner {
-        say_found(pc);
-    }
+    let Some(gr) = pc.recognise.all.as_mut().and_then(|all| all.groups.get_mut(g)) else { return };
+    gr.taking = if gr.taking == Taking::In { Taking::Out } else { Taking::In };
+    gr.off.clear();
+    say_found(pc);
+    light(pc);
 }
 
 /// THE TRIAL'S ANSWER read on the frame: a group it found not laying is left out with its words, and the rest is tried
@@ -254,24 +245,21 @@ fn laid(pc: &PartCtx, all: &AllInHand) -> Laid {
 
 /// APPLY: the groups taken laid down exact as one node, with the sizes of the fields - a number, or an expression kept
 /// on the node under the key of its group. A node reopened takes its sizes back through its own edit.
-pub fn apply_recognise_all_cmd(pc: &mut PartCtx) -> Option<Id> {
+pub fn apply_recognise_all_cmd(pc: &mut PartCtx) -> Result<Id, qymcad_ui_state::NotApplied> {
     let Some(all) = pc.recognise.all.clone() else {
-        *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-all"));
-        return None;
+        return Err(super::refused("msg-recognise-all"));
     };
     let Laid { groups, fields } = laid(pc, &all);
     if groups.is_empty() {
-        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-recognise-all-nothing-taken"));
-        *pc.cmd_failed = true;
-        return None;
+        return Err(super::refused("msg-recognise-all-nothing-taken"));
     }
     let node = pc.project.add_remade_features(all.body, groups);
     let mut cmd = pc.cmd.clone();
     cmd.params = fields;
     if let Err(e) = super::store_cmd_exprs(&cmd, pc.project, node) {
-        return super::formula_refused(pc, &e);
+        return Err(super::formula_refused(&e));
     }
-    Some(node)
+    Ok(node)
 }
 
 /// A NODE OF FEATURES MADE EXACT TO REOPEN: its id, the body its features were found on, the features, and whether the
@@ -287,7 +275,7 @@ pub struct RemadeNode<'a> {
 /// an expression as it was typed - and Enter changes the node rather than laying another.
 pub fn open_remade_all(pc: &mut PartCtx, node: RemadeNode) {
     let RemadeNode { fid, src, items, was_3d } = node;
-    pc.cmd.open(pc.armed, RECOGNISE_ALL, was_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::RecogniseAll, was_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
     *pc.mode_3d = true;
     let mut groups: Vec<GroupInHand> = Vec::new();
@@ -298,7 +286,7 @@ pub fn open_remade_all(pc: &mut PartCtx, node: RemadeNode) {
         }
         groups[g].items.push(Remake { faces: Vec::new(), exact: it.exact.clone() });
     }
-    pc.recognise.all = Some(AllInHand { body: src, groups, unfound: 0, hover: None });
+    pc.recognise.all = Some(AllInHand { body: src, groups, unfound: 0 });
     pc.gsel.faces = items.iter().flat_map(|it| super::live_picks(&*pc.project, src, &it.faces, true)).collect();
     pc.gsel.faces_body = Some(src);
     let mut seen = std::collections::HashSet::new();

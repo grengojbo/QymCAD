@@ -37,9 +37,46 @@ pub static SWEEP: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/03-sweep",
     not_applicable: FROM_SKETCHES,
+};
+
+/// SWEEP ALONG AN EDGE: the square of 4 over the top front edge of the block swept along that edge, clicked in the
+/// view, and added to the block - a rail of 4 x 4 x 40 on it, 12640 in all. The path is not a sketch here: its edge is
+/// of the body.
+pub static SWEEP_EDGE: Tool = Tool {
+    id: "part.sweep-edge",
+    flow: Flow::Command,
+    title: "cmd-sweep",
+    entries: &[Entry::Button("tb-sweep-hint"), Entry::SearchByArticle],
+    // the other tool and the budget are the sweep's along a sketch: the same tool, the same work
+    other: SWEEP.other,
+    fixture: Fixture::SquareOverEdge,
+    picks: &[Pick::Edge([20.0, 0.0, 10.0])],
+    pick_trial: &[Pick::Edge([20.0, 0.0, 10.0])],
+    wrong_picks: &[],
+    words: &[],
+    fields: &[],
+    modes: &[],
+    result: Outcome::Body { volume: 12640.0, faces: 8, edges: 18, min: [0.0, 0.0, 0.0], max: [40.0, 30.0, 14.0] },
+    node: "Sweep",
+    inputs: &[],
+    undo: "cmd-sweep",
+    undo_steps: 1,
+    stays: false,
+    upstream: None,
+    dependency: None,
+    contexts: &[],
+    refusal: None,
+    // the top front edge and the top back one, apart: no chain to run the profile along
+    refused_together: Some(Together { picks: &[Pick::Edge([20.0, 0.0, 10.0]), Pick::Edge([20.0, 30.0, 10.0])], says: "error-path-edges-apart" }),
+    budget: SWEEP.budget,
+    help: "part/03-sweep",
+    // what a sweep from sketches leaves out but its first point: the path is clicked in the view, and a wrong click is
+    // refused as any pick of the view is
+    not_applicable: FROM_SKETCHES.split_at(1).1,
 };
 
 /// LOFT: from the square of 10 on the table to the square of 20 thirty above - a frustum of 30 / 3 * (100 + 400 +
@@ -67,6 +104,7 @@ pub static LOFT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/04-loft",
     not_applicable: FROM_SKETCHES,
@@ -100,7 +138,7 @@ pub static THREAD: Tool = Tool {
     pick_trial: &[Pick::Face([27.071, 7.929, 5.0])],
     wrong_picks: &[],
     words: &[
-        Words { caption: "f-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
+        Words { caption: "th-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-fit-clearance", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-in", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-out", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
@@ -118,6 +156,7 @@ pub static THREAD: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/10-thread",
     not_applicable: &[
@@ -152,13 +191,13 @@ pub static THREAD_OWN_PITCH: Tool = Tool {
     pick_trial: &[Pick::Face([27.071, 7.929, 5.0])],
     wrong_picks: &[],
     words: &[
-        Words { caption: "f-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
+        Words { caption: "th-nominal-d", by_placeholder: false, typical: "20", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-fit-clearance", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-in", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "th-lead-out", by_placeholder: false, typical: "0", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
         Words { caption: "f-length", by_placeholder: false, typical: "10", valid: &[], invalid: &[], outcome: to_the_standard, enter: false },
     ],
-    fields: &[Field { caption: "f-pitch-std", by_placeholder: false, when: When::Before, class: Class::Length, typical: 4.0, lo: 1.0, hi: 5.0, zero: true, negative: false, outcome: threaded_at }],
+    fields: &[Field { caption: "th-pitch-std", by_placeholder: false, when: When::Before, class: Class::Length, typical: 4.0, lo: 1.0, hi: 5.0, zero: true, negative: false, outcome: threaded_at }],
     modes: &[],
     // pi * 100 * 10 - 722.52 (the ISO profile drawn at a pitch of 4 over 10, by Pappus)
     result: Outcome::Volume { volume: 2419.076, tol: 8.23, min: [10.0, 5.0, 0.0], max: [30.0, 25.0, 10.0] },
@@ -171,6 +210,7 @@ pub static THREAD_OWN_PITCH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 60, frame_ms: 2000 },
     help: "part/10-thread",
     not_applicable: &[

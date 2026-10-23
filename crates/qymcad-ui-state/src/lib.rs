@@ -111,7 +111,7 @@ pub fn set_thread_params(cmd: &mut FeatCommand, thread: ThreadParams) {
             CmdParam::new("th-nominal-d", "nominal", d, 0.5, 1000.0),
             // 0 means the standard coarse pitch for this diameter (ISO 261 / ISO 2901), so choosing the
             // size is enough.
-            CmdParam::new("th-pitch-std", "pitch", 0.0, 0.0, 100.0),
+            CmdParam::new("th-pitch-std", "pitch", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
             CmdParam::new("th-length", "length", (d * 1.5).max(10.0), 0.1, 10000.0),
             // THE FIT CLEARANCE is what printed threads are made for: a bolt and a nut screw together.
             CmdParam::new("th-fit-clearance", "fit", 0.2, 0.0, 5.0),
@@ -119,8 +119,8 @@ pub fn set_thread_params(cmd: &mut FeatCommand, thread: ThreadParams) {
             CmdParam::new("th-lead-out", "lead_out", 1.5, 0.0, 10000.0),
             // FILLETS on both the crest and the root. 0 means follow the standard; a value of one's own
             // overrides the table — for printing the crest is rounded more, so the layers do not tear.
-            CmdParam::new("th-crest-fillet", "crest_r", 0.0, 0.0, 100.0),
-            CmdParam::new("th-root-fillet", "root_r", 0.0, 0.0, 100.0),
+            CmdParam::new("th-crest-fillet", "crest_r", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
+            CmdParam::new("th-root-fillet", "root_r", 0.0, 0.0, 100.0).hint("th-std-zero-hint"),
         ]
     };
     // A "custom" form is a profile NOT described by a standard, so the angle and the depth are given by
@@ -253,7 +253,7 @@ macro_rules! popup_tools {
 #[macro_export]
 macro_rules! popup_looks {
     ($x:expr) => {
-        $crate::PopupLooks { tool_prefs: &mut $x.tool_prefs, scheme: &$x.scheme, set: &$x.set }
+        $crate::PopupLooks { tool_prefs: &mut $x.tool_prefs, scheme: &$x.scheme, set: &$x.set, cam: &$x.viewing.cam }
     };
 }
 
@@ -431,36 +431,47 @@ pub fn mark_changed_params_dirty(params_seen: &std::collections::HashMap<String,
 
 /// The live wireframe preview of the active command (the prism of the profile along its extent) plus the
 /// arrow gizmo of the length.
+/// THE SWEEP PREVIEW OF THE TOOL IN HAND ([`sweep_preview`]): its path the edges picked in the view, by their names on
+/// the live body they lie on, or else its path sketch.
+pub fn painted_sweep_preview(pn: &Painting) -> Option<SweepPreview> {
+    let mut picked: Vec<u32> = pn.gsel.edges.iter().copied().collect();
+    picked.sort_unstable();
+    let edges = pn.edges.body.and_then(|b| pn.live.shapes.get(&b)).filter(|_| !picked.is_empty()).map(|body| qymcad_kernel::ask::BodyEdges { body, edges: &picked });
+    sweep_preview(pn.project, pn.sweep, edges)
+}
+
 /// The geometry of the LIVE SWEEP PREVIEW: the contour of the profile carried along the path with a
-/// parallel-transported frame (the same idea as the corrected Frenet frame in the core: the minimal
-/// rotation between tangents, with no false twist). Returns the polyline of the path in world
-/// coordinates and the section loops at the stations along it. It agrees with the core at the start and
-/// the finish (the same frame perpendicular to the tangent); the middle is a stable approximation.
-pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPreview> {
-    let (prof_sid, path_sid) = (sweep.prof_sid, sweep.path_sid);
-    if prof_sid == 0 || path_sid == 0 {
+/// parallel-transported frame (the minimal rotation between tangents, with no false twist). The path is the edges of a
+/// body picked in the view (`edges`), or else the path sketch. Where the profile stands and the path from the end the
+/// body starts at are the kernel's answer (`qymcad_kernel::ask::sweep_run`), the rule the sweep is built by: a copy of it
+/// here drew the profile carried to the start of the path by its sketch's origin while the body was built where the
+/// profile is drawn, and the chain the edges join into is the kernel's to make. The kernel is asked only when no rebuild
+/// holds it, so a frame drawn beside a rebuild has no preview and the next one has. Returns the polyline of the path in
+/// world coordinates and the section loops at the stations along it; the start agrees with the body, the middle is a
+/// stable approximation.
+pub fn sweep_preview(project: &Project, sweep: SweepParams, edges: Option<qymcad_kernel::ask::BodyEdges<'_>>) -> Option<SweepPreview> {
+    let prof_sid = sweep.prof_sid;
+    if prof_sid == 0 {
         return None;
     }
     let prof_cid = if sweep.prof_cid != 0 { sweep.prof_cid } else { *project.sweep_profile_contours(prof_sid).first()? };
-    let path_cid = if sweep.path_cid != 0 { sweep.path_cid } else { *project.sweep_path_contours(path_sid).first()? };
     let pxy = project.contour_profile_xy(prof_cid)?; // the flat contour of the profile, closed
     let np = pxy.len() / 2;
     if np < 3 {
         return None;
     }
-    let pf = project.sketch_frame_by_id(path_sid)?;
-    let pidx = project.contour_index(path_cid)?;
-    let pts2 = &project.contours[pidx].points;
-    if pts2.len() < 2 {
-        return None;
-    }
-    let path: Vec<[f64; 3]> = pts2
-        .iter()
-        .map(|p| {
-            let w = pf.lift(*p);
-            [w.x, w.y, w.z]
-        })
-        .collect();
+    let encoded;
+    let path = match edges {
+        Some(edges) => qymcad_kernel::ask::SweepPath::Edges(edges),
+        None if sweep.path_sid == 0 => return None,
+        None => {
+            let path_cid = if sweep.path_cid != 0 { sweep.path_cid } else { *project.sweep_path_contours(sweep.path_sid).first()? };
+            encoded = project.sweep_path_encoded(sweep.path_sid, path_cid)?;
+            qymcad_kernel::ask::SweepPath::Sketch { path: &encoded, place: project.sketch_frame_by_id(sweep.path_sid)?.matrix12() }
+        }
+    };
+    let asked = qymcad_kernel::ask::SweepAsked { profile_place: project.sketch_frame_by_id(prof_sid)?.matrix12(), path };
+    let qymcad_kernel::ask::SweepRun { place, path } = qymcad_kernel::ask::sweep_run(&asked, qymcad_kernel::ask::Wait::IfFree)?;
     let n = path.len();
     let sub = |a: [f64; 3], b: [f64; 3]| [a[0] - b[0], a[1] - b[1], a[2] - b[2]];
     let add = |a: [f64; 3], b: [f64; 3]| [a[0] + b[0], a[1] + b[1], a[2] + b[2]];
@@ -483,12 +494,11 @@ pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPrevi
             norm(add(norm(sub(path[i], path[i - 1])), norm(sub(path[i + 1], path[i]))))
         }
     };
-    // the starting frame (as in the C++ core): refX perpendicular to Z, Y = Z x refX, X = Y x Z
-    let z0 = tangent(0);
-    let refx = if dot(z0, [1.0, 0.0, 0.0]).abs() > 0.9 { [0.0, 1.0, 0.0] } else { [1.0, 0.0, 0.0] };
-    let mut y = norm(cross(z0, refx));
-    let mut x = norm(cross(y, z0));
-    let mut zprev = z0;
+    // the profile where the sweep puts it, as offsets from the start of the path: carried along by a frame that starts
+    // as the world's own axes and turns with the tangent
+    let drawn: Vec<[f64; 3]> = (0..np).map(|k| sub(qymcad_core::feature::apply12(&place, [pxy[2 * k], pxy[2 * k + 1], 0.0]), path[0])).collect();
+    let mut frame = [[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]];
+    let mut zprev = tangent(0);
     // rotating vector v about the unit axis a by an angle given as (sin, cos) - Rodrigues
     let rot = |v: [f64; 3], a: [f64; 3], s: f64, c: f64| {
         let av = cross(a, v);
@@ -504,15 +514,9 @@ pub fn sweep_preview(project: &Project, sweep: SweepParams) -> Option<SweepPrevi
         if sn > 1e-9 {
             let a = [axc[0] / sn, axc[1] / sn, axc[2] / sn];
             let cs = dot(zprev, zi).clamp(-1.0, 1.0);
-            x = norm(rot(x, a, sn, cs));
-            y = norm(rot(y, a, sn, cs));
+            frame = frame.map(|e| rot(e, a, sn, cs));
         }
-        let sec: Vec<[f64; 3]> = (0..np)
-            .map(|k| {
-                let (px, py) = (pxy[2 * k], pxy[2 * k + 1]);
-                [org[0] + px * x[0] + py * y[0], org[1] + px * x[1] + py * y[1], org[2] + px * x[2] + py * y[2]]
-            })
-            .collect();
+        let sec: Vec<[f64; 3]> = drawn.iter().map(|d| [0, 1, 2].map(|c| org[c] + d[0] * frame[0][c] + d[1] * frame[1][c] + d[2] * frame[2][c])).collect();
         sections.push(sec);
         zprev = zi;
     }
@@ -674,6 +678,23 @@ pub fn props_header(ui: &mut egui::Ui, icon: &str, kind_key: &str, name: NameSlo
     renamed
 }
 
+/// A WARNING OF STEP `node` IN ITS PROPERTIES - a reference found by place, edges left out, a blend a hair short - said
+/// in the voice's warning tone, as the tree says it; a reference found by place with the one button that accepts what
+/// was found, inside one undo step. One place for every kind of step: a feature and a sketch on a face both hold it.
+pub fn node_warning_props(pr: &mut PropsCtx, ui: &mut egui::Ui, node: Id) {
+    if let Some(warning) = pr.project.node_warning(node).filter(|_| !pr.project.regen_errors.contains_key(&node)) {
+        ui.separator();
+        let text = qymcad_i18n::error_words::error_text(&warning);
+        say(ui, &pr.scheme.pal, &Notice::warning(text), NoticeSize::Small);
+    }
+    let accept = format!("{} {}", egui_phosphor::regular::CHECK, qymcad_i18n::tr("props-accept-place"));
+    if pr.project.placed_refs.contains(&node) && ui.button(accept).on_hover_text(qymcad_i18n::tr("props-accept-place-hint")).clicked() {
+        begin_edit(pr.edits, pr.project, qymcad_i18n::tr("cmdname-accept-place")); // THE BOUNDARY OF AN OPERATION
+        pr.project.accept_found_by_place(node);
+        commit_edit(&mut pr.rebuild());
+    }
+}
+
 /// INSTALL THE FONTS INTO A CONTEXT — IN ONE PLACE.
 ///
 /// This used to be done right inside the application start-up, and the `qym-bold` family existed only
@@ -698,12 +719,6 @@ pub fn name_edit(ui: &mut egui::Ui, stored: &mut String) -> egui::Response {
         *stored = shown;
     }
     r
-}
-
-thread_local! {
-    /// The keys of the bar fields holding a value that cannot be taken, as last drawn - for the tools that act on a
-    /// click rather than on Enter, where no frame context is at hand (the offset of a sketch).
-    static BAR_BAD_KEYS: std::cell::RefCell<std::collections::HashSet<&'static str>> = std::cell::RefCell::new(std::collections::HashSet::new());
 }
 
 pub use icons::{forget_all_cad_icons, icon_button, icon_image, icon_label, icon_small_button, ResolvedIcon};
@@ -829,21 +844,6 @@ mod picking {
         // a nearer body is nearer, whatever it is
         assert!(super::nearer_hit(9.0, false, Some((10.0, true)), true), "what stands in front must be taken");
         assert!(!super::nearer_hit(11.0, true, Some((10.0, false)), true), "a sheet behind the face must not be reached through it");
-    }
-}
-
-#[cfg(test)]
-mod tool_buttons {
-    use super::{take_or_drop, BarAsk};
-
-    /// A TOOL BUTTON TAKES ITS TOOL WHEN THE HAND IS FREE OF IT AND PUTS IT DOWN WHEN IT IS HELD: a sketch tool back to
-    /// the arrow, a command cancelled.
-    #[test]
-    fn a_tool_button_takes_or_puts_down() {
-        assert!(matches!(take_or_drop(false, BarAsk::FeatCmd(4)), BarAsk::FeatCmd(4)), "a free hand takes the command");
-        assert!(matches!(take_or_drop(true, BarAsk::FeatCmd(4)), BarAsk::CancelAllTools(crate::Then::Nothing)), "a held command is put down");
-        assert!(matches!(take_or_drop(true, BarAsk::SketchTool(3)), BarAsk::SketchSelectMode), "a held sketch tool gives the arrow back");
-        assert!(matches!(take_or_drop(false, BarAsk::SketchTool(3)), BarAsk::SketchTool(3)), "a free hand takes the sketch tool");
     }
 }
 
@@ -1032,6 +1032,8 @@ mod rebuild;
 pub use rebuild::*;
 mod edits;
 pub use edits::*;
+mod sketch_history;
+pub use sketch_history::*;
 mod fields;
 pub use fields::*;
 mod fonts;
@@ -1046,8 +1048,13 @@ mod define;
 pub use define::*;
 mod tool_steps;
 pub use tool_steps::*;
+mod path_bar;
+pub use path_bar::*;
+pub use qymcad_shell::{Drew, Switches};
 mod voice;
 pub use voice::*;
+mod tool_frame;
+pub use tool_frame::*;
 mod faults;
 pub use faults::*;
 pub mod catalogue;

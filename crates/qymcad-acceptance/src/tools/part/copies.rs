@@ -22,7 +22,7 @@ pub static MIRROR: Tool = Tool {
     words: &[],
     fields: &[],
     // the original is kept by default; the switch turned off leaves the reflection alone, standing where it was
-    modes: &[&[Mode { word: "cmd-with-original", clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [40.0, 0.0, 0.0], max: [80.0, 30.0, 10.0] }) }]],
+    modes: &[&[Mode { word: "cmd-with-original", arg: None, clicks: None, outcome: Some(Outcome::Body { volume: 12000.0, faces: 6, edges: 12, min: [40.0, 0.0, 0.0], max: [80.0, 30.0, 10.0] }) }]],
     result: doubled(),
     node: "Mirror",
     inputs: &[],
@@ -38,6 +38,7 @@ pub static MIRROR: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/16-mirror",
     not_applicable: &[
@@ -96,6 +97,7 @@ pub static LINEAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/17-linear-array",
     not_applicable: &[
@@ -123,9 +125,7 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     wrong_picks: &[],
     words: &[],
     fields: &[Field { caption: "cmd-copies", by_placeholder: false, when: When::Before, class: Class::Count, typical: 6.0, lo: 2.0, hi: 52.0, zero: false, negative: false, outcome: ring_of }],
-    // the whole circle switched off puts an angle field at the geometry, and 180 degrees over six copies still leaves
-    // them 30 degrees apart - the same six pieces, standing over half the turn
-    modes: &[&[Mode { word: "cmd-full-circle", clicks: None, outcome: Some(ring_of(6.0)) }]],
+    modes: &[],
     result: ring_of(6.0),
     node: "CircularArray",
     inputs: &[],
@@ -136,7 +136,11 @@ pub static CIRCULAR_ARRAY: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "part/18-circular-array",
-    not_applicable: &[Skip { point: 17, why: "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed" }],
+    not_applicable: &[
+        Skip { point: 2, why: "the box of the pattern holds its count, its axis and the angle the copies spread over - fields, not modes that put each other down" },
+        Skip { point: 17, why: "copies of a body turned about an axis always build: what the kernel could not make of them is a matter of where they fall, not of the count typed" },
+    ],
 };

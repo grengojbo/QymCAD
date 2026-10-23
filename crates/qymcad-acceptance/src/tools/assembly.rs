@@ -28,6 +28,7 @@ pub static GROUND: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: &[
@@ -70,11 +71,13 @@ pub static JOINT: Tool = Tool {
     inputs: &[],
     undo: "jt-joint-btn",
     undo_steps: 1,
-    stays: true,
+    // a joint applied leaves the selection in hand, as every command of an assembly does
+    stays: false,
     upstream: None,
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
@@ -130,6 +133,7 @@ pub static NEW_PART: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: MAKES,
@@ -159,6 +163,7 @@ pub static NEW_SUBASSEMBLY: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: MAKES,
@@ -205,8 +210,9 @@ pub static COMP_LINEAR_PATTERN: Tool = Tool {
         negative: false,
         outcome: a_row_along_x,
     }],
-    // a second direction ticked makes a grid: three along X, two along the next axis 30 apart - six parts
-    modes: &[&[Mode { word: "cmd-dir2", clicks: None, outcome: Some(Outcome::Parts { parts: 6, grounded: 0, joints: 0, assemblies: 0 }) }]],
+    // the second direction switched on by the title of its section makes a grid: three along X, two along the next axis
+    // 30 apart - six parts
+    modes: &[&[Mode { word: "box-direction-n", arg: Some(qymcad::Arg { name: "n", value: "2" }), clicks: None, outcome: Some(Outcome::Parts { parts: 6, grounded: 0, joints: 0, assemblies: 0 }) }]],
     result: Outcome::Row { parts: 3, step: [30.0, 0.0, 0.0] },
     // one operation, one node: the pattern as a whole, as the professional systems keep it
     node: "ComponentPattern",
@@ -218,6 +224,7 @@ pub static COMP_LINEAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/04-arrays",
     not_applicable: &[COPIES[0], COPIES[1], COPIES[2], COPIES[3], COPIES[4], COPIES[5], COPIES[6]],
@@ -247,6 +254,7 @@ pub static COMP_CIRCULAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/04-arrays",
     not_applicable: &[
@@ -288,6 +296,7 @@ pub static MIRROR_PART: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/04-arrays",
     not_applicable: &[
@@ -327,6 +336,7 @@ pub static INSERT_COMPONENT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/01-components",
     not_applicable: &[
@@ -373,6 +383,7 @@ pub static GROUP: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
@@ -413,6 +424,7 @@ pub static SECTION: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/09-viewport",
     not_applicable: &[
@@ -453,6 +465,7 @@ pub static TANGENT: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
@@ -492,6 +505,7 @@ pub static WIDTH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/02-joints",
     not_applicable: &[
@@ -531,12 +545,13 @@ pub static RELATION: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/07-relations",
     not_applicable: &[
         Skip { point: 2, why: "the kinds of relation in the bar are not described yet: this contract holds the gear the tool starts with" },
-        Skip { point: 5, why: "the ratio in the bar is a number dragged, not a field typed at the geometry, and it moves no part at rest" },
-        Skip { point: 6, why: "the ratio in the bar is a number dragged, not a field typed at the geometry" },
+        Skip { point: 5, why: "the ratio is a number of the bar - a relation has no place in the view to type it at - and it moves no part at rest" },
+        Skip { point: 6, why: "the ratio is a number of the bar, not a field of a box at the geometry" },
         Skip { point: 13, why: "a relation is edited from the list of mates, not by a row of a timeline" },
         Skip { point: 14, why: "nothing of a timeline stands above a mate" },
         Skip { point: 15, why: "a relation stands on its two mates; deleting one is the mates' matter" },
@@ -570,6 +585,7 @@ pub static INTERFERENCE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/05-interference",
     not_applicable: &[
@@ -632,6 +648,7 @@ pub static DRIVE: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/03-limits-drives",
     not_applicable: &[
@@ -675,6 +692,7 @@ pub static BREAK_REF: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "assembly/06-external-refs",
     not_applicable: &[
@@ -727,6 +745,7 @@ pub static SEARCH: Tool = Tool {
     dependency: None,
     contexts: &[],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/02-tree",
     not_applicable: &[

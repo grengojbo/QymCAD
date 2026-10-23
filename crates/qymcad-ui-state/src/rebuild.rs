@@ -14,7 +14,8 @@ pub fn keep_live_shapes(live: &mut LiveGeom, project: &Project) {
 }
 
 /// A SKETCH OPENED FOR EDITING: the session takes it, and the key it is opened at.
-pub fn open_sketch_session(ses: &mut SketchSession, project: &Project, sid: Id) {
+pub fn open_sketch_session(ses: &mut SketchSession, edits: &mut Edits, project: &Project, sid: Id) {
+    open_sketch_history(edits, sid);
     ses.editing = Some(sid);
     ses.opened = project.sketch_key(sid);
 }
@@ -30,6 +31,7 @@ pub fn open_sketch_session(ses: &mut SketchSession, project: &Project, sid: Id) 
 /// A project from a bundle has no live B-rep, and the feature on a marked sketch asks for its source body: the missing
 /// ones are built first (`ensure_brep`), exactly those and not the whole project.
 pub fn rebuild_after_sketch(rc: &mut RebuildCtx, closed: SketchSession) {
+    close_sketch_history(rc.edits, rc.project);
     if let Some(sid) = closed.editing.filter(|sid| rc.project.sketch_key(*sid) != closed.opened) {
         ensure_brep(rc);
         rc.project.mark_sketch_dirty(sid);
@@ -38,11 +40,17 @@ pub fn rebuild_after_sketch(rc: &mut RebuildCtx, closed: SketchSession) {
 }
 
 pub fn regenerate_now(rc: &mut RebuildCtx) {
+    regenerate_now_unless(rc, &std::sync::Arc::default());
+}
+
+/// A REBUILD OF THIS THREAD THAT A FLAG STOPS: once `stop` is raised, between two nodes, or between two steps of the
+/// node the kernel is building. A rebuild stopped is of no use - its caller lets it go whole.
+pub fn regenerate_now_unless(rc: &mut RebuildCtx, stop: &std::sync::Arc<std::sync::atomic::AtomicBool>) {
     // THE REBUILD ITSELF is the one every headless caller runs: the ghosts pruned, what reads a changed parameter
     // marked, the kernel under its gate at the cores the settings give (one is the switch a person reaches for when a
     // parallel pass is suspected of lying), the parameters seen, the live shapes kept to what the project holds, the
     // faces of a rebuilt body put into the body.
-    let done = qymcad_doc::regen::run(rc.project, &mut rc.live.shapes, rc.params_seen, Some(rc.set.kernel_threads));
+    let done = qymcad_doc::regen::run_unless(rc.project, &mut rc.live.shapes, rc.params_seen, Some(rc.set.kernel_threads), stop);
     let (mut report, snaps) = (done.report, done.snaps);
     for (body, faces) in std::mem::take(&mut report.built) {
         set_body_faces(rc.live, rc.project, body, faces); // the window's own caches: the face cache by body Id, and a stale blob dropped
@@ -231,6 +239,15 @@ pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> 
         }
         return None;
     }
+    // INSIDE A SKETCH UNDO STOPS AT ITS FIRST STEP: what lies under it is another part's, or the document's from before the sketch
+    // was opened
+    drop_stale_sketch_history(rc.edits, rc.project, rc.sketch_ses);
+    if !redo && rc.edits.undo.len() <= undo_floor(rc.edits) {
+        if !rc.edits.undo.is_empty() {
+            *rc.status = Notice::refusal(qymcad_i18n::tr("g-sketch-undo-floor"));
+        }
+        return None;
+    }
     let step = if redo { rc.edits.redo.pop() } else { rc.edits.undo.pop() }?;
     // an operation still open - a command, a sketch session - now starts from the state brought back: put down, it
     // returns there. Letting it go instead broke the sketch session that owned it, and rebuilding everything after an
@@ -257,7 +274,7 @@ pub fn step_through_history(rc: &mut RebuildCtx, redo: bool) -> Option<Vec<Id>> 
 /// until the document changes. The way to go on, where the edit was taken back.
 pub fn rebuild_cancelled(rc: &mut RebuildCtx) -> Option<Vec<Id>> {
     let depth = rc.edits.undo.len();
-    if depth > 0 && depth == rc.regen.computing_depth && rc.regen.computed_depth + 1 == depth {
+    if depth > undo_floor(rc.edits) && depth == rc.regen.computing_depth && rc.regen.computed_depth + 1 == depth {
         let step = rc.edits.undo.pop()?;
         let now = std::mem::replace(&mut rc.edits.baseline, step.snap.clone());
         rc.edits.redo.push(Step { name: step.name.clone(), snap: now });

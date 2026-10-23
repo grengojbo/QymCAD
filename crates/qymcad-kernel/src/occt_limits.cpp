@@ -96,9 +96,11 @@ bool corner_of(const QymShape* s, const TopoDS_Edge& edge, const TopTools_Indexe
     return c.into_first.Dot(c.out_second) < -1e-9 && c.into_second.Dot(c.out_first) < -1e-9;
 }
 
-/// THE PRISM A BLEND TAKES OFF along the corner `c`: its section laid out from `on_first` on the first face to `on_second` on the
-/// second - straight for a chamfer, an arc for a fillet of `radius` through `centre` - and closed outside the body, the
+/// THE PRISM A BLEND TAKES OFF along the corner `c`: its section laid out from `on_first` on the first face to `on_second` on
+/// the second - straight for a chamfer, an arc for a fillet of `radius` through `centre` - and closed outside the body, the
 /// prism carried `past` beyond both ends. The face the section's blend side sweeps is given back in `surface`.
+// NOT `near` AND `far`: the headers of Windows define both as empty macros, and MSVC read `sec.near = ...` as
+// `sec. = ...` - the release build for Windows stopped on this file.
 struct Section {
     gp_Vec on_first, on_second;
     bool arc;

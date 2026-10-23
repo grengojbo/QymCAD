@@ -232,7 +232,13 @@ impl App {
         let consumed = qymcad_ui_state::consumed_bodies(&self.project);
         let edit_hide = qymcad_ui_state::edit_hidden_bodies(&self.tools.cmd, &self.project);
         let edit_src = if !edit_hide.is_empty() { qymcad_ui_state::edit_src_body(&self.tools.cmd, &self.project) } else { None };
-        let solid_only = qymcad_part::solid_only(&self.tools.armed);
+        // A TOOL FOR BODIES DOES NOT CATCH ON A SURFACE. A copy of a face lies EXACTLY ON the face of the
+        // part, and a click there landed on the sheet: the shell got a face of a surface and honestly
+        // refused (`OpFailed(Shell)`), while what was seen was "I clicked the face of the part and it does
+        // not work". The tools for which a sheet is lawful (thicken, replace a face, stitch, trim, patch,
+        // copy a face) are not included here — a surface is what they want.
+        let solid_only = self.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::wants_a_solid);
+        let sheets_first = qymcad_part::sheets_come_first(&self.tools.armed, self.tools.gsel.faces.len(), self.params.repl_surface);
         let mut best: Option<(f64, usize, usize)> = None; // (the depth, the mesh, the triangle)
         for (mi, mesh) in self.project.bodies.iter().map(|b| &b.mesh).enumerate() {
             if !qymcad_ui_state::body_shown(qymcad_ui_state::body_view_of!(self), mi) {
@@ -277,14 +283,7 @@ impl App {
                 let (pc, dc) = scr.at(wc);
                 if point_in_tri(screen, pa, pb, pc) {
                     let depth = tri_depth_at(screen, pa, da, pb, db, pc, dc);
-                    if qymcad_ui_state::nearer_hit(
-                        depth,
-                        self.project.bodies[mi].sheet,
-                        best.map(|(bd, bm, _)| (bd, self.project.bodies[bm].sheet)),
-                        self.tools.armed.cmd_kind() == 33
-                            || (self.tools.armed.cmd_kind() == 31 && !self.tools.gsel.faces.is_empty() && self.params.repl_surface.is_none())
-                            || self.tools.armed.cmd_kind() == 34,
-                    ) {
+                    if qymcad_ui_state::nearer_hit(depth, self.project.bodies[mi].sheet, best.map(|(bd, bm, _)| (bd, self.project.bodies[bm].sheet)), sheets_first) {
                         best = Some((depth, mi, ti));
                     }
                 }
@@ -307,91 +306,15 @@ impl App {
                     self.chosen.sel = Sel::Mesh(mi);
                 }
             } else {
-                let want_face = qymcad_part::wants_face(&self.tools.armed);
+                // A face is selected under a command that asks for one (the shell, the hole) and with nothing in
+                // hand - where a corner or an edge under the cursor goes first; other commands take THE BODY.
+                let want_face = self.tools.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_faces) || !self.tools.armed.commanding();
                 let fi = if want_face { self.project.bodies.get(mi).and_then(|b| b.faces.iter().position(|f| f.triangles.contains(&(ti as u32)))) } else { None };
                 let grip = qymcad_pick::edge_or_corner_under(&self.painting(), rect, screen);
                 qymcad_part::take_under_click(&mut self.part_ctx(), mi, fi, grip);
-                // The shell and the draft: multi-selection of faces strictly within ONE body — the ids of
-                // faces are local to a body (OCCT numbers them from zero in each). A click on a face of
-                // ANOTHER body starts the selection afresh on it, otherwise the ids of neighbouring bodies
-                // get confused and the highlight leaks across.
-                if matches!(self.tools.armed.cmd_kind(), 6 | 23 | 25 | 26 | 28 | 30 | 36) && fi.is_some() {
-                    // command 31 is NOT included here: there a click on ANOTHER body means "here is the
-                    // surface" rather than "start the selection afresh" (see below).
-                    let clicked_body = self.project.mesh_id(mi);
-                    if self.tools.gsel.faces_body != clicked_body {
-                        self.tools.gsel.faces.clear();
-                        self.params.draft.neutral = 0;
-                        self.tools.gsel.faces_body = clicked_body;
-                    }
-                }
-                // The shell: a click on a face ADDS or REMOVES its id from the multi-selection (by the persistent id)
-                if self.tools.armed.cmd_kind() == 6 {
-                    let id = fi.and_then(|fi| self.project.bodies.get(mi).and_then(|b| b.faces.get(fi))).map(|f| f.id);
-                    qymcad_part::toggle_face(&mut self.part_ctx(), id, false);
-                }
-                qymcad_part::face_clicked(&mut self.part_ctx(), mi, fi, rect, screen);
-                // REMOVE FACE: a multi-selection — a feature may consist of several faces (a stepped hole,
-                // a boss with a chamfer). A click adds or removes.
-                // REPLACE FACE: a click on a SHEET chooses the surface, a click on a body collects the
-                // faces to be replaced. The document itself tells them apart (`sheet`) rather than a mode
-                // switch: an extra mode here would force one to remember which step one is on.
-                // TRIM: the first click on a SHEET says both WHAT is being cut and WHICH part is kept — the
-                // point of the hit is the answer about the side. The second click, on a body, gives the
-                // tool.
-                if self.tools.armed.cmd_kind() == 34 {
-                    let clicked = self.project.mesh_id(mi);
-                    let is_sheet = self.project.bodies.get(mi).is_some_and(|b| b.sheet);
-                    if is_sheet && self.side.trim.keep.is_none() {
-                        if let (Some(id), Some((_, _, at))) = (clicked, pick_face_ray(&self.painting(), rect, screen)) {
-                            self.side.trim.keep = Some((id, at));
-                            self.status = Notice::info(crate::i18n::tr("msg-trim-pick-tool"));
-                        }
-                    } else if let Some(id) = clicked {
-                        if self.side.trim.keep.map(|(b, _)| b) == Some(id) {
-                            (self.side.trim.keep, self.chosen.sel) = (None, Sel::None); // a repeated click on the same sheet starts afresh, unlit
-                            self.status = Notice::info(crate::i18n::tr("msg-trim"));
-                        } else {
-                            self.side.trim.tool = if self.side.trim.tool == Some(id) { None } else { Some(id) };
-                            self.status = Notice::info(crate::i18n::tr(if self.side.trim.tool.is_some() { "msg-trim-tool-picked" } else { "msg-trim-pick-tool" }));
-                        }
-                    }
-                }
-                // A CLICK ON A WHOLE BODY, for the tools that take one - stitching sheets, recognising a mesh. What
-                // the click MEANS belongs to the workbench; the window only says what was under it.
-                if matches!(self.tools.armed.cmd_kind(), 33 | 35) {
-                    let clicked = self.project.mesh_id(mi);
-                    let is_sheet = self.project.bodies.get(mi).is_some_and(|b| b.sheet);
-                    let is_mesh = clicked.is_some_and(|id| self.project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::MeshPiece { body, .. } if body == id)));
-                    qymcad_part::pick_body_for_tool(&mut self.part_ctx(), clicked, is_sheet, is_mesh);
-                }
-                if self.tools.armed.cmd_kind() == 31 {
-                    let clicked = self.project.mesh_id(mi);
-                    let is_sheet = self.project.bodies.get(mi).is_some_and(|b| b.sheet);
-                    if is_sheet {
-                        self.params.repl_surface = if self.params.repl_surface == clicked { None } else { clicked };
-                        self.status = Notice::info(crate::i18n::tr(if self.params.repl_surface.is_some() { "msg-surface-picked" } else { "msg-surface-unpicked" }));
-                    } else if let Some(id) = fi.and_then(|fi| self.project.bodies.get(mi).and_then(|b| b.faces.get(fi))).map(|f| f.id) {
-                        if self.tools.gsel.faces_body != clicked {
-                            self.tools.gsel.faces.clear();
-                            self.tools.gsel.faces_body = clicked;
-                        }
-                        qymcad_part::toggle_face(&mut self.part_ctx(), Some(id), false);
-                    }
-                }
-                // The draft: in the neutral-face mode a click sets the neutral face (by the persistent
-                // id), otherwise a click ADDS or REMOVES a face from the set of faces to be drafted.
-                if self.tools.armed.cmd_kind() == 23 {
-                    if let Some(id) = fi.and_then(|fi| self.project.bodies.get(mi).and_then(|b| b.faces.get(fi))).map(|f| f.id) {
-                        if self.params.draft.pick_neutral {
-                            self.params.draft.neutral = if self.params.draft.neutral == id { 0 } else { id };
-                            self.params.draft.pick_neutral = false;
-                            self.tools.gsel.faces.remove(&id); // the neutral face cannot also be a drafted one
-                        } else {
-                            qymcad_part::toggle_face(&mut self.part_ctx(), Some(id), false);
-                        }
-                    }
-                }
+                // WHAT THE TOOL IN HAND TAKES OF THE CLICK is the workbench's: the window says what was under it
+                let ray_at = pick_face_ray(&self.painting(), rect, screen).map(|(_, _, at)| at);
+                qymcad_part::click_on_body(&mut self.part_ctx(), qymcad_part::BodyClick { mesh: mi, face: fi, rect, screen, ray_at });
             }
         } else {
             let plane = pick_sketch_plane_at(&self.painting(), rect, screen);

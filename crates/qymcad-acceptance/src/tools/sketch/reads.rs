@@ -27,6 +27,7 @@ pub static MEASURE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "general/11-measure",
     not_applicable: &[
@@ -69,6 +70,7 @@ pub static SELECT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     // the help writes of no selecting in a sketch: there is no article to name
     help: "sketch/24-select",

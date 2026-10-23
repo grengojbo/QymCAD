@@ -86,14 +86,26 @@ pub fn keep_live_shapes(shapes: &mut HashMap<Id, Shape>, project: &Project) {
 /// `threads` is how many cores the kernel's booleans may take, said where the rebuild starts rather than remembered
 /// somewhere: one means a single thread, zero or less all the cores but one. `None` leaves the kernel as it was set.
 pub fn run(project: &mut Project, shapes: &mut HashMap<Id, Shape>, params_seen: &mut HashMap<String, f64>, threads: Option<i32>) -> Rebuilt {
+    run_unless(project, shapes, params_seen, threads, &std::sync::Arc::default())
+}
+
+/// THE SAME REBUILD, STOPPED BY A FLAG: once `stop` is raised, between two nodes or between two steps of the node the
+/// kernel is building. A rebuild stopped is of no use - its caller lets it go whole.
+pub fn run_unless(
+    project: &mut Project,
+    shapes: &mut HashMap<Id, Shape>,
+    params_seen: &mut HashMap<String, f64>,
+    threads: Option<i32>,
+    stop: &std::sync::Arc<std::sync::atomic::AtomicBool>,
+) -> Rebuilt {
     prepare(project, shapes, params_seen);
     let _gate = qymcad_kernel::kernel_gate();
     if let Some(t) = threads {
         qymcad_kernel::set_parallel(t != 1, t);
     }
-    let kernel = OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(shapes)), quality_k: project.geom_quality.deflection_k(), ..Default::default() };
+    let kernel = OcctKernel { shapes: std::cell::RefCell::new(std::mem::take(shapes)), quality_k: project.geom_quality.deflection_k(), stop: stop.clone(), ..Default::default() };
     let snaps_before = project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed);
-    let report = project.regenerate(&kernel);
+    let report = project.regenerate_watched(&kernel, &Unless(stop));
     let snaps = project.snap_rebinds.load(std::sync::atomic::Ordering::Relaxed).saturating_sub(snaps_before);
     *shapes = kernel.shapes.into_inner();
     settle(project, shapes, params_seen, &report.built);
@@ -107,5 +119,14 @@ pub fn mark_all_dirty(project: &mut Project) {
         if n.kind.body().is_some() {
             n.dirty = true;
         }
+    }
+}
+
+/// A REBUILD WATCHED FOR A FLAG that stops it.
+struct Unless<'a>(&'a std::sync::Arc<std::sync::atomic::AtomicBool>);
+
+impl qymcad_core::feature::RegenWatch for Unless<'_> {
+    fn stopped(&self) -> bool {
+        self.0.load(std::sync::atomic::Ordering::Relaxed)
     }
 }

@@ -105,20 +105,20 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     at_rest(&mut h);
     worked_on(&mut h);
     h.look_at([30.0, 20.0, 5.0], 6.0).frame(Vec::new());
-    h.tool(qymcad_part::RECOGNISE_ALL).click([40.0, 32.0, 10.0]).frame(Vec::new());
+    h.tool(qymcad_ui_state::PartTool::RecogniseAll).click([40.0, 32.0, 10.0]).frame(Vec::new());
     let found = groups(&h);
     assert_eq!(found.len(), 5, "the plate clicked gives not its five groups: {found:?}; the program says {}", h.app.status);
     assert!(found.iter().all(|r| r.taking == Taking::In), "a group found is not taken: {found:?}");
-    // the rounding's group unticked in the list beside the plate
+    // the rounding's group left out by its switch in the list beside the plate, the switch named by the group
     let round = found.iter().find(|r| r.told.contains("R4")).map(|r| r.told.clone()).expect("the group of the rounding");
-    assert!(h.press_tick_before(&round, egui::pos2(700.0, 400.0)), "the row {round:?} has no tick on screen");
+    assert!(h.press_word(&round, egui::pos2(700.0, 400.0)), "the group {round:?} has no switch on screen");
     h.frame(Vec::new());
     // the chamfer clicked in the view, turned to face it: left out
     h.orbit(-2.27, 0.6).frame(Vec::new());
     h.click([1.5, 1.5, 5.0]).frame(Vec::new());
     let now = groups(&h);
     let taken: Vec<&String> = now.iter().filter(|r| r.taking == Taking::In).map(|r| &r.told).collect();
-    assert_eq!(taken.len(), 3, "after the rounding unticked and the chamfer clicked, not the three holes are taken: {now:?}");
+    assert_eq!(taken.len(), 3, "after the rounding left out and the chamfer clicked, not the three holes are taken: {now:?}");
     let nodes = h.app.project.timeline.len();
     h.enter();
     at_rest(&mut h);
@@ -135,7 +135,7 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     let row = crate::gui::panels_tree::feature_row_label(&h.app.project, ti);
     h.key(egui::Key::Escape).frame(Vec::new());
     assert!(h.double_click_word(&row), "the row {row:?} is not in the tree");
-    assert_eq!(h.app.tools.armed.cmd_kind(), qymcad_part::RECOGNISE_ALL, "the double click did not reopen the list");
+    assert_eq!(h.app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::RecogniseAll), "the double click did not reopen the list");
     let keys: Vec<&str> = h.app.tools.cmd.params.iter().map(|p| p.key.as_str()).collect();
     assert_eq!(keys, ["diameter", "depth", "diameter.2", "diameter.3"], "the sizes of the three groups are not in the fields");
     assert_eq!(groups(&h).len(), 3, "the list reopened holds not the node's three groups");
@@ -162,11 +162,11 @@ fn a_group_that_does_not_lay_is_left_out_with_its_reason_and_the_rest_is_laid() 
     worked_on(&mut h);
     h.look_at([30.0, 20.0, 5.0], 6.0).frame(Vec::new());
     // recognised into exact surfaces, as the tool does by itself
-    h.tool(35).frame(Vec::new());
+    h.tool(qymcad_ui_state::PartTool::Recognise).frame(Vec::new());
     h.click([30.0, 20.0, 10.0]).frame(Vec::new());
     h.enter();
     at_rest(&mut h);
-    h.tool(qymcad_part::RECOGNISE_ALL).click([30.0, 20.0, 10.0]).frame(Vec::new());
+    h.tool(qymcad_ui_state::PartTool::RecogniseAll).click([30.0, 20.0, 10.0]).frame(Vec::new());
     assert!(groups(&h).len() >= 2, "the recognised block gives no groups: {:?}; the program says {}", groups(&h), h.app.status);
     // the trial answers, and the popup reads its answer as it is drawn: a group refused is left out, and the rest is
     // tried again, until it lays. A trial refused on this body of 755 faces rebuilds it to the group that refuses:

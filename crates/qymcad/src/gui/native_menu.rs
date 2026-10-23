@@ -192,6 +192,7 @@ pub(crate) fn symbol_of(action: &MenuAction) -> Option<&'static str> {
         MenuAction::CheckUpdates => Some("arrow.down.circle"),
         MenuAction::ConnectClaude => Some("powerplug"),
         MenuAction::Report => Some("ladybug"),
+        MenuAction::Support => Some("heart"),
     }
 }
 
@@ -1010,6 +1011,8 @@ mod tests {
         use crate::gui::hand::Hand;
         let mut app = crate::gui::App::default();
         app.create_sketch_on(qymcad_core::feature::SketchPlane::default());
+        // the sketch closed: inside one undo stops at its first step, the step that opened it
+        app.finish_sketch_edit();
         let steps = app.disk.edits.undo.len();
         let mut hand = Hand::new(&mut app);
         hand.frame(Vec::new());

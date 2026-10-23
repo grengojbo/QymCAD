@@ -3698,7 +3698,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ab_glyph",
  "bytemuck",
@@ -3749,14 +3749,14 @@ dependencies = [
 
 [[package]]
 name = "qymcad-acceptance"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "qymcad",
 ]
 
 [[package]]
 name = "qymcad-assembly"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "egui-phosphor",
@@ -3769,7 +3769,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-bridge"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "qymcad-paths",
  "serde",
@@ -3779,7 +3779,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-core"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cavalier_contours",
  "faer",
@@ -3794,7 +3794,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-doc"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "qymcad-core",
  "qymcad-io",
@@ -3805,7 +3805,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-help"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "include_dir",
  "qymcad-i18n",
@@ -3814,7 +3814,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-i18n"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "fluent-bundle",
  "fluent-syntax",
@@ -3826,7 +3826,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-io"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "dxf",
  "qymcad-core",
@@ -3838,7 +3838,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-kernel"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "cc",
  "qymcad-core",
@@ -3847,7 +3847,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-mcp"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "image",
@@ -3864,7 +3864,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-meshfit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "nalgebra 0.35.0",
  "qymcad-core",
@@ -3874,7 +3874,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-part"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "egui-phosphor",
@@ -3892,14 +3892,14 @@ dependencies = [
 
 [[package]]
 name = "qymcad-paths"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "directories",
 ]
 
 [[package]]
 name = "qymcad-pick"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "qymcad-core",
@@ -3909,7 +3909,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-render"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "eframe",
  "egui",
@@ -3924,7 +3924,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-scheme"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "qymcad-core",
@@ -3936,7 +3936,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-shell"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "serde",
@@ -3944,7 +3944,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-sketch"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "egui-phosphor",
@@ -3958,7 +3958,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-testkit"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "qymcad-core",
  "qymcad-doc",
@@ -3970,7 +3970,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-tools"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "egui",
  "qymcad-core",
@@ -3990,7 +3990,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-ui-state"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "ab_glyph",
  "bytemuck",
@@ -4013,7 +4013,7 @@ dependencies = [
 
 [[package]]
 name = "qymcad-update"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "serde",
  "serde_json",

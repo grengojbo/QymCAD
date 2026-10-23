@@ -103,7 +103,7 @@ pub static CORNER: Tool = Tool {
     // touches the lines further from the corner than they are long (r > 30) cannot be drawn: 29.9 is the largest
     // radius that fits, and a larger one must be refused
     fields: &[Field {
-        caption: "g-expr-placeholder",
+        caption: "f-number-or-expr",
         by_placeholder: true,
         when: When::After,
         class: Class::Radius,
@@ -115,9 +115,9 @@ pub static CORNER: Tool = Tool {
         outcome: corner_rounded,
     }],
     modes: &[&[
-        Mode { word: "opt-radius", clicks: None, outcome: Some(ROUNDED_BY_RADIUS_3) },
-        Mode { word: "opt-fillet-chord", clicks: None, outcome: Some(ROUNDED_BY_CHORD_3) },
-        Mode { word: "opt-fillet-arc-length", clicks: None, outcome: Some(ROUNDED_BY_ARC_3) },
+        Mode { word: "opt-radius", arg: None, clicks: None, outcome: Some(ROUNDED_BY_RADIUS_3) },
+        Mode { word: "opt-fillet-chord", arg: None, clicks: None, outcome: Some(ROUNDED_BY_CHORD_3) },
+        Mode { word: "opt-fillet-arc-length", arg: None, clicks: None, outcome: Some(ROUNDED_BY_ARC_3) },
     ]],
     result: ROUNDED_BY_RADIUS_3,
     node: "Sketch",
@@ -129,6 +129,7 @@ pub static CORNER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/16-corner",
     not_applicable: &[
@@ -225,7 +226,7 @@ pub static CORNER_CHAMFER: Tool = Tool {
     // words: its caption changes with the mode (size, first leg, length), and with two values the bar holds a second
     // field of the same grey words after it
     fields: &[Field {
-        caption: "g-expr-placeholder",
+        caption: "f-number-or-expr",
         by_placeholder: true,
         when: When::After,
         class: Class::Length,
@@ -237,9 +238,9 @@ pub static CORNER_CHAMFER: Tool = Tool {
         outcome: corner_cut,
     }],
     modes: &[&[
-        Mode { word: "cmd-symmetric", clicks: None, outcome: Some(CORNER_SYMMETRIC_3) },
-        Mode { word: "cmd-two-distances", clicks: None, outcome: Some(CORNER_CUT_3) },
-        Mode { word: "cmd-leg-angle", clicks: None, outcome: Some(CORNER_CUT_3) },
+        Mode { word: "cmd-symmetric", arg: None, clicks: None, outcome: Some(CORNER_SYMMETRIC_3) },
+        Mode { word: "cmd-two-distances", arg: None, clicks: None, outcome: Some(CORNER_CUT_3) },
+        Mode { word: "cmd-leg-angle", arg: None, clicks: None, outcome: Some(CORNER_CUT_3) },
     ]],
     result: CORNER_SYMMETRIC_3,
     node: "Sketch",
@@ -251,6 +252,7 @@ pub static CORNER_CHAMFER: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/16-corner",
     not_applicable: &[
@@ -347,6 +349,7 @@ pub static FILLET_ALL: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/16-corner",
     not_applicable: &[

@@ -277,7 +277,7 @@ pub const REVOLVE: Tool = Tool {
             AxisArg::Base(BaseAxis::Y) => RevolveAxis { axis: 1, datum: 0, line: 0 },
             AxisArg::Line { line } => {
                 let si = project.sketch_index(a.sketch).unwrap_or_default();
-                let is_line = project.sketches[si].entities.iter().any(|e| e.id == line && matches!(e.kind, qymcad_core::model::EntityKind::Line { .. }));
+                let is_line = project.sketches[si].entities.iter().any(|e| e.id == line && e.kind.as_line().is_some());
                 if !is_line {
                     return Err(Refusal::new("wrong-kind", &format!("{line} is no line of sketch {}.", a.sketch), Stage::Validate));
                 }

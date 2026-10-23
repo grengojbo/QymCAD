@@ -176,7 +176,7 @@ pub(crate) mod entering_a_context {
         app.project.regen_sketch(si);
         app.finish_sketch_edit();
         app.chosen.sel = qymcad_ui_state::Sel::Sketch(si);
-        app.start_feat_cmd(1);
+        app.start_feat_cmd(qymcad_ui_state::PartTool::Extrude);
         if let Some(p) = app.tools.cmd.params.iter_mut().find(|p| p.key == "height") {
             p.val = 10.0;
             p.txt = "10".into();
@@ -225,7 +225,7 @@ pub(crate) mod entering_a_context {
         part_inside(&mut app, root, 0.0);
         let sub = app.project.add_assembly("Subassembly");
         part_inside(&mut app, sub, 40.0);
-        app.project.set_active_component(Some(root));
+        app.set_context_to(root); // back at the root, as "make active" in the tree puts one there
         qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
         let (before, _) = crate::gui::render_scene::gpu_scene_flat(&app.painting());
         assert!(!before.is_empty(), "setup: the scene is empty");

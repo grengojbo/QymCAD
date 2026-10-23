@@ -11,7 +11,7 @@ use qymcad_ui_state::{CmdParam, PartCtx, SectionDrawn, SectionInHand};
 use std::cell::RefCell;
 use std::rc::Rc;
 
-pub use qymcad_ui_state::{section_base, ON_XY, ON_XZ, ON_YZ, SKETCH_FROM_SECTION};
+pub use qymcad_ui_state::{section_base, ON_XY, ON_XZ, ON_YZ};
 
 /// The tolerance a body gives by itself, as a share of its size: 2e-4, never under 0.01 mm (`section::Fit::for_loop`).
 const TOL_SHARE: f64 = 2e-4;
@@ -31,7 +31,7 @@ fn tol_field(val: f64) -> CmdParam {
 /// TAKE THE TOOL: it waits for a click on a body of a mesh, or takes at once the body of the face selected before it.
 pub fn start_sketch_from_section_cmd(pc: &mut PartCtx) {
     let before = *pc.sel;
-    pc.cmd.open(pc.armed, SKETCH_FROM_SECTION, *pc.mode_3d);
+    pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SketchFromSection, *pc.mode_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, pc.view_restore);
     *pc.mode_3d = true;
     pc.gsel.edges.clear();
@@ -44,6 +44,7 @@ pub fn start_sketch_from_section_cmd(pc: &mut PartCtx) {
     *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-sketch-from-section"));
     if let qymcad_ui_state::Sel::Face(mesh, _) = before {
         sketch_from_section_at(pc, mesh, None);
+        pc.gsel.before.spend_object(); // the face selected is the object of the tool, not a click of it
     }
 }
 
@@ -207,24 +208,22 @@ pub fn told_pieces(loops: &[Fitted]) -> String {
 
 /// APPLY: the sketch of the section, on the base plane or a datum plane off it. Answers the sketch; what it holds is
 /// told in words for the status line after Enter (`RecogniseTool::laid`). A plane missing the body lays nothing.
-pub fn apply_sketch_from_section_cmd(pc: &mut PartCtx) -> Option<Id> {
-    let held = pc.recognise.section?;
+pub fn apply_sketch_from_section_cmd(pc: &mut PartCtx) -> Result<Id, qymcad_ui_state::NotApplied> {
+    let held = pc.recognise.section.ok_or_else(|| super::refused("msg-sketch-from-section"))?;
     let asked = section_asked(held, pc.feat.op, pc.cmd);
     // THE SAME SECTION IS NOT DRAWN TWICE: Enter pressed again, or twice by a heavy hand, laid a second sketch on the first
     let now = SectionDrawn { plane: asked.at.on, offset: asked.at.offset, tol: asked.tol };
     if held.drawn == Some(now) {
-        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-section-drawn"));
-        return None;
+        return Err(super::refused("msg-sketch-from-section-drawn"));
     }
     let pieces = told_pieces(&section_preview(pc.project, asked));
     let name = qymcad_i18n::tr1("g-sketch-n", "n", &(pc.project.sketches.len() + 1).to_string());
     let tol = asked.tol;
     let fit = move |m: &qymcad_core::geom::Mesh, f: &qymcad_core::feature::PlaneFrame| fit_section(m, f, Within::Typed(tol));
     let Some(made) = pc.project.add_sketch_of_section(OfSection { body: held.body, at: asked.at, fit: &fit, name }) else {
-        *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr("msg-sketch-from-section-misses"));
-        return None;
+        return Err(super::refused("msg-sketch-from-section-misses"));
     };
     pc.recognise.laid = format!("{pieces}; {}", qymcad_ui_state::told_defined(&made.defined, "msg-sketch-from-face-laid"));
     pc.recognise.section = Some(SectionInHand { drawn: Some(now), ..held });
-    Some(made.sketch)
+    Ok(made.sketch)
 }

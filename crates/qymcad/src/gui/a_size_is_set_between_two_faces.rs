@@ -23,7 +23,7 @@ mod tests {
         let mut app = block();
         let mut h = Hand::new(&mut app);
         h.look_at([10.0, 10.0, 5.0], 6.0).frame(Vec::new());
-        h.tool(qymcad_part::FACE_GAP).click([10.0, 10.0, 10.0]);
+        h.tool(qymcad_ui_state::PartTool::FaceGap).click([10.0, 10.0, 10.0]);
         h.frame(Vec::new());
         assert_eq!(h.app.params.recognise.gap.len(), 1, "the top was not taken: {}", h.app.status);
         h.look_from_below();

@@ -44,7 +44,7 @@ impl Purpose {
 ///
 /// It used to be a bare `ccw` next to a bare `construction`, and `add_arc_entity(si, 0.0, 0.0, 5.0, 0.0,
 /// 0.0, 5.0, crate::feature::Winding::Ccw, crate::feature::Purpose::Real)` says which is which only to whoever wrote it.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Winding {
     /// counter-clockwise, the positive direction of the sketch plane
     Ccw,
@@ -52,8 +52,18 @@ pub enum Winding {
     Cw,
 }
 
+impl Winding {
+    /// The other way round.
+    pub fn reversed(self) -> Self {
+        match self {
+            Winding::Ccw => Winding::Cw,
+            Winding::Cw => Winding::Ccw,
+        }
+    }
+}
+
 /// WHETHER A SPLINE CLOSES on itself.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Ends {
     /// the last point does not join the first
     Open,
@@ -494,4 +504,19 @@ pub struct FacePlace {
     pub id: u32,
     pub at: [f64; 3],
     pub normal: [f64; 3],
+}
+
+/// THE PATH OF A SWEEP RUN ALONG EDGES OF A BODY instead of a sketch: the body and its edges, picked by hand and kept by
+/// the names the kernel gives them, so the path follows the edges when the body is rebuilt.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct EdgePath {
+    pub body: Id,
+    pub edges: crate::refs::Ref,
+}
+
+/// THE CHAIN OF EDGES A SWEEP RUNS ALONG, as the kernel is handed it: the body and the edges of it that are live now.
+#[derive(Clone, Copy, Debug)]
+pub struct Along<'a> {
+    pub body: Id,
+    pub edges: &'a [u32],
 }

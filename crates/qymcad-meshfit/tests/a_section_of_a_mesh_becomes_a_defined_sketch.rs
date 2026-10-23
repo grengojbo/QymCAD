@@ -224,11 +224,7 @@ fn the_top_of_a_mesh_plate_is_drawn_with_its_arcs_and_its_hole() {
     let made = p.add_sketch_of_face_loops(OfFace { body: id, face: top, fit: &fit, name: "Top".into() }).expect("a sketch is laid");
     let s = &p.sketches[made.si];
     let kinds = |want: fn(&qymcad_core::model::EntityKind) -> bool| s.entities.iter().filter(|e| want(&e.kind)).count();
-    let found = [
-        kinds(|k| matches!(k, qymcad_core::model::EntityKind::Line { .. })),
-        kinds(|k| matches!(k, qymcad_core::model::EntityKind::Arc { .. })),
-        kinds(|k| matches!(k, qymcad_core::model::EntityKind::Circle { .. })),
-    ];
+    let found = [kinds(|k| k.as_line().is_some()), kinds(|k| k.as_arc().is_some()), kinds(|k| k.as_circle().is_some())];
     assert_eq!(found, [4, 4, 1], "the top is drawn as lines, arcs and circles {found:?}");
     assert_eq!(made.defined.free, 0, "the sketch of the top is left free: {:?}", made.defined);
 }

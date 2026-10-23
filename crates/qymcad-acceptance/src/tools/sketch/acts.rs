@@ -41,6 +41,7 @@ pub static DELETE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/18-delete",
     not_applicable: ACTS,
@@ -102,6 +103,7 @@ pub static MIRROR: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/19-mirror",
     not_applicable: &[
@@ -156,6 +158,7 @@ pub static MOVE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
@@ -209,6 +212,7 @@ pub static COPY: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
@@ -252,8 +256,8 @@ pub static ROTATE: Tool = Tool {
     words: &[],
     // a turn of 0 turns nothing and must not lay a step; a whole turn either way is the most there is
     fields: &[Field {
-        caption: "sk-angle-placeholder",
-        by_placeholder: true,
+        caption: "sk-angle-deg",
+        by_placeholder: false,
         when: When::After,
         class: Class::Angle,
         typical: 90.0,
@@ -288,6 +292,7 @@ pub static ROTATE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/21-move-copy-rotate",
     not_applicable: &[
@@ -353,6 +358,7 @@ pub static LINEAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/22-array",
     not_applicable: &[
@@ -407,6 +413,7 @@ pub static CIRCULAR_PATTERN: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/22-array",
     not_applicable: &[

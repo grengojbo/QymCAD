@@ -19,7 +19,7 @@ pub fn start_fully_define(picking: &mut Picking, sel: Sel, sel_sk: &SketchSelect
 
 /// THE CURVES THE TOOL DEFINES: the lines, arcs and circles selected.
 pub fn define_curves(sel_sk: &SketchSelection) -> Vec<Id> {
-    sel_sk.items.iter().filter(|(k, _)| *k == 1).map(|(_, id)| *id).collect()
+    sel_sk.items.iter().filter(|i| i.kind == ItemKind::Curve).map(|i| i.id).collect()
 }
 
 /// WHAT ENTER WOULD LAY: the document as it would stand after it, the constraints laid in the sketch from `from` on,

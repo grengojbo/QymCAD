@@ -59,7 +59,7 @@ impl Project {
             let held = self.sketches[si].projections.iter().find(|x| x.id == p).map(|x| x.entities.clone()).unwrap_or_default();
             for e in self.sketches[si].entities.iter_mut().filter(|e| held.contains(&e.id)) {
                 e.construction = true;
-                if matches!(e.kind, super::EntityKind::Line { .. }) {
+                if e.kind.as_line().is_some() {
                     lines.push(e.id);
                 }
             }

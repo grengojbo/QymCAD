@@ -109,6 +109,25 @@ pub(crate) fn describe(e: &Entry) -> String {
     }
 }
 
+/// The words of the switch of `mode`, as the program writes them.
+fn mode_word(s: &Session, mode: &crate::contract::Mode) -> String {
+    match mode.arg {
+        Some(arg) => s.word_with(mode.word, arg),
+        None => s.word(mode.word),
+    }
+}
+
+/// PRESS THE SWITCH WRITTEN `word`, nearest the top: a button of the bar, or the title of a section of the box, which
+/// a mark of open or folded stands before.
+fn press_switch(s: &mut Session, word: &str) {
+    let titled = format!(" {word}");
+    let title = s.words_at().into_iter().filter(|(w, _)| w.ends_with(&titled)).map(|(w, _)| w).next();
+    match title {
+        Some(t) if s.find(word, TOP).is_none() => s.press_word_near(&t, TOP),
+        _ => s.press_word_near(word, TOP),
+    };
+}
+
 /// 2. EVERY MODE OF THE BAR MAKES WHAT IT IS DESCRIBED TO MAKE - or refuses in words - and going through a group
 ///    and back leaves no mode hanging.
 pub(crate) fn bar(tool: &Tool) {
@@ -118,8 +137,8 @@ pub(crate) fn bar(tool: &Tool) {
         // drawing again
         let mut s = tool.fixture.start();
         take(&mut s, tool);
-        let (word, status, before) = (s.word(mode.word), s.status(), shape_of(&s.document()));
-        s.press_word_near(&word, TOP);
+        let (word, status, before) = (mode_word(&s, mode), s.status(), shape_of(&s.document()));
+        press_switch(&mut s, &word);
         work(&mut s, tool, mode.clicks);
         for f in tool.fields.iter().filter(|f| f.when == When::After) {
             if field_if_there(&mut s, f).is_some() {
@@ -138,8 +157,9 @@ pub(crate) fn bar(tool: &Tool) {
                 if shape_of(&doc) != before {
                     problems.push(format!("mode {word:?} must refuse and changed the document: {:?}", shape_of(&doc)));
                 }
-                if s.status() == status {
-                    problems.push(format!("mode {word:?} must refuse in words and the status line still says {status:?}"));
+                // in the status line, or where the tool in hand speaks
+                if s.status() == status && refusals(&mut s).is_empty() {
+                    problems.push(format!("mode {word:?} must refuse in words and the status line still says {status:?}, the tool says {:?}", s.tool_says()));
                 }
             }
         }
@@ -148,14 +168,14 @@ pub(crate) fn bar(tool: &Tool) {
         let mut s = tool.fixture.start();
         take(&mut s, tool);
         for mode in group.iter().skip(1) {
-            let word = s.word(mode.word);
-            s.press_word_near(&word, TOP);
+            let word = mode_word(&s, mode);
+            press_switch(&mut s, &word);
         }
         // a switch goes back with a second press; an option of a group, with its first option
-        let word = s.word(group[0].word);
-        s.press_word_near(&word, TOP);
+        let word = mode_word(&s, &group[0]);
+        press_switch(&mut s, &word);
         if group.len() == 1 {
-            s.press_word_near(&word, TOP);
+            press_switch(&mut s, &word);
         }
         work(&mut s, tool, None);
         for f in tool.fields.iter().filter(|f| f.when == When::After) {
@@ -202,7 +222,58 @@ pub(crate) fn picks(tool: &Tool) {
             problems.push(format!("{p:?} clicked again: the canvas did not go back to how it was; the status line says {status:?}"));
         }
     }
+    if let Some(boxed) = BOXED.iter().find(|b| b.id == tool.id) {
+        boxes_take(&mut problems, tool, boxed);
+    }
     assert!(problems.is_empty(), "{}: picks:\n{}", tool.id, problems.join("\n"));
+}
+
+/// A TOOL THAT TAKES CONTOURS AS PROFILES TAKES THEM BY A BOX TOO, as a sketch takes its curves: the corners of the contour
+/// its fixture draws, in space.
+pub(crate) struct Boxed {
+    pub id: &'static str,
+    pub low: [f64; 3],
+    pub high: [f64; 3],
+}
+
+/// The tools taking profiles, with the contour of their fixture.
+pub(crate) const BOXED: &[Boxed] = &[Boxed { id: "part.extrude", low: [0.0, 0.0, 0.0], high: [40.0, 30.0, 0.0] }, Boxed { id: "part.revolve", low: [0.0, 0.0, 0.0], high: [40.0, 30.0, 0.0] }];
+
+/// 3, BY A BOX: a crossing drawn right to left over empty space lets every contour go, a window drawn left to right round
+/// the contour takes it - the bar says what a click on it says - and the empty crossing lets it go again.
+fn boxes_take(problems: &mut Vec<String>, tool: &Tool, boxed: &Boxed) {
+    let mut s = tool.fixture.start();
+    take(&mut s, tool);
+    // the four corners of the contour as the view lays them out, not two: a turned view puts the others outermost
+    let l = boxed.low;
+    let h = boxed.high;
+    let mut round = qymcad::Rect::NOTHING;
+    for corner in [[l[0], l[1], l[2]], [h[0], l[1], l[2]], [h[0], h[1], h[2]], [l[0], h[1], h[2]]] {
+        round.extend_with(s.in_space(corner));
+    }
+    let round = round.expand(30.0);
+    let plain = Modifiers::default();
+    let button = qymcad::PointerButton::Primary;
+    // empty space right of the contour, drawn right to left
+    let empty_from = round.right_top() + qymcad::vec2(60.0, 0.0);
+    let empty_to = round.right_top() + qymcad::vec2(30.0, 20.0);
+    s.drag(empty_from, empty_to, button, plain);
+    let none = s.in_hand();
+    s.drag(round.left_top(), round.right_bottom(), button, plain);
+    let boxed_bar = s.in_hand();
+    if boxed_bar == none {
+        problems.push(format!("a window round the contour: the bar does not name what was taken: {boxed_bar:?}; the status line says {:?}", s.status()));
+    }
+    s.drag(empty_from, empty_to, button, plain);
+    if s.in_hand() != none {
+        problems.push(format!("a crossing over empty space after the window: the bar says {:?}, it said {none:?} with nothing taken", s.in_hand()));
+    }
+    if let Some(p) = tool.pick_trial.first() {
+        click(&mut s, p);
+        if s.in_hand() != boxed_bar {
+            problems.push(format!("{p:?} clicked: the bar says {:?}, the window round the contour made it {boxed_bar:?}", s.in_hand()));
+        }
+    }
 }
 
 /// ONE MORE PICK THAN THE ORDINARY ONES, for the tools whose documents are not the plain block: a face of the part
@@ -221,6 +292,8 @@ pub(crate) const MORE: &[(&str, Pick)] = &[
     ("part.thread", Pick::Face([20.0, 15.0, 10.0])),
     ("part.thread-own-pitch", Pick::Face([20.0, 15.0, 10.0])),
     ("part.replace-face", Pick::Face([40.0, 15.0, 5.0])),
+    // the top back edge, apart from the top front one the path runs along: refused in words as a path of edges apart
+    ("part.sweep-edge", Pick::Edge([20.0, 30.0, 10.0])),
     ("part.trim-surface", Pick::Face([35.0, 25.0, 10.0])),
     ("part.measure-3d", Pick::Vertex([40.0, 30.0, 10.0])),
 ];

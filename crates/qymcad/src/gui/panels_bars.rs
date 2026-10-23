@@ -3,19 +3,11 @@
 //! They used to sit inside the frame's body, where "what the frame does" and "what it draws" could not be told
 //! apart and editing one command touched the whole life cycle of the frame.
 
-pub(crate) use qymcad_part::*;
 use super::*;
 
 // the bar of the tools of a workbench, drawn from the catalogue
 mod tool_bar;
 pub(crate) use tool_bar::{wb_toolbar, BAR_MARGIN};
-
-impl App {
-    /// The command bar of the Part workbench, through its own doorway.
-    pub(crate) fn feat_command_bar(&mut self, ui: &mut egui::Ui) {
-        crate::gui::panels_bars::feat_command_bar(&mut self.part_ctx(), ui);
-    }
-}
 
 /// THE MENU BAR OF THE WINDOW: the list said once in `menu_model`, drawn as egui menus. Whatever is chosen
 /// goes through `apply_menu_action` after the drawing, the same door the menu bar of the system uses.
@@ -152,6 +144,7 @@ pub(crate) fn action_glyph(action: &crate::gui::menu_model::MenuAction) -> Optio
         A::ConnectClaude => Some(ph::PLUGS_CONNECTED),
         A::Report => Some(ph::BUG),
         A::About => Some(ph::INFO),
+        A::Support => Some(ph::HEART),
     }
 }
 

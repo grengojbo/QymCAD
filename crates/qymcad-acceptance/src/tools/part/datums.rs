@@ -44,6 +44,7 @@ pub static DATUM_PLANE: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
@@ -81,6 +82,7 @@ pub static DATUM_AXIS: Tool = Tool {
     dependency: Some(Node { kind: "Extrude", row: Some("cmd-extrude") }),
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[
@@ -124,6 +126,7 @@ pub static DATUM_POINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 30, frame_ms: 2000 },
     help: "general/04-datums",
     not_applicable: &[

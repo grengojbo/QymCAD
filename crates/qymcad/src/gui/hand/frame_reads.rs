@@ -1,7 +1,21 @@
 //! WHAT THE LAST FRAME DREW, read back: segments and filled triangles of a colour, rows lit as selected, strokes near
-//! the pointer.
+//! the pointer, every text, and what went to the clipboard of the system.
 
 impl super::Hand<'_> {
+    /// EVERY TEXT THE LAST FRAME DREW, as a person reads the window.
+    pub fn texts(&self) -> Vec<String> {
+        let mut out = Vec::new();
+        for cs in &self.win.shapes {
+            super::super::screen_keys::tests::collect_text(&cs.shape, &mut out);
+        }
+        out
+    }
+
+    /// WHAT THE PROGRAM PUT ON THE CLIPBOARD OF THE SYSTEM, oldest first.
+    pub fn copied(&self) -> &[String] {
+        &self.win.copied
+    }
+
     /// THE SEGMENTS OF `colour` THE LAST FRAME DREW, where they stand on screen: a dashed line is drawn as its dashes.
     pub fn segments_in(&self, colour: egui::Color32) -> Vec<[egui::Pos2; 2]> {
         fn walk(s: &egui::Shape, colour: egui::Color32, out: &mut Vec<[egui::Pos2; 2]>) {

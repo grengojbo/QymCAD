@@ -5,7 +5,6 @@
 //! the light theme exactly as the canvas of the viewport once did.
 use qymcad_ui_state::Notice;
 use super::App;
-use qymcad_ui_state::EditTool;
 use crate::help::{Block, Span};
 use egui_phosphor::regular as ph;
 
@@ -25,15 +24,20 @@ pub(super) const FRAME_SECS: f64 = 0.5;
 /// dies with it. Without a cache every redraw of the window would decode the PNG again — and an
 /// animation redraws twice a second.
 fn help_texture(ctx: &egui::Context, path: &str) -> Option<egui::TextureHandle> {
-    let id = egui::Id::new(("help.img", path));
+    picture_texture(ctx, &format!("help:{path}"), crate::help::image(path)?, egui::TextureOptions::LINEAR)
+}
+
+/// THE TEXTURE OF A PICTURE GIVEN AS PNG BYTES, kept in the context under `key`: decoded once, not on every frame. The
+/// help draws its pictures through it, and the window of support its QR codes.
+pub(crate) fn picture_texture(ctx: &egui::Context, key: &str, bytes: &[u8], options: egui::TextureOptions) -> Option<egui::TextureHandle> {
+    let id = egui::Id::new(("picture", key));
     if let Some(t) = ctx.data(|d| d.get_temp::<egui::TextureHandle>(id)) {
         return Some(t);
     }
-    let bytes = crate::help::image(path)?;
     let rgba = image::load_from_memory(bytes).ok()?.to_rgba8();
     let (w, h) = rgba.dimensions();
     let color = egui::ColorImage::from_rgba_unmultiplied([w as usize, h as usize], rgba.as_raw());
-    let tex = ctx.load_texture(format!("help:{path}"), color, egui::TextureOptions::LINEAR);
+    let tex = ctx.load_texture(key, color, options);
     ctx.data_mut(|d| d.insert_temp(id, tex.clone()));
     Some(tex)
 }
@@ -67,7 +71,7 @@ impl App {
     /// stuck.
     pub(crate) fn help_for_context(&self) -> &'static str {
         if self.tools.armed.commanding() {
-            if let Some(a) = crate::help_map::part_article(self.tools.armed.cmd_kind()) {
+            if let Some(a) = crate::command_catalog::article_in_hand(&self.tools.armed) {
                 return a;
             }
         }
@@ -83,13 +87,12 @@ impl App {
                 return a;
             }
         }
-        if self.side.carr.mode != 0 {
+        if self.side.carr.mode.is_some() {
             if let Some(a) = crate::help_map::assembly_article("asm.comp-array") {
                 return a;
             }
         }
-        let a = &self.tools.armed;
-        if let Some(art) = self.sketch_ses.editing.and(crate::help_map::sketch_tool_article(a.draw_kind(), a.dim_kind(), a.click_op(), a.modify().map(EditTool::code))) {
+        if let Some(art) = self.sketch_ses.editing.and(crate::command_catalog::article_in_hand(&self.tools.armed)) {
             return art;
         }
         // TOOLBAR BUTTONS WITH NO COMMAND NUMBER are an occupied hand as well, and F1 must answer about

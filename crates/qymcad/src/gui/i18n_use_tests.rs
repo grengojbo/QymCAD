@@ -415,6 +415,9 @@ fn every_core_error_has_words_in_every_language() {
         E::SweepPathMissing,
         E::NoIsolatedPointsForHoles,
         E::NoPointsForHoles,
+        E::RecessNotWider { recess: 12.0, hole: 14.0 },
+        E::PathEdgesLost { asked: 3, lost: 1 },
+        E::PathEdgesApart,
         E::ThreadRimNotFound,
         E::AugerRimNotFound,
         E::AugerBadPitchOrLength,
@@ -815,10 +818,10 @@ fn every_code_the_libraries_emit_has_words_in_every_language() {
 /// codes (`tb-`, `wb-`, `tool-`, `sk-`, `jt-` and twenty more) were emitted by libraries that nothing
 /// watched. Whole families of interface words could have been missing in a language with every check
 /// green.
-const WATCHED_PREFIXES: [&str; 56] = [
+const WATCHED_PREFIXES: [&str; 58] = [
     "plane-", "fault-", "jp-", "name-", "recognise-", "rebind-", "joint-", "thread-", "material-", "conn-", "f-", "feat-", "m3-", "cad-", "io-", "post-", "verify-", "error-", "act-", "anchor-",
-    "bool-", "cmd-", "con-", "dof-", "ent-", "expand-", "font-", "g-", "giz-", "hint-", "in-", "j-", "jt-", "mp-", "msg-", "node-", "opt-", "par-", "piece-", "pk-", "pp-", "scheme-", "sec-", "sk-",
-    "sketch-", "status-", "tb-", "tool-", "tree-", "unit-", "vp-", "wb-", "hotkey-", "menu-", "win-", "props-",
+    "bool-", "box-", "cmd-", "con-", "dof-", "ent-", "expand-", "font-", "g-", "giz-", "hint-", "in-", "j-", "jt-", "mp-", "msg-", "node-", "opt-", "par-", "piece-", "pk-", "pp-", "scheme-", "sec-",
+    "sk-", "sketch-", "status-", "tb-", "tool-", "tree-", "unit-", "vp-", "wb-", "hotkey-", "menu-", "win-", "props-", "cmdname-",
 ];
 
 /// THE LIST OF PREFIXES MUST SAY WHAT IT CANNOT SEE.

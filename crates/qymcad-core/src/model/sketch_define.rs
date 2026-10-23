@@ -6,7 +6,7 @@
 //! concentric, equal - then sizes, each kept only when it takes a freedom away (`solver::freedom_taken`), in the order a
 //! drawing is read: radii, lengths, distances between parallel sides, angles, the place, the turn. The sizes are then
 //! rounded to a tenth: a file that says 29.97 meant 30.
-use super::{Constraint, EntityKind, Id, Project};
+use super::{Constraint, Id, LineParts, Project};
 use crate::geom::Point2;
 use std::collections::HashMap;
 
@@ -375,23 +375,16 @@ impl Project {
         let mut sides = Vec::new();
         let mut rounds = Vec::new();
         for e in s.entities.iter().filter(|e| ents.contains(&e.id) && !e.construction) {
-            match e.kind {
-                EntityKind::Line { a, b } => {
-                    if let (Some(&from), Some(&to)) = (at.get(&a), at.get(&b)) {
-                        sides.push(Side { a, b, from, to });
-                    }
+            // a line is a side; a circle or an arc is round, an arc with its two ends; an ellipse and a spline are neither
+            if let Some(LineParts { a, b }) = e.kind.as_line() {
+                if let (Some(&from), Some(&to)) = (at.get(&a), at.get(&b)) {
+                    sides.push(Side { a, b, from, to });
                 }
-                EntityKind::Circle { center, r } => {
-                    if let Some(&c) = at.get(&center) {
-                        rounds.push(Round { centre: center, at: c, r, ends: None });
-                    }
-                }
-                EntityKind::Arc { center, a, b, .. } => {
-                    if let (Some(&c), Some(&p)) = (at.get(&center), at.get(&a)) {
-                        rounds.push(Round { centre: center, at: c, r: (p.x - c.x).hypot(p.y - c.y), ends: Some([a, b]) });
-                    }
-                }
-                EntityKind::Ellipse { .. } => {}
+            }
+            let ends = e.kind.as_arc().map(|arc| [arc.a, arc.b]);
+            let placed = |id: Id| at.get(&id).copied();
+            if let (Some(circle), Some(c)) = (e.kind.circle_by(&placed), e.kind.round_centre().and_then(placed)) {
+                rounds.push(Round { centre: circle.center, at: c, r: circle.r, ends });
             }
         }
         Curves { sides, rounds, at }
@@ -410,15 +403,7 @@ impl Project {
         let side = |a: Id, b: Id| Some(Side { a, b, from: at(a)?, to: at(b)? });
         match anchor {
             Anchor::Origin => s.axis_pts.iter().filter_map(|&g| side(s.frame, g)).collect(),
-            Anchor::Lines(ids) => s
-                .entities
-                .iter()
-                .filter(|e| ids.contains(&e.id))
-                .filter_map(|e| match e.kind {
-                    EntityKind::Line { a, b } => side(a, b),
-                    _ => None,
-                })
-                .collect(),
+            Anchor::Lines(ids) => s.entities.iter().filter(|e| ids.contains(&e.id)).filter_map(|e| e.kind.as_line().and_then(|l| side(l.a, l.b))).collect(),
         }
     }
 

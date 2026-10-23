@@ -608,7 +608,13 @@ impl Project {
 
     /// Move: one branch of the timeline rebuild. Returns whether the node's error record may
     /// be cleared (see `apply_regen`).
-    pub(crate) fn prep_move(&mut self, src: Id, mat: [f64; 12], body: Id) -> crate::feature::KernelJob {
+    pub(crate) fn prep_move(&mut self, p: &mut Pass, src: Id, mat: [f64; 12], body: Id) -> crate::feature::KernelJob {
+        // THE SHIFT FOLLOWS ITS FORMULAS, typed at the gizmo or named: the translation of the transform, axis by axis
+        let mut mat = mat;
+        for k in 0..3 {
+            let at = 3 + 4 * k;
+            mat[at] = p.dim(["dx", "dy", "dz"][k], mat[at]);
+        }
         // A BODY MADE OF A MESH MOVES IN THE DOCUMENT: it has no B-rep for the kernel to move - its mesh and the faces found
         // on it are moved as they are, and nothing is found on it again
         if self.mesh_born(src) {
@@ -730,6 +736,8 @@ impl Project {
         if !above_zero(&[r, h]) {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::PrimitiveSizeNotAboveZero);
         }
+        // the number of sides is a dimension of the node as the radius is: sides typed as `k` follow `k`
+        let n = p.dim("n", f64::from(n)).round().max(3.0) as u32;
         self.named_prism_job(p.node, &polygon_profile(r, n), h, body)
     }
 

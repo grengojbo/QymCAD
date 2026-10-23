@@ -32,7 +32,7 @@ mod tests {
         }
         let mut h = Hand::new(&mut app);
         h.look_at([10.0, 10.0, 5.0], 6.0).frame(Vec::new());
-        h.tool(25).click([10.0, 10.0, 10.0]);
+        h.tool(qymcad_ui_state::PartTool::PushFace).click([10.0, 10.0, 10.0]);
         h.frame(Vec::new());
         assert!(!h.app.tools.gsel.faces.is_empty(), "setup: the top face was not taken: {}", h.app.status);
         h.set("dist", 5.0).frame(Vec::new());

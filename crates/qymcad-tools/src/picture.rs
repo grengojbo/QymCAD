@@ -169,6 +169,7 @@ impl AtRest {
             feat: Default::default(),
             gpu_ok: false,
             gsel: &self.gsel,
+            held: &[],
             hole: Default::default(),
             hover: Default::default(),
             inline: Default::default(),

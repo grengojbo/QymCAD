@@ -40,6 +40,7 @@ pub static LINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/01-line",
     not_applicable: &[
@@ -121,9 +122,9 @@ pub static RECT: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-rect-2corners", clicks: None, outcome: Some(RECT_BY_CORNERS) },
-        Mode { word: "opt-rect-centre", clicks: None, outcome: Some(RECT_FROM_CENTRE) },
-        Mode { word: "opt-rect-3pt", clicks: Some(&[(0.0, 0.0), (40.0, 0.0), (40.0, 20.0)]), outcome: Some(RECT_BY_THREE) },
+        Mode { word: "opt-rect-2corners", arg: None, clicks: None, outcome: Some(RECT_BY_CORNERS) },
+        Mode { word: "opt-rect-centre", arg: None, clicks: None, outcome: Some(RECT_FROM_CENTRE) },
+        Mode { word: "opt-rect-3pt", arg: None, clicks: Some(&[(0.0, 0.0), (40.0, 0.0), (40.0, 20.0)]), outcome: Some(RECT_BY_THREE) },
     ]],
     result: RECT_BY_CORNERS,
     node: "Sketch",
@@ -135,6 +136,7 @@ pub static RECT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/02-rect",
     not_applicable: &[
@@ -183,7 +185,7 @@ pub(crate) const CIRCLE_BY_TWO: Outcome = Outcome::Sketch {
     under: &[(10.0, 0.0, Under::Circle), (5.0, 3.0, Under::Nothing)],
 };
 
-/// A CIRCLE: a centre and a point on it, two ends of a diameter, or tangent to what is drawn.
+/// A CIRCLE: a centre and a point on it, two ends of a diameter, touching two curves drawn, or three points on it.
 pub static CIRCLE: Tool = Tool {
     id: "sketch.circle",
     flow: Flow::Drawing(&[(0.0, 0.0), (10.0, 0.0)], Finish::LastClick),
@@ -197,10 +199,11 @@ pub static CIRCLE: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-circle-centre-radius", clicks: None, outcome: Some(CIRCLE_BY_RADIUS) },
-        Mode { word: "opt-circle-2pt", clicks: None, outcome: Some(CIRCLE_BY_TWO) },
-        // there is nothing drawn to be tangent to, so the tool must say so rather than draw anything
-        Mode { word: "opt-tangent", clicks: None, outcome: None },
+        Mode { word: "opt-circle-centre-radius", arg: None, clicks: None, outcome: Some(CIRCLE_BY_RADIUS) },
+        Mode { word: "opt-circle-2pt", arg: None, clicks: None, outcome: Some(CIRCLE_BY_TWO) },
+        Mode { word: "opt-rect-3pt", arg: None, clicks: Some(&[(10.0, 0.0), (0.0, 10.0), (-10.0, 0.0)]), outcome: Some(CIRCLE_BY_THREE) },
+        // there is nothing drawn to touch, so the tool must say so rather than draw anything
+        Mode { word: "opt-tangent-m", arg: None, clicks: None, outcome: None },
     ]],
     result: CIRCLE_BY_RADIUS,
     node: "Sketch",
@@ -212,6 +215,7 @@ pub static CIRCLE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/03-circle",
     not_applicable: &[
@@ -264,6 +268,7 @@ pub static POINT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/05-point",
     not_applicable: &[
@@ -328,10 +333,10 @@ pub static ARC: Tool = Tool {
     words: &[],
     fields: &[],
     modes: &[&[
-        Mode { word: "opt-arc-cse", clicks: None, outcome: Some(ARC_BY_CENTRE) },
-        Mode { word: "opt-rect-3pt", clicks: Some(&[(0.0, 0.0), (20.0, 0.0), (10.0, 5.0)]), outcome: Some(ARC_BY_THREE) },
+        Mode { word: "opt-arc-cse", arg: None, clicks: None, outcome: Some(ARC_BY_CENTRE) },
+        Mode { word: "opt-rect-3pt", arg: None, clicks: Some(&[(0.0, 0.0), (20.0, 0.0), (10.0, 5.0)]), outcome: Some(ARC_BY_THREE) },
         // there is nothing drawn to continue smoothly from, so the tool must say so rather than draw anything
-        Mode { word: "opt-tangent", clicks: None, outcome: None },
+        Mode { word: "opt-tangent", arg: None, clicks: None, outcome: None },
     ]],
     result: ARC_BY_CENTRE,
     node: "Sketch",
@@ -343,6 +348,7 @@ pub static ARC: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/04-arc",
     not_applicable: &[
@@ -358,56 +364,20 @@ pub static ARC: Tool = Tool {
 };
 
 /// A CIRCLE THROUGH THREE POINTS: the circle of radius 10 about the origin, through (10, 0), (0, 10), (-10, 0).
-pub static CIRCLE3: Tool = Tool {
-    id: "sketch.circle3",
-    flow: Flow::Drawing(&[(10.0, 0.0), (0.0, 10.0), (-10.0, 0.0)], Finish::LastClick),
-    title: "tool-circle-3pt",
-    entries: &[Entry::Button("tb-circle-3pt"), Entry::Search("cmdname-circle-3pt")],
-    other: Other { entry: Entry::Button("tb-line-hint"), title: "tool-line" },
-    fixture: Fixture::SketchOnXy,
-    picks: &[],
-    pick_trial: &[],
-    wrong_picks: &[],
-    words: &[],
-    fields: &[],
-    modes: &[],
-    result: Outcome::Sketch {
-        points: 1,
-        lines: 0,
-        arcs: 0,
-        circles: 1,
-        ellipses: 0,
-        splines: 0,
-        texts: 0,
-        notes: 0,
-        constraints: None,
-        dof: None,
-        box_of: None,
-        size_of: None,
-        under: &[(0.0, -10.0, Under::Circle), (0.0, 0.0, Under::Point), (5.0, 5.0, Under::Nothing)],
-    },
-    node: "Sketch",
-    inputs: &[],
-    undo: "sk-circle",
-    undo_steps: 1,
-    stays: true,
-    upstream: None,
-    dependency: None,
-    contexts: &[Context::SecondPart],
-    refusal: None,
-    budget: Budget { apply_secs: 10, frame_ms: 2000 },
-    help: "sketch/03-circle",
-    not_applicable: &[
-        Skip { point: 2, why: "the circle through three points has no mode: three clicks are the whole of it" },
-        DRAWS_WITHOUT_FIELDS[0],
-        DRAWS_WITHOUT_FIELDS[1],
-        DRAWS_WITHOUT_FIELDS[2],
-        DRAWS_WITHOUT_FIELDS[3],
-        DRAWS_WITHOUT_FIELDS[4],
-        DRAWS_WITHOUT_FIELDS[5],
-        DRAWS_WITHOUT_FIELDS[6],
-        DRAWS_WITHOUT_FIELDS[7],
-    ],
+pub(crate) const CIRCLE_BY_THREE: Outcome = Outcome::Sketch {
+    points: 1,
+    lines: 0,
+    arcs: 0,
+    circles: 1,
+    ellipses: 0,
+    splines: 0,
+    texts: 0,
+    notes: 0,
+    constraints: None,
+    dof: None,
+    box_of: None,
+    size_of: None,
+    under: &[(0.0, -10.0, Under::Circle), (0.0, 0.0, Under::Point), (5.0, 5.0, Under::Nothing)],
 };
 
 /// A polygon of `n` sides about the origin: its corners, the circle they sit on, and the corner clicked at (15, 0).
@@ -465,9 +435,9 @@ pub static POLYGON: Tool = Tool {
     words: &[],
     fields: &[Field { caption: "opt-sides", by_placeholder: false, when: When::Before, class: Class::Count, typical: 6.0, lo: 3.0, hi: 12.0, zero: false, negative: false, outcome: polygon_of }],
     modes: &[&[
-        Mode { word: "opt-polygon-inscribed", clicks: None, outcome: Some(polygon_shape(6)) },
-        Mode { word: "opt-polygon-circumscribed", clicks: None, outcome: Some(POLYGON_CIRCUMSCRIBED) },
-        Mode { word: "opt-by-edge", clicks: None, outcome: Some(polygon_shape(6)) },
+        Mode { word: "opt-polygon-inscribed", arg: None, clicks: None, outcome: Some(polygon_shape(6)) },
+        Mode { word: "opt-polygon-circumscribed", arg: None, clicks: None, outcome: Some(POLYGON_CIRCUMSCRIBED) },
+        Mode { word: "opt-by-edge", arg: None, clicks: None, outcome: Some(polygon_shape(6)) },
     ]],
     result: polygon_shape(6),
     node: "Sketch",
@@ -479,6 +449,7 @@ pub static POLYGON: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/06-polygon",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],
@@ -522,6 +493,7 @@ pub static SLOT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/07-slot",
     not_applicable: &[
@@ -575,6 +547,7 @@ pub static ELLIPSE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/08-ellipse",
     not_applicable: &[
@@ -628,6 +601,7 @@ pub static SPLINE: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/09-spline",
     not_applicable: &[
@@ -686,7 +660,7 @@ pub static TEXT: Tool = Tool {
         enter: false,
     }],
     fields: &[Field {
-        caption: "opt-height-short",
+        caption: "sk-height",
         by_placeholder: false,
         when: When::Before,
         class: Class::Length,
@@ -697,7 +671,7 @@ pub static TEXT: Tool = Tool {
         negative: false,
         outcome: text_of_height,
     }],
-    modes: &[&[Mode { word: "opt-note", clicks: None, outcome: Some(NOTE) }]],
+    modes: &[&[Mode { word: "opt-note", arg: None, clicks: None, outcome: Some(NOTE) }]],
     result: ONE_TEXT,
     node: "Sketch",
     inputs: &[],
@@ -709,6 +683,7 @@ pub static TEXT: Tool = Tool {
     dependency: None,
     contexts: &[Context::SecondPart],
     refusal: None,
+    refused_together: None,
     budget: Budget { apply_secs: 10, frame_ms: 2000 },
     help: "sketch/10-text",
     not_applicable: &[DRAWS[0], DRAWS[1], DRAWS[2], DRAWS[3], DRAWS[4], DRAWS[5]],
