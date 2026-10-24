@@ -374,7 +374,7 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
             FeatureKind::Remade { items, .. } => edit_remade(&remade_cmd, items),
             FeatureKind::FaceGap { gap, moves, .. } => edit_face_gap(&remade_cmd, gap_op, gap, moves),
             FeatureKind::HoleMoved { gap, .. } => edit_gap(&remade_cmd, gap),
-            FeatureKind::Redrawn { height, .. } => edit_redrawn(&remade_cmd, height),
+            FeatureKind::Redrawn { height, rims, .. } => edit_redrawn(&remade_cmd, height, rims),
             FeatureKind::Thicken { face, thickness, .. } => {
                 *thickness = thickness_v;
                 if let Some(&id) = faces_set.first() {

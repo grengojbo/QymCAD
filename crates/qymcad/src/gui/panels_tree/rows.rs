@@ -99,13 +99,22 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         // A SIZE ON THE BODY names its number, as a dimension does
         FeatureKind::FaceGap { gap, .. } => format!("{} {}", ph::RULER, crate::i18n::tr1("feat-face-gap", "d", &crate::i18n::num(at("gap", gap), 1))),
         FeatureKind::HoleMoved { gap, .. } => format!("{} {}", ph::ARROWS_OUT_CARDINAL, crate::i18n::tr1("feat-hole-moved", "d", &crate::i18n::num(at("gap", gap), 1))),
-        FeatureKind::Redrawn { height, kind, .. } => {
+        FeatureKind::Redrawn { height, kind, rims, .. } => {
             let key = match kind {
                 qymcad_core::model::PrismKind::Boss => "feat-redrawn-boss",
                 qymcad_core::model::PrismKind::Pocket => "feat-redrawn-pocket",
                 qymcad_core::model::PrismKind::Stock => "feat-redrawn-stock",
             };
-            format!("{} {}", ph::PENCIL_LINE, crate::i18n::tr1(key, "h", &crate::i18n::num(at("height", height), 1)))
+            let mut text = crate::i18n::tr1(key, "h", &crate::i18n::num(at("height", height), 1));
+            // A RIM GOES WITH THE BOSS and is named in its row, its size as the tree holds it. Reported behaviour: R2 was
+            // said only in the status line before Enter, and the tree showed the height alone
+            if let Some(r) = rims.at_face {
+                text = format!("{text}, {}", rim_named(r, at("rim", r.size), "msg-rim-at-face"));
+            }
+            if let Some(r) = rims.at_base {
+                text = format!("{text}, {}", rim_named(r, at("base_rim", r.size), "msg-rim-at-base"));
+            }
+            format!("{} {}", ph::PENCIL_LINE, text)
         }
         // A FEATURE MADE EXACT names what it is and its size, as the tool that made it does; a node of many, how many
         FeatureKind::Remade { ref items, .. } => {
@@ -727,4 +736,10 @@ pub(crate) fn tree_body_row(tc: &mut qymcad_ui_state::TreeCtx, ui: &mut egui::Ui
             qymcad_ui_state::start_rename_node(&mut *tc.rename, RenameNode::Body(mi), name.clone());
         }
     });
+}
+
+/// A rim of a boss or a pocket redrawn in words: how it is made, its size `size`, and where it runs (`place`, a key).
+fn rim_named(rim: qymcad_core::model::RimBlend, size: f64, place: &str) -> String {
+    let how = if rim.cut == qymcad_core::model::RimCut::Round { "msg-rim-round" } else { "msg-rim-chamfer" };
+    format!("{} {}", crate::i18n::tr1(how, "d", &crate::i18n::num(size, 1)), crate::i18n::tr(place))
 }

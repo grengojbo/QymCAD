@@ -4,7 +4,7 @@
 //! by the sketch, one node whose height is a field at the geometry (`Project::add_redrawn`): from then on the sizes of
 //! the sketch drive the body. Made for a body come from a STEP file, which has no sketch behind its bosses.
 use qymcad_core::feature::{FaceKey, FeatureKind};
-use qymcad_core::model::{FaceSketch, FromFace, Id, PrismKind, RimBlend, RimCut};
+use qymcad_core::model::{FaceSketch, FromFace, Id, PrismKind, RimBlend, RimCut, Rims};
 use qymcad_ui_state::{CmdParam, PartCtx, RedrawInHand};
 
 /// What Enter does, as the operation of the bar (`FeatTarget::op`) holds it.
@@ -16,6 +16,57 @@ const FLAT: f64 = 1e-6;
 
 fn height_field(val: f64) -> CmdParam {
     CmdParam::new("f-redrawn-height", "height", val, 0.01, 100000.0)
+}
+
+/// A RIM OF A BOSS OR A POCKET REDRAWN as a field beside its height: its key among the sizes of the node, and what it
+/// is called by how it is made. Reported behaviour: a rim rounded R2 was named only in the status line before Enter,
+/// and could not be changed.
+struct RimField {
+    key: &'static str,
+    round: &'static str,
+    chamfer: &'static str,
+}
+
+const RIM_FIELDS: [RimField; 2] = [
+    RimField { key: "rim", round: "f-redrawn-rim-round", chamfer: "f-redrawn-rim-chamfer" },
+    RimField { key: "base_rim", round: "f-redrawn-base-round", chamfer: "f-redrawn-base-chamfer" },
+];
+
+/// A rim a boss or a pocket has, and its field.
+struct RimHeld {
+    rim: RimBlend,
+    field: &'static RimField,
+}
+
+impl RimHeld {
+    /// What the field is called, by how the rim is made.
+    fn label(&self) -> &'static str {
+        if self.rim.cut == RimCut::Round {
+            self.field.round
+        } else {
+            self.field.chamfer
+        }
+    }
+
+    /// The field at `val`.
+    fn param(&self, val: f64) -> CmdParam {
+        CmdParam::new(self.label(), self.field.key, val, 0.01, 100000.0)
+    }
+}
+
+/// The rims of `rims` with their fields, at the face then at the base.
+fn rims_held(rims: Rims) -> Vec<RimHeld> {
+    let at = [rims.at_face, rims.at_base];
+    at.into_iter().zip(RIM_FIELDS.iter()).filter_map(|pair| pair.0.map(|rim| RimHeld { rim, field: pair.1 })).collect()
+}
+
+/// The sizes of `rims` as the fields of `cmd` hold them; a field the tool does not show leaves its rim as it was.
+fn rims_from(cmd: &qymcad_ui_state::FeatCommand, rims: &mut Rims) {
+    for (slot, f) in [&mut rims.at_face, &mut rims.at_base].into_iter().zip(RIM_FIELDS.iter()) {
+        if let Some(r) = slot.as_mut().filter(|_| cmd.params.iter().any(|p| p.key == f.key)) {
+            r.size = qymcad_ui_state::cmd_val(cmd, f.key);
+        }
+    }
 }
 
 /// TAKE THE TOOL: it waits for a click on a flat face, or takes at once the face selected before it.
@@ -126,8 +177,10 @@ fn refresh(pc: &mut PartCtx) {
     *pc.status = qymcad_ui_state::Notice::info(said);
     match held.prism.as_ref().filter(|_| replace) {
         Some(p) => {
-            let h = pc.cmd.params.iter().find(|f| f.key == "height").map(|f| f.val).unwrap_or(p.height);
-            pc.cmd.params = vec![height_field(h)];
+            let given = |key: &str, or: f64| pc.cmd.params.iter().find(|f| f.key == key).map(|f| f.val).unwrap_or(or);
+            let mut params = vec![height_field(given("height", p.height))];
+            params.extend(rims_held(p.rims).iter().map(|r| r.param(given(r.field.key, r.rim.size))));
+            pc.cmd.params = params;
             pc.cmd.focus = true;
         }
         None => {
@@ -169,7 +222,10 @@ pub fn apply_sketch_from_face_cmd(pc: &mut PartCtx) -> Result<Id, qymcad_ui_stat
     let outline = held.prism.as_ref().map(|p| p.outline.clone()).unwrap_or_default();
     let profile = held.prism.as_ref().map(|p| p.profile.clone()).unwrap_or_default();
     let name = qymcad_i18n::tr1("g-sketch-n", "n", &(pc.project.sketches.len() + 1).to_string());
-    let prism = held.prism.clone().filter(|_| replace);
+    let mut prism = held.prism.clone().filter(|_| replace);
+    if let Some(p) = prism.as_mut() {
+        rims_from(pc.cmd, &mut p.rims);
+    }
     if pc.project.came_from_a_mesh(held.body) {
         let fit = |pts: &[qymcad_core::geom::Point2]| qymcad_meshfit::section::fit_loop(pts, &qymcad_meshfit::section::Fit::for_loop(pts));
         let Some(sketch) = pc.project.add_sketch_of_face_loops(qymcad_core::model::OfFace { body: held.body, face: held.face, fit: &fit, name }) else {
@@ -207,7 +263,7 @@ fn told_laid(s: &FaceSketch) -> String {
 /// the height in the field - an expression as it was typed - and Enter changes the node rather than laying another. Its
 /// outline is the sketch's: a double click on the sketch edits it.
 pub fn open_redrawn(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool) {
-    let FeatureKind::Redrawn { src, ref faces, height, .. } = *kind else { return };
+    let FeatureKind::Redrawn { src, ref faces, height, rims, .. } = *kind else { return };
     pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SketchFromFace, was_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
     *pc.mode_3d = true;
@@ -215,14 +271,20 @@ pub fn open_redrawn(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool)
     pc.feat.op = REPLACE;
     pc.gsel.faces = super::live_picks(&*pc.project, src, faces, true).into_iter().collect();
     pc.gsel.faces_body = Some(src);
-    pc.cmd.params = vec![super::cmd_param_from(&*pc.project, fid, "f-redrawn-height", "height", height, 0.01, 100000.0)];
+    let mut params = vec![super::cmd_param_from(&*pc.project, fid, "f-redrawn-height", "height", height, 0.01, 100000.0)];
+    for r in rims_held(rims) {
+        params.push(super::cmd_param_from(&*pc.project, fid, r.label(), r.field.key, r.rim.size, 0.01, 100000.0));
+    }
+    pc.cmd.params = params;
     pc.cmd.focus = true;
     *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-edit-redrawn"));
 }
 
-/// The height written into a boss or pocket redrawn being edited; a field the tool does not show leaves it as it was.
-pub fn edit_redrawn(cmd: &qymcad_ui_state::FeatCommand, height: &mut f64) {
+/// The height and the rims written into a boss or pocket redrawn being edited; a field the tool does not show leaves its
+/// size as it was.
+pub fn edit_redrawn(cmd: &qymcad_ui_state::FeatCommand, height: &mut f64, rims: &mut Rims) {
     if cmd.params.iter().any(|p| p.key == "height") {
         *height = qymcad_ui_state::cmd_val(cmd, "height");
     }
+    rims_from(cmd, rims);
 }

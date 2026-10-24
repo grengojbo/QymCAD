@@ -13,6 +13,18 @@ mod tests {
         path: String,
     }
 
+    /// A plate of 60 x 40 x 5 with a boss of 30 x 20 x 8 from (10, 10), its top rounded `r` when one is given.
+    fn bossed_solid(r: Option<f64>) -> qymcad_kernel::Shape {
+        let block = |x: f64, y: f64, w: f64, d: f64, z: f64, h: f64| {
+            let at = [1.0, 0.0, 0.0, x, 0.0, 1.0, 0.0, y, 0.0, 0.0, 1.0, z];
+            qymcad_kernel::specimen::extrude(&[0.0, 0.0, w, 0.0, w, d, 0.0, d], h).expect("a block").moved(&at).expect("placed")
+        };
+        let s = block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&block(10.0, 10.0, 30.0, 20.0, 5.0, 8.0), 1).expect("fused");
+        let Some(r) = r else { return s };
+        let top: Vec<u32> = s.edges_info().into_iter().filter(|e| e.poly.iter().all(|p| (p[2] as f64 - 13.0).abs() < 1e-6)).map(|e| e.id).collect();
+        s.filleted(r, &top).expect("rounded")
+    }
+
     /// A plate of 60 x 40 x 5 with a boss of 30 x 20 x 8 from (10, 10), written to a STEP file.
     fn bossed_file() -> Written {
         let block = |x: f64, y: f64, w: f64, d: f64, z: f64, h: f64| {
@@ -155,5 +167,35 @@ mod tests {
         h.click([25.0, 20.0, 13.0]).frame(Vec::new());
         let told = crate::i18n::tr("msg-sketch-from-face-copy-replace");
         assert!(h.app.status.words.contains(&told), "Sketch only on a boss does not say how to have the sketch drive it: {}", h.app.status);
+    }
+
+    /// A RIM ROUNDED R2 GOES WITH THE BOSS REDRAWN and is named and changed with it: the row in the tree names R2.0, the
+    /// node reopened shows the rounding beside the height, and 1.5 typed there lays the rim again 1.5. Reported
+    /// behaviour: the tree said "Boss by sketch h=8.0" alone, and R2 could not be changed.
+    #[test]
+    fn a_rounded_rim_is_named_and_changed_with_the_boss() {
+        let mut app = App::default();
+        let file = written(&bossed_solid(Some(2.0)), "rounded-boss");
+        brought_in(&mut app, &file);
+        let mut h = Hand::new(&mut app);
+        h.look_at([25.0, 20.0, 10.0], 6.0).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).click([25.0, 20.0, 13.0]).frame(Vec::new());
+        let rim = h.app.tools.cmd.params.iter().find(|p| p.key == "rim").map(|p| p.val);
+        assert_eq!(rim, Some(2.0), "the rounding of the rim is not a field beside the height: {}", h.app.status);
+        h.enter();
+        at_rest(&mut h);
+        let node = h.app.project.timeline.last().map(|n| n.id).expect("the node");
+        let rounded = crate::i18n::tr1("msg-rim-round", "d", &crate::i18n::num(2.0, 1));
+        let row = h.texts().into_iter().find(|t| t.contains(&crate::i18n::tr1("feat-redrawn-boss", "h", &crate::i18n::num(8.0, 1))));
+        assert!(row.as_deref().is_some_and(|r| r.contains(&rounded)), "the row of the boss redrawn does not name {rounded}: {row:?}");
+        h.key(egui::Key::Escape).key(egui::Key::Escape);
+        assert!(h.double_click_word(row.as_deref().unwrap_or_default()), "the row of the boss redrawn is not on screen");
+        let rim = h.app.tools.cmd.params.iter().find(|p| p.key == "rim").map(|p| p.val);
+        assert_eq!(rim, Some(2.0), "the node reopened does not show its rounding: {}", h.app.status);
+        h.set("rim", 1.5).enter();
+        at_rest(&mut h);
+        let built = h.app.project.timeline.iter().find(|n| n.id == node).and_then(|n| n.kind.body()).and_then(|b| h.app.live.shapes.get(&b)).map(|s| s.volume());
+        let want = bossed_solid(Some(1.5)).volume();
+        assert!(built.is_some_and(|v| (v - want).abs() < 1e-3 * want), "the rim made 1.5 holds {built:?} mm^3, not {want}");
     }
 }
