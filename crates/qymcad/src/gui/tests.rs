@@ -77,6 +77,9 @@ mod a_hinge_follows_its_parameter;
 mod a_drawing_is_fully_defined_by_one_command;
 
 #[cfg(test)]
+mod the_edges_of_a_body_are_drawn;
+
+#[cfg(test)]
 mod a_mesh_is_drawn_by_its_section;
 
 #[cfg(test)]

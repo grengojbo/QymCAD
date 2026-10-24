@@ -1001,6 +1001,8 @@ pub use settings::*;
 mod records;
 pub use records::*;
 mod scene;
+mod edges3d;
+pub use edges3d::*;
 pub use floor::*;
 mod floor;
 pub use scene::*;

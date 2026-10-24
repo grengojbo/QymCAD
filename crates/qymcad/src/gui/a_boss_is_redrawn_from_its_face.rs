@@ -259,4 +259,25 @@ mod tests {
             assert!((back - before).abs() < 1e-3 * before, "{}: one step of undo left {back} mm^3, not {before}", c.field);
         }
     }
+
+    /// THE FACE A CLICK WOULD TAKE IS LIT UNDER THE POINTER, before the click: the top of the boss with the pointer on
+    /// it, nothing with the pointer off the plate. Reported behaviour: the faces of the plate and the boss in one colour,
+    /// and no telling which a click would take.
+    #[test]
+    fn the_face_under_the_pointer_is_lit_before_the_click() {
+        let mut app = App::default();
+        let file = bossed_file();
+        brought_in(&mut app, &file);
+        let mut h = Hand::new(&mut app);
+        h.look_at([25.0, 20.0, 10.0], 6.0).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).frame(Vec::new());
+        let lit = qymcad_scheme::a(h.app.scheme.pal.highlight(), crate::gui::render::FACE_UNDER_POINTER_ALPHA);
+        let on_top = h.on_screen3d([25.0, 20.0, 13.0]);
+        h.frame_with(egui::Modifiers::NONE, vec![egui::Event::PointerMoved(on_top)]).frame(Vec::new());
+        assert!(h.mesh_corners_in(lit) > 0, "the top of the boss under the pointer is not lit");
+        assert!(h.app.params.recognise.redraw.is_none(), "the face was taken with no click");
+        let off = h.on_screen3d([200.0, 200.0, 0.0]);
+        h.frame_with(egui::Modifiers::NONE, vec![egui::Event::PointerMoved(off)]).frame(Vec::new());
+        assert_eq!(h.mesh_corners_in(lit), 0, "a face is lit with the pointer off the plate");
+    }
 }

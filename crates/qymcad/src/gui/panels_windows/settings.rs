@@ -510,6 +510,19 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                     ui.label(egui::RichText::new(crate::i18n::tr("settings-fov-needs-persp")).weak().small());
                 }
             }
+            // THE EDGES OF THE BODIES: a thin dark line where faces meet at an angle; hidden for a heavy mesh
+            if show("settings-body-edges") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-body-edges"));
+                    let prev = wc.set.body_edges;
+                    ui.selectable_value(&mut wc.set.body_edges, qymcad_ui_state::BodyEdges::Shown, crate::i18n::tr("settings-body-edges-shown"));
+                    ui.selectable_value(&mut wc.set.body_edges, qymcad_ui_state::BodyEdges::Hidden, crate::i18n::tr("settings-body-edges-hidden"));
+                    if prev != wc.set.body_edges {
+                        *wc.cache.view.borrow_mut() = None;
+                        wc.cache.gpu_scene_key.set(u64::MAX);
+                    }
+                });
+            }
             if show("settings-msaa") {
                 // ANTIALIASING BELONGS TO THE GPU VIEWPORT ONLY: the software raster draws its own way, and
                 // the wgpu sample count does not affect it at all. On the CPU path the row looked alive.

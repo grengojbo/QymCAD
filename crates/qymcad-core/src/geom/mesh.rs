@@ -111,6 +111,65 @@ impl Mesh {
         (n, len * 0.5, ctr)
     }
 
+    /// THE SHARP EDGES OF THE MESH, as the ends of each - a vertex of the mesh at either end: where two of `faces` meet
+    /// turning by more than `crease_deg`, and where the mesh is open. A seam between two faces running on smoothly - a
+    /// rounding into a flat side - is not one. With no faces given every triangle is its own, and the turn alone decides.
+    ///
+    /// The sides of the triangles are matched BY WHERE THEY STAND, to `SAME_PLACE` mm, not by the numbers of their
+    /// vertices: a solid is meshed face by face, and the two faces across an edge each hold vertices of their own
+    /// there.
+    pub fn sharp_edges(&self, faces: &[MeshFace], crease_deg: f64) -> Vec<[u32; 2]> {
+        let mut face_of = vec![u32::MAX; self.tris.len()];
+        for (f, face) in faces.iter().enumerate() {
+            for &t in &face.triangles {
+                if let Some(slot) = face_of.get_mut(t as usize) {
+                    *slot = f as u32;
+                }
+            }
+        }
+        let normal = |t: usize| -> [f64; 3] {
+            let p = self.triangle(t);
+            let (u, v) = ([p[1].x - p[0].x, p[1].y - p[0].y, p[1].z - p[0].z], [p[2].x - p[0].x, p[2].y - p[0].y, p[2].z - p[0].z]);
+            let n = [u[1] * v[2] - u[2] * v[1], u[2] * v[0] - u[0] * v[2], u[0] * v[1] - u[1] * v[0]];
+            let l = (n[0] * n[0] + n[1] * n[1] + n[2] * n[2]).sqrt().max(1e-300);
+            [n[0] / l, n[1] / l, n[2] / l]
+        };
+        let place = |vi: u32| -> [i64; 3] {
+            let p = self.verts[vi as usize];
+            [(p.x / SAME_PLACE).round() as i64, (p.y / SAME_PLACE).round() as i64, (p.z / SAME_PLACE).round() as i64]
+        };
+        // a side of a triangle by its two places in order, and the triangles that have it
+        let mut sides: std::collections::HashMap<[i64; 6], SideOf> = std::collections::HashMap::new();
+        for (t, tri) in self.tris.iter().enumerate() {
+            for k in 0..3 {
+                let (a, b) = (tri[k], tri[(k + 1) % 3]);
+                let (pa, pb) = (place(a), place(b));
+                if pa == pb {
+                    continue;
+                }
+                let key = if pa < pb { [pa[0], pa[1], pa[2], pb[0], pb[1], pb[2]] } else { [pb[0], pb[1], pb[2], pa[0], pa[1], pa[2]] };
+                sides.entry(key).or_insert(SideOf { ends: [a, b], tris: Vec::new() }).tris.push(t as u32);
+            }
+        }
+        let turn = crease_deg.to_radians().cos();
+        let mut out: Vec<[u32; 2]> = sides
+            .into_values()
+            .filter(|s| match s.tris.as_slice() {
+                [one, other] => {
+                    let (i, j) = (*one as usize, *other as usize);
+                    let apart = faces.is_empty() || face_of[i] != face_of[j] || face_of[i] == u32::MAX;
+                    let (n, m) = (normal(i), normal(j));
+                    apart && (n[0] * m[0] + n[1] * m[1] + n[2] * m[2]) < turn
+                }
+                // open, or more than two triangles on one side: an edge either way
+                _ => true,
+            })
+            .map(|s| s.ends)
+            .collect();
+        out.sort_unstable();
+        out
+    }
+
     /// Smoothed normals at the corners of the triangles, `3 * t + k` for corner `k` of triangle `t`, smoothed only
     /// where the surface turns by less than `crease_deg` between two triangles. For a mesh that shares its vertices
     /// across its sharp edges too - a mesh from a file - where `vertex_normals` smooths the light over every edge: a
@@ -456,4 +515,14 @@ impl Mesh {
         let segs = self.face_outline(face).into_iter().map(|s| (Point2::new(s.from.x, s.from.y), Point2::new(s.to.x, s.to.y))).collect();
         stitch_segments(segs, 1e-3)
     }
+}
+
+/// How close two vertices of a mesh stand and are one place, in mm: two faces meshed apart share the points of the edge
+/// between them to the last digit of a float, and a millionth of a millimetre leaves room for that.
+const SAME_PLACE: f64 = 1e-6;
+
+/// A SIDE OF A TRIANGLE AS `Mesh::sharp_edges` GATHERS IT: the vertices it was first seen with, and the triangles having it.
+struct SideOf {
+    ends: [u32; 2],
+    tris: Vec<u32>,
 }

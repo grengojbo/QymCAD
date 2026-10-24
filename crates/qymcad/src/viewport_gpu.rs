@@ -268,9 +268,8 @@ fn octa(p: u32) -> vec3<f32> {
     return normalize(vec3<f32>(xy, z));
 }
 
-@vertex
-fn vs_mesh(@location(0) pos: vec3<f32>, @location(1) body: u32, @location(2) nrm_packed: u32) -> VsOut {
-    var out: VsOut;
+// WHERE A POINT OF THE WORLD LANDS IN CLIP SPACE: the one projection the bodies and their edges share.
+fn clip_of(pos: vec3<f32>) -> vec4<f32> {
     let rel = pos - cam.tgt.xyz;
     let sx = dot(rel, cam.right.xyz);
     let sy = dot(rel, cam.up.xyz);
@@ -286,15 +285,20 @@ fn vs_mesh(@location(0) pos: vec3<f32>, @location(1) body: u32, @location(2) nrm
         // REVERSED AND WITHOUT A FAR PLANE: ndc_z = clip_z / w = z_near / zc, 1 at the near plane and 0 at infinity
         // (`depth_ndc`). The buffer is a float, and a float keeps its relative precision down to 0.
         // ndc.xy = clip.xy/w: clip.xy = sx*scale/half*d_eye, /zc -> sx*scale/half*(d_eye/zc)
-        out.pos = vec4<f32>(sx * scale / cam.params.y * d_eye, sy * scale / cam.params.z * d_eye, cam.persp.y, zc);
-    } else {
-        // ORTHOGRAPHIC: w=1, the depth is linear in the world over the range that holds the scene, reversed - nearer
-        // is larger
-        let ndc_x = sx * scale / cam.params.y;
-        let ndc_y = sy * scale / cam.params.z;     // world-up becomes ndc +y (upwards), as in the raster
-        let ndc_z = 0.5 - depth / (2.0 * cam.params.w);
-        out.pos = vec4<f32>(ndc_x, ndc_y, ndc_z, 1.0);
+        return vec4<f32>(sx * scale / cam.params.y * d_eye, sy * scale / cam.params.z * d_eye, cam.persp.y, zc);
     }
+    // ORTHOGRAPHIC: w=1, the depth is linear in the world over the range that holds the scene, reversed - nearer is
+    // larger
+    let ndc_x = sx * scale / cam.params.y;
+    let ndc_y = sy * scale / cam.params.z;     // world-up becomes ndc +y (upwards), as in the raster
+    let ndc_z = 0.5 - depth / (2.0 * cam.params.w);
+    return vec4<f32>(ndc_x, ndc_y, ndc_z, 1.0);
+}
+
+@vertex
+fn vs_mesh(@location(0) pos: vec3<f32>, @location(1) body: u32, @location(2) nrm_packed: u32) -> VsOut {
+    var out: VsOut;
+    out.pos = clip_of(pos);
     out.wpos = pos;
     out.body = body;
     // zero means flat shading: then the fragment takes the face normal from the derivatives
@@ -365,6 +369,40 @@ fn fs_mesh(in: VsOut, @builtin(front_facing) front: bool) -> @location(0) vec4<f
         return vec4<f32>(tint * lit * 0.25 / 255.0 + cam.ghost.xyz * 0.75, cam.shade.y);
     }
     return vec4<f32>(tint * lit / 255.0, 1.0);
+}
+
+// ---- THE EDGES OF THE BODIES: a thin dark line where two faces meet at an angle, tested against the depth of the
+// bodies so an edge behind a body stays hidden (`render_scene::edge_lines`, the same lines the raster draws) ----
+
+struct EdgeOut {
+    @builtin(position) pos: vec4<f32>,
+    @location(1) @interpolate(flat) body: u32,
+};
+
+@vertex
+fn vs_edge(@location(0) pos: vec3<f32>, @location(1) body: u32, @location(2) nrm_packed: u32) -> EdgeOut {
+    var out: EdgeOut;
+    var p = clip_of(pos);
+    // A HAIR TOWARDS THE EYE, so the line wins over the two faces it lies on: the depth is reversed, nearer larger. In
+    // perspective the depth is z / w, scaled; in orthographic it is linear and shifted (`EDGE_LEAD_*`, the raster too).
+    if (cam.persp.x > 0.0) {
+        p.z = p.z * (1.0 + 5.0e-4);
+    } else {
+        p.z = p.z + 1.0e-4;
+    }
+    out.pos = p;
+    out.body = body;
+    return out;
+}
+
+@fragment
+fn fs_edge(in: EdgeOut) -> @location(0) vec4<f32> {
+    let look = look_of(in.body);
+    // a ghost and the cap of a section draw no edges
+    if ((look.state & 6u) != 0u) { discard; }
+    let tint = vec3<f32>(f32(look.tint & 0xffu), f32((look.tint >> 8u) & 0xffu), f32((look.tint >> 16u) & 0xffu));
+    // the body's own colour, darkened (`EDGE_SHADE`)
+    return vec4<f32>(tint * 0.35 / 255.0, 1.0);
 }
 
 
@@ -515,6 +553,8 @@ fn fs_blit_srgb(in: BlitOut) -> @location(0) vec4<f32> {
 pub struct GpuRenderer {
     mesh_pipeline: wgpu::RenderPipeline,
     mesh_pipeline_ghost: wgpu::RenderPipeline,
+    /// The edges of the solid bodies, after them (see `edge_pipeline` where it is made).
+    edge_pipeline: wgpu::RenderPipeline,
     /// The depth of the ghosts alone, drawn before their colour (see `mesh_pipeline_ghost_depth` where it is made).
     mesh_pipeline_ghost_depth: wgpu::RenderPipeline,
     /// The floor, after the solid bodies and before the ghosts (see `floor_pipeline` where it is made).
@@ -548,12 +588,21 @@ pub struct GpuRenderer {
     /// Where each block lies and whose it is: the pass is chosen from the look of that body, so a body
     /// becoming a ghost changes no buffer at all.
     spans: Vec<Span>,
+    /// The edges of the bodies: a buffer of lines per body that has any, uploaded with the scene.
+    lines: Vec<LineSpan>,
     /// The look table on the card, rewritten every frame - two numbers per body.
     look_buf: Option<wgpu::Texture>,
     look_bind: Option<wgpu::BindGroup>,
     look_len: usize,
     vcount: u32,
     scene_key: u64,
+}
+
+/// THE EDGES OF ONE BODY ON THE CARD: their buffer, how many vertices it holds - two a line - and whose they are.
+struct LineSpan {
+    buf: wgpu::Buffer,
+    count: u32,
+    body: u32,
 }
 
 /// ONE BLOCK AS THE DRAW SEES IT: which piece it lies in, which of that piece's indices are its own, where
@@ -630,6 +679,32 @@ impl GpuRenderer {
             fragment: Some(wgpu::FragmentState {
                 module: &shader,
                 entry_point: Some("fs_mesh"),
+                compilation_options: Default::default(),
+                targets: &[Some(wgpu::ColorTargetState { format: OFFSCREEN_FORMAT, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
+            }),
+            multiview_mask: None,
+            cache: None,
+        });
+
+        // --- the edges of the bodies ---
+        // LINES OVER THE SOLID BODIES, tested against their depth and writing none: an edge behind a body is hidden,
+        // and two edges crossing do not hide each other. Drawn from the same vertices the bodies are, two a line.
+        let edge_pipeline = device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+            label: Some("qym_edge_pipeline"),
+            layout: Some(&mesh_pl),
+            vertex: wgpu::VertexState { module: &shader, entry_point: Some("vs_edge"), compilation_options: Default::default(), buffers: std::slice::from_ref(&vbl) },
+            primitive: wgpu::PrimitiveState { topology: wgpu::PrimitiveTopology::LineList, cull_mode: None, ..Default::default() },
+            depth_stencil: Some(wgpu::DepthStencilState {
+                format: DEPTH_FORMAT,
+                depth_write_enabled: Some(false),
+                depth_compare: Some(wgpu::CompareFunction::GreaterEqual),
+                stencil: wgpu::StencilState::default(),
+                bias: wgpu::DepthBiasState::default(),
+            }),
+            multisample: wgpu::MultisampleState { count: samples, ..Default::default() },
+            fragment: Some(wgpu::FragmentState {
+                module: &shader,
+                entry_point: Some("fs_edge"),
                 compilation_options: Default::default(),
                 targets: &[Some(wgpu::ColorTargetState { format: OFFSCREEN_FORMAT, blend: Some(wgpu::BlendState::REPLACE), write_mask: wgpu::ColorWrites::ALL })],
             }),
@@ -758,6 +833,7 @@ impl GpuRenderer {
         Self {
             mesh_pipeline,
             mesh_pipeline_ghost,
+            edge_pipeline,
             mesh_pipeline_ghost_depth,
             floor_pipeline,
             blit_pipeline,
@@ -774,6 +850,7 @@ impl GpuRenderer {
             size: [0, 0],
             bufs: Vec::new(),
             spans: Vec::new(),
+            lines: Vec::new(),
             look_buf: None,
             look_bind: None,
             look_len: 0,
@@ -928,6 +1005,18 @@ impl egui_wgpu::CallbackTrait for MeshPaint {
                     queue.write_buffer(ibuf, at.first_index as u64 * isize_, bytemuck::cast_slice(&part.idx));
                     gpu.spans.push(Span { chunk: at.chunk as usize, idx: at.first_index..at.first_index + part.idx.len() as u32, base_vertex: at.first_vertex as i32, body: part.body });
                 }
+                // the edges, a buffer a body: small beside its triangles, and drawn as they are, with no indices
+                gpu.lines.clear();
+                for part in verts.iter().filter(|p| !p.lines.is_empty()) {
+                    let buf = device.create_buffer(&wgpu::BufferDescriptor {
+                        label: Some("qym_scene_lines"),
+                        size: part.lines.len() as u64 * vsize,
+                        usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+                        mapped_at_creation: false,
+                    });
+                    queue.write_buffer(&buf, 0, bytemuck::cast_slice(&part.lines));
+                    gpu.lines.push(LineSpan { buf, count: part.lines.len() as u32, body: part.body });
+                }
                 gpu.vcount = verts.iter().map(|p| p.idx.len() as u32).sum();
                 gpu.scene_key = self.scene_key;
             }
@@ -1020,6 +1109,16 @@ impl egui_wgpu::CallbackTrait for MeshPaint {
             }
         };
         bodies(&mut pass, false, &gpu.mesh_pipeline);
+        // the edges of the solid bodies, over them: the depth they test against is set now
+        if let Some(look_bind) = scene {
+            pass.set_pipeline(&gpu.edge_pipeline);
+            pass.set_bind_group(0, &gpu.cam_bind, &[]);
+            pass.set_bind_group(1, look_bind, &[]);
+            for l in gpu.lines.iter().filter(|l| !ghostly(l.body)) {
+                pass.set_vertex_buffer(0, l.buf.slice(..));
+                pass.draw(0..l.count, 0..1);
+            }
+        }
         pass.set_pipeline(&gpu.floor_pipeline);
         pass.set_bind_group(0, &gpu.cam_bind, &[]);
         pass.draw(0..3, 0..1);
@@ -1078,7 +1177,7 @@ fn draw_the_square(device: &wgpu::Device, queue: &wgpu::Queue, samples: u32) -> 
     let corner = |x: f32, y: f32| GpuVert { pos: [x, y, 0.0], body: 0, nrm: 0 };
     let verts = vec![corner(-1.0, -1.0), corner(1.0, -1.0), corner(1.0, 1.0), corner(-1.0, 1.0)];
     let idx = vec![0, 1, 2, 0, 2, 3, 0, 2, 1, 0, 3, 2];
-    let piece = qymcad_ui_state::ScenePiece { verts: std::sync::Arc::new(verts), idx: std::sync::Arc::new(idx), body: 0, rows: 1 };
+    let piece = qymcad_ui_state::ScenePiece { verts: std::sync::Arc::new(verts), idx: std::sync::Arc::new(idx), body: 0, rows: 1, lines: std::sync::Arc::new(Vec::new()) };
     let looks = vec![qymcad_ui_state::BodyLook { tint: 0x00C0_C0C0, state: 0 }];
     let paint = MeshPaint::new(cam, [TEST_SIDE; 2], Some(vec![piece]), looks, 1);
     let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor { label: Some("qym_self_test") });

@@ -182,6 +182,9 @@ fn answer_to(block: &mut qymcad_ui_state::SceneBlock, no: u32) {
             v.body = v.body - from + no;
         }
     }
+    for v in std::sync::Arc::make_mut(&mut block.lines).iter_mut() {
+        v.body = v.body - from + no;
+    }
     block.body = no;
 }
 
@@ -192,6 +195,7 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
         qymcad_ui_state::ensure_vertex_normals(pn.cache, pn.project, pn.regen);
     }
     let ncache = pn.cache.norm.borrow();
+    qymcad_ui_state::ensure_sharp_edges(pn.cache, pn.project, pn.regen);
     let items = qymcad_ui_state::visible_mesh_items(pn);
     let mut caps_verts: Vec<qymcad_ui_state::GpuVert> = Vec::new();
     let mut looks: Vec<qymcad_ui_state::BodyLook> = Vec::new();
@@ -216,6 +220,7 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
         smooth.hash(&mut h);
         pn.set.ghost_alpha.hash(&mut h);
         pn.scheme.pal.fingerprint().hash(&mut h);
+        (pn.set.body_edges == qymcad_ui_state::BodyEdges::Shown).hash(&mut h);
         // the section cuts the triangles IN THE WORLD, so the block depends on it too
         if let Some((o, n)) = qymcad_ui_state::section_eff(&pn.cut()) {
             for v in o.iter().chain(n.iter()) {
@@ -290,6 +295,11 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
                         v.pos[1] += d[1];
                         v.pos[2] += d[2];
                     }
+                }
+                for v in std::sync::Arc::make_mut(&mut b.lines).iter_mut() {
+                    v.pos[0] += d[0];
+                    v.pos[1] += d[1];
+                    v.pos[2] += d[2];
                 }
                 b.at = wt;
                 answer_to(b, body_no);
@@ -384,7 +394,8 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
             parts.push(qymcad_ui_state::BlockPart { verts: std::sync::Arc::new(own), idx: std::sync::Arc::new(idx) });
         }
         stats[0] += 1;
-        blocks.insert(mi, super::SceneBlock { shape, at: wt, body: body_no, parts });
+        let lines = std::sync::Arc::new(qymcad_ui_state::edge_lines(pn, qymcad_ui_state::EdgesOf { mi, world: wt, row: body_no }));
+        blocks.insert(mi, super::SceneBlock { shape, at: wt, body: body_no, parts, lines });
     }
     pn.cache.scene_stats.set(stats);
     blocks.retain(|mi, _| live.contains(mi)); // bodies that are no longer visible hold no memory
@@ -399,8 +410,10 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
     let mut pieces: Vec<qymcad_ui_state::ScenePiece> = Vec::new();
     for mi in &order {
         if let (Some(b), Some(&no)) = (blocks.get(mi), look_of.get(mi)) {
-            for part in b.parts.iter().filter(|p| !p.idx.is_empty()) {
-                pieces.push(qymcad_ui_state::ScenePiece { verts: part.verts.clone(), idx: part.idx.clone(), body: no, rows: rows_of.get(mi).copied().unwrap_or(1) });
+            for (k, part) in b.parts.iter().filter(|p| !p.idx.is_empty()).enumerate() {
+                // the edges go with the first piece of the body
+                let lines = if k == 0 { b.lines.clone() } else { std::sync::Arc::new(Vec::new()) };
+                pieces.push(qymcad_ui_state::ScenePiece { verts: part.verts.clone(), idx: part.idx.clone(), body: no, rows: rows_of.get(mi).copied().unwrap_or(1), lines });
             }
         }
     }
@@ -438,7 +451,13 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
                 // THE CAPS ARE NOT INDEXED: every triangle of a cut brings its own points (and twice over, for
                 // the two windings), so there is nothing to share - the indices simply run in order.
                 let idx: Vec<u32> = (0..caps_verts.len() as u32).collect();
-                pieces.push(qymcad_ui_state::ScenePiece { verts: std::sync::Arc::new(std::mem::take(&mut caps_verts)), idx: std::sync::Arc::new(idx), body: cap_no, rows: 1 });
+                pieces.push(qymcad_ui_state::ScenePiece {
+                    verts: std::sync::Arc::new(std::mem::take(&mut caps_verts)),
+                    idx: std::sync::Arc::new(idx),
+                    body: cap_no,
+                    rows: 1,
+                    lines: std::sync::Arc::new(Vec::new()),
+                });
             }
         }
     }

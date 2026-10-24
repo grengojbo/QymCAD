@@ -91,6 +91,14 @@ pub enum Shading {
     Flat,
 }
 
+/// WHETHER THE EDGES OF A BODY ARE DRAWN: a thin dark line where two of its faces meet at an angle, so the top of a
+/// plate and its sides read apart. Shown by default; hidden for a heavy mesh whose every facet stands at an angle.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum BodyEdges {
+    Shown,
+    Hidden,
+}
+
 /// A NAVIGATION GESTURE: which buttons are held and which modifiers, to move the view.
 ///
 /// Written as data rather than as a branch per style. With eleven layouts a condition written out at each
@@ -475,6 +483,8 @@ pub struct Settings {
     pub projection: Projection,
     /// How a face is lit.
     pub shading: Shading,
+    /// Whether the edges of the bodies are drawn.
+    pub body_edges: BodyEdges,
     /// THE SHARED TOGGLE FOR SKETCH OUTLINES - FOR THE ASSEMBLY ONLY.
     ///
     /// Inside a Part there is none and there must be none: every sketch has a visibility checkbox of its own there

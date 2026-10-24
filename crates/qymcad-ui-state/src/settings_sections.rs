@@ -93,6 +93,7 @@ impl SettingsSection {
                 "settings-pick-precision",
                 "settings-ghost-alpha",
                 "settings-fov",
+                "settings-body-edges",
                 "settings-msaa",
                 "settings-window-drawer",
                 "settings-frame-time",
@@ -177,6 +178,7 @@ impl SettingsSection {
                 s.gpu_viewport = d.gpu_viewport;
                 s.projection = d.projection;
                 s.shading = d.shading;
+                s.body_edges = d.body_edges;
                 s.viewcube_size = d.viewcube_size;
                 s.pick_precision = d.pick_precision;
                 s.mouse_nav = d.mouse_nav;

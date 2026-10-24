@@ -650,6 +650,7 @@ impl Default for Settings {
             gpu_viewport: true,
             projection: Projection::Ortho,
             shading: Shading::Smooth,
+            body_edges: BodyEdges::Shown,
             show_contours: true,
             show_joints: true,
             show_interference: false,

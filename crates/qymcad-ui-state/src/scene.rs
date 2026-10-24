@@ -361,9 +361,12 @@ pub struct SceneLights {
     pub fill_share: f64,
 }
 
-/// The two lights in the frame of the camera: x to the right, y up, z towards the eye.
-const KEY_FROM_EYE: [f64; 3] = [-0.21, 0.38, 0.9];
-const FILL_FROM_EYE: [f64; 3] = [0.17, -0.47, 0.87];
+/// The two lights in the frame of the camera: x to the right, y up, z towards the eye. The key a little above the eye, the
+/// fill low and to the right: in the usual view the top, the front and the side of a plate part by 8 % of the full
+/// colour or more where the lights before gave 5 %, and the faces round a chamfered block part as they did, from above,
+/// from behind and from below. Reported behaviour: the top of a plate and its walls came out nearly one brightness.
+const KEY_FROM_EYE: [f64; 3] = [0.0, 0.2, 0.98];
+const FILL_FROM_EYE: [f64; 3] = [0.4, -0.6, 0.69];
 /// The fill's strength against the key's.
 const FILL_TO_KEY: f64 = 0.37;
 
@@ -397,6 +400,9 @@ pub struct ScenePiece {
     pub body: u32,
     /// How many rows of the look table from `body` on the vertices name: the body's own, and one per colour of its faces.
     pub rows: u32,
+    /// The edges of the body as lines, a pair of vertices each (`SceneBlock::lines`): with the first piece of a body,
+    /// empty with the rest.
+    pub lines: std::sync::Arc<Vec<GpuVert>>,
 }
 
 /// THE WHOLE SCENE as it goes to the card: the pieces in a stable order, and the table saying what each body

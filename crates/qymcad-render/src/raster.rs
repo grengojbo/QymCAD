@@ -55,6 +55,52 @@ pub fn raster_band(color: &mut [Color32], zbuf: &mut [f32], w: usize, y0: usize,
     }
 }
 
+/// A LINE READY FOR THE RASTERISER: its two ends `(x, y, z)` as the triangles have them - z the depth already led a
+/// hair towards the eye (`edge_lead`) - and its colour.
+pub struct RasterLine {
+    pub ends: [[f32; 3]; 2],
+    pub col: Color32,
+}
+
+/// The edges of the bodies into the band [y0, y0 + rows): a pixel a step along each line, drawn where the line stands no
+/// deeper than the bodies, writing no depth - the card's `edge_pipeline`.
+pub fn raster_lines(color: &mut [Color32], zbuf: &[f32], band: Band, lines: &[RasterLine]) {
+    let Band { w, y0, rows } = band;
+    for RasterLine { ends: [a, b], col } in lines {
+        let steps = (b[0] - a[0]).abs().max((b[1] - a[1]).abs()).ceil().max(1.0) as i32;
+        for k in 0..=steps {
+            let t = k as f32 / steps as f32;
+            let (x, y, z) = (a[0] + (b[0] - a[0]) * t, a[1] + (b[1] - a[1]) * t, a[2] + (b[2] - a[2]) * t);
+            let (px, py) = (x.floor() as i64, y.floor() as i64);
+            if px < 0 || px as usize >= w || py < y0 as i64 || py >= (y0 + rows) as i64 {
+                continue;
+            }
+            let idx = (py as usize - y0) * w + px as usize;
+            if z <= zbuf[idx] {
+                color[idx] = *col;
+            }
+        }
+    }
+}
+
+/// A BAND OF THE PICTURE a pass draws into: the width of a row, the first row and how many rows.
+#[derive(Clone, Copy)]
+pub struct Band {
+    pub w: usize,
+    pub y0: usize,
+    pub rows: usize,
+}
+
+/// THE DEPTH OF A POINT OF AN EDGE, led a hair towards the eye so the line wins over the faces it lies on - in
+/// perspective by a share of the depth, in orthographic by a step: the same lead `vs_edge` gives it on the card.
+pub fn edge_lead(ndc: f32, proj: &qymcad_ui_state::ProjParams) -> f32 {
+    if proj.inv_d_eye > 0.0 {
+        ndc * (1.0 + 5.0e-4)
+    } else {
+        ndc + 1.0e-4
+    }
+}
+
 /// The second pass: the translucent (ghost) triangles go OVER the opaque ones, and a ghost is seen as ITS NEAREST
 /// SURFACE only - one pane of glass over what stands behind it. First the nearest ghost depth of every pixel is found
 /// (solid bodies still occlude a ghost through `zbuf`), then only the fragments at that depth are blended, once. Every
@@ -250,6 +296,25 @@ struct Corner {
 /// the nearest depth there is: a part standing behind the eye, 5 m along the line of sight from the one looked at at
 /// 100 mm, smeared 139 128 pixels of its colour over the frame. The card clips at the near plane; the raster now does
 /// the same. In orthographic nothing is behind the eye and the triangle is whole.
+/// The part of segment `seg` in front of the near plane of a perspective eye; all of it in orthographic.
+fn ahead_of_eye(cam: &qymcad_ui_state::Cam3, basis: &([f64; 3], [f64; 3], [f64; 3]), proj: &qymcad_ui_state::ProjParams, seg: [[f64; 3]; 2]) -> Option<[[f64; 3]; 2]> {
+    if proj.inv_d_eye <= 0.0 {
+        return Some(seg);
+    }
+    let d_eye = 1.0 / proj.inv_d_eye;
+    let ahead = |p: [f64; 3]| qymcad_ui_state::v_dot(qymcad_ui_state::v_sub(p, cam.target), basis.2) + d_eye - proj.z_near;
+    let (a, b) = (ahead(seg[0]), ahead(seg[1]));
+    if a <= 0.0 && b <= 0.0 {
+        return None;
+    }
+    if a > 0.0 && b > 0.0 {
+        return Some(seg);
+    }
+    let t = a / (a - b);
+    let at = std::array::from_fn(|k| seg[0][k] + (seg[1][k] - seg[0][k]) * t);
+    Some(if a > 0.0 { [seg[0], at] } else { [at, seg[1]] })
+}
+
 fn in_front(tri: &[Corner; 3], cam: &qymcad_ui_state::Cam3, basis: &([f64; 3], [f64; 3], [f64; 3]), proj: &qymcad_ui_state::ProjParams) -> Vec<Corner> {
     if proj.inv_d_eye <= 0.0 {
         return tri.to_vec();
@@ -346,6 +411,7 @@ fn raster(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), sam
         qymcad_ui_state::ensure_vertex_normals(pn.cache, pn.project, pn.regen);
     }
     let ncache = pn.cache.norm.borrow();
+    qymcad_ui_state::ensure_sharp_edges(pn.cache, pn.project, pn.regen);
     let items = qymcad_ui_state::visible_mesh_items(pn);
     // the depth of this frame, as the card takes it
     let proj = qymcad_ui_state::proj_params(pn, rect, qymcad_ui_state::gpu_scene_key(pn));
@@ -364,7 +430,25 @@ fn raster(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), sam
     // the opaque ones (first pass, z-write) and the translucent ghosts (second pass, blend, no z-write)
     let mut tris: Vec<RasterTri> = Vec::new();
     let mut ghost_tris: Vec<RasterTri> = Vec::new();
+    let mut lines: Vec<RasterLine> = Vec::new();
     for qymcad_ui_state::SceneMesh { index: mi, hot, ghost, tint: base, mesh, world: wt } in items {
+        // THE EDGES OF A SOLID BODY: the body's own colour darkened (`EDGE_SHADE`), as `fs_edge` draws them; a ghost has none
+        if !ghost {
+            let b = qymcad_scheme::brighten(base, pn.scheme.pal.body_lighten, pn.scheme.pal.body_saturate);
+            let col = Color32::from_rgb((b[0] as f32 * EDGE_SHADE) as u8, (b[1] as f32 * EDGE_SHADE) as u8, (b[2] as f32 * EDGE_SHADE) as u8);
+            let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis };
+            let along = qymcad_ui_state::edge_lines(pn, qymcad_ui_state::EdgesOf { mi, world: wt, row: 0 });
+            for pair in along.as_chunks::<2>().0 {
+                let world = |v: &qymcad_ui_state::GpuVert| [v.pos[0] as f64, v.pos[1] as f64, v.pos[2] as f64];
+                // the part in front of the eye, as a triangle is clipped (`in_front`)
+                let Some(seg) = ahead_of_eye(&pn.cam, basis, &proj, [world(&pair[0]), world(&pair[1])]) else { continue };
+                let end = |w: [f64; 3]| {
+                    let (p, d) = scr.at(w);
+                    [(p.x - ox) * pscale, (p.y - oy) * pscale, -edge_lead(qymcad_ui_state::depth_ndc(d, &proj), &proj)]
+                };
+                lines.push(RasterLine { ends: [end(seg[0]), end(seg[1])], col });
+            }
+        }
         let ident = qymcad_core::feature::is_identity12(&wt);
         let vn = if smooth { ncache.value.get(mi) } else { None };
         let (palette, per_tri) = qymcad_ui_state::face_palette(pn.project, mi, mesh.tris.len());
@@ -428,6 +512,7 @@ fn raster(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), sam
     let nthreads = std::thread::available_parallelism().map(|n| n.get()).unwrap_or(1).clamp(1, 8);
     if nthreads <= 1 || h < 64 {
         raster_band(&mut color, &mut zbuf, w, 0, h, &tris);
+        raster_lines(&mut color, &zbuf, Band { w, y0: 0, rows: h }, &lines);
         lay_floor(&mut color, &zbuf, floor);
         raster_band_blend(&mut color, &zbuf, w, 0, h, &ghost_tris);
     } else {
@@ -437,6 +522,7 @@ fn raster(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), sam
             let mut y0 = 0;
             let tref = &tris;
             let gref = &ghost_tris;
+            let lref = &lines;
             let mut frest = floor;
             while y0 < h {
                 let rows = band.min(h - y0);
@@ -451,6 +537,7 @@ fn raster(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), sam
                 // (z test, blend)
                 s.spawn(move || {
                     raster_band(cb, zb, w, y, rows, tref);
+                    raster_lines(cb, zb, Band { w, y0: y, rows }, lref);
                     lay_floor(cb, zb, fb);
                     raster_band_blend(cb, zb, w, y, rows, gref);
                 });
@@ -461,3 +548,6 @@ fn raster(pn: &Painting, rect: Rect, basis: &([f64; 3], [f64; 3], [f64; 3]), sam
     let image = egui::ColorImage { size: [w, h], source_size: egui::Vec2::new([w, h][0] as f32, [w, h][1] as f32), pixels: color };
     Some(Raster { image, depth: zbuf, scale: DepthScale { proj } })
 }
+
+/// How dark the edge of a body is drawn: a share of the body's own colour, as `fs_edge` takes it.
+const EDGE_SHADE: f32 = 0.35;

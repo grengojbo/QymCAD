@@ -255,6 +255,20 @@ pub fn ensure_vertex_normals(cache: &Caches, project: &Project, regen: &Rebuildi
     c.rev = regen.geom_rev;
 }
 
+/// How far two faces of a body turn from each other, in degrees, and the edge between them is drawn: a rounding runs
+/// into a flat side turning a few degrees between its first triangles and the side, and is no edge.
+pub const EDGE_CREASE_DEG: f64 = 20.0;
+
+/// THE SHARP EDGES OF EVERY BODY, found once per change of the geometry (`Caches::sharp`).
+pub fn ensure_sharp_edges(cache: &Caches, project: &Project, regen: &Rebuilding) {
+    let mut c = cache.sharp.borrow_mut();
+    if c.rev == regen.geom_rev && c.value.len() == project.bodies.len() {
+        return;
+    }
+    c.value = project.bodies.iter().map(|b| EdgeList { ends: std::sync::Arc::new(b.mesh.sharp_edges(&b.faces, EDGE_CREASE_DEG)) }).collect();
+    c.rev = regen.geom_rev;
+}
+
 /// The scene key for the GPU buffer: the same as in `view_key`, BUT without the camera, the size or the
 /// dragging flag (the vertices and their colours do not depend on the camera). When it changes, the
 /// vertex buffer is uploaded anew.
@@ -263,9 +277,10 @@ pub fn gpu_scene_key(pn: &Painting) -> u64 {
     let mut h = std::collections::hash_map::DefaultHasher::new();
     view_rev(pn.regen).hash(&mut h);
     (pn.set.shading == Shading::Smooth).hash(&mut h); // smooth carries a vertex normal, flat carries none - a different buffer
-                                                      // THE COLOURS ARE NOT HERE ANY MORE, and neither is the highlight. Both live in the look table beside the
-                                                      // vertices: changing a scheme or moving the pointer over the model rewrites two numbers per body instead
-                                                      // of the whole scene. Measured on the reference engine: 739 MB re-uploaded for a change of highlight.
+    (pn.set.body_edges == BodyEdges::Shown).hash(&mut h); // the lines of the edges go to the card with the vertices
+                                                          // THE COLOURS ARE NOT HERE ANY MORE, and neither is the highlight. Both live in the look table beside the
+                                                          // vertices: changing a scheme or moving the pointer over the model rewrites two numbers per body instead
+                                                          // of the whole scene. Measured on the reference engine: 739 MB re-uploaded for a change of highlight.
     if let Some((o, n)) = section_eff(&pn.cut()) {
         for v in o.iter().chain(n.iter()) {
             v.to_bits().hash(&mut h); // the section moved or turned, so the buffer is rebuilt
@@ -312,6 +327,7 @@ pub fn view_key(pn: &Painting, rect: Rect, ppp: f32) -> u64 {
     }
     (pn.set.projection == Projection::Perspective).hash(&mut h); // perspective against orthographic changes the projection, so it goes into the raster cache key
     (pn.set.shading == Shading::Smooth).hash(&mut h); // smooth against flat shading changes the vertex colours, so it goes in too
+    (pn.set.body_edges == BodyEdges::Shown).hash(&mut h); // the edges drawn or not
     pn.scheme.pal.fingerprint().hash(&mut h); // the raster is already coloured by the scheme: change the scheme and it is drawn anew
                                               // The selection highlight is painted into the texture, so the WHOLE set of highlighted bodies goes into the
                                               // key - the one both drawing paths colour by (a body lights itself, a component its whole subtree), in a

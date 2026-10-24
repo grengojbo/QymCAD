@@ -66,6 +66,8 @@ mod tests {
     #[test]
     fn the_software_raster_paints_a_cubes_faces_flat() {
         let mut app = the_cube(Check::Raster);
+        // the shading alone is counted: the dark lines of the edges are a shade of their own
+        app.set.body_edges = qymcad_ui_state::BodyEdges::Hidden;
         let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(700.0, 600.0));
         crate::gui::fit3d(&mut app.viewing.cam, &app.project, rect);
         let basis = app.viewing.cam.basis();

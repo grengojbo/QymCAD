@@ -105,6 +105,7 @@ mod tests {
             gpu_viewport: false,
             projection: Projection::Perspective,
             shading: Shading::Flat,
+            body_edges: qymcad_ui_state::BodyEdges::Hidden,
             show_contours: false,
             show_joints: false,
             show_interference: true,

@@ -59,8 +59,9 @@ mod tests {
             kernel_threads: 0, // all the cores but one
             persp_fov_deg: 60.0,
             gpu_viewport: !d.gpu_viewport,
-            projection: Projection::Perspective, // the default is Ortho
-            shading: Shading::Flat,              // the default is Smooth
+            projection: Projection::Perspective,            // the default is Ortho
+            shading: Shading::Flat,                         // the default is Smooth
+            body_edges: qymcad_ui_state::BodyEdges::Hidden, // the default is Shown
             show_contours: !d.show_contours,
             show_joints: !d.show_joints,
             show_interference: !d.show_interference,

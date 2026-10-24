@@ -338,6 +338,8 @@ pub struct SceneBlock {
     /// Several parts only when the body is too big for one buffer of the card (see `BLOCK_VERTEX_CAP`);
     /// ordinarily there is exactly one.
     pub parts: Vec<BlockPart>,
+    /// THE EDGES OF THE BODY as the card draws them: a line for every two vertices, in the world, naming the body's row.
+    pub lines: std::sync::Arc<Vec<GpuVert>>,
 }
 
 /// ONE PIECE OF A BODY as the card takes it: the vertices, and the triangles as indices into them.

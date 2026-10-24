@@ -591,6 +591,7 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     // THE COMMAND HANDLE - one for every tool that has a direction and a distance along it (push face,
     // thicken, shell, both splits). It is drawn AFTER the preview branches so that no call has to be
     // added inside each of them: those would drift apart, the way the popups once did.
+    draw_face_under_pointer(pn, painter, rect);
     draw_face_arrow(pn, painter, rect, &basis);
     draw_fillet_vertices(pn, painter, rect); // the points a per-vertex radius is set at
                                              // the wireframe preview of the primitive being created
@@ -669,6 +670,35 @@ fn draw_3d_view(pn: &Painting, painter: &egui::Painter, rect: Rect) {
 /// colour - a corner, else an edge, else a face, as the click decides - and what was taken in the colour of the
 /// selection. Under a command the command's own highlight speaks instead. Reported behaviour: with nothing in hand the
 /// cursor over the top of a block changed nothing on the picture.
+/// THE FACE A CLICK WOULD TAKE, lit under the pointer while a tool that takes faces is in hand - before the click, so a
+/// person sees which face it is. Reported behaviour: the top of a plate, its walls and a boss on it in one colour, and
+/// no telling which face a click would take.
+fn draw_face_under_pointer(pn: &Painting, painter: &egui::Painter, rect: Rect) {
+    if !pn.armed.part_tool().is_some_and(qymcad_ui_state::PartTool::picks_faces) {
+        return;
+    }
+    let Some(at) = painter.ctx().pointer_hover_pos().filter(|p| rect.contains(*p)) else { return };
+    let Some((_, body, key)) = qymcad_pick::face_under_cursor(pn, rect, at) else { return };
+    let Some(b) = pn.project.mesh_index(body).and_then(|mi| pn.project.bodies.get(mi)) else { return };
+    let Some(face) = b.faces.iter().find(|f| f.id == key.id) else { return };
+    let wt = pn.project.body_display_transform(body, qymcad_ui_state::current_ctx_id(pn.active_path, pn.project));
+    let basis = pn.cam.basis();
+    let scr = qymcad_ui_state::Screen { cam: &pn.cam, set: pn.set, rect, basis: &basis };
+    let col = qymcad_scheme::a(pn.scheme.pal.highlight(), FACE_UNDER_POINTER_ALPHA);
+    let mut hm = egui::Mesh::default();
+    for &ti in &face.triangles {
+        let base = hm.vertices.len() as u32;
+        for v in b.mesh.triangle(ti as usize) {
+            hm.colored_vertex(scr.at(qymcad_core::feature::apply12(&wt, [v.x, v.y, v.z])).0, col);
+        }
+        hm.add_triangle(base, base + 1, base + 2);
+    }
+    painter.add(egui::Shape::mesh(hm));
+}
+
+/// How strongly the face under the pointer is lit: the face shows through, the colour says it is the one.
+pub(crate) const FACE_UNDER_POINTER_ALPHA: u8 = 90;
+
 fn draw_taken_piece(pn: &Painting, painter: &egui::Painter, rect: Rect) {
     if pn.armed.commanding() {
         return;
