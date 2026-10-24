@@ -18,7 +18,7 @@ impl App {
     pub(crate) fn properties_panel(&mut self, ui: &mut egui::Ui) {
         let mut asks = Vec::new();
         crate::gui::panels_props::properties_panel(&mut self.props_ctx(&mut asks), ui);
-        self.do_props_asks(asks);
+        crate::gui::commands::do_props_asks(self, asks);
     }
 }
 
@@ -775,7 +775,11 @@ pub(crate) fn properties_panel(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui
         // the CAM properties (the machine, the stock, the tool, the setup, the operation) belong to the CAM workbench only
         match *pr.sel {
             Sel::Mesh(i) if i < pr.project.bodies.len() => crate::gui::mesh_props(&mut *pr.deferred, &mut *pr.project, &mut *pr.regen, ui, i),
-            Sel::Face(mi, fi) if pr.project.bodies.get(mi).is_some_and(|b| fi < b.faces.len()) => crate::gui::face_props(&mut *pr.project, &mut *pr.ask, ui, mi, fi, !pr.gsel.faces.is_empty()),
+            Sel::Face(mi, fi) if pr.project.bodies.get(mi).is_some_and(|b| fi < b.faces.len()) => {
+                // the faces a tool collects are named by the tool that holds them
+                let taken_by = pr.armed.part_tool().filter(|_| !pr.gsel.faces.is_empty()).map(qymcad_part::tool_title);
+                crate::gui::face_props(&mut *pr.project, &mut *pr.ask, ui, qymcad_ui_state::made_by::FaceAt { mesh: mi, face: fi }, taken_by)
+            }
             Sel::Contour(i) if i < pr.project.contours.len() => {
                 crate::gui::panels_props::contour_props(qymcad_ui_state::editing_in!(pr), &mut *pr.array, &mut *pr.boolean, &mut *pr.deferred, &mut *pr.set, ui, i)
             }

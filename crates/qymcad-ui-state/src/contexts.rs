@@ -1151,6 +1151,8 @@ pub struct PropsCtx<'a> {
     /// The rows held with the selection - joints of the list picked with Shift or Ctrl - for a tool taken next.
     pub held: &'a mut Vec<Id>,
     pub sel: &'a mut Sel,
+    /// What is in hand: a face card names the tool that took the face.
+    pub armed: &'a Armed,
     /// The rest of the properties COLUMN, gathered as its panels came over: the tools a row can arm
     /// (array, boolean), the feature options, the caches a sketch row reads, the windows, the 2D view and
     /// the geometry selection.

@@ -355,9 +355,10 @@ pub(crate) fn datum_point_props(datum: &mut DatumCommand, deferred: &mut Deferre
     }
 }
 
-pub(crate) fn face_props(project: &mut Project, ask: &mut Vec<qymcad_ui_state::PropsAsk>, ui: &mut egui::Ui, mi: usize, fi: usize, for_cmd: bool) {
+pub(crate) fn face_props(project: &mut Project, ask: &mut Vec<qymcad_ui_state::PropsAsk>, ui: &mut egui::Ui, at: qymcad_ui_state::made_by::FaceAt, taken_by: Option<String>) {
+    let qymcad_ui_state::made_by::FaceAt { mesh: mi, face: fi } = at;
     // INFORMATION ABOUT THE FACE, and nothing else. A face is selected by a click with nothing in hand and under
-    // a command that collects faces (`for_cmd`, said in the last line); the older buttons (sketch, plane,
+    // a command that collects faces (`taken_by`, the name of the tool said in the last line); the older buttons (sketch, plane,
     // contour, projection, Z0) are gone — a sketch on a face is made with the Sketch tool on the toolbar (a
     // click on the face), and a datum by the datum command.
     let Some(face) = project.bodies.get(mi).and_then(|b| b.faces.get(fi)) else { return };
@@ -387,8 +388,9 @@ pub(crate) fn face_props(project: &mut Project, ask: &mut Vec<qymcad_ui_state::P
         &[("n", &format!("[{}, {}, {}]", crate::i18n::num(n[0], 2), crate::i18n::num(n[1], 2), crate::i18n::num(n[2], 2))), ("side", &crate::i18n::tr(normal_label(n)))],
     ));
     ui.label(crate::i18n::tr1("face-center", "v", &format!("{:.1}, {:.1}, {:.1}", face.centroid.x, face.centroid.y, face.centroid.z)));
-    if for_cmd {
-        ui.label(egui::RichText::new(crate::i18n::tr("face-picked-for-cmd")).weak().small());
+    // the tool that holds the face is named: a fixed "Shell or Hole" stood under a face Sketch from face had taken
+    if let Some(tool) = taken_by {
+        ui.label(egui::RichText::new(crate::i18n::tr1("face-picked-for-cmd", "tool", &tool)).weak().small());
     }
 }
 

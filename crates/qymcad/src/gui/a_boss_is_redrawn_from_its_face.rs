@@ -20,9 +20,14 @@ mod tests {
             qymcad_kernel::specimen::extrude(&[0.0, 0.0, w, 0.0, w, d, 0.0, d], h).expect("a block").moved(&at).expect("placed")
         };
         let s = block(0.0, 0.0, 60.0, 40.0, 0.0, 5.0).combined(&block(10.0, 10.0, 30.0, 20.0, 5.0, 8.0), 1).expect("fused");
-        let folder = crate::gui::check_folder::tests::CheckFolder::new("boss-redrawn");
-        let file = folder.file("bossed.step").to_string_lossy().into_owned();
-        qymcad_kernel::write_step(&[(&s, qymcad_core::feature::PLACE_IDENTITY)], &file).expect("the STEP is written");
+        written(&s, "bossed")
+    }
+
+    /// `s` written to a STEP file named `name`.
+    fn written(s: &qymcad_kernel::Shape, name: &str) -> Written {
+        let folder = crate::gui::check_folder::tests::CheckFolder::new(name);
+        let file = folder.file(&format!("{name}.step")).to_string_lossy().into_owned();
+        qymcad_kernel::write_step(&[(s, qymcad_core::feature::PLACE_IDENTITY)], &file).expect("the STEP is written");
         Written { _folder: folder, path: file }
     }
 
@@ -30,11 +35,7 @@ mod tests {
     fn round_boss_file() -> Written {
         let plate = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 60.0, 0.0, 60.0, 40.0, 0.0, 40.0], 5.0).expect("a plate");
         let boss = qymcad_kernel::specimen::cylinder(6.0, 8.0).expect("a boss").moved(&[1.0, 0.0, 0.0, 30.0, 0.0, 1.0, 0.0, 20.0, 0.0, 0.0, 1.0, 5.0]).expect("placed");
-        let s = plate.combined(&boss, 1).expect("fused");
-        let folder = crate::gui::check_folder::tests::CheckFolder::new("round-boss");
-        let file = folder.file("round.step").to_string_lossy().into_owned();
-        qymcad_kernel::write_step(&[(&s, qymcad_core::feature::PLACE_IDENTITY)], &file).expect("the STEP is written");
-        Written { _folder: folder, path: file }
+        written(&plate.combined(&boss, 1).expect("fused"), "round-boss")
     }
 
     /// The window with `file` brought in, as millimetres, and its part entered.
@@ -116,5 +117,27 @@ mod tests {
         assert!(h.app.status.words.contains(&refusal), "the click on the round wall was not refused: {}", h.app.status);
         let said = h.tool_says();
         assert!(said.iter().any(|n| n.words == refusal && n.tone == qymcad_ui_state::Tone::Refusal), "the tool does not say the refusal: {said:?}");
+    }
+
+    /// THE FACE A TOOL TOOK IS NAMED IN THE PROPERTIES BY THAT TOOL. Reported behaviour: under the top of a boss Sketch
+    /// from face had taken stood "picked for a command (Shell or Hole)".
+    #[test]
+    fn the_face_taken_is_named_by_the_tool_that_took_it() {
+        let mut app = App::default();
+        let file = bossed_file();
+        brought_in(&mut app, &file);
+        let mut h = Hand::new(&mut app);
+        h.look_at([25.0, 20.0, 10.0], 6.0).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).click([25.0, 20.0, 13.0]).frame(Vec::new());
+        h.frame(Vec::new());
+        let tool = crate::i18n::tr("f-sketch-from-face");
+        let named = crate::i18n::tr1("face-picked-for-cmd", "tool", &tool);
+        assert!(named.contains(&tool), "the line under a face taken does not name the tool: {named}");
+        let texts = h.texts();
+        assert!(
+            texts.iter().any(|t| t.contains(&named)),
+            "the properties do not say the face is held by Sketch from face; {:?} is under the face",
+            texts.iter().filter(|t| t.contains("Shell") || t.contains(&named)).collect::<Vec<_>>()
+        );
     }
 }

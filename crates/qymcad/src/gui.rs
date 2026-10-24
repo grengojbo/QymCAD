@@ -425,6 +425,7 @@ impl App {
             params_seen: &mut self.params_seen,
             held: &mut self.chosen.tree_sel.multi,
             sel: &mut self.chosen.sel,
+            armed: &self.tools.armed,
             array: &mut self.side.array,
             boolean: &mut self.params.boolean,
             opts: &mut self.opts,
@@ -441,11 +442,6 @@ impl App {
             mode_3d: &mut self.viewing.mode_3d,
             ask,
         }
-    }
-
-    /// Carry out what the properties panel asked for, after it has drawn.
-    pub(crate) fn do_props_asks(&mut self, asks: Vec<PropsAsk>) {
-        crate::gui::commands::do_props_asks(self, asks)
     }
 
     /// Is the cursor on the face arrow? The threshold matches the body gizmo's, in pixels along the segment.
@@ -1123,7 +1119,7 @@ impl App {
     pub(crate) fn joints_panel_for_test(&mut self, ui: &mut egui::Ui) {
         let mut asks = Vec::new();
         crate::gui::panels_props::joints_panel(&mut self.props_ctx(&mut asks), ui);
-        self.do_props_asks(asks);
+        crate::gui::commands::do_props_asks(self, asks);
     }
 
     /// THE BUILD TREE in a single call — the same door for checks that look at the frame.

@@ -5,7 +5,7 @@ use qymcad_ui_state::{AsLit, Mode, Did, Notice, Opt, OptKey};
 use super::*;
 
 /// The name the bar gives the command `kind`.
-fn command_title(kind: qymcad_ui_state::PartTool) -> String {
+pub fn tool_title(kind: qymcad_ui_state::PartTool) -> String {
     qymcad_i18n::tr(match kind {
         qymcad_ui_state::PartTool::Extrude => "cmd-extrude",
         qymcad_ui_state::PartTool::Revolve => "cmd-revolve",
@@ -182,7 +182,7 @@ pub(crate) fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, k
     }
     let gate = command_gate(pc, ctx).with_fields(&pc.cmd.params, pc.project);
     qymcad_ui_state::Described {
-        head: qymcad_ui_state::Head { icon: ph::CUBE, name: command_title(kind), ends: qymcad_ui_state::Ends::ApplyCancel, after: qymcad_ui_state::AfterApply::Select },
+        head: qymcad_ui_state::Head { icon: ph::CUBE, name: tool_title(kind), ends: qymcad_ui_state::Ends::ApplyCancel, after: qymcad_ui_state::AfterApply::Select },
         bar,
         gate,
         says,

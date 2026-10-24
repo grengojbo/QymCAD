@@ -46,7 +46,7 @@ mod tests {
                     // same door the frame does, so no facade on `App` is needed for it
                     let mut asks = Vec::new();
                     crate::gui::panels_props::feature_props(&mut app.props_ctx(&mut asks), ui, ti);
-                    app.do_props_asks(asks);
+                    crate::gui::commands::do_props_asks(app, asks);
                 });
             });
             self.drawn.clear();

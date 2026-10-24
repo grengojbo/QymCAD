@@ -397,5 +397,6 @@ pub fn sync_comp_array_params(arr: qymcad_ui_state::ArrayParams, mode: Option<qy
 
 mod feat_bar;
 pub(crate) use feat_bar::*;
+pub use feat_bar::tool_title;
 mod commands;
 pub use commands::*;

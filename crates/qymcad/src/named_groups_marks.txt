@@ -731,7 +731,7 @@ crates/qymcad/src/gui/no_ties_shows_no_tie.rs 1 1 2
 crates/qymcad/src/gui/one_list_of_mates.rs 0 2 0
 crates/qymcad/src/gui/one_node_per_command.rs 0 1 0
 crates/qymcad/src/gui/open_keeps_brep.rs 0 1 0
-crates/qymcad/src/gui/panel_bits.rs 1 4 4
+crates/qymcad/src/gui/panel_bits.rs 0 4 3
 crates/qymcad/src/gui/panels_props.rs 0 12 0
 crates/qymcad/src/gui/panels_source.rs 0 3 0
 crates/qymcad/src/gui/panels_tree.rs 2 0 1
