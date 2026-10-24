@@ -174,6 +174,12 @@ pub(crate) fn describe(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Context, k
             v
         }
     };
+    // A CLICK THE TOOL REFUSED is said where the tool is, not only in the status line at the foot of the window: the
+    // refusal of a face it cannot take came with nothing held, so the bar stayed empty. Reported behaviour: a click on
+    // the round wall of a boss with Sketch from face in hand - "nothing happened".
+    if pc.status.tone == qymcad_ui_state::Tone::Refusal && !says.iter().any(|s: &Notice| s.words == pc.status.words) {
+        says.push(pc.status.clone());
+    }
     let gate = command_gate(pc, ctx).with_fields(&pc.cmd.params, pc.project);
     qymcad_ui_state::Described {
         head: qymcad_ui_state::Head { icon: ph::CUBE, name: command_title(kind), ends: qymcad_ui_state::Ends::ApplyCancel, after: qymcad_ui_state::AfterApply::Select },

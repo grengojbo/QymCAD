@@ -26,6 +26,29 @@ mod tests {
         Written { _folder: folder, path: file }
     }
 
+    /// A plate of 60 x 40 x 5 with a round boss of 12 across and 8 high at (30, 20), written to a STEP file.
+    fn round_boss_file() -> Written {
+        let plate = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 60.0, 0.0, 60.0, 40.0, 0.0, 40.0], 5.0).expect("a plate");
+        let boss = qymcad_kernel::specimen::cylinder(6.0, 8.0).expect("a boss").moved(&[1.0, 0.0, 0.0, 30.0, 0.0, 1.0, 0.0, 20.0, 0.0, 0.0, 1.0, 5.0]).expect("placed");
+        let s = plate.combined(&boss, 1).expect("fused");
+        let folder = crate::gui::check_folder::tests::CheckFolder::new("round-boss");
+        let file = folder.file("round.step").to_string_lossy().into_owned();
+        qymcad_kernel::write_step(&[(&s, qymcad_core::feature::PLACE_IDENTITY)], &file).expect("the STEP is written");
+        Written { _folder: folder, path: file }
+    }
+
+    /// The window with `file` brought in, as millimetres, and its part entered.
+    fn brought_in(app: &mut App, file: &Written) {
+        let mut h = Hand::new(app);
+        h.import(&file.path);
+        h.press_word(&crate::i18n::tr("import-scale-import"), egui::pos2(700.0, 450.0));
+        at_rest(&mut h);
+        let body = h.app.project.bodies.last().map(|b| b.id).expect("the plate came in");
+        if let Some(part) = h.app.project.body_owner(body) {
+            h.app.enter_component(part);
+        }
+    }
+
     /// Frames run, as they do by themselves, until nothing is being built.
     fn at_rest(h: &mut Hand) {
         for _ in 0..600 {
@@ -76,5 +99,22 @@ mod tests {
         assert_eq!(h.app.project.sketch_dof(si), (0, 0), "the sketch is not fully defined");
         assert!(h.app.status.words.contains(&crate::i18n::tr("dof-fully-defined")), "the status does not say the sketch is fully defined: {}", h.app.status);
         assert_eq!(h.app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::SketchFromFace), "the tool did not stay in hand");
+    }
+
+    /// THE ROUND WALL OF A BOSS CLICKED is refused where the tool speaks - on its plate in the corner of the view, in the
+    /// tone of a refusal - and not only in the status line at the foot of the window. Reported behaviour: the click held
+    /// no face, the tool said nothing, "nothing happened".
+    #[test]
+    fn a_round_wall_clicked_is_refused_by_the_tool() {
+        let mut app = App::default();
+        let file = round_boss_file();
+        brought_in(&mut app, &file);
+        let mut h = Hand::new(&mut app);
+        h.look_at([30.0, 20.0, 9.0], 6.0).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).click([30.0, 14.0, 9.0]).frame(Vec::new());
+        let refusal = crate::i18n::tr("error-prism-face-not-flat");
+        assert!(h.app.status.words.contains(&refusal), "the click on the round wall was not refused: {}", h.app.status);
+        let said = h.tool_says();
+        assert!(said.iter().any(|n| n.words == refusal && n.tone == qymcad_ui_state::Tone::Refusal), "the tool does not say the refusal: {said:?}");
     }
 }
