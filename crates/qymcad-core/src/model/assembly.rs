@@ -37,6 +37,8 @@ pub struct ImportNode {
     pub repeat_of: Option<u32>,
     /// The body is a piece of a mesh, not a solid: it comes in as a `MeshPiece` rather than an `Import`.
     pub mesh: bool,
+    /// The file marks it invisible: it comes in hidden, to be shown from the tree.
+    pub hidden: bool,
     pub children: Vec<ImportNode>,
 }
 
@@ -52,6 +54,7 @@ impl Default for ImportNode {
             tri_colors: Vec::new(),
             repeat_of: None,
             mesh: false,
+            hidden: false,
             children: Vec::new(),
         }
     }

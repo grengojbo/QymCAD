@@ -368,6 +368,7 @@ struct QymTree {
         int64_t repeat_of = -1; // an occurrence of a product met before: the body of its first occurrence
         int64_t solid = -1;
         bool has_color = false;
+        bool hidden = false; // the file marks the occurrence, its product or its solid invisible
         float rgb[3] = {0, 0, 0};
         std::vector<std::pair<int, std::array<float, 3>>> faces; // colours of single faces: (persistent face id, sRGB)
     };

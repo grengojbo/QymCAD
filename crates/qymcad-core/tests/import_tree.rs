@@ -224,3 +224,17 @@ fn an_import_source_goes_with_the_part_it_came_in_as() {
     let left: Vec<&str> = p.sources.iter().map(|s| s.name.as_str()).collect();
     assert!(left == ["kept.step"], "the part the file came in as was deleted and the sources are {left:?}");
 }
+
+/// A NODE THE FILE HIDES COMES IN HIDDEN: its part is in the tree, switched off, and the rest stays shown.
+#[test]
+fn a_node_the_file_hides_comes_in_hidden() {
+    let mut p = Project::default();
+    p.new_document();
+    let source = p.add_source("table.step", vec![1]);
+    let (slat, plate) = (p.add_mesh(tri()), p.add_mesh(tri()));
+    let tree = vec![leaf("slat", slat, 0, PLACE_IDENTITY), ImportNode { hidden: true, ..leaf("plate", plate, 1, PLACE_IDENTITY) }];
+    p.import_tree_as_parts(tree, source, "table").expect("came in");
+    let shown = |name: &str| p.components.iter().find(|c| c.name == name).map(|c| c.visible);
+    assert_eq!(shown("plate"), Some(false), "the part the file hides came in shown");
+    assert_eq!(shown("slat"), Some(true), "a part the file shows came in hidden");
+}

@@ -164,6 +164,8 @@ pub struct ImportNode {
     /// Colours the file gives single faces of the body, sRGB, by the face's persistent id - the number the body's face
     /// gets when the body is wrapped (`qym_born` in the bridge).
     pub faces: Vec<(u32, [f32; 3])>,
+    /// The file marks it invisible (STEP `INVISIBILITY`): a helper body, often lying in a face of a real one.
+    pub hidden: bool,
 }
 
 /// The tree read as the document takes it: the flat list of `read_exact_tree` (each node naming its parent by place
@@ -198,6 +200,7 @@ pub fn document_tree(nodes: &[ImportNode], bodies: &[u64], stem: &str) -> Vec<qy
             tri_colors: Vec::new(),
             repeat_of: n.repeat_of.map(|k| k as u32),
             mesh: false,
+            hidden: n.hidden,
             children,
         }
     }
@@ -256,7 +259,7 @@ pub fn read_exact_tree(format: ExactFormat, path: &str, deflection: f64) -> Resu
     };
     let nodes = if tree.is_null() {
         (0..shapes.len())
-            .map(|i| ImportNode { name: String::new(), parent: None, place: qymcad_core::feature::PLACE_IDENTITY, solid: Some(i), color: None, repeat_of: None, faces: Vec::new() })
+            .map(|i| ImportNode { name: String::new(), parent: None, place: qymcad_core::feature::PLACE_IDENTITY, solid: Some(i), color: None, repeat_of: None, faces: Vec::new(), hidden: false })
             .collect()
     } else {
         unsafe {
@@ -275,7 +278,8 @@ pub fn read_exact_tree(format: ExactFormat, path: &str, deflection: f64) -> Resu
                     let (mut ids, mut rgb) = (vec![0u32; n], vec![0.0f32; 3 * n]);
                     qym_tree_face_colours(tree, i, ids.as_mut_ptr(), rgb.as_mut_ptr(), n);
                     let faces = ids.into_iter().enumerate().map(|(k, id)| (id, [rgb[3 * k], rgb[3 * k + 1], rgb[3 * k + 2]])).collect();
-                    ImportNode { name, parent, place, solid, color, repeat_of, faces }
+                    let hidden = qym_tree_hidden(tree, i) == 1;
+                    ImportNode { name, parent, place, solid, color, repeat_of, faces, hidden }
                 })
                 .collect();
             qym_tree_free(tree);

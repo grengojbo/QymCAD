@@ -127,7 +127,7 @@ fn the_print_head_comes_as_its_author_built_it() {
 }
 
 fn read(name: &str, parent: Option<usize>, solid: Option<usize>) -> ImportNode {
-    ImportNode { name: name.into(), parent, place: qymcad_core::feature::PLACE_IDENTITY, solid, color: None, repeat_of: None, faces: Vec::new() }
+    ImportNode { name: name.into(), parent, place: qymcad_core::feature::PLACE_IDENTITY, solid, color: None, repeat_of: None, faces: Vec::new(), hidden: false }
 }
 
 /// AN UNNAMED FILE'S PARTS ARE NAMED AFTER THE FILE, as before the tree came in: a single body by the file's name,
@@ -196,4 +196,18 @@ fn a_face_brings_a_colour_of_its_own() {
     let top = live.faces.iter().find(|f| f.id == 6).map(|f| f.centroid.z);
     assert_eq!(top, Some(5.0), "face 6 of the plate is not its top face");
     assert!(nodes[named(&nodes, name(3))[0]].faces.is_empty(), "the pin has no face of a colour of its own");
+}
+
+/// THE BODIES A FILE MARKS INVISIBLE ARE READ AS HIDDEN. `examples/Table_CNC_WORK.stp` lists a white plate
+/// ("SurfaceTable", a 600 x 600 box whose top lies in the plane of the slats' tops) and the five pieces of
+/// "SurfasePaz_12mm" in an INVISIBILITY; the base, the grooved strips and the slats are shown.
+#[test]
+fn the_bodies_a_step_file_marks_invisible_are_read_hidden() {
+    let path = concat!(env!("CARGO_MANIFEST_DIR"), "/../../examples/Table_CNC_WORK.stp");
+    let nodes = read_exact_tree(ExactFormat::Step, path, 0.5).expect("the table reads").nodes;
+    let leaves: Vec<&ImportNode> = nodes.iter().filter(|n| n.solid.is_some() || n.repeat_of.is_some()).collect();
+    let helper = |n: &ImportNode| n.name.starts_with("SurfaceTable") || n.name.starts_with("SurfasePaz");
+    let wrong: Vec<String> = leaves.iter().filter(|n| n.hidden != helper(n)).map(|n| format!("{} hidden {}", n.name, n.hidden)).collect();
+    assert_eq!(leaves.iter().filter(|n| helper(n)).count(), 6, "the plate and its five pockets are not all read");
+    assert!(wrong.is_empty(), "a body is read shown where the file hides it, or hidden where it shows it: {wrong:?}");
 }

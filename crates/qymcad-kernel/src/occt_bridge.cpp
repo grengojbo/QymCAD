@@ -1631,6 +1631,14 @@ static bool colour_of(const Handle(XCAFDoc_ColorTool)& ct, const TopoDS_Shape& s
     return false;
 }
 
+// WHETHER THE FILE HIDES A SOLID: STEP lists the styled items of helper bodies in an INVISIBILITY, and the reader
+// keeps that as the visibility of the solid's label. Reported behaviour: four slats of a table speckled with light
+// noise - a white helper plate the file marks invisible lies in the plane of their tops and was drawn opaque.
+static bool hidden_solid(const Handle(XCAFDoc_ColorTool)& ct, const TopoDS_Shape& solid) {
+    TDF_Label l;
+    return ct->ShapeTool()->Search(solid, l) && !XCAFDoc_ColorTool::IsVisible(l);
+}
+
 // The colours the file gives single faces of `solid`, by the face's persistent id: the number `qym_born` gives the face
 // when the body is wrapped - 1..n in the order the explorer meets the faces, a face met twice counted once.
 static void face_colours(const Handle(XCAFDoc_ColorTool)& ct, const TopoDS_Shape& solid, std::vector<std::pair<int, std::array<float, 3>>>& out) {
@@ -1661,6 +1669,7 @@ static void walk(const Handle(XCAFDoc_ColorTool)& ct, const TDF_Label& label, in
     for (int r = 0; r < 3; ++r)
         for (int c = 0; c < 4; ++c) node.place[r * 4 + c] = t.Value(r + 1, c + 1);
     node.has_color = colour_of(ct, label, node.rgb) || colour_of(ct, product, node.rgb);
+    node.hidden = !XCAFDoc_ColorTool::IsVisible(label) || !XCAFDoc_ColorTool::IsVisible(product);
     const int64_t at = (int64_t)tree.nodes.size();
     tree.nodes.push_back(node);
     if (XCAFDoc_ShapeTool::IsAssembly(product)) {
@@ -1679,6 +1688,7 @@ static void walk(const Handle(XCAFDoc_ColorTool)& ct, const TDF_Label& label, in
         const int64_t was = seen->second;
         if (tree.nodes[was].solid >= 0) {
             tree.nodes[at].repeat_of = tree.nodes[was].solid;
+            tree.nodes[at].hidden = tree.nodes[at].hidden || tree.nodes[was].hidden;
             if (!tree.nodes[at].has_color && tree.nodes[was].has_color) {
                 tree.nodes[at].has_color = true;
                 std::copy(tree.nodes[was].rgb, tree.nodes[was].rgb + 3, tree.nodes[at].rgb);
@@ -1692,6 +1702,7 @@ static void walk(const Handle(XCAFDoc_ColorTool)& ct, const TDF_Label& label, in
             piece.parent = at;
             piece.repeat_of = piece.solid;
             piece.solid = -1;
+            piece.hidden = piece.hidden || tree.nodes[at].hidden;
             tree.nodes.push_back(piece);
         }
         return;
@@ -1704,6 +1715,7 @@ static void walk(const Handle(XCAFDoc_ColorTool)& ct, const TDF_Label& label, in
     if (own.size() == 1) {
         solids.push_back(own[0]);
         tree.nodes[at].solid = (int64_t)solids.size() - 1;
+        tree.nodes[at].hidden = tree.nodes[at].hidden || hidden_solid(ct, own[0]);
         if (!tree.nodes[at].has_color) tree.nodes[at].has_color = colour_of(ct, own[0], tree.nodes[at].rgb);
         face_colours(ct, own[0], tree.nodes[at].faces);
         return;
@@ -1715,6 +1727,7 @@ static void walk(const Handle(XCAFDoc_ColorTool)& ct, const TDF_Label& label, in
         piece.name = node.name + " " + std::to_string(k + 1);
         solids.push_back(own[k]);
         piece.solid = (int64_t)solids.size() - 1;
+        piece.hidden = node.hidden || hidden_solid(ct, own[k]);
         piece.has_color = colour_of(ct, own[k], piece.rgb);
         face_colours(ct, own[k], piece.faces);
         if (!piece.has_color && node.has_color) {
@@ -1878,6 +1891,7 @@ extern "C" void qym_tree_place(const QymTree* t, size_t i, double* out) {
 }
 extern "C" int64_t qym_tree_solid(const QymTree* t, size_t i) { return t && i < t->nodes.size() ? t->nodes[i].solid : -1; }
 extern "C" int64_t qym_tree_repeat_of(const QymTree* t, size_t i) { return t && i < t->nodes.size() ? t->nodes[i].repeat_of : -1; }
+extern "C" int qym_tree_hidden(const QymTree* t, size_t i) { return t && i < t->nodes.size() && t->nodes[i].hidden ? 1 : 0; }
 extern "C" int qym_tree_color(const QymTree* t, size_t i, float* out) {
     if (!t || !out || i >= t->nodes.size() || !t->nodes[i].has_color) return 0;
     std::copy(t->nodes[i].rgb, t->nodes[i].rgb + 3, out);

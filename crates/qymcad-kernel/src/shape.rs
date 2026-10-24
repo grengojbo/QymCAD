@@ -325,6 +325,7 @@ extern "C" {
     fn qym_tree_solid(t: *const QymTree, i: usize) -> i64;
     fn qym_tree_repeat_of(t: *const QymTree, i: usize) -> i64;
     fn qym_tree_color(t: *const QymTree, i: usize, out: *mut f32) -> i32;
+    fn qym_tree_hidden(t: *const QymTree, i: usize) -> i32;
     fn qym_tree_face_colours(t: *const QymTree, i: usize, ids: *mut u32, rgb: *mut f32, cap: usize) -> usize;
     fn qym_tree_free(t: *mut QymTree);
     #[allow(clippy::too_many_arguments)] // the tree goes over as parallel arrays, one per field of a node

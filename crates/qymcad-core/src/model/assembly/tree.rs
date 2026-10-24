@@ -262,6 +262,7 @@ impl Project {
                     face_colors: node.face_colors.clone(),
                     tri_colors: node.tri_colors.clone(),
                     mesh: node.mesh,
+                    hidden: node.hidden,
                     ..Default::default()
                 });
                 for child in own.into_iter().chain(node.children.into_iter().filter(ImportNode::carries_something)) {
@@ -272,6 +273,9 @@ impl Project {
             }
         };
         self.set_component_transform(created, node.place);
+        if node.hidden {
+            self.set_component_visible(created, false);
+        }
         self.set_active_component(here);
         Some(created)
     }

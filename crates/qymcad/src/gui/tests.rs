@@ -62,6 +62,9 @@ mod the_floor_fades_round_the_view;
 mod parts_far_apart_draw_clean;
 
 #[cfg(test)]
+mod a_table_top_is_drawn_clean;
+
+#[cfg(test)]
 mod the_camera_holds_after_a_far_view;
 
 #[cfg(test)]
