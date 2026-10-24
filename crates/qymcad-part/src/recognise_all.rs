@@ -138,7 +138,7 @@ fn say_found(pc: &mut PartCtx) {
 pub fn group_told(gr: &GroupInHand) -> String {
     // a group left out still says what it holds
     let n = if gr.taking == Taking::In { taken(gr).count() } else { gr.items.len() }.to_string();
-    let size = |v: f64| qymcad_i18n::num(v, 1);
+    let size = |v: f64| qymcad_i18n::num_short(v, 1);
     match gr.items.first().map(|r| &r.exact) {
         Some(Exact::Hole { diameter, reach: Reach::Through, .. }) => qymcad_i18n::tr2("msg-all-hole-through", "d", &size(*diameter), "n", &n),
         Some(Exact::Hole { diameter, depth, .. }) => {

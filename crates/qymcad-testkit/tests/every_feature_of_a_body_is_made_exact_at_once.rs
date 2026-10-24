@@ -144,12 +144,13 @@ struct Case {
 
 fn cases() -> Vec<Case> {
     vec![
-        // the groups: hole 4 blind, hole 5, hole 6, chamfer 3, rounding 4 - the bore of 5 is the second
+        // the groups, each kind from its larger size down: hole 6, hole 5, hole 4 blind, chamfer 3, rounding 4 - the bore of
+        // 5 is the second
         Case { name: "plate", solid: plate, came: &[Came::Step, Came::Polyhedron, Came::Recognised], groups: 5, features: 5, edit: "diameter.2", edited: Sizes { bore: 5.5, ..DRAWN } },
-        // the groups: hole 6, rounding 2, rounding 4. Recognised, the chain leaves a side of the block in loose triangles
+        // the groups: hole 6, rounding 4, rounding 2 - the small rounding is the third. Recognised, the chain leaves a side of the block in loose triangles
         // beside a corner, and a rounding takes one for a side: the group that does not lay is the tool's to find and
         // leave out, with its reason
-        Case { name: "chain", solid: chained, came: &[Came::Step, Came::Polyhedron], groups: 3, features: 9, edit: "radius.2", edited: Sizes { small_round: 1.5, ..DRAWN } },
+        Case { name: "chain", solid: chained, came: &[Came::Step, Came::Polyhedron], groups: 3, features: 9, edit: "radius.3", edited: Sizes { small_round: 1.5, ..DRAWN } },
     ]
 }
 

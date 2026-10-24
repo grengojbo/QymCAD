@@ -263,6 +263,21 @@ pub fn num(v: f64, digits: usize) -> String {
     format!("{v:.digits$}")
 }
 
+/// A size as a drawing writes it: to `digits` places, with no trailing zeros - `4`, not `4.0`; `2.5` stays `2.5`.
+/// Reported behaviour: the groups of holes were named "Ø4.0" where the drawing says "Ø4".
+pub fn num_short(v: f64, digits: usize) -> String {
+    let s = format!("{v:.digits$}");
+    if !s.contains('.') {
+        return s;
+    }
+    let s = s.trim_end_matches('0').trim_end_matches('.');
+    if s == "-0" {
+        "0".into()
+    } else {
+        s.into()
+    }
+}
+
 /// A signed number (for offsets: which way it goes matters).
 pub fn num_signed(v: f64, digits: usize) -> String {
     format!("{v:+.digits$}")

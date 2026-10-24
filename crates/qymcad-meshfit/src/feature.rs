@@ -168,14 +168,14 @@ pub fn features_of(mesh: &Mesh, faces: &[MeshFace], tol: f64) -> Everything {
 
 /// THE FEATURES FOUND, MADE AGAIN EXACT, IN GROUPS OF ONE SIZE: a group holds the features of one kind whose sizes,
 /// brought to what was drawn, are the same - a blind hole its depth as well - so one field changes them all. The holes
-/// come first, then the chamfers, then the roundings, each kind from its smaller size up. A feature naming a face the
-/// body's list does not hold is left out.
+/// come first, then the chamfers, then the roundings, each kind from its larger size down: the most seen first, as a
+/// drawing lists them. A feature naming a face the body's list does not hold is left out.
 pub fn grouped(found: &[Found], faces: &[MeshFace]) -> Vec<RemakeGroup> {
     let mut groups: Vec<RemakeGroup> = Vec::new();
     let mut made: Vec<Remake> = found.iter().filter_map(|f| f.remake(faces)).collect();
     made.sort_by(|a, b| {
         let (ka, kb) = (kin(&a.exact), kin(&b.exact));
-        ka.order.cmp(&kb.order).then(ka.size.total_cmp(&kb.size))
+        ka.order.cmp(&kb.order).then(kb.size.total_cmp(&ka.size))
     });
     for r in made {
         match groups.iter_mut().find(|g| g.items.first().is_some_and(|first| kin(&first.exact) == kin(&r.exact))) {

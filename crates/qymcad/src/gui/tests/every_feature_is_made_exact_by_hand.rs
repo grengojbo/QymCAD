@@ -108,6 +108,21 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     h.tool(qymcad_ui_state::PartTool::RecogniseAll).click([40.0, 32.0, 10.0]).frame(Vec::new());
     let found = groups(&h);
     assert_eq!(found.len(), 5, "the plate clicked gives not its five groups: {found:?}; the program says {}", h.app.status);
+    // THE GROUPS AS A DRAWING LISTS THEM: the holes from the largest down, then the chamfer, then the rounding, a whole
+    // size written whole. Reported behaviour: "Ø4.0" first and "Ø6.0" last, where the drawing reads Ø6, Ø5, Ø4
+    let size = |v: f64| crate::i18n::num_short(v, 1);
+    let want = [
+        crate::i18n::tr2("msg-all-hole-through", "d", &size(6.0), "n", "1"),
+        crate::i18n::tr2("msg-all-hole-through", "d", &size(5.0), "n", "1"),
+        crate::i18n::tr_with(
+            "msg-all-hole-blind",
+            &[crate::i18n::Arg { name: "d", value: &size(4.0) }, crate::i18n::Arg { name: "depth", value: &size(5.0) }, crate::i18n::Arg { name: "n", value: "1" }],
+        ),
+        crate::i18n::tr2("msg-all-chamfer", "d", &size(3.0), "n", "1"),
+        crate::i18n::tr2("msg-all-round", "r", &size(4.0), "n", "1"),
+    ];
+    let told: Vec<&str> = found.iter().map(|r| r.told.as_str()).collect();
+    assert_eq!(told, want, "the groups do not stand as a drawing lists them");
     assert!(found.iter().all(|r| r.taking == Taking::In), "a group found is not taken: {found:?}");
     // the rounding's group left out by its switch in the list beside the plate, the switch named by the group
     let round = found.iter().find(|r| r.told.contains("R4")).map(|r| r.told.clone()).expect("the group of the rounding");
@@ -137,7 +152,7 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     assert!(h.double_click_word(&row), "the row {row:?} is not in the tree");
     assert_eq!(h.app.tools.armed.part_tool(), Some(qymcad_ui_state::PartTool::RecogniseAll), "the double click did not reopen the list");
     let keys: Vec<&str> = h.app.tools.cmd.params.iter().map(|p| p.key.as_str()).collect();
-    assert_eq!(keys, ["diameter", "depth", "diameter.2", "diameter.3"], "the sizes of the three groups are not in the fields");
+    assert_eq!(keys, ["diameter", "diameter.2", "diameter.3", "depth.3"], "the sizes of the three groups are not in the fields");
     assert_eq!(groups(&h).len(), 3, "the list reopened holds not the node's three groups");
 }
 
