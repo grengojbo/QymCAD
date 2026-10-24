@@ -114,6 +114,47 @@ fn cases() -> Vec<Case> {
             height: 10.0,
             height_gains: PI * 36.0 * 2.0,
         },
+        // A STOCK REDRAWN: the block becomes its sketch. Reported behaviour: the top of a box 60 x 40 x 4 was refused for
+        // Replace, and the sketch taken with Sketch only drove nothing
+        Case {
+            name: "box from its top",
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 4.0 }),
+            clicked: |f| top(4.0)(f),
+            resize: Resize { from: 60.0, to: 80.0 },
+            gains: 20.0 * 40.0 * 6.0,
+            height: 6.0,
+            height_gains: 60.0 * 40.0 * 2.0,
+        },
+        // the boss on the top of the plate stays where it stood, the plate grown 2 into it
+        Case {
+            name: "plate under a boss, from its top",
+            solid: bossed,
+            clicked: |f| top(5.0)(f),
+            resize: Resize { from: 60.0, to: 80.0 },
+            gains: 20.0 * 40.0 * 7.0,
+            height: 7.0,
+            height_gains: 60.0 * 40.0 * 2.0 - 30.0 * 20.0 * 2.0,
+        },
+        // from below, the boss on the top of the plate stays on it, the plate grown 2 down
+        Case {
+            name: "plate under a boss, from its bottom",
+            solid: bossed,
+            clicked: |f| f.normal[2] < -0.999 && f.centroid.z.abs() < 1e-6,
+            resize: Resize { from: 60.0, to: 80.0 },
+            gains: 20.0 * 40.0 * 7.0,
+            height: 7.0,
+            height_gains: 60.0 * 40.0 * 2.0,
+        },
+        // a hole through stays a hole of the plate laid again
+        Case {
+            name: "plate drilled through, from its top",
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }).combined(&post(Post { x: 30.0, y: 20.0, r: 3.0, z: -1.0, h: 7.0 }), 0).expect("drilled"),
+            clicked: |f| top(5.0)(f),
+            resize: Resize { from: 60.0, to: 80.0 },
+            gains: 20.0 * 40.0 * 7.0,
+            height: 7.0,
+            height_gains: (60.0 * 40.0 - PI * 9.0) * 2.0,
+        },
         Case {
             name: "boss with its corners rounded",
             solid: || {

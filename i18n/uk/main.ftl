@@ -2769,9 +2769,11 @@ cmd-gap-hole-moves = Рухається отвір
 feat-name-hole-moved = Положення отвору
 feat-name-redrawn-boss = Виступ за ескізом
 feat-name-redrawn-pocket = Кишеня за ескізом
+feat-name-redrawn-stock = Заготовка за ескізом
 feat-hole-moved = Положення отвору { $d }
 feat-redrawn-boss = Виступ за ескізом h={ $h }
 feat-redrawn-pocket = Кишеня за ескізом h={ $h }
+feat-redrawn-stock = Заготовка за ескізом h={ $h }
 msg-unfound-no-surface = Тут не знайдено поверхні: сітка грубіша за допуск. Збільште «Допуск» і клацніть ще раз
 msg-unfound-no-entry = Ця кругла стінка не має грані, з якої її свердлити: це вал або бобишка, а не отвір
 msg-unfound-not-two-sides = До цього скруглення вздовж нього не прилягають дві грані: клацніть іншу його смугу або скругліть ребро інструментом «Скруглення»
@@ -2928,8 +2930,10 @@ f-section-offset = Відступ
 f-section-tol = Допуск
 msg-sketch-from-face-boss = Виступ висотою { $h }
 msg-sketch-from-face-pocket = Кишеня глибиною { $h }
+msg-sketch-from-face-stock = Заготовка висотою { $h }
 msg-sketch-from-face-enter-replace = Enter — ескіз грані, а виступ чи кишеня накреслені за ним заново
-msg-sketch-from-face-enter-sketch = Enter — ескіз грані
+msg-sketch-from-face-enter-sketch = Enter — ескіз грані: копія контуру, тіло він не змінює
+msg-sketch-from-face-copy-replace = Щоб розміри ескізу керували тілом, виберіть «Замінити»
 msg-sketch-from-face-no-outline = Ця грань не дає контуру для копії: клацніть іншу пласку грань
 msg-sketch-from-face-laid = Ескіз: обмежень { $rel }, розмірів { $sizes }, { $state }
 msg-define-laid = Поставлено обмежень { $rel } і розмірів { $sizes }: { $state }

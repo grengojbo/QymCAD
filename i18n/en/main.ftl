@@ -2776,9 +2776,11 @@ cmd-gap-hole-moves = The hole moves
 feat-name-hole-moved = Hole position
 feat-name-redrawn-boss = Boss by sketch
 feat-name-redrawn-pocket = Pocket by sketch
+feat-name-redrawn-stock = Stock by sketch
 feat-hole-moved = Hole position { $d }
 feat-redrawn-boss = Boss by sketch h={ $h }
 feat-redrawn-pocket = Pocket by sketch h={ $h }
+feat-redrawn-stock = Stock by sketch h={ $h }
 msg-unfound-no-surface = No surface found here: the mesh is rougher than the tolerance. Raise "Tolerance" and click again
 msg-unfound-no-entry = This round wall has no face to drill it from: it is a shaft or a boss, not a hole
 msg-unfound-not-two-sides = This rounding is not met by two faces along its length: click another strip of it, or round the edge with "Fillet"
@@ -2945,8 +2947,10 @@ f-section-offset = Offset
 f-section-tol = Tolerance
 msg-sketch-from-face-boss = A boss { $h } high
 msg-sketch-from-face-pocket = A pocket { $h } deep
+msg-sketch-from-face-stock = A stock { $h } high
 msg-sketch-from-face-enter-replace = Enter: a sketch of the face, the boss or pocket redrawn by it
-msg-sketch-from-face-enter-sketch = Enter: a sketch of the face
+msg-sketch-from-face-enter-sketch = Enter: a sketch of the face - a copy of its outline that does not change the body
+msg-sketch-from-face-copy-replace = For the sizes of the sketch to drive the body, choose Replace
 msg-sketch-from-face-no-outline = This face gives no outline to copy: click another flat face
 msg-sketch-from-face-laid = Sketch: { $rel } constraints, { $sizes } sizes, { $state }
 msg-define-laid = Laid { $rel } constraints and { $sizes } sizes: { $state }

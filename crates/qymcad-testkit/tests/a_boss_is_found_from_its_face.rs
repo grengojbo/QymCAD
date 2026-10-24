@@ -162,7 +162,42 @@ fn cases() -> Vec<Case> {
             clicked: |f| up_at(13.0)(f),
             want: Want::Refused(CoreError::PrismRimRounded),
         },
-        Case { name: "plain plate", solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }), clicked: |f| up_at(5.0)(f), want: Want::Refused(CoreError::NotAPrism) },
+        // A BLOCK FROM ONE OF ITS ENDS is the stock its walls run the height of. Reported behaviour: the top of a box 60 x 40
+        // x 4 was refused as "no boss or pocket", and the bottom of a plate as well
+        Case {
+            name: "plain plate from its top",
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }),
+            clicked: |f| up_at(5.0)(f),
+            want: Want::Found { kind: PrismKind::Stock, walls: 4, inner: 0, height: 5.0, rims: SHARP },
+        },
+        Case {
+            name: "plate under a boss, from its bottom",
+            solid: bossed,
+            clicked: |f| f.normal[2] < -0.999 && f.centroid.z.abs() < 1e-6,
+            want: Want::Found { kind: PrismKind::Stock, walls: 4, inner: 0, height: 5.0, rims: SHARP },
+        },
+        // what stands on the face of a stock stays: the boss is not one of its faces
+        Case { name: "plate under a boss, from its top", solid: bossed, clicked: |f| up_at(5.0)(f), want: Want::Found { kind: PrismKind::Stock, walls: 4, inner: 0, height: 5.0, rims: SHARP } },
+        Case {
+            name: "plate drilled through, from its top",
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 5.0 }).combined(&post(Post { x: 30.0, y: 20.0, r: 3.0, z: -1.0, h: 7.0 }), 0).expect("drilled"),
+            clicked: |f| up_at(5.0)(f),
+            want: Want::Found { kind: PrismKind::Stock, walls: 4, inner: 1, height: 5.0, rims: SHARP },
+        },
+        // THE SIDE OF A BLOCK WITH A BOSS ON ITS TOP is refused for what it is, not for a rounding it does not have.
+        // Reported behaviour: "the rim of the boss or pocket is rounded or cut along part of it" on a block with no rounding
+        Case {
+            name: "the side of a block a boss stands on",
+            solid: || block(Block { x: 0.0, y: 0.0, w: 40.0, d: 30.0, z: 0.0, h: 10.0 }).combined(&block(Block { x: 10.0, y: 20.0, w: 20.0, d: 10.0, z: 10.0, h: 5.0 }), 1).expect("fused"),
+            clicked: |f| f.normal[1] < -0.999 && f.centroid.y.abs() < 1e-6,
+            want: Want::Refused(CoreError::PrismStockCarries),
+        },
+        Case {
+            name: "plate pocketed from below, from its top",
+            solid: || block(Block { x: 0.0, y: 0.0, w: 60.0, d: 40.0, z: 0.0, h: 10.0 }).combined(&block(Block { x: 10.0, y: 10.0, w: 30.0, d: 20.0, z: -1.0, h: 5.0 }), 0).expect("cut"),
+            clicked: |f| up_at(10.0)(f),
+            want: Want::Refused(CoreError::PrismStockCarries),
+        },
         Case {
             name: "boss drilled through the plate",
             solid: || bossed().combined(&post(Post { x: 25.0, y: 20.0, r: 3.0, z: -1.0, h: 15.0 }), 0).expect("drilled"),

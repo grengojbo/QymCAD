@@ -193,6 +193,7 @@ pub(crate) fn feat_default_name(kind: &qymcad_core::feature::FeatureKind) -> Str
         FK::HoleMoved { .. } => "feat-name-hole-moved".into(),
         FK::Redrawn { kind: qymcad_core::model::PrismKind::Boss, .. } => "feat-name-redrawn-boss".into(),
         FK::Redrawn { kind: qymcad_core::model::PrismKind::Pocket, .. } => "feat-name-redrawn-pocket".into(),
+        FK::Redrawn { kind: qymcad_core::model::PrismKind::Stock, .. } => "feat-name-redrawn-stock".into(),
         FK::SplitBody { .. } => "feat-name-split-body".into(),
         FK::PartInstance { .. } => "feat-name-instance".into(),
         // A MIRRORED PART WITH NO NAME. It had a row in the tree but no default name — so the node

@@ -7,6 +7,12 @@
 //! make a boss, walls facing into it a pocket. Loops inside the face are holes through the boss; one going deeper than
 //! the boss is refused, as it could not be laid back by the sketch.
 //!
+//! A BLOCK SEEN FROM ONE OF ITS ENDS is a prism too: its walls run from the face to flat faces facing the other way - the
+//! far end of the body - and the body stands on nothing (a stock). A plate is the stock its top or its bottom is clicked
+//! on, a box primitive the stock of any face. What stands on its ends - a boss on the top, a pocket in it, a hole through -
+//! stays: loops inside the face are drawn in the sketch and are not taken off with it, but a hole running through is.
+//! Something standing on the walls or on the far end, the sketch could not lay back, and is refused in words.
+//!
 //! A RIM ROUNDED OR CUT - at the face, between it and the walls, or at the base - is a strip between them, and corner
 //! pieces where strips meet. It is found by walking from the face across the faces that are neither square to it nor
 //! flat with it until square walls are met, and from the walls down to flat faces the same way. A rim is taken whole: the
@@ -31,6 +37,8 @@ pub enum PrismKind {
     Boss,
     /// Sunk into the body: the face is its floor.
     Pocket,
+    /// The body itself from one of its ends: the walls run to the far end, which faces the other way.
+    Stock,
 }
 
 /// How a rim is made: rounded, or cut flat.
@@ -220,8 +228,9 @@ fn walk(pairs: &[crate::feature::EdgeFaces], w: Walk, goes: impl Fn(u32) -> bool
 }
 
 impl Project {
-    /// THE PRISM FACE `face` OF BODY `body` TOPS, as the body stands now: refused in words when the face is not flat, when
-    /// nothing stands on it as a prism, when a wall is slanted, when a rim is rounded or cut only in part or not to one
+    /// THE PRISM FACE `face` OF BODY `body` TOPS, as the body stands now - a boss, a pocket, or the body itself from one of
+    /// its ends: refused in words when the face is not flat, when nothing stands on it as a prism, when something stands on
+    /// the walls or the far end of a stock, when a wall is slanted, when a rim is rounded or cut only in part or not to one
     /// size, when the walls end at different heights, or when a hole inside goes deeper than the prism.
     pub fn prism_at(&self, body: Id, face: u32, kernel: &dyn crate::feature::Kernel) -> Result<Prism, CoreError> {
         let mi = self.mesh_index(body).ok_or(CoreError::SourceBodyNotBuilt)?;
@@ -232,6 +241,9 @@ impl Project {
         // a face standing square to the normal (a wall), lying flat as the face does (a base), or neither (a rim)
         let square = |id: u32| by_id(id).is_some_and(|f| normals(mesh, f).iter().all(|t| (*t).dot(n).abs() <= SQUARE));
         let level = |id: u32| by_id(id).is_some_and(|f| normals(mesh, f).iter().all(|t| 1.0 - (*t).dot(n) <= SQUARE * SQUARE));
+        // flat and facing the other way: the far end of the body. Walked over as a rim, it gave the refusal "the rim is
+        // rounded" for the side of a block with no rounding on it
+        let opposite = |id: u32| by_id(id).is_some_and(|f| normals(mesh, f).iter().all(|t| 1.0 + (*t).dot(n) <= SQUARE * SQUARE));
         if !level(face) {
             return Err(CoreError::PrismFaceNotFlat);
         }
@@ -252,7 +264,7 @@ impl Project {
         first.sort_unstable();
         first.dedup();
         // THE RIM AT THE FACE: walked over from the face across what is neither square nor flat, to the walls
-        let at_face = walk(&pairs, Walk { from: &first, kept: &[face] }, |f| !square(f) && !level(f));
+        let at_face = walk(&pairs, Walk { from: &first, kept: &[face] }, |f| !square(f) && !level(f) && !opposite(f));
         if !at_face.over.is_empty() && first.iter().any(|f| square(*f)) {
             return Err(CoreError::PrismRimRounded);
         }
@@ -282,15 +294,21 @@ impl Project {
         let mut kept: Vec<u32> = above.clone();
         kept.extend(walls.iter().copied());
         let below: Vec<u32> = pairs.iter().filter(|p| p.faces.iter().any(|f| walls.contains(f))).flat_map(|p| p.faces.iter().copied()).filter(|f| !kept.contains(f)).collect();
-        let at_base = walk(&pairs, Walk { from: &below, kept: &kept }, |f| !square(f) && !level(f));
+        let at_base = walk(&pairs, Walk { from: &below, kept: &kept }, |f| !square(f) && !level(f) && !opposite(f));
         if !at_base.over.is_empty() && below.iter().any(|f| level(*f)) {
             return Err(CoreError::PrismRimRounded);
         }
         let base_faces: Vec<u32> = if at_base.over.is_empty() { below.clone() } else { at_base.stopped.clone() };
+        // THE FAR END OF THE BODY under the walls: a stock, when the walls end on it alone
+        let stock = base_faces.iter().any(|f| opposite(*f));
+        if stock && !base_faces.iter().all(|f| opposite(*f)) {
+            return Err(CoreError::PrismStockCarries);
+        }
+        let kind = if stock { PrismKind::Stock } else { kind };
         let mut base = Vec::new();
         let mut height: Option<f64> = None;
         for f in base_faces {
-            if !level(f) {
+            if !level(f) && !opposite(f) {
                 return Err(CoreError::NotAPrism);
             }
             let Some(b) = by_id(f) else { continue };
@@ -304,8 +322,8 @@ impl Project {
             }
         }
         let s = height.ok_or(CoreError::NotAPrism)?;
-        // a boss ends below its top, a pocket above its floor
-        if (kind == PrismKind::Boss) != (s < -NEAR) || s.abs() <= NEAR {
+        // a boss and a stock end below their face, a pocket above its floor
+        if (kind != PrismKind::Pocket) != (s < -NEAR) || s.abs() <= NEAR || (stock && outward <= 0.0) {
             return Err(CoreError::NotAPrism);
         }
         let rim_at_base = rim_of(mesh, &at_base.over, faces, Along { from: o, n }, s)?;
@@ -316,13 +334,35 @@ impl Project {
             for r in chain {
                 let Some(w) = by_id(r.across) else { continue };
                 let reach = reach_along(mesh, w, Along { from: o, n }).ok_or(CoreError::FaceNotFound)?;
-                if reach.low < s.min(0.0) - NEAR || reach.high > s.max(0.0) + NEAR {
+                let past = reach.low < s.min(0.0) - NEAR || reach.high > s.max(0.0) + NEAR;
+                profile.push(r.edge);
+                // on a stock a loop that does not run through is something standing on its face - a boss on the top,
+                // a pocket in it - and stays; its outline is drawn as a hole of the sketch
+                let through = (reach.low - s).abs() <= NEAR && reach.high.abs() <= NEAR;
+                if stock && !through {
+                    continue;
+                }
+                if past {
                     return Err(CoreError::PrismHoleDeeper);
                 }
                 if !inner.contains(&r.across) {
                     inner.push(r.across);
                 }
-                profile.push(r.edge);
+            }
+        }
+        // on a stock, a loop in its far end going into it - a pocket from that side - the sketch would fill: refused. A
+        // boss standing out of the far end stays, as one on the face does
+        if stock {
+            for &b in &base {
+                let rims: Vec<Rim> = pairs.iter().filter(|p| p.faces.contains(&b) && p.faces[0] != p.faces[1]).filter_map(|p| edge_of(p, b)).collect();
+                let mut chains = loops(rims);
+                chains.sort_by(|x, y| area_along(y, n).total_cmp(&area_along(x, n)));
+                for r in chains.iter().skip(1).flatten().filter(|r| !inner.contains(&r.across)) {
+                    let Some(w) = by_id(r.across) else { continue };
+                    if reach_along(mesh, w, Along { from: o, n }).ok_or(CoreError::FaceNotFound)?.high > s + NEAR {
+                        return Err(CoreError::PrismStockCarries);
+                    }
+                }
             }
         }
         // the outline of the base: the outer loop of its largest face, the loop the prism stands in left out

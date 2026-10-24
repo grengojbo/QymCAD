@@ -166,6 +166,7 @@ error-not-a-prism = Nothing stands on this face as a boss or a pocket with walls
 error-prism-wall-slanted = A wall of this boss or pocket leans off square: only straight walls are redrawn. Sketch only still copies the outline
 error-prism-rim-rounded = The rim of this boss or pocket is rounded or cut only along part of it: only a rim rounded or cut all round is laid again. Sketch only still copies the outline
 error-prism-base-uneven = The walls of this boss or pocket end at different heights: it cannot be redrawn by one sketch. Sketch only still copies the outline
+error-prism-stock-carries = The walls from this face run to the far side of the body, but something else stands on them or on the far side: it cannot be redrawn by one sketch. Sketch only still copies the outline
 error-prism-hole-deeper = A hole inside this face goes deeper than the boss or pocket: take the hole off first (Recognise feature, Take off), or use Sketch only
 error-prism-height-not-above-zero = The height of the boss or pocket is above zero: type a larger number
 error-prism-rim-uneven = The rim of this boss or pocket is rounded or cut to different sizes along it: only a rim of one size all round is laid again. Sketch only still copies the outline

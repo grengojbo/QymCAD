@@ -140,4 +140,20 @@ mod tests {
             texts.iter().filter(|t| t.contains("Shell") || t.contains(&named)).collect::<Vec<_>>()
         );
     }
+
+    /// SKETCH ONLY ON A BOSS SAYS THE SKETCH IS A COPY, and how to have it drive the boss. Reported behaviour: the sizes
+    /// of a sketch taken with Sketch only were changed, and the person waited for the block to follow.
+    #[test]
+    fn sketch_only_says_it_is_a_copy() {
+        let mut app = App::default();
+        let file = bossed_file();
+        brought_in(&mut app, &file);
+        let mut h = Hand::new(&mut app);
+        h.look_at([25.0, 20.0, 10.0], 6.0).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).frame(Vec::new());
+        assert!(h.press_word(&crate::i18n::tr("cmd-sketch-only"), egui::pos2(400.0, 40.0)), "no Sketch only in the bar");
+        h.click([25.0, 20.0, 13.0]).frame(Vec::new());
+        let told = crate::i18n::tr("msg-sketch-from-face-copy-replace");
+        assert!(h.app.status.words.contains(&told), "Sketch only on a boss does not say how to have the sketch drive it: {}", h.app.status);
+    }
 }

@@ -2776,9 +2776,11 @@ cmd-gap-hole-moves = Двигается отверстие
 feat-name-hole-moved = Положение отверстия
 feat-name-redrawn-boss = Выступ по эскизу
 feat-name-redrawn-pocket = Карман по эскизу
+feat-name-redrawn-stock = Заготовка по эскизу
 feat-hole-moved = Положение отверстия { $d }
 feat-redrawn-boss = Выступ по эскизу h={ $h }
 feat-redrawn-pocket = Карман по эскизу h={ $h }
+feat-redrawn-stock = Заготовка по эскизу h={ $h }
 msg-unfound-no-surface = Здесь не найдено поверхности: сетка грубее допуска. Увеличьте «Допуск» и щёлкните ещё раз
 msg-unfound-no-entry = У этой круглой стенки нет грани, с которой её сверлить: это вал или бобышка, а не отверстие
 msg-unfound-not-two-sides = К этому скруглению вдоль него не примыкают две грани: щёлкните другую его полосу или скруглите ребро инструментом «Скругление»
@@ -2945,8 +2947,10 @@ f-section-offset = Смещение
 f-section-tol = Допуск
 msg-sketch-from-face-boss = Выступ высотой { $h }
 msg-sketch-from-face-pocket = Карман глубиной { $h }
+msg-sketch-from-face-stock = Заготовка высотой { $h }
 msg-sketch-from-face-enter-replace = Enter — эскиз грани, а выступ или карман начерчены по нему заново
-msg-sketch-from-face-enter-sketch = Enter — эскиз грани
+msg-sketch-from-face-enter-sketch = Enter — эскиз грани: копия контура, тело он не меняет
+msg-sketch-from-face-copy-replace = Чтобы размеры эскиза управляли телом, выберите «Заменить»
 msg-sketch-from-face-no-outline = Эта грань не даёт контура для копии: щёлкните другую плоскую грань
 msg-sketch-from-face-laid = Эскиз: ограничений { $rel }, размеров { $sizes }, { $state }
 msg-define-laid = Поставлено ограничений { $rel } и размеров { $sizes }: { $state }

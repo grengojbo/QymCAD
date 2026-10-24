@@ -266,6 +266,8 @@ pub enum CoreError {
     PrismRimRounded,
     /// The walls of the boss or the pocket end at different heights.
     PrismBaseUneven,
+    /// The walls from the face run to the far end of the body, but something else stands on them or on the far end.
+    PrismStockCarries,
     /// A hole inside the face goes deeper than the boss or the pocket.
     PrismHoleDeeper,
     /// A boss or a pocket redrawn asks for a height above zero.
@@ -536,6 +538,7 @@ impl CoreError {
             PrismWallSlanted => "error-prism-wall-slanted".into(),
             PrismRimRounded => "error-prism-rim-rounded".into(),
             PrismBaseUneven => "error-prism-base-uneven".into(),
+            PrismStockCarries => "error-prism-stock-carries".into(),
             PrismHoleDeeper => "error-prism-hole-deeper".into(),
             PrismHeightNotAboveZero => "error-prism-height-not-above-zero".into(),
             PrismRimUneven => "error-prism-rim-uneven".into(),
@@ -682,6 +685,7 @@ impl std::fmt::Display for CoreError {
             PrismWallSlanted => write!(f, "a wall of the boss or pocket leans off square"),
             PrismRimRounded => write!(f, "the rim of the boss or pocket is rounded or cut along part of it"),
             PrismBaseUneven => write!(f, "the walls of the boss or pocket end at different heights"),
+            PrismStockCarries => write!(f, "the walls run to the far end of the body, and something else stands on them or on that end"),
             PrismHoleDeeper => write!(f, "a hole inside the face goes deeper than the boss or pocket"),
             PrismHeightNotAboveZero => write!(f, "a boss or pocket redrawn no height"),
             PrismRimUneven => write!(f, "the rim of the boss or pocket is rounded or cut to different sizes"),

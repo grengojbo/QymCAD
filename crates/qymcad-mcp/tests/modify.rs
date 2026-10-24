@@ -138,8 +138,9 @@ fn a_hole_is_moved_by_its_distance_to_a_side() {
 }
 
 /// A SKETCH TAKEN OFF A FACE: a boss of 20 x 10 standing 5 on the block, its top taken into a sketch fully defined and
-/// the boss redrawn by it 8 high; the front of the block, with nothing standing on it, gives a sketch alone and is refused
-/// for a redraw.
+/// the boss redrawn by it 8 high; the front of the block, its walls running to the back with the boss standing on them,
+/// gives a sketch alone and is refused for a redraw for that - not for a rounding the block does not have. Reported
+/// behaviour: "the rim of the boss or pocket is rounded or cut along part of it".
 #[test]
 fn a_boss_is_redrawn_by_a_sketch_taken_off_its_top() {
     let mut ctx = Ctx::blank();
@@ -157,6 +158,20 @@ fn a_boss_is_redrawn_by_a_sketch_taken_off_its_top() {
     assert_eq!(volumes(&front), [13600], "a sketch alone changed the body: {front}");
     assert_eq!(front["found"]["kind"], "none", "{front}");
     assert_eq!(front["sketch"]["free"], 0, "{front}");
+    assert!(!front["found"]["why"].as_str().unwrap_or_default().contains("rounded"), "a rounding is named on a block with none: {front}");
     let refused = call(&mut ctx, "sketch_from_face", json!({ "face": "front", "action": "replace" }));
     assert_eq!(refused["error"]["code"], "not-a-prism", "{refused}");
+    assert!(refused["error"]["message"].as_str().unwrap_or_default().contains("far end"), "the refusal does not say the boss stands on the block: {refused}");
+}
+
+/// A BOX FROM ITS TOP IS A STOCK: Replace lays it again by the sketch, and the sketch drives the box. Reported behaviour:
+/// the top of a box 60 x 40 x 4 was refused as "no boss or pocket", and the copy taken with Sketch only drove nothing.
+#[test]
+fn a_box_is_redrawn_by_a_sketch_of_its_top() {
+    let mut ctx = Ctx::blank();
+    let made = ok(call(&mut ctx, "box", json!({ "x": 60, "y": 40, "z": 4 })));
+    assert_eq!(volumes(&made), [9600], "{made}");
+    let redrawn = ok(call(&mut ctx, "sketch_from_face", json!({ "face": "top", "action": "replace", "height": 6 })));
+    assert_eq!(redrawn["found"]["kind"], "stock", "{redrawn}");
+    assert_eq!(volumes(&redrawn), [14400], "the box redrawn 6 high: {redrawn}");
 }

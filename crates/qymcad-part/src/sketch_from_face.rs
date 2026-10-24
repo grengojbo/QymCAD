@@ -78,7 +78,11 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
     let found = qymcad_ui_state::with_kernel(&mut pc.rebuild(), |project, k| project.prism_at(body, key.id, k));
     let told = match &found {
         Ok(p) => {
-            let what = if p.kind == PrismKind::Boss { "msg-sketch-from-face-boss" } else { "msg-sketch-from-face-pocket" };
+            let what = match p.kind {
+                PrismKind::Boss => "msg-sketch-from-face-boss",
+                PrismKind::Pocket => "msg-sketch-from-face-pocket",
+                PrismKind::Stock => "msg-sketch-from-face-stock",
+            };
             let mut told = qymcad_i18n::tr1(what, "h", &qymcad_i18n::num(p.height, 2));
             // a rim rounded or cut is named: it goes with the boss and comes back the same size
             let rims = [p.rims.at_face.map(|r| RimTold { rim: r, at: "msg-rim-at-face" }), p.rims.at_base.map(|r| RimTold { rim: r, at: "msg-rim-at-base" })];
@@ -113,7 +117,13 @@ fn refresh(pc: &mut PartCtx) {
     };
     pc.gsel.faces_body = Some(held.body);
     let enter = if replace { "msg-sketch-from-face-enter-replace" } else { "msg-sketch-from-face-enter-sketch" };
-    *pc.status = qymcad_ui_state::Notice::info(format!("{}. {}", held.told, qymcad_i18n::tr(enter)));
+    let mut said = format!("{}. {}", held.told, qymcad_i18n::tr(enter));
+    // a copy taken where a boss could be redrawn says how to have the sketch drive it: a person changed the sizes of the
+    // copy and waited for the block to follow
+    if !replace && held.prism.is_some() {
+        said = format!("{said}. {}", qymcad_i18n::tr("msg-sketch-from-face-copy-replace"));
+    }
+    *pc.status = qymcad_ui_state::Notice::info(said);
     match held.prism.as_ref().filter(|_| replace) {
         Some(p) => {
             let h = pc.cmd.params.iter().find(|f| f.key == "height").map(|f| f.val).unwrap_or(p.height);

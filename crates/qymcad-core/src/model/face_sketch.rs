@@ -87,6 +87,7 @@ impl Project {
         let name = match prism.kind {
             super::PrismKind::Boss => "feat-name-redrawn-boss",
             super::PrismKind::Pocket => "feat-name-redrawn-pocket",
+            super::PrismKind::Stock => "feat-name-redrawn-stock",
         };
         self.push_timeline(FeatureNode { id: body, name: name.into(), kind, parent, dirty: true, suppressed: false })
     }

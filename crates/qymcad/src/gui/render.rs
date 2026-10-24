@@ -900,8 +900,8 @@ fn draw_redraw_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, 
     let body = &pn.project.bodies[mi];
     let Some(f) = body.faces.iter().find(|f| f.id == held.face.id) else { return };
     let grow = qymcad_ui_state::cmd_val(pn.cmd, "height") - prism.height;
-    // a boss grows out along the normal of its top, a pocket deepens against the normal of its floor
-    let d = if prism.kind == qymcad_core::model::PrismKind::Boss { grow } else { -grow };
+    // a boss and a stock grow out along the normal of their face, a pocket deepens against the normal of its floor
+    let d = if prism.kind == qymcad_core::model::PrismKind::Pocket { -grow } else { grow };
     if d.abs() < 1e-9 {
         return;
     }

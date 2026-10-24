@@ -2634,9 +2634,11 @@ cmd-gap-hole-moves = Тесік жылжиды
 feat-name-hole-moved = Тесіктің орны
 feat-name-redrawn-boss = Эскиз бойынша шығыңқы
 feat-name-redrawn-pocket = Эскиз бойынша қалта
+feat-name-redrawn-stock = Эскиз бойынша дайындама
 feat-hole-moved = Тесіктің орны { $d }
 feat-redrawn-boss = Эскиз бойынша шығыңқы h={ $h }
 feat-redrawn-pocket = Эскиз бойынша қалта h={ $h }
+feat-redrawn-stock = Эскиз бойынша дайындама h={ $h }
 msg-unfound-no-surface = Мұнда бет табылмады: тор төзімділіктен дөрекі. «Төзімділікті» үлкейтіп, қайта шертіңіз
 msg-unfound-no-entry = Бұл дөңгелек қабырғаның оны бұрғылайтын беті жоқ: бұл тесік емес, білік не бобышка
 msg-unfound-not-two-sides = Бұл дөңгелектеуге бойымен екі бет жанаспайды: оның басқа жолағын шертіңіз не қырды «Дөңгелектеу» құралымен дөңгелектеңіз
@@ -2890,8 +2892,10 @@ f-section-offset = Ығысу
 f-section-tol = Төзімділік
 msg-sketch-from-face-boss = Биіктігі { $h } шығыңқы
 msg-sketch-from-face-pocket = Тереңдігі { $h } қалта
+msg-sketch-from-face-stock = Биіктігі { $h } дайындама
 msg-sketch-from-face-enter-replace = Enter — беттің эскизі, ал шығыңқы немесе қалта соған қарап қайта сызылады
-msg-sketch-from-face-enter-sketch = Enter — беттің эскизі
+msg-sketch-from-face-enter-sketch = Enter — беттің эскизі: контурдың көшірмесі, денені өзгертпейді
+msg-sketch-from-face-copy-replace = Эскиз өлшемдері денені басқаруы үшін «Ауыстыру» таңдаңыз
 msg-sketch-from-face-no-outline = Бұл бет көшіруге контур бермейді: басқа жазық бетті басыңыз
 msg-sketch-from-face-laid = Эскиз: шектеулер { $rel }, өлшемдер { $sizes }, { $state }
 msg-define-laid = { $rel } шектеу және { $sizes } өлшем қойылды: { $state }

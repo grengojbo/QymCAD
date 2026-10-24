@@ -329,6 +329,11 @@ impl Project {
     /// is the sketch): 8 made 10 left the body as it was. The base is read where it stands now, so a base moved above
     /// carries the boss. The tool reaches `REDRAW_PAST` back past the base, into the plate or out of the opening: an end
     /// lying in the plane of a face of the body leaves a sliver of a face behind it.
+    ///
+    /// A STOCK - the body itself from one of its ends - has no base to heal over: its old prism is cut out by pushing its
+    /// face in to the far end, what stood on it is left, and the sketch extruded from the far end is fused in; a body
+    /// that was the stock and nothing else is the extruded sketch alone. Loops inside the face are holes of the sketch, so
+    /// a hole through stays a hole and a boss on the face keeps the column it stands on.
     pub(crate) fn prep_redrawn(&mut self, p: &Pass, r: Redraw, height: f64) -> crate::feature::KernelJob {
         let Redraw { src, faces, base, sketch, kind, rims, body } = r;
         let ids = match self.faces_by_ref(p.node, src, faces, "ref-what-redrawn-faces") {
@@ -347,10 +352,13 @@ impl Project {
         let (n, o) = ([pl[2], pl[6], pl[10]], [pl[3], pl[7], pl[11]]);
         let off = (0..3).map(|i| (b.centroid[i] - o[i]) * n[i]).sum::<f64>();
         let toward = if off > 0.0 { -1.0 } else { 1.0 };
-        let (near, far) = (off - toward * REDRAW_PAST, off + toward * h);
+        let stock = (kind == crate::model::PrismKind::Stock).then(|| self.stock_of(src, &ids, Plane { n, o }));
+        // a stock starts at its far end: nothing of the body lies past it
+        let near = if stock.is_some() { off } else { off - toward * REDRAW_PAST };
+        let far = off + toward * h;
         let span = crate::feature::ToolSpan { start: near.min(far), length: (far - near).abs(), ends: crate::feature::ToolEnds::Kept };
         let op = match kind {
-            crate::model::PrismKind::Boss => 1,
+            crate::model::PrismKind::Boss | crate::model::PrismKind::Stock => 1,
             crate::model::PrismKind::Pocket => 0,
         };
         // the rims as the tree has them, laid again where the new walls meet the new face (`far`) and the base (`off`), the
@@ -358,13 +366,25 @@ impl Project {
         let face_rim = rims.at_face.map(|r| crate::model::RimBlend { size: p.dim("rim", r.size), ..r });
         let base_rim = rims.at_base.map(|r| crate::model::RimBlend { size: p.dim("base_rim", r.size), ..r });
         let outline: Vec<crate::geom::Point2> = self.contour_index(outer).map(|i| self.contours[i].points.clone()).unwrap_or_default();
-        let far = off + toward * h;
         let laid: Vec<RimAt> = [face_rim.map(|rim| RimAt { rim, at: far }), base_rim.map(|rim| RimAt { rim, at: off })].into_iter().flatten().collect();
         let feature = p.node;
         crate::feature::KernelJob::new(vec![src], move |k| {
-            k.remove_faces(body, src, &ids)?;
+            let read = match stock {
+                Some(Stock { alone: true, .. }) => 0,
+                Some(Stock { face: Some(face), .. }) => {
+                    // pushed in to the far end as it stands and no further - not by the height typed anew: a boss may
+                    // stand on the far end
+                    k.push_face(body, src, face, -off.abs())?;
+                    body
+                }
+                Some(Stock { face: None, .. }) => return Err(crate::errors::CoreError::FaceNotFound),
+                None => {
+                    k.remove_faces(body, src, &ids)?;
+                    body
+                }
+            };
             let mut built =
-                k.combine_region_multi(BodyOp { src: body, op, body }, &sourced.profiles, span, pl, crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions })?;
+                k.combine_region_multi(BodyOp { src: read, op, body }, &sourced.profiles, span, pl, crate::feature::Sides { feature, sources: &sourced.sources, regions: &sourced.regions })?;
             for r in &laid {
                 let edges = crate::model::edges_round_outline(k, body, &pl, r.at, &outline);
                 if edges.is_empty() {
@@ -375,6 +395,24 @@ impl Project {
             }
             Ok(built)
         })
+    }
+
+    /// WHAT A STOCK REDRAWN READS of body `src` as it stands: its face among the faces `ids` it goes with - the one
+    /// lying in the plane of the sketch, facing its way - and whether those faces and its far end are the whole body.
+    fn stock_of(&self, src: Id, ids: &[u32], plane: Plane) -> Stock {
+        let Plane { n, o } = plane;
+        let faces = self.regen_faces.get(&src).cloned().unwrap_or_default();
+        let face = faces
+            .iter()
+            .filter(|f| ids.contains(&f.id))
+            .find(|f| {
+                let along = (f.centroid.x - o[0]) * n[0] + (f.centroid.y - o[1]) * n[1] + (f.centroid.z - o[2]) * n[2];
+                let facing = (0..3).map(|i| f.normal[i] * n[i]).sum::<f64>();
+                along.abs() < 1e-4 && facing > 1.0 - 1e-6
+            })
+            .map(|f| f.id);
+        // the faces taken off and the one far end: nothing else is there to keep
+        Stock { face, alone: faces.len() == ids.len() + 1 }
     }
 
     /// THE LARGEST CLOSED CONTOUR OF A SKETCH, by the area it encloses: the outline a boss or a pocket is redrawn by,
@@ -770,4 +808,18 @@ impl Project {
             None => crate::feature::KernelJob::refused(crate::errors::CoreError::LoftNeedsTwoSections),
         }
     }
+}
+
+/// The plane of a sketch: its normal and its origin.
+#[derive(Clone, Copy)]
+struct Plane {
+    n: [f64; 3],
+    o: [f64; 3],
+}
+
+/// A STOCK AS ITS REDRAWING READS IT: the face its old prism is pushed out by, and whether the stock is the whole body.
+#[derive(Clone, Copy)]
+struct Stock {
+    face: Option<u32>,
+    alone: bool,
 }
