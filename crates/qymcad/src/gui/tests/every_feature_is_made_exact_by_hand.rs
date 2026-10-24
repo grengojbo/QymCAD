@@ -123,11 +123,18 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     ];
     let told: Vec<&str> = found.iter().map(|r| r.told.as_str()).collect();
     assert_eq!(told, want, "the groups do not stand as a drawing lists them");
+    // EVERY GROUP MARKED BY THE COLOUR ITS FACES ARE LIT IN: the holes, the chamfer and the rounding a square each.
+    // Reported behaviour: the model lit the kinds in three colours, and the list beside it had none to match them by
+    h.frame(Vec::new());
+    let pal = h.app.scheme.pal.clone();
+    let marks = [pal.remove(), pal.modify(), pal.reference()].map(|c| h.rects_filled_in(c));
+    assert_eq!(marks, [3, 1, 1], "the groups are not marked by their colours - holes, chamfer, rounding: {marks:?}");
     assert!(found.iter().all(|r| r.taking == Taking::In), "a group found is not taken: {found:?}");
     // the rounding's group left out by its switch in the list beside the plate, the switch named by the group
     let round = found.iter().find(|r| r.told.contains("R4")).map(|r| r.told.clone()).expect("the group of the rounding");
     assert!(h.press_word(&round, egui::pos2(700.0, 400.0)), "the group {round:?} has no switch on screen");
     h.frame(Vec::new());
+    assert_eq!(h.rects_filled_in(pal.reference()), 0, "the group of the rounding left out keeps its colour");
     // the chamfer clicked in the view, turned to face it: left out
     h.orbit(-2.27, 0.6).frame(Vec::new());
     h.click([1.5, 1.5, 5.0]).frame(Vec::new());

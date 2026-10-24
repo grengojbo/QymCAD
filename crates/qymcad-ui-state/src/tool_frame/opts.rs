@@ -80,8 +80,9 @@ pub enum Opt {
     /// A group of named choices, one in force (or none, where nothing is chosen yet). More choices than a row holds
     /// well are drawn as a list.
     Modes { key: OptKey, caption: Option<String>, choices: Vec<Mode>, current: Option<usize> },
-    /// A switch, on or off: a tick box.
-    Switch { key: OptKey, word: String, hint: Option<String>, lit: Lit },
+    /// A switch, on or off: a tick box - with a square of colour before its words when it is marked, the colour of
+    /// what it switches as the view shows it.
+    Switch { key: OptKey, word: String, hint: Option<String>, lit: Lit, mark: Option<egui::Color32> },
     /// A switch of one sign beside a value - the lock of a degree of a joint: a button that stays pressed while on.
     Toggle { key: OptKey, word: String, hint: Option<String>, lit: Lit },
     /// A reference picked in the view: what it asks for, what is taken, whether the pick is being made now. What is
@@ -147,7 +148,7 @@ impl Opt {
 
     /// A switch by its words, lit or not.
     pub fn switch(key: OptKey, word: impl Into<String>, lit: Lit) -> Opt {
-        Opt::Switch { key, word: word.into(), hint: None, lit }
+        Opt::Switch { key, word: word.into(), hint: None, lit, mark: None }
     }
 
     /// A switch of one sign, a button that stays pressed while on.
@@ -163,6 +164,15 @@ impl Opt {
     /// A button by its words.
     pub fn press(key: OptKey, word: impl Into<String>) -> Opt {
         Opt::Press { key, word: word.into(), hint: None }
+    }
+
+    /// The same switch marked by `colour`: a square of it before its words, grey while the switch is off. Other options
+    /// are left as they are.
+    pub fn marked(mut self, colour: egui::Color32) -> Opt {
+        if let Opt::Switch { mark, .. } = &mut self {
+            *mark = Some(colour);
+        }
+        self
     }
 
     /// The same option with the longer explanation the hover shows - a switch, a pick or a button.
@@ -233,10 +243,27 @@ pub(crate) fn draw_opts(ui: &mut egui::Ui, pal: &qymcad_scheme::Palette, opts: &
                 }
             }
             // a switch is a tick box: on or off, read at a glance as every tick box of the program
-            Opt::Switch { key, word, hint, lit } => {
+            Opt::Switch { key, word, hint, lit, mark } => {
                 let mut on = *lit == Lit::On;
-                if hinted(ui.checkbox(&mut on, word.as_str()), hint).clicked() {
-                    did.push(Did::Switched { key: *key });
+                match mark {
+                    None => {
+                        if hinted(ui.checkbox(&mut on, word.as_str()), hint).clicked() {
+                            did.push(Did::Switched { key: *key });
+                        }
+                    }
+                    // THE TICK, A SQUARE OF THE COLOUR, THE WORDS: the square grey while off, as what it marks is not lit;
+                    // the words switch it as the tick does
+                    Some(colour) => {
+                        let tick = ui.checkbox(&mut on, "");
+                        let side = ui.text_style_height(&egui::TextStyle::Body) * 0.7;
+                        let (square, _) = ui.allocate_exact_size(egui::vec2(side, side), egui::Sense::hover());
+                        let shown = if *lit == Lit::On { *colour } else { ui.visuals().weak_text_color() };
+                        ui.painter().rect_filled(square, 2.0, shown);
+                        let words = ui.add(egui::Label::new(word.as_str()).sense(egui::Sense::click()));
+                        if hinted(tick, hint).clicked() || hinted(words, hint).clicked() {
+                            did.push(Did::Switched { key: *key });
+                        }
+                    }
                 }
             }
             Opt::Toggle { key, word, hint, lit } => {

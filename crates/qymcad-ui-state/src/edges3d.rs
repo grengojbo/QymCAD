@@ -1,5 +1,6 @@
 //! THE EDGES OF THE BODIES AS LINES: a pair of points in the world for every sharp edge of a body (`Caches::sharp`),
-//! the part of it a section keeps. The card draws them and the raster draws them, from this one list.
+//! the part of it a section keeps. The card draws them and the raster draws them, from this one list. And the colour a
+//! feature found on a body is shown in.
 
 use crate::{section_eff, BodyEdges, GpuVert, Painting};
 
@@ -67,4 +68,14 @@ pub fn kept_by(cut: Option<CutPlane>, seg: [[f64; 3]; 2]) -> Option<[[f64; 3]; 2
     let t = da / (da - db);
     let at = [seg[0][0] + (seg[1][0] - seg[0][0]) * t, seg[0][1] + (seg[1][1] - seg[0][1]) * t, seg[0][2] + (seg[1][2] - seg[0][2]) * t];
     Some(if da <= 0.0 { [seg[0], at] } else { [at, seg[1]] })
+}
+
+/// THE COLOUR OF A FEATURE FOUND ON A BODY, by its kind: a hole, a chamfer, a rounding. The one table the model is lit
+/// by and the list of Recognise all marks its groups with, so a row reads as the faces it lights.
+pub fn feature_colour(pal: &qymcad_scheme::Palette, exact: &qymcad_core::model::Exact) -> egui::Color32 {
+    match exact {
+        qymcad_core::model::Exact::Hole { .. } => pal.remove(),
+        qymcad_core::model::Exact::Chamfer { .. } => pal.modify(),
+        qymcad_core::model::Exact::Round { .. } => pal.reference(),
+    }
 }

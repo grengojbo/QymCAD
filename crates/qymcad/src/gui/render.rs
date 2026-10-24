@@ -975,13 +975,7 @@ fn draw_remade_all_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Paint
     let (Some(all), Some(mi)) = (pn.recognise.all.as_ref(), pn.gsel.faces_body.and_then(|b| pn.project.mesh_index(b))) else { return };
     let body = &pn.project.bodies[mi];
     let pal = &pn.scheme.pal;
-    let kind_of = |id: u32| {
-        all.groups.iter().flat_map(|g| g.items.iter()).find(|r| r.faces.iter().any(|f| f.id == id)).map(|r| match r.exact {
-            qymcad_core::model::Exact::Hole { .. } => pal.remove(),
-            qymcad_core::model::Exact::Chamfer { .. } => pal.modify(),
-            qymcad_core::model::Exact::Round { .. } => pal.reference(),
-        })
-    };
+    let kind_of = |id: u32| all.groups.iter().flat_map(|g| g.items.iter()).find(|r| r.faces.iter().any(|f| f.id == id)).map(|r| qymcad_ui_state::feature_colour(pal, &r.exact));
     let mut hm = egui::Mesh::default();
     for face in body.faces.iter().filter(|f| pn.gsel.faces.contains(&f.id)) {
         let colour = qymcad_scheme::a(kind_of(face.id).unwrap_or(pal.remove()), 120);

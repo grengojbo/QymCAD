@@ -170,7 +170,17 @@ pub(crate) fn group_sections(pc: &PartCtx) -> Vec<qymcad_ui_state::Section> {
         .enumerate()
         .map(|(g, gr)| {
             let told = group_told(gr);
-            let head = if edit { Opt::Readout(told) } else { Opt::switch(OptKey::at("group", g), told, (gr.taking == Taking::In).lit()) };
+            // the switch marked by the colour its features are lit in on the model
+            let colour = gr.items.first().map(|r| qymcad_ui_state::feature_colour(&pc.scheme.pal, &r.exact));
+            let head = if edit {
+                Opt::Readout(told)
+            } else {
+                let switch = Opt::switch(OptKey::at("group", g), told, (gr.taking == Taking::In).lit());
+                match colour {
+                    Some(c) => switch.marked(c),
+                    None => switch,
+                }
+            };
             let fields = pc.cmd.params.iter().filter(|p| group_of_key(&p.key) == Some(g)).map(|p| Row::new(qymcad_ui_state::field_caption(p)).field(&p.key));
             Section::plain(std::iter::once(Row::new(String::new()).opt(head)).chain(fields).collect())
         })

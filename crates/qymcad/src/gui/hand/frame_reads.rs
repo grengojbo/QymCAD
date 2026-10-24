@@ -30,6 +30,24 @@ impl super::Hand<'_> {
         out
     }
 
+    /// HOW MANY RECTANGLES FILLED IN `colour` THE LAST FRAME DREW, at whatever opacity the layer took it to: a square
+    /// marking a row is drawn as one, and the box at the geometry draws itself translucent while it fades in.
+    pub fn rects_filled_in(&self, colour: egui::Color32) -> usize {
+        fn walk(s: &egui::Shape, colour: egui::Color32) -> usize {
+            match s {
+                // the fill brought back from the opacity it was drawn at, against the colour
+                egui::Shape::Rect(r) => {
+                    let a = r.fill.a() as i32;
+                    let back = r.fill.to_array().into_iter().zip(colour.to_array()).take(3).all(|pair| a > 0 && (pair.0 as i32 * 255 / a - pair.1 as i32).abs() <= 4);
+                    usize::from(back)
+                }
+                egui::Shape::Vec(v) => v.iter().map(|x| walk(x, colour)).sum(),
+                _ => 0,
+            }
+        }
+        self.win.shapes.iter().map(|cs| walk(&cs.shape, colour)).sum()
+    }
+
     /// HOW MANY CORNERS OF FILLED TRIANGLES IN `colour` THE LAST FRAME DREW: a lit face is drawn as its triangles.
     pub fn mesh_corners_in(&self, colour: egui::Color32) -> usize {
         fn walk(s: &egui::Shape, colour: egui::Color32) -> usize {
