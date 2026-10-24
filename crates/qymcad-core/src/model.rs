@@ -647,7 +647,7 @@ pub(crate) mod comp_pattern;
 pub use comp_pattern::{CompPattern, CompPatternKind};
 mod projection;
 mod face_sketch;
-pub use face_sketch::{FaceSketch, FromFace};
+pub use face_sketch::{FaceSketch, FromFace, OutlineSize, OutlineSizeKind};
 mod section_sketch;
 pub use section_sketch::{Extent, Fitter, FromLoops, LoopFitter, OfFace, OfSection, SectionAt};
 mod prism;

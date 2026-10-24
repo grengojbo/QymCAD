@@ -164,6 +164,21 @@ fn a_boss_is_redrawn_by_a_sketch_taken_off_its_top() {
     assert!(refused["error"]["message"].as_str().unwrap_or_default().contains("far end"), "the refusal does not say the boss stands on the block: {refused}");
 }
 
+/// THE OUTLINE OF A BOSS REDRAWN IS EDITED BY ITS MAIN SIZES: the boss of 20 x 10 made 30 wide, written into its
+/// sketch, the block gaining 10 x 10 x 5.
+#[test]
+fn a_boss_redrawn_takes_the_width_of_its_outline() {
+    let mut ctx = Ctx::blank();
+    let _ = block(&mut ctx);
+    let made = ok(call(&mut ctx, "create_sketch", json!({ "plane": "xy" })));
+    let _ = ok(call(&mut ctx, "sketch_add", json!({ "sketch": made["sketch"], "entities": [{ "rect": { "from": [10, 10], "to": [30, 20] } }] })));
+    let _ = ok(call(&mut ctx, "extrude", json!({ "sketch": made["sketch"], "distance": 15 })));
+    let redrawn = ok(call(&mut ctx, "sketch_from_face", json!({ "face": "top", "action": "replace" })));
+    let node = redrawn["feature"].clone();
+    let wider = ok(call(&mut ctx, "edit_feature", json!({ "feature": node, "values": { "width": 30 } })));
+    assert_eq!(volumes(&wider), [13500], "the boss made 30 wide: {wider}");
+}
+
 /// A BOX FROM ITS TOP IS A STOCK: Replace lays it again by the sketch, and the sketch drives the box. Reported behaviour:
 /// the top of a box 60 x 40 x 4 was refused as "no boss or pocket", and the copy taken with Sketch only drove nothing.
 #[test]

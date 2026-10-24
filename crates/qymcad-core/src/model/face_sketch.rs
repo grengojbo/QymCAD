@@ -6,7 +6,7 @@
 //! (`fully_define`), and placed from the outline of the face it stands on, held as a projection: a person measures a
 //! boss from the edge of the plate. Redrawn, the boss is taken off and laid again by the sketch, one node, and the sizes
 //! of the sketch drive it from then on.
-use super::{Anchor, Defined, Id, ProjSource, Prism, Project};
+use super::{Anchor, Constraint, Defined, DimTarget, Id, ProjSource, Prism, Project};
 use crate::feature::{FaceKey, SketchPlane};
 
 /// WHAT A SKETCH IS TAKEN OFF: the body, its flat face, the edges whose plan is the drawing (none: the outline of the
@@ -91,4 +91,54 @@ impl Project {
         };
         self.push_timeline(FeatureNode { id: body, name: name.into(), kind, parent, dirty: true, suppressed: false })
     }
+
+    /// THE MAIN SIZES OF THE OUTLINE A SKETCH HOLDS: the diameter of a circle, the width and the length of a rectangle -
+    /// the sizes laid between points of its own curves, not those placing it from the edges of the plate or the origin.
+    /// None when there are more than three of them: an outline of many sides is changed in the sketch itself. The sizes a
+    /// boss redrawn by the sketch offers beside its height, so a boss 12 across is made 16 where its height is typed.
+    pub fn outline_sizes(&self, sketch: Id) -> Vec<OutlineSize> {
+        let Some(s) = self.sketch_index(sketch).map(|si| &self.sketches[si]) else { return Vec::new() };
+        let drawn: std::collections::HashSet<Id> = s.entities.iter().filter(|e| !e.construction).flat_map(|e| super::curve_ref_of(e).points()).collect();
+        let sizes: Vec<OutlineSize> = s
+            .constraints
+            .iter()
+            .filter_map(|c| {
+                let kind = match *c {
+                    Constraint::Diameter { driven: false, .. } => OutlineSizeKind::Diameter,
+                    Constraint::Distance { driven: false, axis: 1, .. } => OutlineSizeKind::Width,
+                    Constraint::Distance { driven: false, axis: 2, .. } => OutlineSizeKind::Length,
+                    _ => return None,
+                };
+                if !c.points().iter().all(|p| drawn.contains(p)) {
+                    return None;
+                }
+                let refs = Self::dim_refs(c)?;
+                Some(OutlineSize { kind, target: DimTarget::Sketch { sketch, refs: Self::dim_key(&refs) }, value: Self::dim_value_of(c)?, expr: c.expr().unwrap_or_default().to_string() })
+            })
+            .collect();
+        if sizes.len() > 3 {
+            return Vec::new();
+        }
+        sizes
+    }
+}
+
+/// What a main size of an outline measures.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutlineSizeKind {
+    Diameter,
+    /// Across the sketch, along its X.
+    Width,
+    /// Along its Y.
+    Length,
+}
+
+/// A MAIN SIZE OF AN OUTLINE (`Project::outline_sizes`): what it measures, the dimension it is, its value and its
+/// formula as typed - empty for a plain number.
+#[derive(Clone, Debug, PartialEq)]
+pub struct OutlineSize {
+    pub kind: OutlineSizeKind,
+    pub target: DimTarget,
+    pub value: f64,
+    pub expr: String,
 }

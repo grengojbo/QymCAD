@@ -573,6 +573,8 @@ pub fn update_feat(pc: &mut qymcad_ui_state::PartCtx, fid: Id) -> Result<Id, Not
     if let Err(e) = store_cmd_exprs(pc.cmd, pc.project, fid) {
         return Err(formula_refused(&e));
     }
+    // a boss redrawn: the sizes of its outline go into its sketch
+    crate::sketch_from_face::edit_outline(pc, fid)?;
     // the array: the step expressions go onto the components of the vector (the regen reads those)
     if pc.armed.part_tool() == Some(qymcad_ui_state::PartTool::LinearPattern) {
         {

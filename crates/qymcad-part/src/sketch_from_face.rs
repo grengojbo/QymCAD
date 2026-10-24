@@ -4,7 +4,7 @@
 //! by the sketch, one node whose height is a field at the geometry (`Project::add_redrawn`): from then on the sizes of
 //! the sketch drive the body. Made for a body come from a STEP file, which has no sketch behind its bosses.
 use qymcad_core::feature::{FaceKey, FeatureKind};
-use qymcad_core::model::{FaceSketch, FromFace, Id, PrismKind, RimBlend, RimCut, Rims};
+use qymcad_core::model::{FaceSketch, FromFace, Id, OutlineSizeKind, PrismKind, RimBlend, RimCut, Rims};
 use qymcad_ui_state::{CmdParam, PartCtx, RedrawInHand};
 
 /// What Enter does, as the operation of the bar (`FeatTarget::op`) holds it.
@@ -263,7 +263,7 @@ fn told_laid(s: &FaceSketch) -> String {
 /// the height in the field - an expression as it was typed - and Enter changes the node rather than laying another. Its
 /// outline is the sketch's: a double click on the sketch edits it.
 pub fn open_redrawn(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool) {
-    let FeatureKind::Redrawn { src, ref faces, height, rims, .. } = *kind else { return };
+    let FeatureKind::Redrawn { src, ref faces, height, rims, sketch, .. } = *kind else { return };
     pc.cmd.open(pc.armed, qymcad_ui_state::PartTool::SketchFromFace, was_3d);
     qymcad_ui_state::borrow_view(*pc.cam, *pc.mode_3d, *pc.view, &mut *pc.view_restore);
     *pc.mode_3d = true;
@@ -275,9 +275,19 @@ pub fn open_redrawn(pc: &mut PartCtx, fid: Id, kind: &FeatureKind, was_3d: bool)
     for r in rims_held(rims) {
         params.push(super::cmd_param_from(&*pc.project, fid, r.label(), r.field.key, r.rim.size, 0.01, 100000.0));
     }
+    // the main sizes of the outline beside the height: a boss 12 across is made 16 where its height is typed
+    let sizes = pc.project.outline_sizes(sketch);
+    for (i, s) in sizes.iter().enumerate() {
+        let mut f = CmdParam::new(outline_label(s.kind), &outline_key(i), s.value, 0.01, 100000.0);
+        if !s.expr.is_empty() {
+            f.txt = s.expr.clone();
+        }
+        params.push(f);
+    }
     pc.cmd.params = params;
     pc.cmd.focus = true;
-    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-edit-redrawn"));
+    let told = if sizes.is_empty() { "msg-edit-redrawn" } else { "msg-edit-redrawn-sizes" };
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr(told));
 }
 
 /// The height and the rims written into a boss or pocket redrawn being edited; a field the tool does not show leaves its
@@ -287,4 +297,44 @@ pub fn edit_redrawn(cmd: &qymcad_ui_state::FeatCommand, height: &mut f64, rims: 
         *height = qymcad_ui_state::cmd_val(cmd, "height");
     }
     rims_from(cmd, rims);
+}
+
+/// The key of the field of the `i`-th main size of an outline.
+fn outline_key(i: usize) -> String {
+    format!("outline{i}")
+}
+
+/// What the field of a main size of an outline is called.
+fn outline_label(kind: OutlineSizeKind) -> &'static str {
+    match kind {
+        OutlineSizeKind::Diameter => "f-redrawn-diameter",
+        OutlineSizeKind::Width => "f-redrawn-width",
+        OutlineSizeKind::Length => "f-redrawn-length",
+    }
+}
+
+/// THE MAIN SIZES OF THE OUTLINE OF BOSS OR POCKET `fid` REDRAWN, as their fields hold them, written into the sketch it
+/// is drawn by - the same dimension the sketch shows, a formula kept as typed - and the sketch solved again. The fields
+/// are not numbers of the node: what `store_cmd_exprs` wrote under their keys is taken back off it.
+pub fn edit_outline(pc: &mut PartCtx, fid: Id) -> Result<(), qymcad_ui_state::NotApplied> {
+    let Some(FeatureKind::Redrawn { sketch, .. }) = pc.project.timeline.iter().find(|n| n.id == fid).map(|n| n.kind.clone()) else { return Ok(()) };
+    let sizes = pc.project.outline_sizes(sketch);
+    let mut changed = false;
+    for (i, s) in sizes.iter().enumerate() {
+        let key = outline_key(i);
+        pc.project.clear_feat_formula(&qymcad_core::model::FeatNumber { node: fid, key: &key });
+        let Some(typed) = pc.cmd.params.iter().find(|p| p.key == key).map(|p| p.txt.clone()) else { continue };
+        if typed.trim() == s.expr.trim() || (s.expr.is_empty() && typed.trim().parse::<f64>().is_ok_and(|v| (v - s.value).abs() < 1e-9)) {
+            continue;
+        }
+        pc.project.set_dim_target_text(&s.target, &typed).map_err(|e| super::formula_refused(&e))?;
+        changed = true;
+    }
+    if changed {
+        if let Some(si) = pc.project.sketch_index(sketch) {
+            pc.project.solve_sketch(si);
+        }
+        pc.project.mark_sketch_dirty(sketch);
+    }
+    Ok(())
 }

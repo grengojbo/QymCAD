@@ -190,7 +190,7 @@ struct EditArgs {
 
 pub const EDIT_FEATURE: Tool = Tool {
     name: "edit_feature",
-    description: "Give a feature new sizes: values maps a key of the feature (get_document lists the features; this answer lists their keys - height, radius, depth, angle, dx ...) to a number or an expression. A number replaces the size; an expression keeps following its parameters. The document is rebuilt; one undo step.",
+    description: "Give a feature new sizes: values maps a key of the feature (get_document lists the features; this answer lists their keys - height, radius, depth, angle, dx ...) to a number or an expression. A number replaces the size; an expression keeps following its parameters. A boss, pocket or stock redrawn by a sketch also takes the main sizes of its outline - diameter of a round one, width and length of a rectangle - written into its sketch. The document is rebuilt; one undo step.",
     schema: || json!({ "type": "object", "properties": { "feature": { "type": "integer" }, "values": { "type": "object", "additionalProperties": { "oneOf": [ { "type": "number" }, { "type": "string" } ] } } }, "required": ["feature", "values"], "additionalProperties": false }),
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: EditArgs = tool::args(arguments)?;
@@ -202,7 +202,12 @@ pub const EDIT_FEATURE: Tool = Tool {
             return Err(Refusal::new("arguments", "values is empty: nothing to change.", Stage::Validate));
         }
         let mut read = Vec::new();
+        let mut outline = Vec::new();
         for (key, v) in &a.values {
+            if let Some(target) = outline_target(project, ti, key) {
+                outline.push(Outlined { target, read: v.read(project, key)? });
+                continue;
+            }
             if !keys.contains(&key.as_str()) {
                 return Err(Refusal::new("no-size", &format!("Feature {} has no size \"{key}\"; it has {keys:?}.", a.feature), Stage::Validate));
             }
@@ -220,6 +225,17 @@ pub const EDIT_FEATURE: Tool = Tool {
                         }
                     }
                 }
+                // the sizes of the outline of a boss redrawn live in its sketch: the same dimension the sketch shows
+                for o in &outline {
+                    let typed = o.read.expr.clone().unwrap_or_else(|| qymcad_core::expr::fmt_num(o.read.value));
+                    p.set_dim_target_text(&o.target, &typed).map_err(|e| e.to_string())?;
+                    if let DimTarget::Sketch { sketch, .. } = o.target {
+                        if let Some(si) = p.sketch_index(sketch) {
+                            p.solve_sketch(si);
+                        }
+                        p.mark_sketch_dirty(sketch);
+                    }
+                }
                 Ok(())
             })
             .map_err(tool::doc_refusal)?;
@@ -228,6 +244,28 @@ pub const EDIT_FEATURE: Tool = Tool {
         Ok(outcome(ctx, out))
     },
 };
+
+/// A main size of the outline of a boss redrawn to set: the dimension of its sketch, and what was given for it.
+struct Outlined {
+    target: DimTarget,
+    read: crate::args::Read,
+}
+
+/// THE DIMENSION OF THE SKETCH `key` NAMES on node `ti` - a boss, pocket or stock redrawn - when it is `diameter`,
+/// `width` or `length` and its outline has one such size.
+fn outline_target(project: &Project, ti: usize, key: &str) -> Option<DimTarget> {
+    use qymcad_core::model::OutlineSizeKind;
+    let FeatureKind::Redrawn { sketch, .. } = project.timeline[ti].kind else { return None };
+    let kind = match key {
+        "diameter" => OutlineSizeKind::Diameter,
+        "width" => OutlineSizeKind::Width,
+        "length" => OutlineSizeKind::Length,
+        _ => return None,
+    };
+    let mut of_kind = project.outline_sizes(sketch).into_iter().filter(|s| s.kind == kind);
+    let one = of_kind.next()?;
+    of_kind.next().is_none().then_some(one.target)
+}
 
 /// A size to set: its key and what was given for it.
 struct Sized {

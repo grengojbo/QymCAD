@@ -43,11 +43,16 @@ mod tests {
         Written { _folder: folder, path: file }
     }
 
-    /// A plate of 60 x 40 x 5 with a round boss of 12 across and 8 high at (30, 20), written to a STEP file.
-    fn round_boss_file() -> Written {
+    /// A plate of 60 x 40 x 5 with a round boss of 12 across and 8 high at (30, 20).
+    fn round_boss_solid() -> qymcad_kernel::Shape {
         let plate = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 60.0, 0.0, 60.0, 40.0, 0.0, 40.0], 5.0).expect("a plate");
         let boss = qymcad_kernel::specimen::cylinder(6.0, 8.0).expect("a boss").moved(&[1.0, 0.0, 0.0, 30.0, 0.0, 1.0, 0.0, 20.0, 0.0, 0.0, 1.0, 5.0]).expect("placed");
-        written(&plate.combined(&boss, 1).expect("fused"), "round-boss")
+        plate.combined(&boss, 1).expect("fused")
+    }
+
+    /// The same, written to a STEP file.
+    fn round_boss_file() -> Written {
+        written(&round_boss_solid(), "round-boss")
     }
 
     /// The window with `file` brought in, as millimetres, and its part entered.
@@ -197,5 +202,61 @@ mod tests {
         let built = h.app.project.timeline.iter().find(|n| n.id == node).and_then(|n| n.kind.body()).and_then(|b| h.app.live.shapes.get(&b)).map(|s| s.volume());
         let want = bossed_solid(Some(1.5)).volume();
         assert!(built.is_some_and(|v| (v - want).abs() < 1e-3 * want), "the rim made 1.5 holds {built:?} mm^3, not {want}");
+    }
+
+    /// The volume of the body node `node` builds, as the window holds it.
+    fn built(h: &Hand, node: qymcad_core::model::Id) -> Option<f64> {
+        h.app.project.timeline.iter().find(|n| n.id == node).and_then(|n| n.kind.body()).and_then(|b| h.app.live.shapes.get(&b)).map(|s| s.volume())
+    }
+
+    /// A BOSS REDRAWN, REOPENED, OFFERS THE SIZES OF ITS OUTLINE BESIDE ITS HEIGHT: a round boss its diameter, a square one
+    /// its width and its length; a size typed there changes the sketch and the boss, one step of undo taking it back.
+    /// Reported behaviour: to make a boss 12 across 16, the sketch had to be opened, the number found and the sketch left.
+    #[test]
+    fn the_sizes_of_the_outline_stand_beside_the_height() {
+        struct Case {
+            file: fn() -> Written,
+            field: &'static str,
+            from: f64,
+            to: f64,
+            gains: f64,
+        }
+        let round = || written(&round_boss_solid(), "round-sized");
+        let square = || written(&bossed_solid(None), "square-sized");
+        let cases = [
+            Case { file: round, field: "f-redrawn-diameter", from: 12.0, to: 16.0, gains: std::f64::consts::PI * (64.0 - 36.0) * 8.0 },
+            Case { file: square, field: "f-redrawn-width", from: 30.0, to: 40.0, gains: 10.0 * 20.0 * 8.0 },
+        ];
+        for c in cases {
+            let mut app = App::default();
+            let file = (c.file)();
+            brought_in(&mut app, &file);
+            let mut h = Hand::new(&mut app);
+            h.look_at([30.0, 20.0, 10.0], 6.0).frame(Vec::new());
+            h.tool(qymcad_ui_state::PartTool::SketchFromFace).click([25.0, 20.0, 13.0]).frame(Vec::new());
+            h.enter();
+            at_rest(&mut h);
+            let node = h.app.project.timeline.last().map(|n| n.id).expect("the node");
+            let before = built(&h, node).expect("the boss redrawn is built");
+            h.key(egui::Key::Escape).key(egui::Key::Escape);
+            let row = h.texts().into_iter().find(|t| t.contains(&crate::i18n::tr1("feat-redrawn-boss", "h", &crate::i18n::num(8.0, 1)))).expect("the row of the boss redrawn");
+            assert!(h.double_click_word(&row), "the row of the boss redrawn is not on screen");
+            let field = h.app.tools.cmd.params.iter().find(|p| p.key.starts_with("outline") && (p.val - c.from).abs() < 1e-6).cloned();
+            let Some(field) = field else {
+                panic!("{}: no size {} of the outline beside the height: {:?}", c.field, c.from, h.app.tools.cmd.params.iter().map(|p| format!("{}={}", p.key, p.val)).collect::<Vec<_>>())
+            };
+            h.frame(Vec::new());
+            let texts = h.texts();
+            let named = texts.iter().any(|t| t.contains(&crate::i18n::tr(c.field)));
+            assert!(named, "{}: the field of the size is not named so at the geometry: {:?}", c.field, texts.iter().filter(|t| t.len() < 40).collect::<Vec<_>>());
+            h.set(&field.key, c.to).enter();
+            at_rest(&mut h);
+            let after = built(&h, node).expect("the boss is built again");
+            assert!((after - before - c.gains).abs() < 1e-3 * before, "{}: {} made {} holds {after} mm^3, not {}", c.field, c.from, c.to, before + c.gains);
+            h.undo();
+            at_rest(&mut h);
+            let back = built(&h, node).expect("the boss is built after undo");
+            assert!((back - before).abs() < 1e-3 * before, "{}: one step of undo left {back} mm^3, not {before}", c.field);
+        }
     }
 }
