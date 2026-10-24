@@ -157,7 +157,7 @@ pub const OPEN_PROJECT: Tool = Tool {
 
 pub const SAVE_PROJECT: Tool = Tool {
     name: "save_project",
-    description: "Write the document to a .qcad file with its live bodies. Without path it goes to the file it was opened from or last saved to. A file that is there already, other than the document's own, is written over only with overwrite: true.",
+    description: "Write the document to a .qcad file with its live bodies. Without path it goes to the file it was opened from or last saved to. A path without a folder goes beside the document's own file, or into the person's Downloads while the document has none; the answer names the absolute path - tell it to the person. A file that is there already, other than the document's own, is written over only with overwrite: true.",
     schema: || {
         json!({ "type": "object", "properties": {
             "path": { "type": "string", "description": "The .qcad file; the document's own file when left out." },
@@ -169,12 +169,13 @@ pub const SAVE_PROJECT: Tool = Tool {
         let Some(raw) = a.path.or_else(|| ctx.path.clone()) else {
             return Err(Refusal::new("no-path", "The document has no file yet.", Stage::Io).with_hint("Pass path."));
         };
-        let path = paths::resolve(&raw);
+        let path = paths::to_write(&raw, &paths::Places::here(ctx.path.as_deref()))?;
         paths::has_extension(&path, &["qcad"])?;
         let target = path.to_string_lossy().into_owned();
         // the document's own file is the one it is saved to; only another file needs the leave to write over it
         let existing = if ctx.path.as_deref() == Some(target.as_str()) { Existing::WriteOver } else { Existing::from_overwrite(a.overwrite) };
         paths::may_write(&path, existing)?;
+        paths::may_write_in(&path)?;
         ctx.doc.save(&target, &qymcad_doc::clock::now_iso8601()).map_err(tool::doc_refusal)?;
         ctx.path = Some(target.clone());
         Ok(answer("path", json!(target)))

@@ -209,3 +209,33 @@ fn every_feature_of_a_step_is_made_editable_at_once() {
     let wider = call(&mut ctx, "edit_feature", json!({ "feature": made["feature"], "values": { "diameter": 6 } }));
     assert_eq!(volumes(&wider), [hole(6.0)], "the diameter of the group does not drive the hole: {wider}");
 }
+
+/// A NAME WITHOUT A FOLDER GOES BESIDE THE DOCUMENT: the server runs in whatever folder its client started it in - on
+/// Windows the program's own folder under Program Files - so a bare name is written next to the document's own file,
+/// and the answer names the absolute path. Reported behaviour: `test2.step` landed in `C:\Program Files\QymCAD`.
+#[test]
+fn a_bare_name_is_written_beside_the_document() {
+    let dir = out_dir("beside");
+    let mut ctx = cube();
+    let saved = call(&mut ctx, "save_project", json!({ "path": file(&dir, "doc.qcad") }));
+    assert_eq!(saved["ok"], json!(true), "{saved}");
+    let beside = |ctx: &mut Ctx, tool: &str, name: &str| {
+        let out = call(ctx, tool, json!({ "path": name }));
+        assert_eq!(out["ok"], json!(true), "{tool}: {out}");
+        assert_eq!(out["written"]["path"], json!(file(&dir, name)), "{tool} did not name the file beside the document: {out}");
+        assert!(dir.join(name).exists(), "{tool} wrote no file beside the document: {out}");
+    };
+    beside(&mut ctx, "export_cad", "beside.step");
+    beside(&mut ctx, "export_mesh", "beside.stl");
+    let again = call(&mut ctx, "save_project", json!({ "path": "copy.qcad" }));
+    assert_eq!(again["path"], json!(file(&dir, "copy.qcad")), "a bare name to save as did not go beside the document: {again}");
+}
+
+/// A FOLDER THAT IS NOT THERE is named as the reason, not as a code of the writer.
+#[test]
+fn a_missing_folder_is_named_as_the_reason() {
+    let dir = out_dir("no-folder");
+    let mut ctx = cube();
+    let out = call(&mut ctx, "export_cad", json!({ "path": file(&dir.join("not-there"), "box.step") }));
+    assert_eq!(out["error"]["code"], "path-no-folder", "{out}");
+}

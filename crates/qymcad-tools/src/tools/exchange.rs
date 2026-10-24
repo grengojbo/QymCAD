@@ -168,7 +168,7 @@ pub const IMPORT_CAD: Tool = Tool {
 
 pub const EXPORT_MESH: Tool = Tool {
     name: "export_mesh",
-    description: "Write the visible bodies of the document, or of one part, as a mesh file - the format by the extension: .stl, .obj, .ply, .glb, .3mf, .amf. 3MF and glTF keep the parts and their colours. quality is draft (0.2 mm), standard (0.05), high (0.02), max (0.005) or {\"deflection\": mm}.",
+    description: "Write the visible bodies of the document, or of one part, as a mesh file - the format by the extension: .stl, .obj, .ply, .glb, .3mf, .amf. 3MF and glTF keep the parts and their colours. A path without a folder is written beside the document's own file, or into the person's Downloads while the document has none; the answer names the absolute path - tell it to the person. quality is draft (0.2 mm), standard (0.05), high (0.02), max (0.005) or {\"deflection\": mm}.",
     schema: || {
         json!({ "type": "object", "properties": {
             "path": { "type": "string" },
@@ -182,9 +182,10 @@ pub const EXPORT_MESH: Tool = Tool {
     },
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: ExportArgs = tool::args(arguments)?;
-        let path = paths::resolve(&a.path);
+        let path = paths::to_write(&a.path, &paths::Places::here(ctx.path.as_deref()))?;
         paths::has_extension(&path, &extensions(&MESH_FORMATS))?;
         paths::may_write(&path, Existing::from_overwrite(a.overwrite))?;
+        paths::may_write_in(&path)?;
         let deflection = a.quality.unwrap_or(Quality::Named(Detail::Standard)).deflection();
         if !(deflection.is_finite() && deflection > 0.0) {
             return Err(tool::Refusal::new("bad-deflection", &format!("The deflection {deflection} has to be a number of millimetres above zero."), tool::Stage::Validate));
@@ -198,7 +199,7 @@ pub const EXPORT_MESH: Tool = Tool {
 
 pub const EXPORT_CAD: Tool = Tool {
     name: "export_cad",
-    description: "Write the visible exact bodies of the document, or of one part, as STEP (.step, .stp - with the tree of parts) or IGES (.igs, .iges). A body that is only a mesh cannot go into an exact file; the answer counts what went and what did not.",
+    description: "Write the visible exact bodies of the document, or of one part, as STEP (.step, .stp - with the tree of parts) or IGES (.igs, .iges). A body that is only a mesh cannot go into an exact file; the answer counts what went and what did not. A path without a folder is written beside the document's own file, or into the person's Downloads while the document has none; the answer names the absolute path - tell it to the person.",
     schema: || {
         json!({ "type": "object", "properties": {
             "path": { "type": "string" },
@@ -208,9 +209,10 @@ pub const EXPORT_CAD: Tool = Tool {
     },
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: ExportCadArgs = tool::args(arguments)?;
-        let path = paths::resolve(&a.path);
+        let path = paths::to_write(&a.path, &paths::Places::here(ctx.path.as_deref()))?;
         paths::has_extension(&path, &extensions(&EXACT_FORMATS))?;
         paths::may_write(&path, Existing::from_overwrite(a.overwrite))?;
+        paths::may_write_in(&path)?;
         let target_path = path.to_string_lossy().into_owned();
         let format = match Format::of_path(&target_path) {
             Some(Format::Iges) => qymcad_kernel::ExactFormat::Iges,

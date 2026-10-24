@@ -95,6 +95,17 @@ pub fn data(sub: &str) -> Option<std::path::PathBuf> {
     data_root().map(|d| d.join(sub))
 }
 
+/// THE FOLDER A FILE GOES TO WHEN IT IS NAMED WITHOUT ONE: the person's Downloads, where a browser puts what it brings
+/// and so where a person looks first; Documents, then home, on a system without it. Under the root when one was given,
+/// so a run of checks never writes into a person's Downloads.
+pub fn downloads() -> Option<std::path::PathBuf> {
+    if let Some(root) = ROOT.get() {
+        return Some(root.join("Downloads"));
+    }
+    let user = directories::UserDirs::new()?;
+    Some(user.download_dir().or(user.document_dir()).unwrap_or(user.home_dir()).to_path_buf())
+}
+
 #[cfg(test)]
 mod tests {
     /// THE FOLDER IS NAMED AFTER THE PROGRAM, and this is asked of the finished path, not of the strings.
