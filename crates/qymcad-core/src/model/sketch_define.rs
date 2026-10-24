@@ -469,7 +469,52 @@ impl Project {
         let offered = sizes(&self.curves_of(si, ents), &anchors);
         let sizes = self.lay_independent(si, offered, Judged::AsItStands);
         let rounded = self.round_sizes(si, from.., seen.bores);
+        self.stand_sizes_outside(si, from.., ents);
         Defined { relations, sizes, free: self.sketch_dof(si).0, rounded }
+    }
+
+    /// THE SIZES OF SKETCH `si` FROM CONSTRAINT `from` ON STAND OUTSIDE THE CURVES `ents`, as on a drawing on paper: each
+    /// width on a line of its own below them, each height on a line of its own to their right, the shortest nearest, a
+    /// step apart. Only where the line stands changes, never what it measures. Laid with no shift, a width stood along
+    /// the bottom side and a height through the middle: the dashed sizes of the preview read as the outline itself.
+    fn stand_sizes_outside(&mut self, si: usize, laid: std::ops::RangeFrom<usize>, ents: &[Id]) {
+        let Some(s) = self.sketches.get_mut(si) else { return };
+        let drawn: std::collections::HashSet<Id> = s.entities.iter().filter(|e| ents.contains(&e.id)).flat_map(|e| super::curve_ref_of(e).points()).collect();
+        let mine: Vec<Point2> = s.points.iter().filter(|q| drawn.contains(&q.id)).map(|q| Point2::new(q.x, q.y)).collect();
+        if mine.is_empty() {
+            return;
+        }
+        let low = mine.iter().map(|q| q.y).fold(f64::INFINITY, f64::min);
+        let right = mine.iter().map(|q| q.x).fold(f64::NEG_INFINITY, f64::max);
+        let span = mine.iter().map(|q| q.x).fold(f64::NEG_INFINITY, f64::max) - mine.iter().map(|q| q.x).fold(f64::INFINITY, f64::min);
+        let tall = mine.iter().map(|q| q.y).fold(f64::NEG_INFINITY, f64::max) - low;
+        // a step of 15 % of the larger side, and never under a millimetre: room for the text between two lines
+        let step = (span.max(tall) * 0.15).max(1.0);
+        let at = |id: Id| s.points.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+        let mut widths: Vec<Shift> = Vec::new();
+        let mut heights: Vec<Shift> = Vec::new();
+        for (ci, c) in s.constraints.iter().enumerate().skip(laid.start) {
+            let Constraint::Distance { a, b, axis, .. } = *c else { continue };
+            let (Some(pa), Some(pb)) = (at(a), at(b)) else { continue };
+            match axis {
+                1 => widths.push(Shift { ci, length: (pa.x - pb.x).abs(), middle: (pa.y + pb.y) / 2.0 }),
+                2 => heights.push(Shift { ci, length: (pa.y - pb.y).abs(), middle: (pa.x + pb.x) / 2.0 }),
+                _ => {}
+            }
+        }
+        widths.sort_by(|x, y| x.length.total_cmp(&y.length));
+        heights.sort_by(|x, y| x.length.total_cmp(&y.length));
+        // the shift is read down the screen for a width - down the sketch - and along X for a height (`linear_dim_line`)
+        for (k, w) in widths.iter().enumerate() {
+            if let Some(Constraint::Distance { off, .. }) = s.constraints.get_mut(w.ci) {
+                *off = w.middle - (low - step * (k + 1) as f64);
+            }
+        }
+        for (k, h) in heights.iter().enumerate() {
+            if let Some(Constraint::Distance { off, .. }) = s.constraints.get_mut(h.ci) {
+                *off = right + step * (k + 1) as f64 - h.middle;
+            }
+        }
     }
 
     /// The sizes of sketch `si` from constraint `from` on rounded to a tenth - the diameter of a circle as `bores` says -
@@ -503,4 +548,12 @@ impl Project {
         }
         rounded
     }
+}
+
+/// A width or a height being stood outside a drawing: the constraint it is, what it measures, and the middle of its ends
+/// across its line - Y for a width, X for a height.
+struct Shift {
+    ci: usize,
+    length: f64,
+    middle: f64,
 }

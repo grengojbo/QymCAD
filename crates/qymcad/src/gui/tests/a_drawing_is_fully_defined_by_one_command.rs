@@ -77,3 +77,40 @@ fn with_nothing_chosen_the_tool_waits_and_esc_puts_it_down() {
     hand.key(egui::Key::Escape);
     assert!(!hand.app.tools.picking.fully_define(), "Esc does not put the tool down");
 }
+
+/// THREE SIDES PICKED BY HAND - ONE CLICKED, TWO MORE WITH SHIFT - AND THEN THE BUTTON: the sizes it would lay are up at
+/// once, with no click on the contour. Reported behaviour: picked so, the button showed no dashed size.
+#[test]
+fn sides_picked_with_shift_before_the_button_are_taken_at_once() {
+    let Drawn { mut app, .. } = a_rectangle();
+    let mut hand = Hand::new(&mut app);
+    hand.click2d(25.0, 5.0);
+    hand.shift_click2d(5.0, 20.0);
+    hand.shift_click2d(25.0, 35.0);
+    assert_eq!(hand.app.tools.sel_sk.items.len(), 3, "setup: the three sides are not picked");
+    hand.hover2d(25.0, 20.0);
+    assert!(hand.press_hint(&crate::i18n::tr("tb-fully-define-hint")), "the button of Fully define");
+    hand.frame(Vec::new());
+    assert_eq!(hand.app.tools.sel_sk.items.len(), 3, "the button let the picked sides go");
+    assert!(hand.written_at("40.0").is_some(), "the sizes it would lay are not shown for the sides picked before the button");
+    // THE DASHED SIZES STAND OFF THE OUTLINE: none of their dashes lies along a side of the rectangle. Reported behaviour:
+    // the width lay on the bottom side and the height through the middle, and read as solid lines of the drawing. A size
+    // from an axis runs on from a corner, between the axis and the outline: that is not along a side
+    let corner = hand.on_screen2d((5.0, 5.0));
+    let across = hand.on_screen2d((45.0, 35.0));
+    let low = corner.y.max(across.y);
+    let high = corner.y.min(across.y);
+    let left = corner.x.min(across.x);
+    let right = corner.x.max(across.x);
+    let on_a_side = |s: &[egui::Pos2; 2]| {
+        let flat = (s[0].y - s[1].y).abs() < 0.5 && [low, high].iter().any(|y| (s[0].y - y).abs() < 1.5);
+        let upright = (s[0].x - s[1].x).abs() < 0.5 && [left, right].iter().any(|x| (s[0].x - x).abs() < 1.5);
+        let mid = s[0].lerp(s[1], 0.5);
+        let within = |v: f32, a: f32, b: f32| v > a.min(b) + 1.0 && v < a.max(b) - 1.0;
+        (flat && within(mid.x, left, right)) || (upright && within(mid.y, low, high))
+    };
+    let dashes = hand.segments_in(hand.app.scheme.pal.preview());
+    assert!(!dashes.is_empty(), "no dashed size is drawn");
+    let lying: Vec<_> = dashes.iter().filter(|s| on_a_side(s)).collect();
+    assert!(lying.is_empty(), "{} dashes of the sizes lie along a side of the rectangle: {:?}", lying.len(), lying.first());
+}

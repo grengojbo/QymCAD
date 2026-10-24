@@ -136,6 +136,49 @@ fn run(d: &Drawing) -> Result<(), String> {
     if p.sketches[si].constraints.iter().any(|c| c.is_driven()) {
         return Err("a size went on as a reference".into());
     }
+    outside(&p, si, had..)
+}
+
+/// THE SIZES STAND OUTSIDE THE DRAWING, as on a drawing on paper: a width below it, a height to its right, each on a line
+/// of its own. Reported behaviour: the width lay along the bottom side and the height through the middle, the dashed
+/// sizes of the preview read as the outline itself.
+fn outside(p: &Project, si: usize, laid: std::ops::RangeFrom<usize>) -> Result<(), String> {
+    let pts = &p.sketches[si].points;
+    let drawn: std::collections::HashSet<Id> = p.sketches[si].entities.iter().flat_map(|e| qymcad_core::model::curve_ref_of(e).points()).collect();
+    let mine: Vec<&qymcad_core::model::SketchPoint> = pts.iter().filter(|q| drawn.contains(&q.id)).collect();
+    let low = mine.iter().map(|q| q.y).fold(f64::INFINITY, f64::min);
+    let right = mine.iter().map(|q| q.x).fold(f64::NEG_INFINITY, f64::max);
+    let at = |id: Id| pts.iter().find(|q| q.id == id).map(|q| Point2::new(q.x, q.y));
+    let mut rows: Vec<f64> = Vec::new();
+    let mut columns: Vec<f64> = Vec::new();
+    for c in &p.sketches[si].constraints[laid] {
+        let Constraint::Distance { a, b, off, axis, .. } = *c else { continue };
+        let (Some(pa), Some(pb)) = (at(a), at(b)) else { continue };
+        match axis {
+            // the line stands at the middle of its ends shifted by `off`, down the screen - down the sketch - for a width
+            1 => {
+                let y = (pa.y + pb.y) / 2.0 - off;
+                if y >= low - 1e-6 {
+                    return Err(format!("a width stands at y {y:.2}, not below the drawing (its lowest point at {low:.2})"));
+                }
+                if rows.iter().any(|r| (r - y).abs() < 1e-6) {
+                    return Err(format!("two widths stand on one line at y {y:.2}"));
+                }
+                rows.push(y);
+            }
+            2 => {
+                let x = (pa.x + pb.x) / 2.0 + off;
+                if x <= right + 1e-6 {
+                    return Err(format!("a height stands at x {x:.2}, not right of the drawing (its rightmost point at {right:.2})"));
+                }
+                if columns.iter().any(|r| (r - x).abs() < 1e-6) {
+                    return Err(format!("two heights stand on one line at x {x:.2}"));
+                }
+                columns.push(x);
+            }
+            _ => {}
+        }
+    }
     Ok(())
 }
 
