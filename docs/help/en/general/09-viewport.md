@@ -78,6 +78,14 @@ the model is not cut and nothing goes into the export. The plane's shift and til
 A body, a face, an edge, a sketch outline, a component. Pointing precision is set in the settings —
 from “precise” to “coarse”: a touch screen and a 4K display need different hit radii.
 
+## Body edges
+
+The sharp edges of a body - where faces meet at more than 20° - are drawn as a darker line, so the top of a plate, its
+walls and a boss on it do not run together into one patch. The line hides behind what stands nearer. While a tool that
+takes faces is in hand, the face under the pointer lights up before the click: it shows which face a click takes.
+
+To hide the lines: **Settings -> Viewport -> Body edges -> Hidden**.
+
 ## Ghosts
 
 A part outside the current context is shown semi-transparent — so that you can refer to it without it

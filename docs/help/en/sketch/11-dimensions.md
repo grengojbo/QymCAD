@@ -15,7 +15,7 @@ the label opens the field again.
 
 ## Where the label stands
 
-Any label — of a length, a radius, an angle — can be taken with the mouse and led to where it reads well; the geometry
+Any label — of a length, a radius, an angle — can be taken with the mouse by the number itself and led to where it reads well; the geometry
 does not move. A length's text runs along its dimension line; led past an arrow it stands on a shelf, the dimension
 line running on to it. A radius's or a diameter's text stands on a shelf past the bend of the leader; lower it inside
 the circle and it lies along the dimension line itself, lead it out past the circle and it goes back onto the shelf.
@@ -51,6 +51,17 @@ If a dimension would be redundant (the same is already set by other constraints)
 **reference**: it shows the measured value but holds nothing. If a dimension **conflicts** with the existing ones, the
 conflicting constraints turn red in the list of constraints on the right; the dimension has a ruler button there,
 **Make it a reference** — or remove another constraint of the conflicting set.
+
+## If it did not work
+
+- **The label does not move**: take the number itself with the mouse; the dimension line and the extension lines do not
+  move the label.
+- **The dimension became a reference by itself**: the same is set by other constraints already. Change the dimension
+  that holds the geometry.
+- **Constraints turned red**: the new dimension conflicts with the existing ones. Press **Make it a reference** at it in
+  the list of constraints on the right, or remove another constraint.
+- **The field does not take the number**: the reason is written under the field - a broken formula, zero or a negative
+  value where that is no size. Mend the value and press **Enter**.
 
 ## See also
 
