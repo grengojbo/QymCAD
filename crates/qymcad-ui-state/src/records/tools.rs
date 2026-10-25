@@ -374,6 +374,8 @@ pub struct RedrawInHand {
     pub face: qymcad_core::feature::FaceKey,
     pub prism: Option<qymcad_core::model::Prism>,
     pub told: String,
+    /// The tone `told` is said in with Replace: a refusal when what stands on the face cannot be redrawn.
+    pub tone: crate::Tone,
 }
 
 /// A FEATURE FOUND ON A BODY AND HELD BY THE TOOL until Enter: the body it stands on, what the core is to lay down for

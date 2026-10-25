@@ -122,7 +122,7 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
     // A FACE OF A MESH IS DRAWN BY ITS FITTED OUTLINE, as a sketch only: its chords become the lines, arcs and circles
     // they follow (`add_sketch_of_face_loops`), and there is no exact boss to redraw
     if pc.project.came_from_a_mesh(body) {
-        pc.recognise.redraw = Some(RedrawInHand { body, face: key, prism: None, told: qymcad_i18n::tr("msg-sketch-from-face-mesh") });
+        pc.recognise.redraw = Some(RedrawInHand { body, face: key, prism: None, told: qymcad_i18n::tr("msg-sketch-from-face-mesh"), tone: qymcad_ui_state::Tone::Info });
         refresh(pc);
         return;
     }
@@ -145,8 +145,9 @@ pub fn sketch_from_face_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         }
         Err(e) => qymcad_i18n::tr(&e.key()),
     };
+    let tone = if found.is_ok() { qymcad_ui_state::Tone::Info } else { qymcad_ui_state::Tone::Refusal };
     let prism = found.ok();
-    pc.recognise.redraw = Some(RedrawInHand { body, face: key, prism, told });
+    pc.recognise.redraw = Some(RedrawInHand { body, face: key, prism, told, tone });
     refresh(pc);
 }
 
@@ -174,7 +175,9 @@ fn refresh(pc: &mut PartCtx) {
     if !replace && held.prism.is_some() {
         said = format!("{said}. {}", qymcad_i18n::tr("msg-sketch-from-face-copy-replace"));
     }
-    *pc.status = qymcad_ui_state::Notice::info(said);
+    // with Replace, what cannot be redrawn is refused, and the plate of the tool says it; a copy is taken anyway
+    let tone = if pc.feat.op == REPLACE { held.tone } else { qymcad_ui_state::Tone::Info };
+    *pc.status = qymcad_ui_state::Notice { tone, words: said };
     match held.prism.as_ref().filter(|_| replace) {
         Some(p) => {
             let given = |key: &str, or: f64| pc.cmd.params.iter().find(|f| f.key == key).map(|f| f.val).unwrap_or(or);

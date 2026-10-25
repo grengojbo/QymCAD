@@ -86,6 +86,9 @@ mod the_edges_of_a_body_are_drawn;
 mod a_feature_number_is_named_in_words;
 
 #[cfg(test)]
+mod a_flat_face_is_refused_by_recognise_feature;
+
+#[cfg(test)]
 mod a_mesh_is_drawn_by_its_section;
 
 #[cfg(test)]

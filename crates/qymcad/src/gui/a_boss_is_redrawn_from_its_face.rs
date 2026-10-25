@@ -136,6 +136,24 @@ mod tests {
         assert!(said.iter().any(|n| n.words == refusal && n.tone == qymcad_ui_state::Tone::Refusal), "the tool does not say the refusal: {said:?}");
     }
 
+    /// A RIM ROUNDED ON ONE EDGE ONLY IS REFUSED BY THE TOOL, not only on the status line: Replace cannot lay the rim
+    /// again, and the plate of the tool says why, as it does for a round wall.
+    #[test]
+    fn a_rim_rounded_on_one_edge_is_refused_by_the_tool() {
+        let s = bossed_solid(None);
+        let edge = s.edges_info().into_iter().find(|e| e.poly.iter().all(|p| (p[2] as f64 - 13.0).abs() < 1e-6 && (p[1] as f64 - 10.0).abs() < 1e-6)).map(|e| e.id).expect("the front edge of the top");
+        let file = written(&s.filleted(2.0, &[edge]).expect("rounded"), "one-edge");
+        let mut app = App::default();
+        brought_in(&mut app, &file);
+        let mut h = Hand::new(&mut app);
+        h.look_at([25.0, 20.0, 10.0], 6.0).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).click([25.0, 22.0, 13.0]).frame(Vec::new());
+        let refusal = crate::i18n::tr("error-prism-rim-rounded");
+        assert!(h.app.status.words.contains(&refusal), "the rim on one edge was not refused: {}", h.app.status);
+        let said = h.tool_says();
+        assert!(said.iter().any(|n| n.words.contains(&refusal) && n.tone == qymcad_ui_state::Tone::Refusal), "the tool does not say the refusal: {said:?}");
+    }
+
     /// THE FACE A TOOL TOOK IS NAMED IN THE PROPERTIES BY THAT TOOL. Reported behaviour: under the top of a boss Sketch
     /// from face had taken stood "picked for a command (Shell or Hole)".
     #[test]

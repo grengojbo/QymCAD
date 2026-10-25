@@ -66,7 +66,7 @@ pub fn recognise_feature_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>, 
         Err(why) => {
             pc.cmd.params = vec![tol_field];
             pc.recognise.feature = None;
-            *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr(unfound_key(why)));
+            *pc.status = qymcad_ui_state::Notice::refusal(qymcad_i18n::tr(unfound_key(why)));
         }
     }
 }
