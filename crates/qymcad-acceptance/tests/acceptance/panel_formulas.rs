@@ -38,7 +38,9 @@ probe! {
         let left = s.canvas().min.x;
         let row = s.words_at().into_iter().find(|(w, r)| *w == node && r.max.x < left).map(|(_, r)| r.center()).unwrap_or_else(|| panic!("the row {node:?}; on screen: {:?}", s.words()));
         s.click(row);
-        let field = panel_field(&mut s, "height");
+        // the number is headed by its words, not by the key `height` a formula names
+        let label = s.word("fnum-height");
+        let field = panel_field(&mut s, &label);
         type_over(&mut s, &field, "w/2");
         assert!((height(&mut s) - 20.0).abs() < 1e-6, "w/2 with w = 40: the block stands {} high", height(&mut s));
         build::set_parameter(&mut s, "w", "60");
