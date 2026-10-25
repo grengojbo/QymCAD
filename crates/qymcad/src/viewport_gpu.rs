@@ -388,7 +388,8 @@ fn vs_edge(@location(0) pos: vec3<f32>, @location(1) body: u32, @location(2) nrm
     if (cam.persp.x > 0.0) {
         p.z = p.z * (1.0 + 5.0e-4);
     } else {
-        p.z = p.z + 1.0e-4;
+        // 0.5 mm of the world over the depth span, at least 1e-6: `EDGE_LEAD_MM` and `EDGE_LEAD_FLOOR` of the raster
+        p.z = p.z + max(0.5 / (2.0 * cam.params.w), 1.0e-6);
     }
     out.pos = p;
     out.body = body;

@@ -107,3 +107,32 @@ fn the_top_the_front_and_the_side_take_tones_well_apart() {
         }
     }
 }
+
+/// AN EDGE BEHIND A BODY STAYS HIDDEN IN A PARALLEL VIEW OF A WIDE SCENE: the plate of 5 seen orthographically while a
+/// block of another part stands 100 m off, so the depth of the view spans the 100 m. Reported behaviour, by the check
+/// of parts far apart on a Linux machine: a face of the near block drawn in two tones, an edge of its back seen through
+/// it - the line was led towards the eye by a share of the depth span, and that share grew past the plate.
+#[test]
+fn an_edge_behind_the_body_stays_hidden_in_a_parallel_view_of_a_wide_scene() {
+    let mut app = a_plate();
+    let root = app.project.root;
+    app.project.set_active_component(Some(root));
+    let part = app.project.add_part("Far");
+    app.project.set_active_component(Some(part));
+    let far = app.project.add_box(10.0, 10.0, 10.0);
+    app.project.finish_base_body(far, 1);
+    if let Some(c) = app.project.components.iter_mut().find(|c| c.id == part) {
+        c.transform[3] = 100_000.0;
+    }
+    qymcad_ui_state::rebuild_if_dirty(&mut app.rebuild_ctx());
+    assert_eq!(app.project.bodies.len(), 2, "setup: the plate and the far block");
+    app.set.projection = qymcad_ui_state::Projection::Ortho;
+    let basis = app.viewing.cam.basis();
+    let img = crate::gui::render::rasterize_3d(&app.painting(), rect(), &basis, 1.0, 1.0).expect("the frame was not drawn");
+    let Bounds { lo, hi } = bounds(&app);
+    let scr = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect: rect(), basis: &basis };
+    let average = |v: Vec<u32>| v.iter().sum::<u32>() / v.len().max(1) as u32;
+    let hidden = scr.at([(lo[0] + hi[0]) / 2.0, hi[1], lo[2]]).0;
+    let behind = brightness(&img, hidden, 1).into_iter().min().unwrap_or(0);
+    assert!(behind + 30 > average(brightness(&img, hidden, 4)), "the edge behind the plate shows through it: {behind} against {}", average(brightness(&img, hidden, 4)));
+}

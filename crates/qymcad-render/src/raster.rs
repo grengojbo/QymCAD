@@ -92,14 +92,24 @@ pub struct Band {
 }
 
 /// THE DEPTH OF A POINT OF AN EDGE, led a hair towards the eye so the line wins over the faces it lies on - in
-/// perspective by a share of the depth, in orthographic by a step: the same lead `vs_edge` gives it on the card.
+/// perspective by a share of the depth, in orthographic by `EDGE_LEAD_MM` of the world: the same lead `vs_edge` gives it
+/// on the card. The orthographic depth spans the whole scene (`depth_half` each way), so a fixed step of it was a
+/// distance that grew with the scene: with a part 100 m off, 1e-4 of the depth was more than a plate of 5 is thick, and
+/// the edges of the back of the plate showed through it. The lead is kept above `EDGE_LEAD_FLOOR`, a step of the depth a float still holds near
+/// the middle of its range (about 16 of its smallest steps at 0.5).
 pub fn edge_lead(ndc: f32, proj: &qymcad_ui_state::ProjParams) -> f32 {
     if proj.inv_d_eye > 0.0 {
         ndc * (1.0 + 5.0e-4)
     } else {
-        ndc + 1.0e-4
+        ndc + ((EDGE_LEAD_MM / (2.0 * proj.depth_half)) as f32).max(EDGE_LEAD_FLOOR)
     }
 }
+
+/// How far an edge is led towards the eye in an orthographic view, in millimetres of the world.
+pub const EDGE_LEAD_MM: f64 = 0.5;
+
+/// The least lead of an edge in an orthographic view, in the units of the depth.
+pub const EDGE_LEAD_FLOOR: f32 = 1.0e-6;
 
 /// The second pass: the translucent (ghost) triangles go OVER the opaque ones, and a ghost is seen as ITS NEAREST
 /// SURFACE only - one pane of glass over what stands behind it. First the nearest ghost depth of every pixel is found
