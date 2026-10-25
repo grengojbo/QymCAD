@@ -210,3 +210,19 @@ fn with_no_window_a_side_is_drawn_and_the_window_view_refused() {
     let refused = call(&mut ctx, "render", json!({ "view": "window" }));
     assert_eq!(refused["error"]["code"], "no-window", "{refused}");
 }
+
+/// MARKS ON A PICTURE: each place given is drawn as a numbered ring and the answer tells the pixel it fell on - the
+/// pixel the window projects it to, the one point_at reads back; a place off the picture falls on none.
+#[test]
+fn a_mark_tells_the_pixel_it_fell_on() {
+    let mut ctx = plate();
+    let r = call(&mut ctx, "render", json!({ "view": "top", "width": 600, "height": 600, "marks": [[10, 5, 4], [5000, 0, 0]] }));
+    assert_eq!(r["ok"], json!(true), "{r}");
+    let look = Look { view: View::Top, size: Size { width: 600, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+    let at = picture::pixel_of(ctx.doc.project(), &look, [10.0, 5.0, 4.0]).expect("the place is in the picture");
+    assert_eq!(r["marks"][0], json!({ "n": 1, "at": [10.0, 5.0, 4.0], "pixel": [at.x.round(), at.y.round()] }), "{r}");
+    assert_eq!(r["marks"][1]["pixel"], Value::Null, "a place off the picture fell on a pixel: {r}");
+    let back = call(&mut ctx, "point_at", json!({ "view": "top", "width": 600, "height": 600, "x": at.x, "y": at.y }));
+    let world = back["world"].as_array().expect("a place").iter().filter_map(Value::as_f64).collect::<Vec<f64>>();
+    assert!((world[0] - 10.0).abs() < 0.2 && (world[1] - 5.0).abs() < 0.2, "the pixel of the mark reads back as {back}");
+}

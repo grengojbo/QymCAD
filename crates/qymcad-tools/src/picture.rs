@@ -389,11 +389,101 @@ fn over(top: Color32, ground: Color32) -> Color32 {
 
 /// THE PICTURE of the document as PNG bytes, its edges taken from the bodies' shapes.
 pub fn png(doc: &qymcad_doc::DocEngine, look: &Look) -> Option<Shot> {
+    png_marked(doc, look, &[])
+}
+
+/// The picture with each place of `marks` marked: a ring round the pixel it falls on and its number, from 1, beside
+/// it - so that a reader of the picture sees where a point given stands. A mark off the picture is left out. The
+/// share filled is of the model alone.
+pub fn png_marked(doc: &qymcad_doc::DocEngine, look: &Look, marks: &[[f64; 3]]) -> Option<Shot> {
     let lines = if look.edges == Edges::Drawn { lines(doc) } else { Vec::new() };
-    let image = draw(doc.project(), look, &lines)?;
+    let mut image = draw(doc.project(), look, &lines)?;
     let ground = qymcad_scheme::light().viewport_bg();
     let filled = image.pixels.iter().filter(|p| **p != ground).count() as f64 / image.pixels.len().max(1) as f64;
+    let ink = Ink { mark: qymcad_scheme::light().error(), ground };
+    for (k, m) in marks.iter().enumerate() {
+        if let Some(at) = pixel_of(doc.project(), look, *m) {
+            mark(&mut image, &Mark { at, n: k + 1 }, &ink);
+        }
+    }
     Some(Shot { png: qymcad_render::color_image_to_png(&image)?, filled })
+}
+
+/// A place marked on a picture: the pixel it falls on, and its number.
+pub struct Mark {
+    pub at: egui::Pos2,
+    pub n: usize,
+}
+
+/// The colours a mark is drawn in: the red of the theme, on a patch of the ground behind its number.
+pub struct Ink {
+    pub mark: Color32,
+    pub ground: Color32,
+}
+
+/// The radius of the ring of a mark, and its width, in pixels: wide enough to see on a face of any colour, small
+/// enough to leave the edge it stands by in sight.
+const RING: f32 = 9.0;
+const RING_WIDTH: f32 = 2.0;
+
+/// The digits 0 to 9, three cells wide and five high, a row a byte from the top, the high bit of three the left cell.
+const DIGITS: [[u8; 5]; 10] = [
+    [0b111, 0b101, 0b101, 0b101, 0b111],
+    [0b010, 0b110, 0b010, 0b010, 0b111],
+    [0b111, 0b001, 0b111, 0b100, 0b111],
+    [0b111, 0b001, 0b111, 0b001, 0b111],
+    [0b101, 0b101, 0b111, 0b001, 0b001],
+    [0b111, 0b100, 0b111, 0b001, 0b111],
+    [0b111, 0b100, 0b111, 0b101, 0b111],
+    [0b111, 0b001, 0b010, 0b010, 0b010],
+    [0b111, 0b101, 0b111, 0b101, 0b111],
+    [0b111, 0b101, 0b111, 0b001, 0b111],
+];
+
+/// A cell of a digit, in pixels.
+const CELL: usize = 3;
+
+/// `m` drawn on `img`: a ring round its pixel, and its number up and to the right of it on a patch of the ground.
+pub fn mark(img: &mut egui::ColorImage, m: &Mark, ink: &Ink) {
+    let [w, h] = img.size;
+    let mut put = |x: i64, y: i64, c: Color32| {
+        if x >= 0 && y >= 0 && (x as usize) < w && (y as usize) < h {
+            img.pixels[y as usize * w + x as usize] = c;
+        }
+    };
+    let reach = (RING + RING_WIDTH) as i64 + 1;
+    let cx = m.at.x as i64;
+    let cy = m.at.y as i64;
+    for y in cy - reach..=cy + reach {
+        for x in cx - reach..=cx + reach {
+            let d = ((x as f32 + 0.5 - m.at.x).powi(2) + (y as f32 + 0.5 - m.at.y).powi(2)).sqrt();
+            if (d - RING).abs() <= RING_WIDTH / 2.0 {
+                put(x, y, ink.mark);
+            }
+        }
+    }
+    let digits: Vec<usize> = m.n.to_string().bytes().map(|b| usize::from(b - b'0')).collect();
+    let left = cx + reach;
+    let top = cy - reach - (5 * CELL) as i64;
+    let wide = (digits.len() * 4 * CELL) as i64;
+    for y in top - 1..top + (5 * CELL) as i64 + 1 {
+        for x in left - 1..left + wide {
+            put(x, y, ink.ground);
+        }
+    }
+    for (i, d) in digits.iter().enumerate() {
+        for (row, bits) in DIGITS[*d].iter().enumerate() {
+            for col in 0..3 {
+                if bits >> (2 - col) & 1 == 1 {
+                    for dy in 0..CELL {
+                        for dx in 0..CELL {
+                            put(left + (i * 4 * CELL + col * CELL + dx) as i64, top + (row * CELL + dy) as i64, ink.mark);
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 /// A PICTURE WRITTEN OUT, and the share of it the model covers: the pixels that are not the ground. A picture with
@@ -423,6 +513,24 @@ pub fn base64(bytes: &[u8]) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A mark on a blank picture: its ring stands round the pixel at the radius it is drawn at, its middle is left
+    /// clear, and its number stands beside it.
+    #[test]
+    fn a_mark_rings_its_pixel_and_numbers_it() {
+        let ground = Color32::WHITE;
+        let ink = Ink { mark: Color32::RED, ground };
+        let mut img = egui::ColorImage::filled([100, 100], ground);
+        mark(&mut img, &Mark { at: egui::pos2(50.0, 50.0), n: 7 }, &ink);
+        let at = |x: usize, y: usize| img.pixels[y * 100 + x];
+        assert_eq!(at(50, 50), ground, "the middle of the ring is covered");
+        let r = RING as usize;
+        for p in [egui::pos2((50 + r) as f32, 50.0), egui::pos2((50 - r - 1) as f32, 50.0), egui::pos2(50.0, (50 + r) as f32), egui::pos2(50.0, (50 - r - 1) as f32)] {
+            assert_eq!(at(p.x as usize, p.y as usize), Color32::RED, "no ring at {p:?}");
+        }
+        let numbered = img.pixels.iter().enumerate().filter(|(i, p)| **p == Color32::RED && i % 100 > 50 + RING as usize + 2 && i / 100 < 50).count();
+        assert!(numbered >= 4 * CELL * CELL, "no number beside the ring: {numbered} pixels");
+    }
 
     #[test]
     fn base64_as_the_standard_writes_it() {

@@ -20,6 +20,8 @@ struct RenderArgs {
     highlight: Option<BodyRef>,
     #[serde(default = "drawn")]
     edges: bool,
+    #[serde(default)]
+    marks: Vec<[f64; 3]>,
 }
 
 fn drawn() -> bool {
@@ -53,9 +55,27 @@ fn drawable(ctx: &Ctx, look: &Look) -> Result<(), Refusal> {
 
 /// The picture of the document as an answer: the PNG for the protocol to carry as an image, and what it shows.
 pub fn picture_answer(ctx: &Ctx, look: &Look) -> Result<Answer, Refusal> {
+    marked_answer(ctx, look, &[])
+}
+
+/// The picture with the places `marks` marked and numbered from 1, and where each fell: its pixel, or null off the
+/// picture.
+fn marked_answer(ctx: &Ctx, look: &Look, marks: &[[f64; 3]]) -> Result<Answer, Refusal> {
     drawable(ctx, look)?;
-    let shot = picture::png(&ctx.doc, look).ok_or_else(|| Refusal::new("bad-size", "The picture could not be drawn at that size.", Stage::Validate))?;
+    let shot = picture::png_marked(&ctx.doc, look, marks).ok_or_else(|| Refusal::new("bad-size", "The picture could not be drawn at that size.", Stage::Validate))?;
     let mut a = Answer::new();
+    if !marks.is_empty() {
+        let inside = |p: egui::Pos2| p.x >= 0.0 && p.y >= 0.0 && p.x < look.size.width as f32 && p.y < look.size.height as f32;
+        let fell: Vec<Value> = marks
+            .iter()
+            .enumerate()
+            .map(|(k, m)| {
+                let pixel = picture::pixel_of(ctx.doc.project(), look, *m).filter(|p| inside(*p)).map(|p| json!([p.x.round(), p.y.round()]));
+                json!({ "n": k + 1, "at": m, "pixel": pixel })
+            })
+            .collect();
+        a.insert("marks".into(), json!(fell));
+    }
     a.insert("view".into(), json!(look.view));
     a.insert("size".into(), json!({ "width": look.size.width, "height": look.size.height }));
     a.insert("filled".into(), json!((shot.filled * 1000.0).round() / 1000.0));
@@ -87,7 +107,7 @@ pub fn eye(ctx: &Ctx) -> Option<picture::Eye> {
 
 pub const RENDER: Tool = Tool {
     name: "render",
-    description: "Draw the document as a picture (PNG) to look at the result: view iso (front-right-above), top, bottom, front (-Y), back, left, right, or window - as the person sees it in the open QymCAD window, their camera as it stands (the default there; iso is the default with no window); width and height in pixels (800 x 600 by default, 64..2048); highlight lights a body ({\"body\": key} or {\"part\": key}) as the window lights a selection; edges (true by default) draws the sharp edges of the bodies, hidden ones left out. A side is fitted to the whole model. filled tells the share of the picture the model covers - 0 means nothing is in sight. Sketch lines are not drawn.",
+    description: "Draw the document as a picture (PNG) to look at the result: view iso (front-right-above), top, bottom, front (-Y), back, left, right, or window - as the person sees it in the open QymCAD window, their camera as it stands (the default there; iso is the default with no window); width and height in pixels (800 x 600 by default, 64..2048); highlight lights a body ({\"body\": key} or {\"part\": key}) as the window lights a selection; edges (true by default) draws the sharp edges of the bodies, hidden ones left out; marks - places in world coordinates, as point_at's world - are drawn as red rings numbered from 1, and the answer tells the pixel each fell on (null off the picture), to see where a point stands before a tool is given it. A side is fitted to the whole model. filled tells the share of the picture the model covers - 0 means nothing is in sight. Sketch lines are not drawn.",
     schema: || {
         json!({
             "type": "object",
@@ -97,6 +117,7 @@ pub const RENDER: Tool = Tool {
                 "height": { "type": "integer", "minimum": SIDE.start(), "maximum": SIDE.end(), "default": 600 },
                 "highlight": crate::args::body_schema(),
                 "edges": { "type": "boolean", "default": true },
+                "marks": { "type": "array", "maxItems": 99, "items": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }, "description": "Places in world coordinates, mm, drawn as numbered rings." },
             },
             "additionalProperties": false
         })
@@ -117,7 +138,10 @@ pub const RENDER: Tool = Tool {
         };
         let edges = if a.edges { Edges::Drawn } else { Edges::Left };
         let view = a.view.unwrap_or_else(|| default_view(ctx));
-        picture_answer(ctx, &Look { view, size, lit, edges, window: eye(ctx) })
+        if a.marks.len() > 99 {
+            return Err(Refusal::new("too-many-marks", &format!("{} marks: a picture tells 99 apart at most.", a.marks.len()), Stage::Validate));
+        }
+        marked_answer(ctx, &Look { view, size, lit, edges, window: eye(ctx) }, &a.marks)
     },
 };
 
