@@ -190,3 +190,33 @@ fn a_box_is_redrawn_by_a_sketch_of_its_top() {
     assert_eq!(redrawn["found"]["kind"], "stock", "{redrawn}");
     assert_eq!(volumes(&redrawn), [14400], "the box redrawn 6 high: {redrawn}");
 }
+
+/// A CUT BETWEEN TWO PARTS leaves a body that stands. Reported behaviour: a plate in part "C" cut by a block of part
+/// "C_pocket_tool" answered ok with a new body that inspect did not find, and the plate was gone. The plate 80 x 60 x
+/// 10 less the block 30 x 20 x 4 sunk 4 into its top is 48000 - 2400 = 45600, whether named by body or by part.
+#[test]
+fn a_cut_between_two_parts_leaves_a_body() {
+    for named in ["body", "part"] {
+        let mut ctx = Ctx::blank();
+        let plate_part = ok(call(&mut ctx, "add_part", json!({ "name": "C" })))["part"].clone();
+        let plate = ok(call(&mut ctx, "box", json!({ "x": 80, "y": 60, "z": 10 })))["body"].clone();
+        let tool_part = ok(call(&mut ctx, "add_part", json!({ "name": "C_pocket_tool" })))["part"].clone();
+        let block = ok(call(&mut ctx, "box", json!({ "x": 30, "y": 20, "z": 4, "at": [25, 20, 6] })))["body"].clone();
+        let by = |body: &Value, part: &Value| if named == "body" { json!({ "body": body }) } else { json!({ "part": part }) };
+        let cut = call(&mut ctx, "boolean", json!({ "target": by(&plate, &plate_part), "tool": by(&block, &tool_part), "op": "cut" }));
+        if cut["ok"] != json!(true) {
+            assert_eq!(cut["error"]["code"], "cross-part", "named by {named}: {cut}");
+            let doc = ok(call(&mut ctx, "get_document", json!({})));
+            let kept =
+                doc["document"]["bodies"].as_array().expect("bodies").iter().filter(|b| b["part"] == plate_part).map(|b| b["volume"].as_f64().unwrap_or(0.0).round() as i64).collect::<Vec<i64>>();
+            assert_eq!(kept, [48000], "named by {named}, the refusal took the plate: {doc}");
+            continue;
+        }
+        let seen = ok(call(&mut ctx, "inspect", json!({ "body": { "body": cut["body"] } })));
+        assert_eq!(seen["solids"], 1, "named by {named}: {seen}");
+        let doc = ok(call(&mut ctx, "get_document", json!({})));
+        let standing =
+            doc["document"]["bodies"].as_array().expect("bodies").iter().filter(|b| b["part"] == plate_part).map(|b| b["volume"].as_f64().unwrap_or(0.0).round() as i64).collect::<Vec<i64>>();
+        assert_eq!(standing, [45600], "named by {named}, the plate's part holds: {doc}");
+    }
+}

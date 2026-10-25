@@ -355,7 +355,7 @@ struct BooleanArgs {
 
 pub const BOOLEAN: Tool = Tool {
     name: "boolean",
-    description: "Combine two bodies into one: op \"cut\" takes tool away from target, \"join\" adds them, \"intersect\" keeps what they share. Both are used up into the result. For the pieces of a split, or two parts' bodies.",
+    description: "Combine two bodies into one: op \"cut\" takes tool away from target, \"join\" adds them, \"intersect\" keeps what they share. Both are used up into the result. For the bodies of one part, such as the pieces of a split; bodies of two parts are refused (cross-part).",
     schema: || json!({ "type": "object", "properties": { "target": args::body_schema(), "tool": args::body_schema(), "op": { "type": "string", "enum": ["cut", "join", "intersect"] } }, "required": ["target", "tool", "op"], "additionalProperties": false }),
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: BooleanArgs = tool::args(arguments)?;
@@ -364,6 +364,15 @@ pub const BOOLEAN: Tool = Tool {
         let with = a.tool.resolve(project)?;
         if target == with {
             return Err(Refusal::new("arguments", &format!("target and tool are the same body {target}."), Stage::Validate));
+        }
+        // a feature reads only the bodies of its own part: a boolean across parts would stand red with no body
+        let of_target = project.body_owner(target);
+        let of_tool = project.body_owner(with);
+        if of_target != of_tool {
+            let part = |p: Option<Id>| p.map_or_else(|| "no part".to_string(), |p| format!("part {p}"));
+            return Err(Refusal::new("cross-part", &format!("Body {target} is in {} and body {with} in {}: a boolean works between the bodies of one part.", part(of_target), part(of_tool)), Stage::Validate).with_hint(
+                "To cut a pocket, step into the target's part (set_active_part), sketch the outline on its face (create_sketch, sketch_add) and extrude it with op \"cut\".",
+            ));
         }
         let op = match a.op {
             BoolOp::Cut => 0,
