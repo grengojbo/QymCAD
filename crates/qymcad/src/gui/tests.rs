@@ -89,6 +89,9 @@ mod a_feature_number_is_named_in_words;
 mod a_flat_face_is_refused_by_recognise_feature;
 
 #[cfg(test)]
+mod a_size_on_body_row_reads_as_typed;
+
+#[cfg(test)]
 mod a_mesh_is_drawn_by_its_section;
 
 #[cfg(test)]

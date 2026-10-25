@@ -97,8 +97,8 @@ pub(crate) fn feature_row_label(project: &qymcad_core::model::Project, ti: usize
         FeatureKind::OffsetSurface { dist, .. } => format!("{} {}", ph::SELECTION_FOREGROUND, crate::i18n::tr1("feat-offset-surface", "d", &fmt_num(at("dist", dist)))),
         FeatureKind::RemoveFace { ref faces, .. } => format!("{} {}", ph::ERASER, crate::i18n::tr1("feat-remove-face", "n", &faces.query.picked_descs().len().to_string())),
         // A SIZE ON THE BODY names its number, as a dimension does
-        FeatureKind::FaceGap { gap, .. } => format!("{} {}", ph::RULER, crate::i18n::tr1("feat-face-gap", "d", &crate::i18n::num(at("gap", gap), 1))),
-        FeatureKind::HoleMoved { gap, .. } => format!("{} {}", ph::ARROWS_OUT_CARDINAL, crate::i18n::tr1("feat-hole-moved", "d", &crate::i18n::num(at("gap", gap), 1))),
+        FeatureKind::FaceGap { gap, .. } => format!("{} {}", ph::RULER, crate::i18n::tr1("feat-face-gap", "d", &crate::i18n::num_short(at("gap", gap), 1))),
+        FeatureKind::HoleMoved { gap, .. } => format!("{} {}", ph::ARROWS_OUT_CARDINAL, crate::i18n::tr1("feat-hole-moved", "d", &crate::i18n::num_short(at("gap", gap), 1))),
         FeatureKind::Redrawn { height, kind, rims, .. } => {
             let key = match kind {
                 qymcad_core::model::PrismKind::Boss => "feat-redrawn-boss",
