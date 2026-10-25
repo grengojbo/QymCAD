@@ -10,7 +10,9 @@ a STEP, on a recognised body and on a body made of a mesh.
 2. Press **Recognise all** in the "Part" bar and click the body. With a face of the body selected beforehand, the body
    is taken at once.
 3. What was found is lit, and a list of groups appears beside the body: **Holes Ø5 through: 3**, **Chamfers 1: 4**,
-   **Roundings R2: 8**. Each group has a size field, a number or a formula.
+   **Roundings R2: 8**. The holes come first, then the chamfers, then the roundings, each kind from the larger size
+   down. The square before the name of a group is the colour its features are lit in on the body. Each group has a
+   size field, a number or a formula.
 4. Press the name of a group that should be left alone: it goes dark and is not taken; a second press takes it back.
    A click on a feature in the view leaves out only that feature; a second click takes it back.
 5. **Enter** makes what is taken exact; **Esc** cancels.
