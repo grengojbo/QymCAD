@@ -154,7 +154,8 @@ fn rewrite(md: &str, at: &str, known: &[String]) -> Result<Rewritten, Vec<String
             }
             out.push_str(&format!("{bang}[{label}]({up}{anchor_less}{anchor})"));
             images.push(anchor_less.to_string());
-        } else if SECTION_ORDER.iter().any(|s| anchor_less.starts_with(&format!("{s}/"))) || anchor_less == "index" {
+        } else if SECTION_ORDER.iter().any(|s| anchor_less.starts_with(&format!("{s}/"))) || !anchor_less.contains(['/', ':', '.']) {
+            // an article of a section, or one at the root of the help beside the index - the questions and answers
             if !known.iter().any(|a| a == anchor_less) {
                 wrong.push(format!("{target}: no such article"));
             }

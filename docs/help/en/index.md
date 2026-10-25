@@ -45,7 +45,7 @@ bottom says what is happening, how many degrees of freedom the sketch has and wh
 - [Parameters and formulas](general/05-parameters) — one number for the whole part.
 - [The history timeline and rollback](general/03-timeline) — why a model is a recipe, not a picture.
 - [Keyboard shortcuts](general/10-hotkeys) — the full reference and how to reassign them.
-- [Questions and answers](general/17-faq) — where a button is, how to leave a sketch, where Claude saved a file.
+- [Questions and answers](questions) — where a button is, how to leave a sketch, where Claude saved a file.
 - [Report a problem](general/13-report) — something does not work: how to tell about it.
 - [Updates](general/14-updates) — how to learn about a new version, and what goes over the network.
 - [Connect to Claude](general/15-claude) — let Claude Desktop or Claude Code model in QymCAD.
