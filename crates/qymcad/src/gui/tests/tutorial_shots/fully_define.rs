@@ -42,6 +42,7 @@ fn tutorial_shots_fully_define() {
     take_tool(&mut h, &mut shots, "tb-fully-define-hint", None);
     shots.take(&mut h, "picked-preview", None);
     h.key(egui::Key::Enter);
-    h.key(egui::Key::Escape);
+    // taken before Esc puts the tool down: the status line then tells what was laid, not that the tool was let go
     shots.take(&mut h, "all-laid", None);
+    h.key(egui::Key::Escape);
 }
