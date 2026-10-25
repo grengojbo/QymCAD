@@ -21,6 +21,8 @@ ron.workspace = true
 # for its colour and rectangle types; no window is opened.
 qymcad-ui-state = { path = "../qymcad-ui-state" }
 qymcad-render = { path = "../qymcad-render" }
+# WHAT A PIXEL OF A PICTURE SHOWS: the window's own pick of the face under the pointer.
+qymcad-pick = { path = "../qymcad-pick" }
 qymcad-scheme = { path = "../qymcad-scheme" }
 egui = "0.35"
 serde_json = "1.0.151"

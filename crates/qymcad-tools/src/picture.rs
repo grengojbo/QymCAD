@@ -223,18 +223,21 @@ fn selection(project: &Project, lit: Lit) -> Sel {
     }
 }
 
-/// THE PICTURE as RGBA, or `None` when there is nothing to draw it at (a size of nothing). `lines` are drawn over the
-/// bodies when the look asks for edges.
-///
-/// `View::Window` draws through the window's eye as it stands - its camera is not fitted, the picture shows what the
-/// person sees - and is `None` with no window to look through.
-pub fn draw(project: &Project, look: &Look, lines: &[Line]) -> Option<egui::ColorImage> {
+/// WHERE THE CAMERA OF A PICTURE STANDS: the camera, the settings it projects by, and the frame of the picture.
+pub struct Framed {
+    pub cam: Cam3,
+    pub set: Settings,
+    pub rect: Rect,
+}
+
+/// The camera of the picture `look` draws: a standard view fitted to the model, or the window's eye as it stands -
+/// `None` for the window's view with no window to look through.
+pub fn framed(project: &Project, look: &Look) -> Option<Framed> {
     let projection = match (look.view, look.window) {
         (View::Window, Some(eye)) => eye.projection,
         (View::Window, None) => return None,
         _ => Projection::Ortho,
     };
-    let rest = AtRest { set: Settings { projection, ..Settings::default() }, scheme: qymcad_ui_state::SchemeUi { pal: qymcad_scheme::light(), ..Default::default() }, ..Default::default() };
     let rect = Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(look.size.width as f32, look.size.height as f32));
     let cam = match (look.view, look.window) {
         (View::Window, Some(eye)) => eye.cam,
@@ -246,6 +249,42 @@ pub fn draw(project: &Project, look: &Look, lines: &[Line]) -> Option<egui::Colo
             cam
         }
     };
+    Some(Framed { cam, set: Settings { projection, ..Settings::default() }, rect })
+}
+
+/// WHAT STANDS UNDER A PIXEL OF A PICTURE: the body, the key of its face, and the point hit, in the world.
+pub struct Under {
+    pub body: Id,
+    pub face: u32,
+    pub world: [f64; 3],
+}
+
+/// What the window's pointer would catch at pixel `at` of the picture `look` draws: the nearest face drawn there,
+/// facing the eye, by the window's own pick. `None` where the pixel shows the ground.
+pub fn under(project: &Project, look: &Look, at: egui::Pos2) -> Option<Under> {
+    let f = framed(project, look)?;
+    let rest = AtRest { set: f.set, ..Default::default() };
+    let painting = rest.painting(project, f.cam, Sel::None);
+    let (body, face, world) = qymcad_pick::pick_face_ray(&painting, f.rect, at)?;
+    Some(Under { body, face, world })
+}
+
+/// The pixel of the picture `look` draws that a place `world` of the model falls on, as the window projects it.
+pub fn pixel_of(project: &Project, look: &Look, world: [f64; 3]) -> Option<egui::Pos2> {
+    let f = framed(project, look)?;
+    let basis = f.cam.basis();
+    let screen = qymcad_ui_state::Screen { cam: &f.cam, set: &f.set, rect: f.rect, basis: &basis };
+    Some(screen.at(world).0)
+}
+
+/// THE PICTURE as RGBA, or `None` when there is nothing to draw it at (a size of nothing). `lines` are drawn over the
+/// bodies when the look asks for edges.
+///
+/// `View::Window` draws through the window's eye as it stands - its camera is not fitted, the picture shows what the
+/// person sees - and is `None` with no window to look through.
+pub fn draw(project: &Project, look: &Look, lines: &[Line]) -> Option<egui::ColorImage> {
+    let Framed { cam, set, rect } = framed(project, look)?;
+    let rest = AtRest { set, scheme: qymcad_ui_state::SchemeUi { pal: qymcad_scheme::light(), ..Default::default() }, ..Default::default() };
     let painting = rest.painting(project, cam, selection(project, look.lit));
     let basis = cam.basis();
     let mut raster = qymcad_render::rasterize_3d_with_depth(&painting, rect, &basis, 1.0, 1.0)?;

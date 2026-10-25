@@ -192,6 +192,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::history::UNDO,
     crate::tools::history::REDO,
     crate::tools::look::RENDER,
+    crate::tools::look::POINT_AT,
     crate::tools::query::LIST_FACES,
     crate::tools::query::LIST_EDGES,
     crate::tools::query::RESOLVE,

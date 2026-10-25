@@ -23,7 +23,7 @@ fn dir(wt: &[f64; 12], d: [f64; 3]) -> [f64; 3] {
     qymcad_core::feature::apply12_dir(wt, d).map(round)
 }
 
-fn round(v: f64) -> f64 {
+pub(crate) fn round(v: f64) -> f64 {
     let r = (v * 1e6).round() / 1e6;
     if r == 0.0 {
         0.0 // no -0
@@ -125,6 +125,20 @@ pub(crate) fn face_entry(project: &Project, shape: &qymcad_kernel::Shape, body: 
         v["axis"] = json!({ "origin": at(&wt, o), "dir": dir(&wt, axis) });
     }
     v
+}
+
+/// ONE FACE OF A BODY MADE OF A MESH, which has no shape to ask: its key, centre, normal and area as `face_entry` gives
+/// them, its kind `mesh` - a flat strip of triangles, whatever surface it was cut from.
+pub(crate) fn mesh_face_entry(project: &Project, body: Id, f: &qymcad_core::geom::MeshFace) -> Value {
+    let wt = project.body_world_transform(body);
+    json!({
+        "key": f.id,
+        "kind": "mesh",
+        "centre": at(&wt, [f.centroid.x, f.centroid.y, f.centroid.z]),
+        "normal": dir(&wt, f.normal),
+        "area": round(f.area),
+        "made_by": face_made_by(project, body, f.id),
+    })
 }
 
 /// ONE EDGE OF `body` AS THE MODEL READS IT: its key, middle, length, ends, a circle's centre, axis and radius, and who

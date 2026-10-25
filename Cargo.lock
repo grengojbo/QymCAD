@@ -3980,6 +3980,7 @@ dependencies = [
  "qymcad-kernel",
  "qymcad-meshfit",
  "qymcad-paths",
+ "qymcad-pick",
  "qymcad-render",
  "qymcad-scheme",
  "qymcad-ui-state",
