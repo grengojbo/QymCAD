@@ -1,5 +1,5 @@
 //! THE PROMPTS: ways of working a client offers its person by name - design a part for a printer, change a mesh file,
-//! change an exact one - each the order of tools this server has for it, with the person's own words filled in.
+//! change an exact one, find features by eye - each the order of tools this server has for it, with the person's own words filled in.
 
 use serde_json::{json, Map, Value};
 
@@ -55,8 +55,8 @@ fn edit_stl(given: &Map<String, Value>) -> String {
         "Change the mesh file {path}: {change}.\n\n\
          1. Bring it in with import_mesh. Read the size it came in at and its warning: a mesh written in inches or metres comes in at the wrong size - import it again with the factor that makes it right.\n\
          2. Look at it: render from iso and the sides; measure what the change depends on.\n\
-         3. A mesh has no exact faces: it can be moved, measured and written out, not filleted or drilled as it is. What is added is built as bodies of their own beside it - primitives, sketches extruded - and placed by measuring the mesh.\n\
-         4. When the change needs exact work on the mesh itself, say so to the person: the way is to model the shape anew from its measurements.\n\
+         3. A mesh is triangles, not a body: make it one with recognise_mesh - mode exact finds its planes, cylinders and cones; as_is, a polyhedron of flat faces, for a mesh exact surfaces do not hold. Then its holes, roundings and chamfers become features with recognise_all (then list first) or recognise_feature, their sizes editable; mesh_section and sketch_from_section draw a section of it to build on.\n\
+         4. What is added is built as bodies of their own - primitives, sketches extruded - and placed by measuring the body.\n\
          5. Check with render, then write it out with export_mesh (.stl or .3mf) and save the document."
     )
 }
@@ -86,7 +86,21 @@ fn edit_what_i_selected(given: &Map<String, Value>) -> String {
     )
 }
 
-const PROMPTS: [Prompt; 4] = [
+fn recognise_by_eye(given: &Map<String, Value>) -> String {
+    let path = arg(given, "path", "the mesh in the document");
+    format!(
+        "Find the holes, roundings and chamfers of {path} by looking at it, and make them features whose sizes can be changed.\n\n\
+         1. A file not yet in the document comes in with import_mesh (an STL, OBJ, 3MF) or import_cad (a STEP). A mesh is made a body with recognise_mesh (mode exact; as_is when exact surfaces do not hold).\n\
+         2. Try recognise_all with then list: it names every group it finds. Look by eye for what it missed or misread.\n\
+         3. Look: render from iso and the sides. Where you see a hole, a rounding or a chamfer, take a pixel on it - the wall of a hole, the strip of a rounding, the slanted face of a chamfer - and ask point_at with the same view, width and height. It answers the face and the point there; the ground is refused.\n\
+         4. Before laying anything, read it with fit_at_point at that point: the kind, the size measured and the size it would be laid at, a hole's depth and whether it runs through. To check where your points stand, render again with marks - the points as numbered rings.\n\
+         5. The picture says where; the size comes from the geometry, never from the picture. If fit_at_point refuses, take another pixel on the feature, or raise tolerance for a rough mesh.\n\
+         6. Make it a feature with recognise_feature at the same point - one node, one undo step; give size to lay it at another size. Then edit_feature changes it.\n\
+         7. Tell the person what you found, with sizes, and what you made editable."
+    )
+}
+
+const PROMPTS: [Prompt; 5] = [
     Prompt {
         name: "design_for_fdm",
         title: "Design a part for FDM printing",
@@ -100,7 +114,7 @@ const PROMPTS: [Prompt; 4] = [
     Prompt {
         name: "edit_stl",
         title: "Change a mesh file",
-        description: "Bring in an STL (or another mesh), change it as far as a mesh allows, and write it out again.",
+        description: "Bring in an STL (or another mesh), make it a body, change it, and write it out again.",
         arguments: &[Arg { name: "path", description: "The mesh file", need: Need::Required }, Arg { name: "change", description: "What to change", need: Need::Required }],
         text: edit_stl,
     },
@@ -117,6 +131,13 @@ const PROMPTS: [Prompt; 4] = [
         description: "In the open QymCAD window: read what the person selected, say it back, and change the feature that made it - one step of undo.",
         arguments: &[Arg { name: "change", description: "What to change, in the person's words", need: Need::Required }],
         text: edit_what_i_selected,
+    },
+    Prompt {
+        name: "recognise_by_eye",
+        title: "Find features by looking at the model",
+        description: "Look at a mesh or a STEP in pictures, find its holes, roundings and chamfers by eye, read each by its geometry, and make them features with sizes that can be changed.",
+        arguments: &[Arg { name: "path", description: "The file, when it is not in the document yet", need: Need::Optional }],
+        text: recognise_by_eye,
     },
 ];
 

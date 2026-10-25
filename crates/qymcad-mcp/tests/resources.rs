@@ -70,13 +70,25 @@ fn the_prompts_are_listed_and_filled_with_the_persons_words() {
     let mut ctx = Ctx::blank();
     let listed = ask(&mut ctx, "prompts/list", json!({}));
     let names: Vec<&str> = listed["result"]["prompts"].as_array().expect("prompts").iter().filter_map(|p| p["name"].as_str()).collect();
-    assert_eq!(names, ["design_for_fdm", "edit_stl", "edit_step", "edit_what_i_selected"], "{listed}");
+    assert_eq!(names, ["design_for_fdm", "edit_stl", "edit_step", "edit_what_i_selected", "recognise_by_eye"], "{listed}");
 
     let got = ask(&mut ctx, "prompts/get", json!({ "name": "design_for_fdm", "arguments": { "part": "a bracket 60 x 40 x 4", "nozzle": "0.6" } }));
     let text = got["result"]["messages"][0]["content"]["text"].as_str().unwrap_or_else(|| panic!("no text in {got}"));
     assert!(text.contains("a bracket 60 x 40 x 4"), "the person's words are not in the prompt: {text}");
     assert!(text.contains("1.8 mm"), "the walls are not three lines of a 0.6 nozzle: {text}");
     assert_eq!(got["result"]["messages"][0]["role"], "user", "{got}");
+
+    // BY EYE: the picture says where, the geometry says how much - the way goes through the tools that read a pixel and
+    // a point, and a mesh is made a body first
+    let eye = ask(&mut ctx, "prompts/get", json!({ "name": "recognise_by_eye", "arguments": { "path": "bracket.stl" } }));
+    let text = eye["result"]["messages"][0]["content"]["text"].as_str().unwrap_or_else(|| panic!("no text in {eye}"));
+    for tool in ["recognise_mesh", "render", "point_at", "fit_at_point", "recognise_feature", "marks"] {
+        assert!(text.contains(tool), "the way by eye does not name {tool}: {text}");
+    }
+    assert!(text.contains("bracket.stl"), "the file is not in the prompt: {text}");
+    let stl = ask(&mut ctx, "prompts/get", json!({ "name": "edit_stl", "arguments": { "path": "a.stl", "change": "a wider hole" } }));
+    let text = stl["result"]["messages"][0]["content"]["text"].as_str().unwrap_or_else(|| panic!("no text in {stl}"));
+    assert!(text.contains("recognise_mesh"), "changing a mesh does not make it a body first: {text}");
 
     let bare = ask(&mut ctx, "prompts/get", json!({ "name": "edit_step", "arguments": { "path": "a.step" } }));
     assert_eq!(bare["error"]["code"], json!(-32602), "a prompt without its required change went: {bare}");
