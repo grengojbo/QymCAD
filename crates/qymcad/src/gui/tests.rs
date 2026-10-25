@@ -213,3 +213,6 @@ mod profiles_are_taken_by_a_box;
 
 #[cfg(test)]
 mod the_author_is_supported;
+
+#[cfg(test)]
+mod tutorial_shots;

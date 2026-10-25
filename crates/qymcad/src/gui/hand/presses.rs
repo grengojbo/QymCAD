@@ -102,3 +102,11 @@ impl<'a> Hand<'a> {
 pub(in crate::gui) fn escape(app: &mut super::super::App) {
     Hand::as_it_stands(app).key(egui::Key::Escape);
 }
+
+impl Hand<'_> {
+    /// WHERE THE BUTTON WITH THE HINT `hint` STANDS, the pointer left resting over it with the hint up - the place a
+    /// picture of "where the button is" rings.
+    pub fn button_of(&mut self, hint: &str) -> Option<egui::Pos2> {
+        self.find_hint(hint)
+    }
+}
