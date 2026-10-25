@@ -125,6 +125,11 @@ probe! {
     }
 }
 
+/// HOW FAR FROM THE TIP OF THE ARROW THE WORDS OF THE BOX OF THE LENGTH ARE LOOKED FOR. The box stands to one side of
+/// the arrow, its first word farthest: measured, the word "Length" stood 318 px from the tip once the field beside the
+/// value read "Parameter", the nearest word of the box 71 px.
+const REACH: f32 = 400.0;
+
 probe! {
     /// THE FIELDS OF AN EXTRUSION STAND BESIDE ITS ARROW, clear of it: a rectangle 40 x 30 on XY taken by the extrusion,
     /// its arrow from the middle of the profile, (20, 15, 0), to (20, 15, 10) - every point of the arrow on the screen is
@@ -140,10 +145,10 @@ probe! {
         s.press_hint(&extrude);
         let (base, tip) = (s.projected([20.0, 15.0, 0.0]), s.projected([20.0, 15.0, 10.0]));
         let length = s.word("f-length");
-        // the box of the length: its words within 300 px of the tip, the bars of the window far above it left out
+        // the box of the length: its words within REACH of the tip, the bars of the window far above it left out
         let canvas = s.canvas();
-        let boxes: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(_, r)| r.min.y > canvas.min.y && r.center().distance(tip) < 300.0).map(|(_, r)| r.expand(2.0)).collect();
-        assert!(s.words_at().iter().any(|(w, r)| *w == length && r.center().distance(tip) < 300.0), "setup: no box of the length beside the arrow; on screen {:?}", s.words());
+        let boxes: Vec<qymcad::Rect> = s.words_at().into_iter().filter(|(_, r)| r.min.y > canvas.min.y && r.center().distance(tip) < REACH).map(|(_, r)| r.expand(2.0)).collect();
+        assert!(s.words_at().iter().any(|(w, r)| *w == length && r.center().distance(tip) < REACH), "setup: no box of the length beside the arrow; on screen {:?}", s.words());
         // how near the arrow comes to the box: the nearest of its points to the nearest word of the box
         let gap = (0..=20).map(|k| base + (tip - base) * (k as f32 / 20.0)).flat_map(|p| boxes.iter().map(move |r| r.distance_to_pos(p))).fold(f32::INFINITY, f32::min);
         let near: Vec<(String, qymcad::Rect)> = s.words_at().into_iter().filter(|(_, r)| r.center().distance(tip) < 120.0).collect();
