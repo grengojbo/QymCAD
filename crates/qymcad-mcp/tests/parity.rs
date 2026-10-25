@@ -112,6 +112,24 @@ fn block_off_axis(ctx: &mut Ctx) -> Value {
     json!({ "body": { "body": laid["body"] } })
 }
 
+/// THE MESH OF THE BLOCK: the block written as an STL and brought back - triangles, no body - as the window's fixture
+/// makes it; the arguments name the mesh.
+fn mesh_of_block(ctx: &mut Ctx) -> Value {
+    let _ = block(ctx);
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-mcp-parity"));
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    // one file a call: the twin is called once a mode and a field, and the fixtures run side by side
+    static CALLS: std::sync::atomic::AtomicUsize = std::sync::atomic::AtomicUsize::new(0);
+    let n = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    let stl = dir.join(format!("block-{}-{n}.stl", std::process::id())).to_string_lossy().into_owned();
+    let written = call(ctx, "export_mesh", json!({ "path": stl, "overwrite": true }));
+    assert_eq!(written["ok"], json!(true), "the block was not written: {written}");
+    let _ = call(ctx, "new_project", json!({}));
+    let mesh = call(ctx, "import_mesh", json!({ "path": stl }));
+    assert_eq!(mesh["ok"], json!(true), "the mesh did not come in: {mesh}");
+    json!({ "body": { "body": mesh["bodies"][0]["id"] } })
+}
+
 const TWINS: &[Twin] = &[
     Twin { contract: &primitives::BOX, name: "box", args: &["x", "y", "z"], fixture: first_part, modes: &[] },
     Twin { contract: &primitives::CYLINDER, name: "cylinder", args: &["radius", "height"], fixture: first_part, modes: &[] },
@@ -173,6 +191,13 @@ const TWINS: &[Twin] = &[
     Twin { contract: &part::CIRCULAR_ARRAY, name: "circular_pattern", args: &["count"], fixture: block_off_axis, modes: &[ModeTwin { word: "cmd-full-circle", args: || json!({ "angle": 180 }) }] },
     Twin { contract: &part::SPLIT_BODY, name: "split_body", args: &["offset"], fixture: block_cut_by_top, modes: &[] },
     Twin { contract: &part::PUSH_FACE, name: "push_face", args: &["distance"], fixture: block_top_face, modes: &[] },
+    Twin {
+        contract: &part::RECOGNISE,
+        name: "recognise_mesh",
+        args: &[],
+        fixture: mesh_of_block,
+        modes: &[ModeTwin { word: "cmd-recognise-exact", args: || json!({ "mode": "exact" }) }, ModeTwin { word: "cmd-recognise-asis", args: || json!({ "mode": "as_is" }) }],
+    },
     Twin {
         contract: &part::SHELL,
         name: "shell",

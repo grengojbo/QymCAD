@@ -86,3 +86,30 @@ fn a_hole_seen_in_the_picture_is_made_editable() {
     let made = ok(call(&mut ctx, "recognise_feature", json!({ "body": body, "at": hit["at"] })));
     assert_eq!(made["found"]["kind"], "hole", "{made}");
 }
+
+/// BY EYE ON A MESH: the drilled block written as an STL and brought back, made a polyhedron by `recognise_mesh` - its
+/// hole a ring of flat strips, no round face anywhere - is read and made editable the same way: a strip of the wall
+/// under the pixel, a hole of 10.
+#[test]
+fn a_hole_seen_on_a_mesh_is_made_editable() {
+    let Drilled { mut ctx, .. } = drilled();
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-mcp-fit-at-point"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let stl = dir.join("drilled.stl").to_string_lossy().into_owned();
+    let _ = ok(call(&mut ctx, "export_mesh", json!({ "path": stl })));
+    let _ = ok(call(&mut ctx, "new_project", json!({})));
+    let mesh = ok(call(&mut ctx, "import_mesh", json!({ "path": stl })));
+    // a mesh is triangles, not a body: made a polyhedron of its flat faces first, as the window's Recognise "as is"
+    let _ = ok(call(&mut ctx, "recognise_mesh", json!({ "body": { "body": mesh["bodies"][0]["id"] }, "mode": "as_is" })));
+    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+    let r = 5.0 / std::f64::consts::SQRT_2;
+    let px = picture::pixel_of(ctx.doc.project(), &look, [-r, r, 8.0]).expect("the wall is in the picture");
+    let hit = ok(call(&mut ctx, "point_at", json!({ "view": "iso", "x": px.x, "y": px.y })));
+    let body = json!({ "body": hit["body"] });
+    let read = ok(call(&mut ctx, "fit_at_point", json!({ "body": body, "at": hit["at"] })));
+    assert_eq!(read["found"]["kind"], "hole", "{read} under {hit}");
+    assert_eq!(read["found"]["size"], json!(10.0), "{read}");
+    let made = ok(call(&mut ctx, "recognise_feature", json!({ "body": body, "at": hit["at"] })));
+    assert_eq!(made["found"]["kind"], "hole", "{made}");
+}

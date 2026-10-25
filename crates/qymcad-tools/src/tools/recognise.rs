@@ -292,3 +292,74 @@ pub const FIT_AT_POINT: Tool = Tool {
         Ok(out)
     },
 };
+
+/// What a mesh is made into: the exact surfaces found on it, or a polyhedron of its flat faces.
+#[derive(Clone, Copy, Debug, Default, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+enum MeshInto {
+    #[default]
+    Exact,
+    AsIs,
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct RecogniseMeshArgs {
+    body: BodyRef,
+    #[serde(default)]
+    mode: MeshInto,
+    tolerance: Option<f64>,
+    sharp: Option<f64>,
+    simplify: Option<f64>,
+}
+
+pub const RECOGNISE_MESH: Tool = Tool {
+    name: "recognise_mesh",
+    description: "Make a mesh brought in by import_mesh (STL, OBJ, 3MF...) a body, as the window's Recognise does: mode exact (the default) finds the planes, cylinders, cones and spheres of it and lays them as exact faces; as_is lays a polyhedron of its flat faces - each strip of triangles a face, a hole a ring of flat strips - for a mesh exact surfaces do not hold. One node. tolerance multiplies the distance a corner may lie off its surface (1 by default, more for a rough mesh), sharp is the angle in degrees from which an edge between two triangles is sharp (30 by default), simplify the deviation in mm the mesh is made lighter within first (0, none, by default; 0.01 to 0.1 for a mesh of a million triangles). Then recognise_all, recognise_feature, fit_at_point and point_at work on the body.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": crate::args::body_schema(),
+            "mode": { "enum": ["exact", "as_is"], "description": "exact surfaces (the default), or a polyhedron of flat faces." },
+            "tolerance": { "type": "number", "minimum": 0.1, "maximum": 1000, "description": "A multiple of the mesh's own tolerance; 1 by default." },
+            "sharp": { "type": "number", "minimum": 5, "maximum": 90, "description": "Degrees from which an edge is sharp; 30 by default." },
+            "simplify": { "type": "number", "minimum": 0, "maximum": 10, "description": "mm the mesh is made lighter within first; 0 by default." },
+        }, "required": ["body"], "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        let a: RecogniseMeshArgs = tool::args(arguments)?;
+        let project = ctx.doc.project();
+        let src = a.body.resolve(project)?;
+        let is_mesh = project.timeline.iter().any(|n| matches!(n.kind, qymcad_core::feature::FeatureKind::MeshPiece { body, .. } if body == src));
+        if !is_mesh {
+            return Err(Refusal::new("not-a-mesh", &format!("Body {src} is not a mesh brought in from a file: it is a body already."), Stage::Validate).with_hint("Give the body import_mesh answered."));
+        }
+        let within = |v: Option<f64>, fallback: f64, range: std::ops::RangeInclusive<f64>, name: &str| {
+            let v = v.unwrap_or(fallback);
+            if range.contains(&v) {
+                Ok(v)
+            } else {
+                Err(Refusal::new("bad-value", &format!("{name} {v} is out of {}..{}.", range.start(), range.end()), Stage::Validate))
+            }
+        };
+        let tol = within(a.tolerance, 1.0, 0.1..=1000.0, "tolerance")?;
+        let sharp = within(a.sharp, 30.0, 5.0..=90.0, "sharp")?;
+        let simplify = within(a.simplify, 0.0, 0.0..=10.0, "simplify")?;
+        let node = ctx
+            .doc
+            .edit("f-recognise", |p| {
+                let part = p.body_owner(src);
+                p.set_active_component(part);
+                Ok(match a.mode {
+                    MeshInto::AsIs => p.add_mesh_solid(src, simplify),
+                    MeshInto::Exact => p.add_mesh_recognised(src, tol, sharp, simplify),
+                })
+            })
+            .map_err(tool::doc_refusal)?;
+        if let Some(e) = ctx.doc.project().regen_errors.get(&node).cloned() {
+            let words = qymcad_i18n::error_words::error_text(&e);
+            ctx.doc.undo();
+            return Err(Refusal::new("refused", &words, Stage::Kernel).with_hint("For a rough mesh raise tolerance, or give mode as_is."));
+        }
+        Ok(crate::tools::modify::laid_node(ctx, node))
+    },
+};
