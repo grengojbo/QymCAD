@@ -163,6 +163,15 @@ probe! {
 }
 
 probe! {
+    /// TINKERCAD WITH ONE BUTTON, as its own sheet of shortcuts gives it for a mouse with one button or a touchpad: Ctrl
+    /// and the left turn, Shift and the right move. Reported behaviour: under TinkerCAD a touchpad, which has no middle
+    /// button, could not move the view at all.
+    fn the_view_moves_under_tinkercad_with_one_button() {
+        a_layout_moves_the_view("tinkercad", with(&[LEFT], Modifiers::CTRL), with(&[RIGHT], Modifiers::SHIFT), None);
+    }
+}
+
+probe! {
     /// THE TOUCHPAD: no button at all - Alt and a movement turn, Shift and a movement move, Ctrl with Shift scales.
     /// There is no wheel to scale with.
     fn the_view_moves_under_touchpad() {
