@@ -307,3 +307,17 @@ pub fn edit_gap(cmd: &qymcad_ui_state::FeatCommand, gap: &mut f64) {
         *gap = qymcad_ui_state::cmd_val(cmd, "gap");
     }
 }
+
+#[cfg(test)]
+mod tests {
+    /// THE WORDS AFTER A HOLE TAKEN START A SENTENCE: the status line puts them after "Hole 10.00." Reported behaviour:
+    /// "Hole 10.00. click a flat face along its axis to measure from".
+    #[test]
+    fn the_ask_after_a_hole_starts_a_sentence() {
+        for (lang, _) in qymcad_i18n::available() {
+            qymcad_i18n::set_language(&lang);
+            let ask = qymcad_i18n::tr("msg-hole-gap-face");
+            assert!(ask.chars().next().is_some_and(char::is_uppercase), "{lang}: the ask after a hole starts small: {ask:?}");
+        }
+    }
+}
