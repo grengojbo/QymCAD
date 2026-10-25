@@ -2414,13 +2414,21 @@ extern "C" QymShape* qym_shape_remove_faces(const QymShape* s, const uint32_t* i
         }
         // DIFFERENT FAILURES DESERVE DIFFERENT ANSWERS. "Face not found" and "the neighbours cannot be
         // extended" are fixed in different ways, and one message for both leaves a person guessing. -1 in
-        // out_reason means not found, 0 means it did not work out.
+        // out_reason means not found, -2 broken off as too heavy, 0 means it did not work out.
         if (faces.IsEmpty()) { if (out_reason) *out_reason = -1; return why_no_named_faces("remove face/faces", s, ids[0]), nullptr; }
         BRepAlgoAPI_Defeaturing algo;
         qym_configure(algo);
         algo.SetShape(s->shape);
         algo.AddFacesToRemove(faces);
-        algo.Build();
+        // A REMOVAL THAT RUNS AWAY IS BROKEN OFF, not left to take the process down (`QymMemoryWatch`). 2 GB over
+        // what the process held: the removal above refused by itself at 590 MB, and one that came through took 3.7 GB
+        // and 52 s - a person is better told it is too heavy than kept waiting on a body that may not come.
+        Handle(QymMemoryWatch) watch = new QymMemoryWatch(size_t(2) << 30);
+        algo.Build(watch->Start());
+        if (watch->Tripped()) {
+            if (out_reason) *out_reason = -2;
+            return why("remove face/build", "the removal took more than 2 GB of memory and was broken off"), nullptr;
+        }
         if (!algo.IsDone() || algo.HasErrors()) return why("remove face/build", "the kernel could not close the body after removing these faces"), nullptr;
         TopoDS_Shape res = algo.Shape();
         if (res.IsNull()) return why("remove face/build", "the body came back empty"), nullptr;

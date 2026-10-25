@@ -35,6 +35,7 @@ impl Shape {
         match Self::wrap(p) {
             Some(sh) => Ok(sh),
             None if reason == -1 => Err("cad-faces-not-in-body".into()),
+            None if reason == -2 => Err("cad-removal-too-heavy".into()),
             None => Err("cad-neighbours-not-extendable".into()),
         }
     }

@@ -41,6 +41,7 @@
 #include <IGESSolid_Face.hxx>
 #include <IGESGraph_Color.hxx>
 #include <gp_GTrsf.hxx>
+#include <Message_ProgressIndicator.hxx>
 #include <TCollection_HAsciiString.hxx>
 #include <ShapeUpgrade_UnifySameDomain.hxx>
 #include <BRepBuilderAPI_MakePolygon.hxx>
@@ -256,6 +257,35 @@ struct QymBody {
 /// this whole change carries, and it cannot be proved absent without the "off" side. And a person whose
 /// machine is busy with something else needs a way to give the kernel fewer cores than it has.
 extern std::atomic<bool> g_parallel;
+
+/// How much memory the process holds now, in bytes; 0 where the system does not say.
+size_t qym_resident_bytes();
+
+/// A WATCH ON AN ALGORITHM THAT CAN RUN AWAY: given to its `Build` as the progress it reports to, it breaks the work
+/// off once the process holds more than `budget` bytes over what it held when the watch was made, and says so.
+/// Measured on removing the wall of a hole from a polyhedron of a mesh drawn at 0.01, its chamfered rim left standing:
+/// OCCT's pave filler went on into itself, past 4 GB, and the process died with signal 6 - no exception, nothing to
+/// catch. The same removal on the mesh drawn at 0.1 refused by itself after 590 MB. The memory is read every 1024th
+/// asking: the pave filler asks millions of times (26 million in 52 s), and reading it costs a call to the system.
+class QymMemoryWatch : public Message_ProgressIndicator {
+public:
+    explicit QymMemoryWatch(size_t budget) : start(qym_resident_bytes()), budget(budget) {}
+    Standard_Boolean UserBreak() override {
+        if (tripped) return Standard_True;
+        if (++asked % 1024 != 0) return Standard_False;
+        size_t now = qym_resident_bytes();
+        tripped = now > start && now - start > budget;
+        return tripped;
+    }
+    void Show(const Message_ProgressScope&, const Standard_Boolean) override {}
+    bool Tripped() const { return tripped; }
+
+private:
+    size_t start;
+    size_t budget;
+    size_t asked = 0;
+    bool tripped = false;
+};
 
 /// The base `BOPAlgo_Options` is not accessible in every algorithm of this kernel, while the method itself is
 /// - hence a template over the type rather than a reference to the base.

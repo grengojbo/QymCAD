@@ -1,6 +1,15 @@
 #ifndef _WIN32
 #include <signal.h>
 #endif
+#if defined(__APPLE__)
+#include <mach/mach.h>
+#elif defined(_WIN32)
+#include <windows.h>
+#include <psapi.h>
+#else
+#include <cstdio>
+#include <unistd.h>
+#endif
 #include <algorithm>
 #include <Geom_Line.hxx>
 #include <Geom_BSplineCurve.hxx>
@@ -2639,6 +2648,26 @@ extern "C" QymDoc* qym_occt_extrude_bool(const double* base_xy, size_t nb, doubl
 // THE ONE PLACE THAT HOLDS THE ANSWER (declared in the shared header): on by default, because that is what a
 // person expects from a machine with eight cores.
 std::atomic<bool> g_parallel{true};
+
+size_t qym_resident_bytes() {
+#if defined(__APPLE__)
+    mach_task_basic_info info;
+    mach_msg_type_number_t n = MACH_TASK_BASIC_INFO_COUNT;
+    return task_info(mach_task_self(), MACH_TASK_BASIC_INFO, reinterpret_cast<task_info_t>(&info), &n) == KERN_SUCCESS ? info.resident_size : 0;
+#elif defined(_WIN32)
+    PROCESS_MEMORY_COUNTERS c;
+    return K32GetProcessMemoryInfo(GetCurrentProcess(), &c, sizeof c) ? c.WorkingSetSize : 0;
+#else
+    // the second number of statm: the pages resident
+    long pages = 0;
+    if (FILE* f = std::fopen("/proc/self/statm", "r")) {
+        long total = 0;
+        if (std::fscanf(f, "%ld %ld", &total, &pages) != 2) pages = 0;
+        std::fclose(f);
+    }
+    return pages > 0 ? static_cast<size_t>(pages) * static_cast<size_t>(sysconf(_SC_PAGESIZE)) : 0;
+#endif
+}
 
 /// Whether the booleans run on several cores at all.
 extern "C" void qym_set_parallel(int on) { g_parallel.store(on != 0); }
