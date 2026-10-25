@@ -47,7 +47,10 @@ pub fn focus_edit(ui: &mut egui::Ui, text: &mut String, width: f32, hint: &str, 
 }
 
 pub fn dim_expr_field_in(rc: &mut RebuildCtx, ui: &mut egui::Ui, id: Id, key: &str, place: &str) {
-    ui.horizontal(|ui| {
+    // THE ROW WRAPS where it does not fit: the formula, its value, the word of the parameter and its name in one row are
+    // wider than the panel of properties. Reported behaviour: laid in one row, they ran past the left edge of the panel,
+    // and the whole panel was drawn from x = 1076 while it was laid out from 1110.
+    ui.horizontal_wrapped(|ui| {
         ui.label(egui::RichText::new("ƒ=").weak());
         // THE SAME FIELD AS ON A SKETCH DIMENSION AND IN THE PARAMETER TABLE. It was asked for plainly:
         // features must have all of this too. Different behaviour in two similar places is a defect, even
