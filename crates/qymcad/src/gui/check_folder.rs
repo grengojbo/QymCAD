@@ -24,9 +24,13 @@ pub(crate) mod tests {
     }
 
     impl CheckFolder {
-        /// The folder of the check `check` in this run.
+        /// The folder of the check `check` in this run, its own for every call: two checks of one run naming the same
+        /// check side by side - two checks of one file writing the same sample - each get a folder, and the second does
+        /// not empty the first.
         pub(crate) fn new(check: &str) -> Self {
-            Self::of_run(check, std::process::id())
+            static CALLS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+            let call = CALLS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+            Self::of_run(&format!("{check}-{call}"), std::process::id())
         }
 
         /// The folder of the check `check` in the run `run` (a process id). A folder left by a run that ended before
@@ -70,6 +74,19 @@ pub(crate) mod tests {
         fn drop(&mut self) {
             let _ = std::fs::remove_dir_all(&self.path);
         }
+    }
+
+    /// TWO CHECKS OF ONE RUN NAMING THE SAME CHECK each write in a folder of their own. Reported behaviour: the checks of
+    /// a boss redrawn from its face, run side by side, each wrote their sample to `bossed.step`; one emptied the folder
+    /// while another wrote or read it, and they failed with "cad-step-write-failed" or "the plate came in", green the
+    /// next run.
+    #[test]
+    fn two_checks_naming_one_check_keep_their_files() {
+        let first = CheckFolder::new("side-by-side");
+        std::fs::write(first.file("sample.step"), "first").expect("written");
+        let second = CheckFolder::new("side-by-side");
+        std::fs::write(second.file("sample.step"), "second").expect("written");
+        assert_eq!(std::fs::read_to_string(first.file("sample.step")).ok().as_deref(), Some("first"), "the second folder of the check emptied or overwrote the first");
     }
 
     /// ANOTHER RUN OF THE SAME CHECK DOES NOT REACH THIS RUN'S FILE. Reported behaviour: in a whole run of the lib in the
