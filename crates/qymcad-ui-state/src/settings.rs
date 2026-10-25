@@ -261,7 +261,8 @@ impl MouseNav {
             MouseNav::MayaGesture => const { &[Gesture::of(&[LEFT]).alt()] },
             MouseNav::OpenCascade => const { &[Gesture::of(&[RIGHT]).ctrl()] },
             MouseNav::Revit => const { &[Gesture::of(&[MIDDLE]).shift()] },
-            MouseNav::TinkerCad => const { &[Gesture::of(&[RIGHT])] },
+            // and Ctrl with the left one, as the program's own sheet of shortcuts gives it for a mouse of one button or a touchpad
+            MouseNav::TinkerCad => const { &[Gesture::of(&[RIGHT]), Gesture::of(&[LEFT]).ctrl()] },
             MouseNav::Touchpad => const { &[Gesture::of(&[]).alt()] },
         }
     }
@@ -275,7 +276,9 @@ impl MouseNav {
             MouseNav::Revit => const { &[Gesture::of(&[MIDDLE]), Gesture::of(&[LEFT, RIGHT])] },
             MouseNav::OpenCascade => const { &[Gesture::of(&[MIDDLE]), Gesture::of(&[MIDDLE]).ctrl()] },
             MouseNav::OpenInventor => const { &[Gesture::of(&[MIDDLE]), Gesture::of(&[LEFT]).ctrl().shift(), Gesture::of(&[]).ctrl().shift()] },
-            MouseNav::TinkerCad | MouseNav::Den => const { &[Gesture::of(&[MIDDLE])] },
+            // Shift and the right one for a mouse of one button or a touchpad, which has no middle button to move the view with
+            MouseNav::TinkerCad => const { &[Gesture::of(&[MIDDLE]), Gesture::of(&[RIGHT]).shift()] },
+            MouseNav::Den => const { &[Gesture::of(&[MIDDLE])] },
             MouseNav::Gesture | MouseNav::OpenScad => const { &[Gesture::of(&[RIGHT])] },
             MouseNav::MayaGesture => const { &[Gesture::of(&[MIDDLE]).alt()] },
             MouseNav::Touchpad => const { &[Gesture::of(&[]).shift()] },
