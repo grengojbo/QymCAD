@@ -114,6 +114,24 @@ fn a_hole_seen_on_a_mesh_is_made_editable() {
     assert_eq!(made["found"]["kind"], "hole", "{made}");
 }
 
+/// A HOLE WHOSE RIM IS ROUNDED reads through, and widened it keeps its rim. Reported behaviour: the hole of the plate
+/// whose top edges were all rounded 1.5 read blind 6.5 deep from the bottom, and recognise_feature laid a red node.
+#[test]
+fn a_hole_with_a_rounded_rim_reads_through_and_widens() {
+    let Drilled { mut ctx, body } = drilled();
+    let rounded = ok(call(&mut ctx, "fillet", json!({ "body": body, "edges": { "adjacent": "top" }, "radius": 1.5 })));
+    let body = json!({ "body": rounded["body"] });
+    let read = ok(call(&mut ctx, "fit_at_point", json!({ "body": body, "at": [0.0, 5.0, 4.0] })));
+    assert_eq!(read["found"]["through"], json!(true), "{read}");
+    let before = rounded["bodies"][0]["volume"].as_f64().expect("a volume");
+    let made = ok(call(&mut ctx, "recognise_feature", json!({ "body": body, "at": [0.0, 5.0, 4.0], "size": 12 })));
+    assert_eq!(made["red"], json!([]), "{made}");
+    let after = made["bodies"][0]["volume"].as_f64().expect("a volume");
+    // 12 across instead of 10, through the 10 of the block: the rim of 1.5 stands round the wider mouth as before
+    let wider = std::f64::consts::PI * (36.0 - 25.0) * 10.0;
+    assert!((before - after - wider).abs() < 5.0, "widened by {} mm^3, not about {wider}: {made}", before - after);
+}
+
 /// THE PLATE WITH ROUNDED CORNERS WRITTEN AS AN STL gives its holes and roundings and no chamfer. Reported behaviour:
 /// recognise_all listed two chamfers, 43.1 and 30.7, on the plate of the manual check.
 #[test]

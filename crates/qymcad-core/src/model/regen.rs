@@ -352,12 +352,29 @@ pub fn remade_dims(items: &[RemadeItem]) -> Vec<Dim> {
 /// What a found feature is made again as, once its faces are taken off the body.
 #[derive(Clone, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum Exact {
-    /// A plain hole drilled from `entry` at `at`, square into it; one through is drilled past the body.
-    Hole { entry: crate::feature::FaceKey, at: [f64; 3], diameter: f64, depth: f64, reach: Reach },
+    /// A plain hole drilled from `entry` at `at`, square into it; one through is drilled past the body. `rims` are the
+    /// roundings and chamfers round its mouths, laid again once it is drilled.
+    Hole {
+        entry: crate::feature::FaceKey,
+        at: [f64; 3],
+        diameter: f64,
+        depth: f64,
+        reach: Reach,
+        #[serde(default)]
+        rims: Vec<HoleRim>,
+    },
     /// A rounding of the edge the two faces meet in.
     Round { sides: crate::geom::EdgeFaces, radius: f64 },
     /// A chamfer of the edge the two faces meet in, both legs `leg`.
     Chamfer { sides: crate::geom::EdgeFaces, leg: f64 },
+}
+
+/// A ROUNDING OR A CHAMFER ROUND THE MOUTH OF A HOLE: the face the hole opens onto through it, and the blend laid again
+/// on the edge the hole and that face meet in once the hole is drilled.
+#[derive(Clone, Copy, Debug, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct HoleRim {
+    pub face: u32,
+    pub blend: crate::model::RimBlend,
 }
 
 /// Whether a hole goes through the body or stops inside it.
@@ -371,7 +388,12 @@ impl Exact {
     /// The faces it names, carried over as a query's own descriptors are: the entry of a hole, the sides of a blend.
     pub fn remap_descs(&mut self, f: &mut impl FnMut(&mut u32)) {
         match self {
-            Exact::Hole { entry, .. } => f(&mut entry.id),
+            Exact::Hole { entry, rims, .. } => {
+                f(&mut entry.id);
+                for r in rims {
+                    f(&mut r.face);
+                }
+            }
             Exact::Round { sides, .. } | Exact::Chamfer { sides, .. } => {
                 f(&mut sides.one);
                 f(&mut sides.other);
@@ -473,11 +495,19 @@ struct Made {
     group: u32,
 }
 
-/// A hole of a node made exact, ready to drill: its group, its tool and the frame it is drilled from.
+/// A hole of a node made exact, ready to drill: its group, its tool, the frame it is drilled from, and the rims laid
+/// round its mouths after.
 struct Drilled {
     group: u32,
     tool: HoleTool,
     pl: [f64; 12],
+    rims: Vec<HoleRim>,
+}
+
+/// THE EDGES ROUND THE MOUTH OF A HOLE JUST DRILLED onto face `face`: the edges of `body` between that face and a face
+/// the drilling made - one not among `before`. A rim is laid on them, as it stood before the hole was taken off.
+fn mouth_of(k: &dyn crate::feature::Kernel, body: Id, face: u32, before: &std::collections::HashSet<u32>) -> Vec<u32> {
+    k.edge_face_pairs(body).into_iter().filter(|p| (p.faces[0] == face && !before.contains(&p.faces[1])) || (p.faces[1] == face && !before.contains(&p.faces[0]))).map(|p| p.edge).collect()
 }
 
 /// A group of blends of a node made exact, ready to lay: its size and the two faces of each edge it goes on.

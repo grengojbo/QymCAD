@@ -25,6 +25,8 @@ feature. **Enter** removes its faces: the corner turns sharp, the wall whole. Th
 - One row in the timeline: **Recognised hole Ø5 through**, **Recognised rounding R2**, **Recognised chamfer 1**. The
   faces of the old feature are taken off - the faces around close over them - and the feature is made again by its
   own tool, round and exact.
+- A rounded or cut-back rim round a hole goes with it and is laid again, of the same size, round the new hole: a hole
+  with a rounded rim runs through, not blind.
 - A double click on the row opens the same tool with the size in the field: type another diameter and the hole
   follows.
 - Sizes are brought to what was most likely drawn: a tenth of a millimetre, and for a hole the nearest common bore

@@ -193,3 +193,31 @@ fn a_side_between_two_rounded_corners_is_no_chamfer() {
     let all = features_of(&b.mesh, &b.faces, 1.0);
     assert_eq!(told(&all.found), ["hole 6.0 through", "hole 6.0 through", "round 5.0", "round 5.0", "round 5.0", "round 5.0"]);
 }
+
+/// A plate 60 x 40 x 8 from the origin drilled 6 through at (20, 20), the rim of the hole at the top rounded 1.5; and
+/// drilled 6 through at (40, 20), its rim at the top cut back 1.
+fn rimmed_plate() -> Shape {
+    let p = specimen::extrude(&[0.0, 0.0, 60.0, 0.0, 60.0, 40.0, 0.0, 40.0], 8.0).expect("a plate");
+    let p = [20.0, 40.0].into_iter().fold(p, |p, x| p.combined(&bore(Drill { x, y: 20.0, r: 3.0, from: -1.0, h: 10.0 }), 0).expect("drilled"));
+    let rim = |s: &Shape, x: f64| -> Vec<u32> {
+        s.edges_info().into_iter().filter(|e| e.poly.iter().all(|q| (q[2] as f64 - 8.0).abs() < 1e-6 && ((q[0] as f64 - x).hypot(q[1] as f64 - 20.0) - 3.0).abs() < 1e-3)).map(|e| e.id).collect()
+    };
+    let p = p.filleted(1.5, &rim(&p, 20.0)).expect("the rim rounded");
+    p.chamfered(1.0, &rim(&p, 40.0)).expect("the rim cut back")
+}
+
+/// A HOLE WHOSE RIM IS ROUNDED OR CUT BACK RUNS THROUGH, and its rim goes with it. Reported behaviour: the wall ends at
+/// the rim, not at a face square to the axis, and the hole was read blind 6.5 deep from the bottom; laid again, its faces
+/// would not come off - the rim was left standing round nothing.
+#[test]
+fn a_hole_with_a_rounded_or_cut_back_rim_runs_through_and_takes_its_rim() {
+    let b = built(&rimmed_plate());
+    let all = features_of(&b.mesh, &b.faces, 1.0);
+    assert_eq!(told(&all.found), ["hole 6.0 through", "hole 6.0 through"], "{:?}", all.found);
+    let mut rims: Vec<String> =
+        all.found.iter().filter_map(|f| if let Found::Hole(h) = f { Some(h) } else { None }).flat_map(|h| h.rims.iter().map(|r| format!("{:?} {:.1}", r.blend.cut, r.blend.size))).collect();
+    rims.sort();
+    assert_eq!(rims, ["Chamfer 1.0", "Round 1.5"], "{:?}", all.found);
+    assert!(apart(&all.found), "a face is in two features: {:?}", all.found);
+    assert!(all.unfound.is_empty(), "curved faces left: {:?}", all.unfound);
+}

@@ -1008,7 +1008,7 @@ fn draw_remade_preview(pn: &qymcad_ui_state::Painting, painter: &egui::Painter, 
     if !hm.is_empty() {
         painter.add(egui::Shape::mesh(hm));
     }
-    let Some(qymcad_ui_state::FeatureInHand { remake: qymcad_core::model::Remake { exact: qymcad_core::model::Exact::Hole { entry, at, diameter, depth, reach }, .. }, .. }) =
+    let Some(qymcad_ui_state::FeatureInHand { remake: qymcad_core::model::Remake { exact: qymcad_core::model::Exact::Hole { entry, at, diameter, depth, reach, .. }, .. }, .. }) =
         pn.recognise.feature.as_ref()
     else {
         return;

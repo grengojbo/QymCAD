@@ -167,14 +167,14 @@ impl Project {
         let mut rounds: Vec<Laid> = Vec::new();
         for it in items {
             match it.exact {
-                Exact::Hole { entry, at, diameter, depth, .. } => {
+                Exact::Hole { entry, at, diameter, depth, ref rims, .. } => {
                     let tool = HoleTool { kind: 0, diameter: p.dim(&group_key("diameter", it.group), diameter), depth: p.dim(&group_key("depth", it.group), depth).abs(), dia2: 0.0, depth2: 0.0 };
                     // the hole stands where it was found, brought onto the entry face as it stands now
                     let face = crate::refs::Ref::one(entry.id, crate::refs::Fingerprint { centroid: entry.centroid, normal: entry.normal });
                     let Ok(c) = self.face_by_ref(p.node, src, &face, "ref-what-hole-face") else { return crate::feature::KernelJob::refused(crate::errors::CoreError::FaceNotFound) };
                     let off = (0..3).map(|i| (at[i] - c.centroid[i]) * c.normal[i]).sum::<f64>();
                     let point = [at[0] - off * c.normal[0], at[1] - off * c.normal[1], at[2] - off * c.normal[2]];
-                    holes.push(Drilled { group: it.group, tool, pl: crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12() });
+                    holes.push(Drilled { group: it.group, tool, pl: crate::feature::PlaneFrame::from_origin_normal(point, c.normal, 0.0).matrix12(), rims: rims.clone() });
                 }
                 Exact::Chamfer { sides, leg } => lay_in(&mut cuts, it.group, p.dim(&group_key("dist", it.group), leg), sides),
                 Exact::Round { sides, radius } => lay_in(&mut rounds, it.group, p.dim(&group_key("radius", it.group), radius), sides),
@@ -187,7 +187,20 @@ impl Project {
             let mut built = k.remove_faces(body, src, &ids)?;
             // what refuses after the faces are off is told with its group, so the tool can leave that group out
             for h in &holes {
+                // the faces standing before the drill: the mouth of the hole is where a face of these meets one it made
+                let before: std::collections::HashSet<u32> = k.edge_face_pairs(body).iter().flat_map(|p| p.faces).collect();
                 built = k.hole(body, body, h.tool, h.pl, feature).map_err(|e| in_group(e, h.group))?;
+                for rim in &h.rims {
+                    let edges = mouth_of(k, body, rim.face, &before);
+                    if edges.is_empty() {
+                        return Err(in_group(crate::errors::CoreError::DescribedEdgesNotFound, h.group));
+                    }
+                    built = match rim.blend.cut {
+                        crate::model::RimCut::Round => k.fillet(body, body, rim.blend.size, &edges, roles.clone()),
+                        crate::model::RimCut::Chamfer => k.chamfer(body, body, rim.blend.size, &edges, roles.clone()),
+                    }
+                    .map_err(|e| in_group(e, h.group))?;
+                }
             }
             for c in &cuts {
                 let edges = c.sides.iter().map(|&s| parted_by(k, body, s)).collect::<Result<Vec<u32>, _>>().map_err(|e| in_group(e, c.group))?;
@@ -301,7 +314,7 @@ impl Project {
     /// parallel to it, and the hole made again exact with its axis `gap` from the plane, on the side it stood.
     pub(crate) fn prep_holemoved(&mut self, p: &Pass, src: Id, refs: HoleRefs, exact: &Exact, gap: f64, body: Id) -> crate::feature::KernelJob {
         let gap = p.dim("gap", gap);
-        let Exact::Hole { entry, at, diameter, depth, reach } = *exact else {
+        let Exact::Hole { entry, at, diameter, depth, reach, ref rims } = *exact else {
             return crate::feature::KernelJob::refused(crate::errors::CoreError::GapNotParallel);
         };
         let Ok(c) = self.face_by_ref(p.node, src, refs.face, "ref-what-gap-face") else {
@@ -320,7 +333,7 @@ impl Project {
         }
         let want = if s < 0.0 { -gap } else { gap };
         let at = [at[0] + n[0] * (want - s), at[1] + n[1] * (want - s), at[2] + n[2] * (want - s)];
-        self.prep_remade(p, src, &[RemadeItem { faces: refs.faces.clone(), exact: Exact::Hole { entry, at, diameter, depth, reach }, group: 0 }], body)
+        self.prep_remade(p, src, &[RemadeItem { faces: refs.faces.clone(), exact: Exact::Hole { entry, at, diameter, depth, reach, rims: rims.clone() }, group: 0 }], body)
     }
 
     /// A boss or a pocket redrawn (`FeatureKind::Redrawn`): its faces taken off `src`, the body healed, and the largest

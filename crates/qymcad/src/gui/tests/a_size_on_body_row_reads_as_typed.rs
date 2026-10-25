@@ -17,7 +17,7 @@ fn a_whole_size_on_a_body_is_written_whole() {
     p.new_document();
     let block = p.add_box(40.0, 30.0, 10.0);
     let gap = p.add_face_gap(block, Gap { one: FaceKey::default(), other: FaceKey::default(), size: 15.0, moves: GapMoves::One });
-    let hole = Remake { faces: Vec::new(), exact: Exact::Hole { entry: FaceKey::default(), at: [10.0, 15.0, 10.0], diameter: 10.0, depth: 10.0, reach: Reach::Through } };
+    let hole = Remake { faces: Vec::new(), exact: Exact::Hole { entry: FaceKey::default(), at: [10.0, 15.0, 10.0], diameter: 10.0, depth: 10.0, reach: Reach::Through, rims: Vec::new() } };
     let moved = p.add_hole_moved(gap, HoleMove { hole, face: FaceKey::default(), size: 8.0 });
     let gap_row = row(&p, gap);
     assert!(gap_row.ends_with(&crate::i18n::tr1("feat-face-gap", "d", "15")), "the gap of 15 reads {gap_row:?}");

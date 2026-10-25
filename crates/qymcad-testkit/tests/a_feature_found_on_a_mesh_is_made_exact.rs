@@ -25,6 +25,25 @@ fn corner_edge(s: &Shape) -> u32 {
     s.edges_info().into_iter().find(|e| e.poly.iter().all(|p| (p[0] as f64 - 40.0).abs() < 1e-6 && (p[1] as f64 - 30.0).abs() < 1e-6)).map(|e| e.id).expect("the corner edge")
 }
 
+/// How the rim of a hole is made.
+#[derive(Clone, Copy)]
+enum Rim {
+    Round,
+    Chamfer,
+}
+
+/// The plate drilled `r` through round (20, 15), the rim of the hole at the top rounded 1.5 or cut back 1: the rim
+/// goes with the hole and is laid again round it.
+fn rimmed(r: f64, rim: Rim) -> Shape {
+    let p = plate().combined(&bore(r, -1.0, 12.0), 0).expect("drilled");
+    let mouth: Vec<u32> =
+        p.edges_info().into_iter().filter(|e| e.poly.iter().all(|q| (q[2] as f64 - 10.0).abs() < 1e-6 && ((q[0] as f64 - 20.0).hypot(q[1] as f64 - 15.0) - r).abs() < 1e-3)).map(|e| e.id).collect();
+    match rim {
+        Rim::Round => p.filleted(1.5, &mouth).expect("the rim rounded"),
+        Rim::Chamfer => p.chamfered(1.0, &mouth).expect("the rim cut back"),
+    }
+}
+
 /// One feature of the matrix: the exact plate, where its feature is clicked, the size it is edited to and the volume
 /// the plate then holds.
 struct Case {
@@ -33,7 +52,7 @@ struct Case {
     clicked: fn(&qymcad_core::geom::MeshFace) -> bool,
     size: &'static str,
     edited: &'static str,
-    edited_volume: f64,
+    edited_volume: fn() -> f64,
 }
 
 const BLOCK: f64 = 40.0 * 30.0 * 10.0;
@@ -41,10 +60,23 @@ const BLOCK: f64 = 40.0 * 30.0 * 10.0;
 fn cases() -> Vec<Case> {
     let wall = |f: &qymcad_core::geom::MeshFace| f.normal[2].abs() < 0.1 && ((f.centroid.x - 20.0).powi(2) + (f.centroid.y - 15.0).powi(2)).sqrt() < 5.01;
     let corner = |f: &qymcad_core::geom::MeshFace| f.centroid.x > 36.0 && f.centroid.y > 26.0 && f.normal[2].abs() < 0.1 && f.normal[0] < 0.999 && f.normal[1] < 0.999;
-    let pi = std::f64::consts::PI;
     vec![
-        Case { name: "hole through", exact: || plate().combined(&bore(5.0, -1.0, 12.0), 0).expect("drilled"), clicked: wall, size: "diameter", edited: "6", edited_volume: BLOCK - pi * 9.0 * 10.0 },
-        Case { name: "blind hole", exact: || plate().combined(&bore(3.0, 4.0, 7.0), 0).expect("drilled"), clicked: wall, size: "depth", edited: "3", edited_volume: BLOCK - pi * 9.0 * 3.0 },
+        Case {
+            name: "hole through",
+            exact: || plate().combined(&bore(5.0, -1.0, 12.0), 0).expect("drilled"),
+            clicked: wall,
+            size: "diameter",
+            edited: "6",
+            edited_volume: || BLOCK - std::f64::consts::PI * 9.0 * 10.0,
+        },
+        Case {
+            name: "blind hole",
+            exact: || plate().combined(&bore(3.0, 4.0, 7.0), 0).expect("drilled"),
+            clicked: wall,
+            size: "depth",
+            edited: "3",
+            edited_volume: || BLOCK - std::f64::consts::PI * 9.0 * 3.0,
+        },
         Case {
             name: "rounding",
             exact: || {
@@ -54,7 +86,7 @@ fn cases() -> Vec<Case> {
             clicked: corner,
             size: "radius",
             edited: "2",
-            edited_volume: BLOCK - (4.0 - pi) * 10.0,
+            edited_volume: || BLOCK - (4.0 - std::f64::consts::PI) * 10.0,
         },
         Case {
             name: "chamfer",
@@ -65,8 +97,10 @@ fn cases() -> Vec<Case> {
             clicked: |f| f.normal[0] > 0.1 && f.normal[1] > 0.1,
             size: "dist",
             edited: "2",
-            edited_volume: BLOCK - 2.0 * 10.0,
+            edited_volume: || BLOCK - 2.0 * 10.0,
         },
+        Case { name: "hole with a rounded rim", exact: || rimmed(5.0, Rim::Round), clicked: wall, size: "diameter", edited: "6", edited_volume: || rimmed(3.0, Rim::Round).volume() },
+        Case { name: "hole with a cut-back rim", exact: || rimmed(5.0, Rim::Chamfer), clicked: wall, size: "diameter", edited: "6", edited_volume: || rimmed(3.0, Rim::Chamfer).volume() },
     ]
 }
 
@@ -110,8 +144,9 @@ fn run(case: &Case, mode: Mode, deflection: f64) -> Result<(), String> {
     }
     p.set_feat_dim(node, case.size, case.edited.into());
     let edited = volume_of(&mut p, node)?;
-    if (edited - case.edited_volume).abs() > 1e-3 * case.edited_volume {
-        return Err(format!("{} edited to {} holds {edited} mm^3, not {}", case.size, case.edited, case.edited_volume));
+    let wanted = (case.edited_volume)();
+    if (edited - wanted).abs() > 1e-3 * wanted {
+        return Err(format!("{} edited to {} holds {edited} mm^3, not {wanted}", case.size, case.edited));
     }
     Ok(())
 }

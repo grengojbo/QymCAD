@@ -20,7 +20,7 @@ use qymcad_core::feature::FaceKey;
 use qymcad_core::geom::{EdgeFaces, Mesh, MeshFace};
 pub use qymcad_core::geom::{rounded, rounded_bore};
 pub use qymcad_core::model::Reach;
-use qymcad_core::model::{Exact, Remake, RemakeGroup};
+use qymcad_core::model::{Exact, HoleRim, Remake, RemakeGroup, RimBlend, RimCut};
 use std::collections::{HashMap, HashSet};
 
 /// AN EDGE OF THE BODY IS NOT CROSSED ABOVE THIS, in degrees. The recognition of a whole mesh stops at 30 deg; here the
@@ -56,6 +56,19 @@ const ROUND_OFF: f64 = 0.03;
 /// with it on a cylinder of 370 and took the rounding: 360 mm^2 against 3.9.
 const STRIP_AREA: f64 = 4.0;
 
+/// THE FACES OF A RIM, at most: a rounding round a hole recognised into exact surfaces is a face or two; a rounding of
+/// 1.5 round a hole of 10 made a polyhedron of a mesh drawn at 0.01 is 2317 of them, a chamfer of 1 there 361. The walk
+/// stops at the face the hole opens onto; past this many it has left the mouth all the same.
+const RIM_FACES: usize = 65536;
+
+/// THE FACE A RIM LEADS OUT ONTO is square to the axis within this, as the cosine: a strip of a rounding of 1.5 drawn
+/// at 0.01 lies 6.6 deg off square (0.993), the face beyond it none.
+const RIM_OPENING: f64 = 0.9999;
+
+/// HOW FAR THE TWO LEGS OF A RIM MAY DIFFER, as a share of the larger: a rounding has one radius, a chamfer here two
+/// equal legs, and a mesh draws them to a few hundredths.
+const RIM_LEGS: f64 = 0.1;
+
 /// The place a person clicked: the face under the pointer, by its persistent id, and the point on it.
 #[derive(Clone, Copy, Debug)]
 pub struct Pick {
@@ -76,8 +89,10 @@ pub struct Hole {
     /// From the entry face to the far end of the wall.
     pub depth: f64,
     pub reach: Reach,
-    /// The faces of the hole: its wall, and the bottom of a blind one.
+    /// The faces of the hole: its wall, the bottom of a blind one, and the faces of its rims.
     pub faces: Vec<u32>,
+    /// The roundings and chamfers round its mouths, each with the face it opens onto.
+    pub rims: Vec<HoleRim>,
 }
 
 /// A rounding of an edge found on a body.
@@ -279,7 +294,7 @@ impl<'a> Body<'a> {
             strips(p, &self.by_face, &self.face_of, seed, pick.face, &self.t)?
         };
         let inside: HashSet<u32> = wall.tris.iter().copied().collect();
-        let look = Look { p, face_of: &self.face_of, faces: self.faces, inside: &inside, distance: self.t.distance };
+        let look = Look { p, face_of: &self.face_of, by_face: &self.by_face, faces: self.faces, inside: &inside, distance: self.t.distance };
         match wall.surface {
             Some(Surface::Cylinder { point, axis, radius }) => look.round_wall(Axis { point: point.into(), dir: Vector3::from(axis).normalize() }, radius, at),
             Some(Surface::Plane { normal, .. }) => look.slanted(Vector3::from(normal).normalize()),
@@ -430,7 +445,7 @@ impl Found {
                     Reach::Through => 2.0 * h.depth + 1.0,
                     Reach::Blind => rounded(h.depth),
                 };
-                Remake { faces: keys(&h.faces)?, exact: Exact::Hole { entry: key(h.entry)?, at: h.at, diameter: rounded_bore(h.diameter), depth, reach: h.reach } }
+                Remake { faces: keys(&h.faces)?, exact: Exact::Hole { entry: key(h.entry)?, at: h.at, diameter: rounded_bore(h.diameter), depth, reach: h.reach, rims: h.rims.clone() } }
             }
             Found::Round(r) => Remake { faces: keys(&r.faces)?, exact: Exact::Round { sides: r.sides, radius: rounded(r.radius) } },
             Found::Chamfer(c) => Remake { faces: keys(&c.faces)?, exact: Exact::Chamfer { sides: c.sides, leg: rounded(c.leg) } },
@@ -523,11 +538,32 @@ struct Border {
     across: Vector3<f64>,
 }
 
-/// One end of a hole's wall: the faces met there, and the one it opens through.
-#[derive(Default)]
+/// One end of a hole's wall: the faces met there, the one it opens through, and the way out of the hole there.
 struct End {
     faces: HashSet<u32>,
     opening: Option<u32>,
+    out: Vector3<f64>,
+}
+
+/// A way a face may face: the direction, and the cosine it must come within.
+struct Facing {
+    out: Vector3<f64>,
+    cos: f64,
+}
+
+/// An end of the wall of a hole: its height along the axis, and the way out of the hole there.
+struct WallEnd {
+    height: f64,
+    out: Vector3<f64>,
+}
+
+/// A RIM FOUND round the mouth of a hole: its faces, the face the hole opens onto through it, how far that face stands
+/// past the end of the wall, and the rounding or chamfer it is.
+struct RimFound {
+    faces: Vec<u32>,
+    opening: u32,
+    past: f64,
+    blend: RimBlend,
 }
 
 /// Where a side face meets a slanted face: a point, the direction along it, and the side face's normal.
@@ -541,6 +577,7 @@ struct SideLine {
 struct Look<'a> {
     p: &'a Prepared,
     face_of: &'a [u32],
+    by_face: &'a HashMap<u32, Vec<u32>>,
     faces: &'a [MeshFace],
     inside: &'a HashSet<u32>,
     distance: f64,
@@ -588,11 +625,8 @@ impl Look<'_> {
     fn corners_of_face(&self, id: u32) -> Vec<Vector3<f64>> {
         let mut seen = HashSet::new();
         let mut out = Vec::new();
-        for (t, &f) in self.face_of.iter().enumerate() {
-            if f != id {
-                continue;
-            }
-            for &i in &self.p.mesh.tris[t] {
+        for &t in self.by_face.get(&id).map(Vec::as_slice).unwrap_or_default() {
+            for &i in &self.p.mesh.tris[t as usize] {
                 if seen.insert(i) {
                     out.push(vertex(self.p, i));
                 }
@@ -663,8 +697,8 @@ impl Look<'_> {
         let low = corners.iter().map(height).fold(f64::INFINITY, f64::min);
         let high = corners.iter().map(height).fold(f64::NEG_INFINITY, f64::max);
         let near = (high - low) * 1e-3 + 10.0 * self.distance;
-        let mut bottom = End::default();
-        let mut top = End::default();
+        let mut bottom = End { faces: HashSet::new(), opening: None, out: -axis.dir };
+        let mut top = End { faces: HashSet::new(), opening: None, out: axis.dir };
         for b in self.border(&taken) {
             let (ha, hb) = (height(&b.a), height(&b.b));
             if (ha - low).abs() < near && (hb - low).abs() < near {
@@ -681,25 +715,64 @@ impl Look<'_> {
                 (off - axis.dir * off.dot(&axis.dir)).norm() <= radius * (1.0 + 1e-3) + 10.0 * self.distance
             })
         };
-        let mut settle = |end: &mut End, out: Vector3<f64>| {
+        let mut settle = |end: &mut End| {
+            let out = end.out;
             let mut found: Vec<u32> = end.faces.iter().copied().collect();
             found.sort_unstable();
             for id in found {
                 if within(id) {
                     taken.push(id);
-                } else if end.opening.is_none() && self.face_normal(id).is_some_and(|n| n.dot(&out) > 0.99) {
+                } else if end.opening.is_none() && self.flat_facing(id, &Facing { out, cos: 0.99 }) {
                     end.opening = Some(id);
                 }
             }
         };
-        settle(&mut bottom, -axis.dir);
-        settle(&mut top, axis.dir);
+        settle(&mut bottom);
+        settle(&mut top);
+        // AN END CLOSED BY A RIM opens through it: a rounding or a chamfer going round the mouth leads out onto the face
+        // the hole is drilled from, and goes with the hole - left standing, it rims nothing once the wall is off
+        let mut rims = Vec::new();
+        let mut low = low;
+        let mut high = high;
+        for end in [&mut bottom, &mut top] {
+            if end.opening.is_some() {
+                continue;
+            }
+            let out = end.out;
+            let start: HashSet<u32> = end.faces.iter().copied().filter(|f| !taken.contains(f)).collect();
+            let at_end = if out.dot(&axis.dir) > 0.0 { high } else { low };
+            let Some(rim) = self.rim(axis, radius, &start, &taken, &WallEnd { height: at_end, out }) else { continue };
+            end.opening = Some(rim.opening);
+            taken.extend(rim.faces);
+            rims.push(HoleRim { face: rim.opening, blend: rim.blend });
+            if out.dot(&axis.dir) > 0.0 {
+                high += rim.past;
+            } else {
+                low -= rim.past;
+            }
+        }
         taken.sort_unstable();
         taken.dedup();
-        let from_high =
-            |entry: u32, reach: Reach| Hole { entry, at: (axis.point + axis.dir * high).into(), inward: (-axis.dir).into(), diameter: 2.0 * radius, depth: high - low, reach, faces: taken.clone() };
-        let from_low =
-            |entry: u32, reach: Reach| Hole { entry, at: (axis.point + axis.dir * low).into(), inward: axis.dir.into(), diameter: 2.0 * radius, depth: high - low, reach, faces: taken.clone() };
+        let from_high = |entry: u32, reach: Reach| Hole {
+            entry,
+            at: (axis.point + axis.dir * high).into(),
+            inward: (-axis.dir).into(),
+            diameter: 2.0 * radius,
+            depth: high - low,
+            reach,
+            faces: taken.clone(),
+            rims: rims.clone(),
+        };
+        let from_low = |entry: u32, reach: Reach| Hole {
+            entry,
+            at: (axis.point + axis.dir * low).into(),
+            inward: axis.dir.into(),
+            diameter: 2.0 * radius,
+            depth: high - low,
+            reach,
+            faces: taken.clone(),
+            rims: rims.clone(),
+        };
         let hole = match (bottom.opening, top.opening) {
             // through: drilled from the end nearer the place clicked
             (Some(l), Some(h)) => {
@@ -714,6 +787,80 @@ impl Look<'_> {
             (None, None) => return Err(Unfound::NoEntry),
         };
         Ok(Found::Hole(hole))
+    }
+
+    /// THE RIM AT AN END OF THE WALL OF A HOLE: from the faces met there, `start`, the faces round the mouth are walked -
+    /// each standing past the end of the wall and no nearer the axis than the bore - to the face square to the axis
+    /// that faces out, the one the hole opens onto. They are a rim when they go round the axis, reach as far out from
+    /// the bore as past the end of the wall - a rounding of one radius, a chamfer of two equal legs - and lie on the
+    /// quarter circle round the edge they took off, or on the line across it. `None` for anything else: the end is
+    /// then closed, as it was.
+    fn rim(&self, axis: Axis, radius: f64, start: &HashSet<u32>, wall: &[u32], end: &WallEnd) -> Option<RimFound> {
+        let near = 10.0 * self.distance;
+        let radial = |v: &Vector3<f64>| {
+            let off = v - axis.point;
+            (off - axis.dir * off.dot(&axis.dir)).norm()
+        };
+        let past = |v: &Vector3<f64>| ((v - axis.point).dot(&axis.dir) - end.height) * end.out.dot(&axis.dir);
+        let mut seen: HashSet<u32> = start.iter().copied().chain(wall.iter().copied()).collect();
+        let mut queue: Vec<u32> = start.iter().copied().collect();
+        queue.sort_unstable();
+        let mut faces = Vec::new();
+        let mut opening = None;
+        while let Some(f) = queue.pop() {
+            if self.flat_facing(f, &Facing { out: end.out, cos: RIM_OPENING }) {
+                if opening.is_some_and(|o| o != f) {
+                    return None;
+                }
+                opening = Some(f);
+                continue;
+            }
+            if self.corners_of_face(f).iter().any(|v| past(v) < -near || radial(v) < radius - near) || faces.len() >= RIM_FACES {
+                return None;
+            }
+            faces.push(f);
+            for g in self.faces_beside(f) {
+                if seen.insert(g) {
+                    queue.push(g);
+                }
+            }
+        }
+        let opening = opening?;
+        let corners: Vec<Vector3<f64>> = faces.iter().flat_map(|&f| self.corners_of_face(f)).collect();
+        let out = corners.iter().map(|v| radial(v) - radius).fold(0.0, f64::max);
+        let up = corners.iter().map(past).fold(0.0, f64::max);
+        if out <= near || up <= near || turned_deg(&corners, axis) <= ROUND_HOLE || (out - up).abs() > RIM_LEGS * out.max(up) + near {
+            return None;
+        }
+        let size = (out + up) / 2.0;
+        // a rounding's corners stand `size` from the line round the mouth it is centred on - out from the bore by `size`,
+        // level with the end of the wall - and a chamfer's on the line from the end of the wall out to the face, as far
+        // out from the bore as past the end
+        let off_round = corners.iter().map(|v| ((radial(v) - radius - size).hypot(past(v)) - size).abs()).fold(0.0, f64::max);
+        let off_line = corners.iter().map(|v| ((radial(v) - radius) - past(v)).abs() / std::f64::consts::SQRT_2).fold(0.0, f64::max);
+        let cut = if off_line <= off_round { RimCut::Chamfer } else { RimCut::Round };
+        Some(RimFound { faces, opening, past: up, blend: RimBlend { cut, size: rounded(size) } })
+    }
+
+    /// WHETHER FACE `id` IS FLAT AND FACES `facing.out` within its cosine. Its normal alone does not say it: the normal of a
+    /// face is the mean of its triangles, and a cone round the mouth of a hole - a chamfer recognised into an exact
+    /// surface - faces straight out along the axis as a whole; it was taken for the face the hole opens onto, and the
+    /// hole made again at 6 kept the cone of the hole of 10.
+    fn flat_facing(&self, id: u32, facing: &Facing) -> bool {
+        self.face_normal(id).is_some_and(|n| n.dot(&facing.out) > facing.cos) && !curved(self.p, self.by_face.get(&id).map(Vec::as_slice).unwrap_or_default())
+    }
+
+    /// The faces across the edges of the triangles of face `id`.
+    fn faces_beside(&self, id: u32) -> HashSet<u32> {
+        let mut out = HashSet::new();
+        for &t in self.by_face.get(&id).map(Vec::as_slice).unwrap_or_default() {
+            for &u in &self.p.neighbours[t as usize] {
+                if u != NO_NEIGHBOUR && self.face_of[u as usize] != id && self.face_of[u as usize] != 0 {
+                    out.insert(self.face_of[u as usize]);
+                }
+            }
+        }
+        out
     }
 
     /// A plane: a chamfer of the edge its two neighbours along its length would meet in, or nothing. A neighbour leans
