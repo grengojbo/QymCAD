@@ -194,7 +194,7 @@ impl Shots {
         let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, h.screen());
         let mut img = h.picture(screen);
         if let Some(at) = ring {
-            ringed(&mut img, at);
+            ringed(&mut img, at, h.app.scheme.pal.error());
         }
         let file = format!("{:02}-{name}.png", self.n);
         self.n += 1;
@@ -205,14 +205,14 @@ impl Shots {
     }
 }
 
-/// A red ring of 18 px round `at`, 3 px wide.
-fn ringed(img: &mut egui::ColorImage, at: egui::Pos2) {
+/// A ring of 18 px round `at`, 3 px wide, in `colour` - the red of the theme.
+fn ringed(img: &mut egui::ColorImage, at: egui::Pos2, colour: egui::Color32) {
     let [w, h] = img.size;
     for y in 0..h {
         for x in 0..w {
             let d = ((x as f32 - at.x).powi(2) + (y as f32 - at.y).powi(2)).sqrt();
             if (16.5..=19.5).contains(&d) {
-                img.pixels[y * w + x] = egui::Color32::from_rgb(230, 30, 30);
+                img.pixels[y * w + x] = colour;
             }
         }
     }
