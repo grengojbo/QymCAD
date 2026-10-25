@@ -11,6 +11,9 @@
 //! MEASURED BY WHERE A WORLD POINT LANDS, not by the camera's numbers: the whole question is whether the
 //! thing under the cursor stays under the cursor, and that is its screen position.
 #[cfg(test)]
+mod the_side_buttons_zoom;
+
+#[cfg(test)]
 mod tests {
     use crate::gui::App;
     use qymcad_ui_state::{ZoomAt, ZoomWhileEditing};

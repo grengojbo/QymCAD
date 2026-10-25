@@ -319,7 +319,97 @@ pub fn view_scroll(ctx: &egui::Context, resp: &egui::Response, nav: MouseNav, sh
     let moved = ctx.input(|i| i.pointer.delta());
     let by = -moved.y + if nav.zooms_sideways() { moved.x } else { 0.0 };
     let gesture = if latched || nav.zooms().iter().filter(usable).any(|g| g.active(ctx, resp)) { by } else { 0.0 };
-    wheel + gesture
+    wheel + gesture + side_zoom(ctx)
+}
+
+/// ONE PRESS OF A SIDE BUTTON, in the wheel's units: 1.25 times, the step a CAD mouse's QuickZoom is known by
+/// (ln 1.25 / 0.002).
+const SIDE_STEP: f32 = 111.57;
+/// HOW LONG A SIDE BUTTON IS HELD BEFORE THE VIEW GOES ON ZOOMING, in seconds: a press shorter than this is one step.
+const SIDE_DELAY: f64 = 0.35;
+/// HOW FAST A HELD SIDE BUTTON ZOOMS, in the wheel's units a second: twice a second (ln 2 / 0.002).
+const SIDE_RATE: f64 = 346.57;
+
+/// The way a side button zooms: in with the front one, out with the back one.
+#[derive(Clone, Copy, PartialEq, Debug)]
+enum Towards {
+    In,
+    Out,
+}
+
+impl Towards {
+    fn sign(self) -> f32 {
+        match self {
+            Towards::In => 1.0,
+            Towards::Out => -1.0,
+        }
+    }
+}
+
+/// A SIDE BUTTON HELD: which way, and up to when its zoom has been counted - from the press on, the delay first.
+#[derive(Clone, Copy, Debug)]
+struct SideHold {
+    towards: Towards,
+    counted: f64,
+}
+
+/// Where the side button held is kept in the frame's memory.
+fn side_hold_id() -> egui::Id {
+    egui::Id::new("nav_side_hold")
+}
+
+/// THE SIDE BUTTONS OF A MOUSE ZOOM THE VIEW, about the place the wheel zooms about: a press is one step, the front
+/// button in and the back one out, and held past `SIDE_DELAY` the view goes on zooming by the time it is held.
+///
+/// A CAD mouse sends them two ways, measured on a 3Dconnexion CadMouse Compact Wireless under macOS: with the maker's
+/// driver running and the program unknown to it, the keys PageUp and PageDown, repeated about twelve times a second
+/// while held; without it - and on Linux, where there is no driver - the buttons Back and Forward, egui's `Extra1` and
+/// `Extra2`, held as one press. Both are taken, and the repeats of a key count for nothing: a held key zooms as fast
+/// as a held button. The keys zoom only while no field takes the keyboard, so PageUp and PageDown in a field stay the
+/// field's own; the view takes any of it only with the hand over it, as it takes the wheel.
+fn side_zoom(ctx: &egui::Context) -> f32 {
+    let keys = !ctx.egui_wants_keyboard_input();
+    let (now, events, front, back) = ctx.input(|i| {
+        let front = (keys && i.key_down(egui::Key::PageUp)) || i.pointer.button_down(egui::PointerButton::Extra1);
+        let back = (keys && i.key_down(egui::Key::PageDown)) || i.pointer.button_down(egui::PointerButton::Extra2);
+        (i.time, i.events.clone(), front, back)
+    });
+    let mut step = 0.0;
+    let mut pressed = None;
+    for e in &events {
+        let towards = match e {
+            egui::Event::Key { key: egui::Key::PageUp, pressed: true, repeat: false, .. } if keys => Some(Towards::In),
+            egui::Event::Key { key: egui::Key::PageDown, pressed: true, repeat: false, .. } if keys => Some(Towards::Out),
+            egui::Event::PointerButton { button: egui::PointerButton::Extra1, pressed: true, .. } => Some(Towards::In),
+            egui::Event::PointerButton { button: egui::PointerButton::Extra2, pressed: true, .. } => Some(Towards::Out),
+            _ => None,
+        };
+        if let Some(t) = towards {
+            step += SIDE_STEP * t.sign();
+            pressed = Some(t);
+        }
+    }
+    let id = side_hold_id();
+    let mut hold: Option<SideHold> = ctx.data(|d| d.get_temp(id));
+    if let Some(t) = pressed {
+        hold = Some(SideHold { towards: t, counted: now + SIDE_DELAY });
+    }
+    let still = hold.filter(|h| match h.towards {
+        Towards::In => front,
+        Towards::Out => back,
+    });
+    let mut going = 0.0;
+    if let Some(mut h) = still {
+        if now > h.counted {
+            going = ((now - h.counted) * SIDE_RATE) as f32 * h.towards.sign();
+            h.counted = now;
+        }
+        ctx.request_repaint(); // held with the hand still: no event comes, and the view must go on
+        ctx.data_mut(|d| d.insert_temp(id, h));
+    } else {
+        ctx.data_mut(|d| d.remove::<SideHold>(id));
+    }
+    step + going
 }
 
 /// Where the zoom latched by the middle button is kept in the frame's memory: the time a left or right press began
