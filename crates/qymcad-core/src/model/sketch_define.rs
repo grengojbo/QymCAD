@@ -10,6 +10,8 @@ use super::{Constraint, Id, LineParts, Project};
 use crate::geom::Point2;
 use std::collections::HashMap;
 
+mod places;
+
 /// How far off a relation may stand and still be taken for one, in radians: 0.01 deg. A face of an exact solid is true
 /// to its tolerance (1e-7 mm over 100 mm is 1e-9 rad); a side drawn by hand 0.5 deg off square is not taken for square.
 const TURN: f64 = 1.75e-4;
@@ -336,11 +338,17 @@ fn sizes(c: &Curves, anchors: &[Side]) -> Vec<Constraint> {
     points.extend(c.sides.iter().flat_map(Side::ends));
     let mut seen = std::collections::HashSet::new();
     points.retain(|p| seen.insert(*p));
+    // the points nearest what they are placed from first, each from its nearest line first: a corner standing on an
+    // axis is laid on it and costs no size, where a corner 30 above it took the distance 30 the height already says
+    let far = |p: &Id| c.at.get(p).map_or(f64::INFINITY, |&at| anchors.iter().map(|l| l.off(at).abs()).sum());
+    points.sort_by(|p, q| far(p).total_cmp(&far(q)));
     // the first point placed, then the turn of the sides, then the other points: a drawing turned is told by its angle,
     // not by the place of a second corner
     let place = |p: Id, out: &mut Vec<Constraint>| {
         if let Some(&at) = c.at.get(&p) {
-            out.extend(anchors.iter().map(|l| to_line(p, Ends { a: l.a, b: l.b }, l.off(at))));
+            let mut lines: Vec<&Side> = anchors.iter().collect();
+            lines.sort_by(|l, m| l.off(at).abs().total_cmp(&m.off(at).abs()));
+            out.extend(lines.into_iter().map(|l| to_line(p, Ends { a: l.a, b: l.b }, l.off(at))));
         }
     };
     if let Some(&first) = points.first() {
@@ -470,6 +478,10 @@ impl Project {
         let sizes = self.lay_independent(si, offered, Judged::AsItStands);
         let rounded = self.round_sizes(si, from.., seen.bores);
         self.stand_sizes_outside(si, from.., ents);
+        if let Some(bounds) = places::Bounds::of(&self.curves_of(si, ents)) {
+            let around = self.around(si, ents, from);
+            self.stand_places_beside(si, from.., &bounds, around);
+        }
         Defined { relations, sizes, free: self.sketch_dof(si).0, rounded }
     }
 
