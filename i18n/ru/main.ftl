@@ -2952,6 +2952,7 @@ msg-sketch-from-face-boss = Выступ высотой { $h }
 msg-sketch-from-face-pocket = Карман глубиной { $h }
 msg-sketch-from-face-stock = Заготовка высотой { $h }
 msg-sketch-from-face-enter-replace = Enter — эскиз грани, а выступ или карман начерчены по нему заново
+msg-sketch-from-face-enter-replace-stock = Enter — эскиз грани, а заготовка начерчена по нему заново
 msg-sketch-from-face-enter-sketch = Enter — эскиз грани: копия контура, тело он не меняет
 msg-sketch-from-face-copy-replace = Чтобы размеры эскиза управляли телом, выберите «Заменить»
 msg-sketch-from-face-no-outline = Эта грань не даёт контура для копии: щёлкните другую плоскую грань

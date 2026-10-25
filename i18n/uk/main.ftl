@@ -2935,6 +2935,7 @@ msg-sketch-from-face-boss = Виступ висотою { $h }
 msg-sketch-from-face-pocket = Кишеня глибиною { $h }
 msg-sketch-from-face-stock = Заготовка висотою { $h }
 msg-sketch-from-face-enter-replace = Enter — ескіз грані, а виступ чи кишеня накреслені за ним заново
+msg-sketch-from-face-enter-replace-stock = Enter — ескіз грані, а заготовка накреслена за ним заново
 msg-sketch-from-face-enter-sketch = Enter — ескіз грані: копія контуру, тіло він не змінює
 msg-sketch-from-face-copy-replace = Щоб розміри ескізу керували тілом, виберіть «Замінити»
 msg-sketch-from-face-no-outline = Ця грань не дає контуру для копії: клацніть іншу пласку грань

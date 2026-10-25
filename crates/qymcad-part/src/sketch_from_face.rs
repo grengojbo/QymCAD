@@ -168,7 +168,11 @@ fn refresh(pc: &mut PartCtx) {
         None => std::iter::once(held.face.id).collect(),
     };
     pc.gsel.faces_body = Some(held.body);
-    let enter = if replace { "msg-sketch-from-face-enter-replace" } else { "msg-sketch-from-face-enter-sketch" };
+    let enter = match held.prism.as_ref().filter(|_| replace).map(|p| p.kind) {
+        Some(PrismKind::Stock) => "msg-sketch-from-face-enter-replace-stock",
+        Some(_) => "msg-sketch-from-face-enter-replace",
+        None => "msg-sketch-from-face-enter-sketch",
+    };
     let mut said = format!("{}. {}", held.told, qymcad_i18n::tr(enter));
     // a copy taken where a boss could be redrawn says how to have the sketch drive it: a person changed the sizes of the
     // copy and waited for the block to follow

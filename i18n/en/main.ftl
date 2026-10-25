@@ -2952,6 +2952,7 @@ msg-sketch-from-face-boss = A boss { $h } high
 msg-sketch-from-face-pocket = A pocket { $h } deep
 msg-sketch-from-face-stock = A stock { $h } high
 msg-sketch-from-face-enter-replace = Enter: a sketch of the face, the boss or pocket redrawn by it
+msg-sketch-from-face-enter-replace-stock = Enter: a sketch of the face, the stock redrawn by it
 msg-sketch-from-face-enter-sketch = Enter: a sketch of the face - a copy of its outline that does not change the body
 msg-sketch-from-face-copy-replace = For the sizes of the sketch to drive the body, choose Replace
 msg-sketch-from-face-no-outline = This face gives no outline to copy: click another flat face

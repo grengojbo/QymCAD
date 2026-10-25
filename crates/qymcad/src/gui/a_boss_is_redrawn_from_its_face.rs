@@ -154,6 +154,24 @@ mod tests {
         assert!(said.iter().any(|n| n.words.contains(&refusal) && n.tone == qymcad_ui_state::Tone::Refusal), "the tool does not say the refusal: {said:?}");
     }
 
+    /// A STOCK TAKEN IS SAID TO BE REDRAWN AS A STOCK: the top of a plain plate with Replace tells that Enter redraws the
+    /// stock, not "a boss or pocket". Reported behaviour: "A stock 5.00 high. Enter: a sketch of the face, and the boss
+    /// or pocket redrawn by it".
+    #[test]
+    fn a_stock_is_said_to_be_redrawn_as_a_stock() {
+        let plate = qymcad_kernel::specimen::extrude(&[0.0, 0.0, 60.0, 0.0, 60.0, 40.0, 0.0, 40.0], 5.0).expect("a plate");
+        let file = written(&plate, "plain-plate");
+        let mut app = App::default();
+        brought_in(&mut app, &file);
+        let mut h = Hand::new(&mut app);
+        h.look_at([30.0, 20.0, 2.0], 6.0).frame(Vec::new());
+        h.tool(qymcad_ui_state::PartTool::SketchFromFace).click([30.0, 20.0, 5.0]).frame(Vec::new());
+        let stock = crate::i18n::tr("msg-sketch-from-face-enter-replace-stock");
+        assert!(h.app.status.words.contains(&stock), "the stock is not said to be redrawn as a stock: {}", h.app.status);
+        let boss_or_pocket = crate::i18n::tr("msg-sketch-from-face-enter-replace");
+        assert!(!h.app.status.words.contains(&boss_or_pocket), "a stock is said to be a boss or pocket: {}", h.app.status);
+    }
+
     /// THE FACE A TOOL TOOK IS NAMED IN THE PROPERTIES BY THAT TOOL. Reported behaviour: under the top of a boss Sketch
     /// from face had taken stood "picked for a command (Shell or Hole)".
     #[test]

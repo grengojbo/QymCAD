@@ -2897,6 +2897,7 @@ msg-sketch-from-face-boss = Биіктігі { $h } шығыңқы
 msg-sketch-from-face-pocket = Тереңдігі { $h } қалта
 msg-sketch-from-face-stock = Биіктігі { $h } дайындама
 msg-sketch-from-face-enter-replace = Enter — беттің эскизі, ал шығыңқы немесе қалта соған қарап қайта сызылады
+msg-sketch-from-face-enter-replace-stock = Enter — беттің эскизі, ал дайындама соған қарап қайта сызылады
 msg-sketch-from-face-enter-sketch = Enter — беттің эскизі: контурдың көшірмесі, денені өзгертпейді
 msg-sketch-from-face-copy-replace = Эскиз өлшемдері денені басқаруы үшін «Ауыстыру» таңдаңыз
 msg-sketch-from-face-no-outline = Бұл бет көшіруге контур бермейді: басқа жазық бетті басыңыз
