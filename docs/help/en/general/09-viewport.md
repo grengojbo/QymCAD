@@ -28,6 +28,9 @@ The default layout is **QymCAD**:
   of the cube.
 * While a command is open the view zooms **about the centre of the part**, so the command's fields do
   not slide away from under the hand. Pick "as usual" in the **While a command is open** row of the settings to turn that off.
+* For a mouse whose **middle button** stands apart from the wheel, pick **QymCAD + middle button** in the
+  **Mouse navigation** row: the middle button moves the view there, the right one turns the model, and the rest is as
+  above.
 
 ## Layouts of other programs
 

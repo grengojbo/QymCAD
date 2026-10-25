@@ -39,8 +39,9 @@ pub struct Layout {
 }
 
 /// EVERY LAYOUT, as the line under the list of the settings describes it.
-pub const LAYOUTS: [Layout; 11] = [
+pub const LAYOUTS: [Layout; 12] = [
     Layout { code: "qymcad", turn: bare(&[LEFT]), pan: with(&[LEFT], Modifiers::SHIFT), zoom: None },
+    Layout { code: "qymcad-middle", turn: bare(&[RIGHT]), pan: bare(&[MIDDLE]), zoom: None },
     Layout { code: "cad", turn: bare(&[MIDDLE, LEFT]), pan: bare(&[MIDDLE]), zoom: None },
     Layout { code: "blender", turn: bare(&[MIDDLE]), pan: with(&[MIDDLE], Modifiers::SHIFT), zoom: None },
     Layout { code: "gesture", turn: bare(&[LEFT]), pan: bare(&[RIGHT]), zoom: None },
@@ -98,8 +99,9 @@ pub fn choose_the_layout(s: &mut Session, code: &str) {
         if s.find(&name, list.rect.center()).is_some() {
             break;
         }
-        let last = s.word("settings-mouse-tinkercad");
-        let over = s.find(&last, list.rect.center()).unwrap_or_else(|| panic!("the list of layouts is open and does not show them; on screen: {:?}", s.words()));
+        // over whichever layout the list shows now: one named by the code may already have scrolled out of it
+        let shown: Vec<String> = LAYOUTS.iter().map(|l| s.word(&format!("settings-mouse-{}", l.code))).collect();
+        let over = shown.iter().find_map(|w| s.find(w, list.rect.center())).unwrap_or_else(|| panic!("the list of layouts is open and does not show them; on screen: {:?}", s.words()));
         s.wheel(over.center(), qymcad::vec2(0.0, -50.0), Modifiers::NONE);
     }
     s.press_word_near(&name, list.rect.center());

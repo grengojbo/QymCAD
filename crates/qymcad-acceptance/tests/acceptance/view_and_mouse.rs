@@ -99,6 +99,16 @@ probe! {
 }
 
 probe! {
+    /// OURS WITH THE MIDDLE BUTTON: the right turns, the middle moves - for a mouse with a middle button of its own -
+    /// and the rest is ours: the left drag turns, Shift and a drag moves. Reported behaviour: under ours the right and
+    /// the middle button did the same, and the layout that moves on the middle one could not move on a touchpad.
+    fn the_view_moves_under_qymcad_with_the_middle_button() {
+        a_layout_moves_the_view("qymcad-middle", bare(&[RIGHT]), bare(&[MIDDLE]), None);
+        a_layout_moves_the_view("qymcad-middle", bare(&[LEFT]), with(&[LEFT], Modifiers::SHIFT), None);
+    }
+}
+
+probe! {
     /// CAD: the middle and the left together turn, the middle alone moves.
     fn the_view_moves_under_cad() {
         a_layout_moves_the_view("cad", bare(&[MIDDLE, LEFT]), bare(&[MIDDLE]), None);

@@ -211,6 +211,12 @@ pub(crate) const MIDDLE: egui::PointerButton = egui::PointerButton::Middle;
 pub enum MouseNav {
     /// OURS, and the factory choice: a drag turns the model, Shift and a drag moves it.
     QymCad,
+    /// OURS WITH THE MIDDLE BUTTON MOVING THE VIEW, for a mouse whose middle button stands apart from the wheel: the
+    /// left and the right drag turn the model, the middle drag moves the view, and the rest is ours - Shift and a drag
+    /// moves it from a touchpad as well, Shift and the left button on a part carries the part. Reported behaviour:
+    /// under ours the right and the middle button did the same, and the layout moving on the middle one (TinkerCAD)
+    /// takes the left button for selecting.
+    QymCadMiddle,
     Cad,
     Blender,
     Gesture,
@@ -228,8 +234,9 @@ pub enum MouseNav {
 
 impl MouseNav {
     /// EVERY LAYOUT. The one list the settings window, the checks and the catalogue walk over.
-    pub const ALL: [MouseNav; 12] = [
+    pub const ALL: [MouseNav; 13] = [
         MouseNav::QymCad,
+        MouseNav::QymCadMiddle,
         MouseNav::Cad,
         MouseNav::Blender,
         MouseNav::Gesture,
@@ -247,6 +254,7 @@ impl MouseNav {
     pub fn code(self) -> &'static str {
         match self {
             MouseNav::QymCad => "qymcad",
+            MouseNav::QymCadMiddle => "qymcad-middle",
             MouseNav::Cad => "cad",
             MouseNav::Blender => "blender",
             MouseNav::Gesture => "gesture",
@@ -266,6 +274,7 @@ impl MouseNav {
     pub fn rotates(self) -> &'static [Gesture] {
         match self {
             MouseNav::QymCad => const { &[Gesture::any()] },
+            MouseNav::QymCadMiddle => const { &[Gesture::of(&[LEFT]), Gesture::of(&[RIGHT])] },
             MouseNav::Cad => const { &[Gesture::of(&[MIDDLE, LEFT]), Gesture::of(&[MIDDLE, RIGHT]), Gesture::of(&[RIGHT]).shift()] },
             MouseNav::Blender => const { &[Gesture::of(&[MIDDLE])] },
             MouseNav::Gesture | MouseNav::OpenScad | MouseNav::OpenInventor | MouseNav::Den => const { &[Gesture::of(&[LEFT])] },
@@ -282,6 +291,7 @@ impl MouseNav {
     pub fn pans(self) -> &'static [Gesture] {
         match self {
             MouseNav::QymCad => const { &[Gesture::any().shift()] },
+            MouseNav::QymCadMiddle => const { &[Gesture::of(&[MIDDLE]), Gesture::any().shift()] },
             MouseNav::Cad => const { &[Gesture::of(&[MIDDLE]), Gesture::of(&[RIGHT]).ctrl()] },
             MouseNav::Blender => const { &[Gesture::of(&[MIDDLE]).shift(), Gesture::of(&[LEFT, RIGHT])] },
             MouseNav::Revit => const { &[Gesture::of(&[MIDDLE]), Gesture::of(&[LEFT, RIGHT])] },
@@ -299,7 +309,7 @@ impl MouseNav {
     /// ZOOMING BY A MOVEMENT, up and down, besides the wheel: every gesture of the layout that does it.
     pub fn zooms(self) -> &'static [Gesture] {
         match self {
-            MouseNav::QymCad | MouseNav::Gesture | MouseNav::TinkerCad => &[],
+            MouseNav::QymCad | MouseNav::QymCadMiddle | MouseNav::Gesture | MouseNav::TinkerCad => &[],
             MouseNav::Cad => const { &[Gesture::of(&[RIGHT]).ctrl().shift()] },
             MouseNav::Blender | MouseNav::Revit => const { &[Gesture::of(&[MIDDLE]).ctrl(), Gesture::of(&[RIGHT]).ctrl().shift()] },
             MouseNav::OpenInventor => const { &[Gesture::of(&[LEFT, MIDDLE]), Gesture::of(&[MIDDLE]).ctrl(), Gesture::of(&[RIGHT]).ctrl().shift()] },
@@ -343,7 +353,7 @@ impl MouseNav {
     /// with Shift and the left one.
     pub fn take_a_part(self) -> Gesture {
         match self {
-            MouseNav::QymCad => Gesture::of(&[LEFT]).shift(),
+            MouseNav::QymCad | MouseNav::QymCadMiddle => Gesture::of(&[LEFT]).shift(),
             _ => Gesture::NONE,
         }
     }
@@ -360,7 +370,7 @@ impl MouseNav {
     /// drag turns it.
     pub fn frames(self) -> Option<(Gesture, bool)> {
         match self {
-            MouseNav::QymCad => Some((Gesture::of(&[LEFT]), false)),
+            MouseNav::QymCad | MouseNav::QymCadMiddle => Some((Gesture::of(&[LEFT]), false)),
             MouseNav::Cad | MouseNav::Blender | MouseNav::Revit | MouseNav::TinkerCad | MouseNav::Touchpad | MouseNav::OpenCascade => Some((Gesture::of(&[LEFT]), true)),
             MouseNav::Gesture | MouseNav::MayaGesture | MouseNav::Den => Some((Gesture::of(&[LEFT]).shift(), true)),
             MouseNav::OpenInventor | MouseNav::OpenScad => None,

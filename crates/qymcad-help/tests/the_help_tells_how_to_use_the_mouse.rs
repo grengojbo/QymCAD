@@ -92,7 +92,10 @@ fn the_help_says_which_button_navigates_is_a_setting() {
     );
     // AND THE NAMES IN THE ARTICLE ARE LAYOUTS THAT EXIST. A list of habits that names one the program does
     // not offer sends somebody looking through the settings for a line that is not there.
+    // in the language of the article: a layout's name may be translated, and the system's language is not English
+    // everywhere the check runs
     let t = article("en");
+    qymcad_i18n::set_language("en");
     for nav in qymcad_ui_state::MouseNav::ALL {
         let name = qymcad_i18n::tr(&nav.key());
         assert!(t.contains(&name), "the article does not name the \"{name}\" layout, so a person cannot tell it is on offer");
