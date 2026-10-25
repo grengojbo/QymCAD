@@ -17,19 +17,20 @@ works on all of them.
 The numbers of a tool stand in a box right by what they size: the length of an extrusion by its arrow, the width of a
 rectangle by the rectangle, the directions of a pattern by the part.
 
-![The box of an extrusion opened again from the tree: the length with its unit, the name of its driver, Apply and Cancel.](img/tool-box-part.png)
+![The box of an extrusion opened again from the tree: the length with its unit, its parameter, Apply and Cancel.](img/tool-box-part.png)
 
 * Type a number, or a **formula**: `40/2`, `w*2`, `w+5`. A formula keeps its parameter: change `w` in **ƒx Parameters**
   and the size follows.
 * **Tab** goes to the next field, **Shift+Tab** back; the value of a field is selected as you come to it, so typing
   replaces it.
-* Next to a value — **Driver**: type a name there, and other formulas can read this value by it.
+* Next to a value — **Parameter**: give the value a name, and it becomes a parameter in **ƒx Parameters**. It can
+  then be changed in one place, and other formulas read this value by its name.
 * **ref.** makes a size a reference: it shows what the geometry measures and holds nothing.
 * A value the field cannot take — a broken formula, zero where zero is no size, past its limits — keeps the old value,
   and the field says why in words under it. Enter is not taken until the value is mended.
 * The geometry follows what you type at once, as a preview. The document takes it only with **Enter**.
 
-![The box of a rectangle just drawn: the width and the height, each with its driver and «ref.».](img/tool-box-sketch.png)
+![The box of a rectangle just drawn: the width and the height, each with its parameter and «ref.».](img/tool-box-sketch.png)
 
 A box with more than one piece of sense has sections, as a pattern has its directions: the first direction is open,
 the second opens — and is switched on — by a click on its title.
@@ -56,5 +57,5 @@ same fields, the formulas as you typed them.
   value the field cannot take). Mend that and press Enter again.
 * **The tool does not take what you selected** — the selection was of another kind (a face where edges are wanted).
   Press Esc, select what the bar asks for and take the tool again.
-* **A formula is refused** — a name in it is not a parameter or a driver of the document, or it comes back to this very
+* **A formula is refused** — a name in it is not a parameter of the document, or it comes back to this very
   value. Check the names in **ƒx Parameters**.

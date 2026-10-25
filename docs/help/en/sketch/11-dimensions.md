@@ -31,7 +31,7 @@ freedom, and why they are not added "for looks".
 ## A formula and a name
 
 The field takes an expression: `40/2`, `w*2`, `len+5`. Names come from the document's parameters
-(**ƒx Parameters**). A dimension can get a name of its own in the **driver:** field — it then becomes a parameter
+(**ƒx Parameters**). A dimension can get a name of its own in the **Parameter** field — it then becomes a parameter
 itself, and other dimensions and parts can refer to it in a formula.
 
 ## What a label says

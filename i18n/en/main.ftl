@@ -602,7 +602,7 @@ about-license = Licence:
 about-no-warranty = The program comes with no warranty of any kind, to the extent permitted by law.
 settings-auto-constrain-hint = Horizontal, vertical, perpendicular and point-on-edge are added on their own (only independent ones, never over-defining)
 settings-point-numbers-hint = The number of every point of a sketch beside it - for looking into a sketch; off, the sheet shows the shapes alone
-settings-dim-name-hint = A dimension named in the "driver:" field is labelled like this: w = 110
+settings-dim-name-hint = A dimension named in the "Parameter" field is labelled like this: w = 110
 settings-dim-formula-hint = A dimension set by a formula is labelled like this: 2*w+10 = 110
 props-title = Properties
 menu-export-stl-hint = A mesh of every visible body, with a quality choice (3D printing)
@@ -1320,10 +1320,10 @@ sk-midpoint-picked = The line is picked at its middle: a constraint with a point
 sk-note-added = The note is added
 sk-fix = Fix
 sk-params-hint = Named values for dimensions: w=50, d=w/2. A dimension can be given as an expression in its own field.
-sk-driver-name-hint = The name of a driver dimension (a skeleton sketch): its value becomes a parameter that a part can refer to by expression
-sk-driver-label = Driver
-box-driver-step = driver name
-sk-driver-name-taken-hint = Another dimension or a global parameter already uses this name. A formula sees one name only, so two drivers cannot share it — pick another.
+sk-driver-name-hint = Give the value a name and it becomes a parameter in ƒx Parameters: change it in one place or read it in formulas
+sk-driver-label = Parameter
+box-driver-step = parameter name
+sk-driver-name-taken-hint = Another dimension or a global parameter already uses this name. A formula sees one name only, so two parameters cannot share it — pick another.
 sk-welcome = The tools are in the left bar. Dimensions and constraints are placed by clicking the geometry; a dimension value is set by double-clicking. A dimension can start from a point, a centre, a midpoint or the origin. Select geometry and drag it to move the whole of it.
 sk-tangency = Tangency
 sk-tangent-short = Tang.
@@ -1410,7 +1410,7 @@ sk-ellipse = Ellipse
 sk-not-projectable = This geometry cannot be projected (the source gives no curves)
 sk-cannot-be-driven = This dimension defines the geometry — it cannot become a reference; remove another of the conflicting constraints
 sk-expr-placeholder = expression, e.g. w/2
-sk-name-placeholder = name
+sk-name-placeholder = name, e.g. d_hole
 sk-edge-toggle = edge <->
 sk-mm = mm
 sk-plane-xy = XY plane (table)

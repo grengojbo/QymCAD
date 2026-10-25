@@ -50,7 +50,7 @@ struct Opened {
 }
 
 /// THE ROWS OF THE BOX WITH A DRIVER, top to bottom: the value of each is the last field on its line left of the words
-/// "Driver", and its caption the word nearest left of the value - a tag of X, Y or Z, or the caption of the row. The words
+/// "Parameter", and its caption the word nearest left of the value - a tag of X, Y or Z, or the caption of the row. The words
 /// of the tree and of the sheet stand on the same line further left, and are not it.
 fn rows_of(s: &mut Session) -> Vec<RowAt> {
     let driver = s.word("sk-driver-label");

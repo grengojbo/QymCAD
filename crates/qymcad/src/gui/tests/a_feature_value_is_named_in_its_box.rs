@@ -1,4 +1,4 @@
-//! A NUMBER OF A FEATURE IS NAMED IN THE BOX OF ITS COMMAND, as a dimension of a sketch is: a row "driver:" under each
+//! A NUMBER OF A FEATURE IS NAMED IN THE BOX OF ITS COMMAND, as a dimension of a sketch is: a row "Parameter" under each
 //! field, the name typed there given to the number as the command writes it.
 //!
 //! Reported behaviour: the boxes of the operations of a part had no driver field; a number of a feature could be named
@@ -100,5 +100,23 @@ mod tests {
         chord(&mut app, &ctx, egui::Key::Z, egui::Modifiers::COMMAND | egui::Modifiers::SHIFT);
         assert!(app.project.timeline.iter().any(|n| n.id == node), "redo did not bring the extrude back");
         assert_eq!(app.project.name_of_target(&target), "vysota", "redo brought the extrude back without the name of its height");
+    }
+
+    /// THE FIELD THAT NAMES A VALUE IS CALLED BY WHAT IT MAKES OF IT, in every language: a parameter, the word of the
+    /// window the named value then stands in (ƒx Parameters). Reported behaviour: "Driver" read as the program of a
+    /// device, and nobody guessed the field gave the value a name formulas read.
+    #[test]
+    fn the_name_field_is_called_parameter_in_every_language() {
+        let prev = crate::i18n::language();
+        let mut wrong = Vec::new();
+        for (code, _) in crate::i18n::available() {
+            crate::i18n::set_language(&code);
+            let (label, window) = (crate::i18n::tr("sk-driver-label").to_lowercase(), crate::i18n::tr("wb-params").to_lowercase());
+            if !window.contains(&label) {
+                wrong.push(format!("{code}: the field is called {label:?}, the parameters {window:?}"));
+            }
+        }
+        crate::i18n::set_language(&prev);
+        assert!(wrong.is_empty(), "the field naming a value does not say it makes a parameter:\n{}", wrong.join("\n"));
     }
 }
