@@ -1,0 +1,88 @@
+//! WHAT `recognise_feature` WOULD MAKE AT A POINT, ASKED WITHOUT MAKING IT: `fit_at_point` reads the hole, rounding or
+//! chamfer at a point of a body - its kind, the size measured and the size it would be laid at, the depth of a hole
+//! and whether it runs through - and changes nothing. What it answers is what `recognise_feature` then lays.
+//!
+//! And the way from a picture to a feature, by eye: the hole seen in the picture `render` draws, its wall found under
+//! a pixel by `point_at`, read by `fit_at_point`, made editable by `recognise_feature`.
+
+use qymcad_mcp::picture::{self, Edges, Lit, Look, Size, View};
+use qymcad_mcp::server::answer;
+use qymcad_mcp::tool::Ctx;
+use serde_json::{json, Value};
+
+fn call(ctx: &mut Ctx, name: &str, arguments: Value) -> Value {
+    let line = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": arguments } }).to_string();
+    answer(ctx, &line).expect("a request is answered")["result"]["structuredContent"].clone()
+}
+
+fn ok(reply: Value) -> Value {
+    assert_eq!(reply["ok"], json!(true), "{reply}");
+    reply
+}
+
+/// A document and the key of its body, as the tools take it.
+struct Drilled {
+    ctx: Ctx,
+    body: Value,
+}
+
+/// A block 40 x 30 x 10 standing on the origin, drilled 10 across through its middle.
+fn drilled() -> Drilled {
+    let mut ctx = Ctx::blank();
+    let _ = ctx.doc.edit("cmd-box", |p| Ok(p.add_box(40.0, 30.0, 10.0))).expect("the block is laid");
+    let made = ok(call(&mut ctx, "hole", json!({ "face": "top", "diameter": 10, "depth": 20 })));
+    let body = json!({ "body": made["bodies"][0]["id"] });
+    Drilled { ctx, body }
+}
+
+/// How many steps the document has been through: a read leaves it where it was.
+fn steps(ctx: &mut Ctx) -> Value {
+    let doc = ok(call(ctx, "get_document", json!({})));
+    json!({ "features": doc["document"]["features"], "undo": doc["document"]["undo"] })
+}
+
+/// The point on the wall of the hole, read: a hole of 10 through, laid at 10; the document as it was; and
+/// `recognise_feature` at the same point finds the same.
+#[test]
+fn the_hole_at_a_point_is_read_and_nothing_is_laid() {
+    let Drilled { mut ctx, body } = drilled();
+    let before = steps(&mut ctx);
+    let read = ok(call(&mut ctx, "fit_at_point", json!({ "body": body, "at": [0.0, 5.0, 5.0] })));
+    assert_eq!(steps(&mut ctx), before, "a read changed the document: {read}");
+    let found = &read["found"];
+    assert_eq!(found["kind"], "hole", "{read}");
+    assert_eq!(found["through"], json!(true), "{read}");
+    assert!((found["measured"].as_f64().unwrap_or(0.0) - 10.0).abs() < 0.05, "{read}");
+    assert_eq!(found["size"], json!(10.0), "{read}");
+    let made = ok(call(&mut ctx, "recognise_feature", json!({ "body": body, "at": [0.0, 5.0, 5.0] })));
+    for key in ["kind", "measured", "through"] {
+        assert_eq!(made["found"][key], found[key], "recognise_feature found another {key}: {made} after {read}");
+    }
+}
+
+/// A plain face holds no feature: refused with the code `recognise_feature` gives it.
+#[test]
+fn a_plain_face_is_refused_as_recognise_feature_refuses_it() {
+    let Drilled { mut ctx, body } = drilled();
+    let read = call(&mut ctx, "fit_at_point", json!({ "body": body, "at": [-20.0, 0.0, 5.0] }));
+    assert_eq!(read["error"]["code"], "no-feature", "{read}");
+}
+
+/// BY EYE: the far wall of the hole, as the iso view shows it, carried to its pixel; `point_at` there gives a round
+/// face and the point to read; `fit_at_point` reads a hole of 10; `recognise_feature` makes it.
+#[test]
+fn a_hole_seen_in_the_picture_is_made_editable() {
+    let Drilled { mut ctx, .. } = drilled();
+    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+    // the iso eye stands at +X -Y +Z: the wall it looks into is the one at -X +Y
+    let r = 5.0 / std::f64::consts::SQRT_2;
+    let px = picture::pixel_of(ctx.doc.project(), &look, [-r, r, 8.0]).expect("the wall is in the picture");
+    let hit = ok(call(&mut ctx, "point_at", json!({ "view": "iso", "x": px.x, "y": px.y })));
+    assert!(hit["face"]["radius"].as_f64().is_some_and(|r| (r - 5.0).abs() < 1e-6), "the pixel is not on the wall of the hole: {hit}");
+    let body = json!({ "body": hit["body"] });
+    let read = ok(call(&mut ctx, "fit_at_point", json!({ "body": body, "at": hit["at"] })));
+    assert_eq!(read["found"]["kind"], "hole", "{read}");
+    assert_eq!(read["found"]["size"], json!(10.0), "{read}");
+    let made = ok(call(&mut ctx, "recognise_feature", json!({ "body": body, "at": hit["at"] })));
+    assert_eq!(made["found"]["kind"], "hole", "{made}");
+}

@@ -195,3 +195,100 @@ pub const RECOGNISE_ALL: Tool = Tool {
         Ok(out)
     },
 };
+
+/// WHAT STANDS AT A POINT OF A BODY: the body, the hole, rounding or chamfer found there, and the feature made ready
+/// to lay again - its size brought to what was drawn.
+pub(crate) struct FoundAt {
+    pub(crate) src: qymcad_core::model::Id,
+    pub(crate) found: qymcad_meshfit::feature::Found,
+    pub(crate) remake: qymcad_core::model::Remake,
+}
+
+/// The feature at point `at` of `body` (the active part's body when none is named), in the body's own frame: found
+/// from the face whose triangle stands nearest the point, `tolerance` times the body's own. Refused with what to do
+/// when nothing is found - the words `recognise_feature` and `fit_at_point` both give.
+pub(crate) fn found_at(project: &qymcad_core::model::Project, body: Option<BodyRef>, at: [f64; 3], tolerance: Option<f64>) -> Result<FoundAt, Refusal> {
+    use qymcad_meshfit::feature::{feature_at, Pick, Unfound};
+    let src = crate::tools::features::target(project, body)?;
+    let b = project.mesh_index(src).and_then(|mi| project.bodies.get(mi)).ok_or_else(|| Refusal::new("no-body", &format!("Body {src} is not built."), Stage::Resolve))?;
+    // the face under the point: the one whose triangle stands nearest it
+    let near = |t: usize| {
+        let [p, q, r] = b.mesh.triangle(t);
+        let c = [(p.x + q.x + r.x) / 3.0, (p.y + q.y + r.y) / 3.0, (p.z + q.z + r.z) / 3.0];
+        (0..3).map(|i| (c[i] - at[i]).powi(2)).sum::<f64>()
+    };
+    let face = b
+        .faces
+        .iter()
+        .filter_map(|f| f.triangles.iter().map(|&t| near(t as usize)).min_by(f64::total_cmp).map(|d| crate::tools::modify::Nearest { id: f.id, d }))
+        .min_by(|x, y| x.d.total_cmp(&y.d))
+        .map(|n| n.id)
+        .ok_or_else(|| Refusal::new("no-face", "The body has no faces.", Stage::Resolve))?;
+    let found = feature_at(&b.mesh, &b.faces, Pick { face, at }, tolerance.unwrap_or(1.0)).map_err(|why| {
+        let words = match why {
+            Unfound::NoSurface => "No surface holds the face there within the tolerance: raise tolerance (10, then 100) for a rough mesh.",
+            Unfound::NoEntry => "The round wall there has no face to drill it from: a shaft or a boss, not a hole.",
+            Unfound::NotTwoSides => "The rounding there is not met by two faces along its length: give a point on another strip of it.",
+            Unfound::Uneven => "The legs of the chamfer there differ: an uneven chamfer is made with chamfer and second.",
+            Unfound::Other => "No hole, rounding or chamfer there: give a point on the wall of a hole, a rounding, or a slanted face between two faces.",
+        };
+        Refusal::new("no-feature", words, Stage::Resolve)
+    })?;
+    let remake = found.remake(&b.faces).ok_or_else(|| Refusal::new("no-face", "The feature names faces the body does not have.", Stage::Resolve))?;
+    Ok(FoundAt { src, found, remake })
+}
+
+/// What was found, as the answers say it: the kind, the size measured, and for a hole its depth and whether it runs
+/// through.
+pub(crate) fn found_words(found: &qymcad_meshfit::feature::Found) -> Value {
+    use qymcad_meshfit::feature::Found;
+    match found {
+        Found::Hole(h) => json!({ "kind": "hole", "measured": h.diameter, "depth": h.depth, "through": h.reach == Reach::Through }),
+        Found::Round(r) => json!({ "kind": "rounding", "measured": r.radius }),
+        Found::Chamfer(c) => json!({ "kind": "chamfer", "measured": c.leg }),
+    }
+}
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct FitAtPointArgs {
+    body: Option<BodyRef>,
+    at: [f64; 3],
+    tolerance: Option<f64>,
+}
+
+pub const FIT_AT_POINT: Tool = Tool {
+    name: "fit_at_point",
+    description: "Read, without making it, what recognise_feature would make at a point of a body: found.kind (hole, rounding, chamfer), found.measured (the diameter, radius or leg as drawn), found.size (what it would be laid at: a tenth of a mm; a hole brought to a metric clearance or tapping bore within 0.15), found.key (the size's name for edit_feature), found.faces (how many faces it takes), and for a hole found.depth, found.through and found.axis (where it enters and the way in). at is a point on a face of the feature, in the body's own frame - the at point_at answers. Nothing is changed and nothing is an undo step; nothing found is refused as recognise_feature refuses it.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": crate::tools::features::body_field(),
+            "at": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "A point on a face of the feature, mm, in the body's own frame." },
+            "tolerance": { "type": "number", "exclusiveMinimum": 0, "description": "A multiple of the body's own tolerance; 1 by default." },
+        }, "required": ["at"], "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        use qymcad_meshfit::feature::Found;
+        let a: FitAtPointArgs = tool::args(arguments)?;
+        let FoundAt { src, found, remake } = found_at(ctx.doc.project(), a.body, a.at, a.tolerance)?;
+        let mut words = found_words(&found);
+        words["size"] = json!(match remake.exact {
+            Exact::Hole { diameter, .. } => diameter,
+            Exact::Round { radius, .. } => radius,
+            Exact::Chamfer { leg, .. } => leg,
+        });
+        words["key"] = json!(match remake.exact {
+            Exact::Hole { .. } => "diameter",
+            Exact::Round { .. } => "radius",
+            Exact::Chamfer { .. } => "dist",
+        });
+        words["faces"] = json!(remake.faces.len());
+        if let Found::Hole(h) = &found {
+            words["axis"] = json!({ "at": h.at, "inward": h.inward });
+        }
+        let mut out = crate::tool::Answer::new();
+        out.insert("body".into(), json!(src));
+        out.insert("found".into(), words);
+        Ok(out)
+    },
+};
