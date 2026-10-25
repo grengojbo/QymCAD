@@ -22,6 +22,9 @@ The default layout is **QymCAD**:
   part. The middle and right buttons over a part move the view, as everywhere.
 * The **wheel** zooms in and out towards the cursor: the point under it stays in place. In the settings,
   in the **Zooming with the wheel** row, you can choose "from the middle of the view".
+* The **side buttons** of a mouse zoom the same way: the front one in, the back one out, one step a press; held,
+  the view goes on zooming. The QuickZoom buttons of a CAD mouse work so with its driver running or without it.
+  `PageUp` and `PageDown` do the same with the cursor over the view, unless a field is being typed in.
 * The view **turns about the point of the model in the middle of the view**, whatever distance it was zoomed
   from. Over empty space it is a point at the depth of the part seen nearest. In the settings, in the **Turning the
   view about** row, you can choose the point under the cursor. If a part has left the view, press the "home" button
