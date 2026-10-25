@@ -35,6 +35,17 @@ is busy and asks again later; the change it waited with does not happen behind y
 
 Starting, opening and saving a document, and undoing, stay yours: Claude asks you to do them from the window's menu.
 
+## Recognise by eye
+
+Claude can make a file with no history — an STL or a STEP — a part whose sizes can be changed. Write, for instance:
+"Open bracket.stl, find the holes and the roundings and make their sizes editable". Claude Desktop has the same as a
+ready way of working: the **+** button in the input field -> **qymcad** -> **Find features by looking at the model**.
+
+Claude looks at pictures of the model, finds the holes, roundings and chamfers on them, and asks QymCAD for each what
+stands at that place. The size is always taken from the geometry, never from the picture. A mesh is first made a
+body, as [Recognise](part/26-recognise) does. Each feature found becomes a row of the tree, as after
+[Recognise feature](part/28-recognise-feature): a double click opens its size.
+
 ## If it did not work
 
 - **The window says there is no server** — this build was not installed from a release. Install QymCAD from the
@@ -58,3 +69,5 @@ Starting, opening and saving a document, and undoing, stay yours: Claude asks yo
   window, since it could be another document, and goes on there.
 - **The status line says Claude cannot connect to this window** — turn the setting off and on again. If the same
   words come back, send them through **Help -> Report a problem**.
+- **Claude says nothing stands at that place** — for a rough mesh, ask it to raise the tolerance, or to make the mesh
+  a body "as is" rather than of exact surfaces.
