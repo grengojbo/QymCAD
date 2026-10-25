@@ -162,3 +162,34 @@ fn a_plain_block_holds_nothing() {
     assert!(all.found.is_empty(), "{:?}", all.found);
     assert!(all.unfound.is_empty());
 }
+
+/// A plate 60 x 40 x 8 standing on the origin and centred on it, its four upright edges rounded 5, drilled 6 through at
+/// (-18, 0) and (18, 0) - the plate of the manual check of recognising by eye.
+fn rounded_plate() -> Shape {
+    let p = specimen::extrude(&[-30.0, -20.0, 30.0, -20.0, 30.0, 20.0, -30.0, 20.0], 8.0).expect("a plate");
+    let ups: Vec<u32> = [(-30.0, -20.0), (30.0, -20.0), (30.0, 20.0), (-30.0, 20.0)].iter().map(|&at| upright(&p, at)).collect();
+    let p = p.filleted(5.0, &ups).expect("rounded");
+    [-18.0, 18.0].into_iter().fold(p, |p, x| p.combined(&bore(Drill { x, y: 0.0, r: 3.0, from: -1.0, h: 10.0 }), 0).expect("drilled"))
+}
+
+/// `s` written as an STL at the standard quality of the export (0.05) and recognised into exact surfaces again by the
+/// kernel, with the defaults of the window's Recognise - the body as the document then holds it.
+fn through_a_mesh(s: &Shape) -> Built {
+    use qymcad_core::feature::Kernel;
+    let Built { mut mesh, .. } = specimen::mesh_merged(s, 0.05).expect("a mesh");
+    // an STL holds its corners in single precision
+    for v in &mut mesh.verts {
+        *v = qymcad_core::geom::Point3::new(f64::from(v.x as f32), f64::from(v.y as f32), f64::from(v.z as f32));
+    }
+    qymcad_kernel::OcctKernel::default().mesh_recognised(1, &mesh, 1.0, 30.0).expect("recognised")
+}
+
+/// THE SIDE OF A PLATE BETWEEN TWO ROUNDED CORNERS IS NO CHAMFER. Reported behaviour: the plate written as an STL and
+/// recognised gave two chamfers of 43.1 and 30.7 besides its roundings - a side meets a rounding along its length with
+/// no turn at all, and the rounding, taken as a whole, faces 45 deg off the side.
+#[test]
+fn a_side_between_two_rounded_corners_is_no_chamfer() {
+    let b = through_a_mesh(&rounded_plate());
+    let all = features_of(&b.mesh, &b.faces, 1.0);
+    assert_eq!(told(&all.found), ["hole 6.0 through", "hole 6.0 through", "round 5.0", "round 5.0", "round 5.0", "round 5.0"]);
+}

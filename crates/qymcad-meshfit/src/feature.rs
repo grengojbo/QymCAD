@@ -514,11 +514,13 @@ struct Axis {
     dir: Vector3<f64>,
 }
 
-/// A side of the region with a triangle of another face across it: its two corners and that face.
+/// A side of the region with a triangle of another face across it: its two corners, that face, and the normal of the
+/// triangle across - how the face beyond turns right at the edge, where its own normal is the mean of all of it.
 struct Border {
     a: Vector3<f64>,
     b: Vector3<f64>,
     face: u32,
+    across: Vector3<f64>,
 }
 
 /// One end of a hole's wall: the faces met there, and the one it opens through.
@@ -576,7 +578,7 @@ impl Look<'_> {
                     continue;
                 }
                 let tri = self.p.mesh.tris[t];
-                out.push(Border { a: vertex(self.p, tri[k]), b: vertex(self.p, tri[(k + 1) % 3]), face });
+                out.push(Border { a: vertex(self.p, tri[k]), b: vertex(self.p, tri[(k + 1) % 3]), face, across: normal(self.p, u as usize) });
             }
         }
         out
@@ -714,12 +716,15 @@ impl Look<'_> {
         Ok(Found::Hole(hole))
     }
 
-    /// A plane: a chamfer of the edge its two neighbours along its length would meet in, or nothing.
+    /// A plane: a chamfer of the edge its two neighbours along its length would meet in, or nothing. A neighbour leans
+    /// where it meets the plane - the triangle across the edge turned 20 to 70 deg from it - not by its own mean normal:
+    /// a rounding at the end of a side of a plate faces 45 deg off the side as a whole and runs on from it with no turn
+    /// at all, and the side between two rounded corners was taken for a chamfer of 43.1.
     fn slanted(&self, n: Vector3<f64>) -> Result<Found, Unfound> {
         let taken = self.faces_taken();
         let border = self.border(&taken);
-        let leaning = |id: u32| self.face_normal(id).is_some_and(|m| (20.0..=70.0).contains(&n.dot(&m).abs().clamp(-1.0, 1.0).acos().to_degrees()));
-        let sides = self.two_sides(&taken, |b| leaning(b.face)).map_err(|_| Unfound::Other)?;
+        let leaning = |b: &Border| (20.0..=70.0).contains(&n.dot(&b.across).abs().clamp(-1.0, 1.0).acos().to_degrees());
+        let sides = self.two_sides(&taken, leaning).map_err(|_| Unfound::Other)?;
         let (Some(one), Some(other)) = (self.side_line(&border, sides.one), self.side_line(&border, sides.other)) else { return Err(Unfound::Other) };
         if one.dir.dot(&other.dir).abs() < 0.99 {
             return Err(Unfound::Other);

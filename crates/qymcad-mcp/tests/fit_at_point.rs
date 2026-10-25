@@ -113,3 +113,27 @@ fn a_hole_seen_on_a_mesh_is_made_editable() {
     let made = ok(call(&mut ctx, "recognise_feature", json!({ "body": body, "at": hit["at"] })));
     assert_eq!(made["found"]["kind"], "hole", "{made}");
 }
+
+/// THE PLATE WITH ROUNDED CORNERS WRITTEN AS AN STL gives its holes and roundings and no chamfer. Reported behaviour:
+/// recognise_all listed two chamfers, 43.1 and 30.7, on the plate of the manual check.
+#[test]
+fn a_plate_through_an_stl_lists_no_chamfer() {
+    let mut ctx = Ctx::blank();
+    let plate = ok(call(&mut ctx, "box", json!({ "x": 60, "y": 40, "z": 8 })));
+    let top = ok(call(&mut ctx, "create_sketch", json!({ "plane": { "body": { "body": plate["body"] }, "face": "top" } })));
+    let _ = ok(call(&mut ctx, "sketch_add", json!({ "sketch": top["sketch"], "entities": [{ "point": { "at": [-18, 0] } }, { "point": { "at": [18, 0] } }] })));
+    let _ = ok(call(&mut ctx, "hole", json!({ "sketch": top["sketch"], "diameter": 6, "depth": 20 })));
+    let side = |axis: &str, max: bool| json!({ "extreme": { "axis": axis, "max": max } });
+    let corner = |x: bool, y: bool| json!({ "between": { "one": side("x", x), "other": side("y", y) } });
+    let _ = ok(call(&mut ctx, "fillet", json!({ "edges": { "union": [corner(false, false), corner(false, true), corner(true, false), corner(true, true)] }, "radius": 5 })));
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-mcp-fit-at-point"));
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let stl = dir.join("rounded-plate.stl").to_string_lossy().into_owned();
+    let _ = ok(call(&mut ctx, "export_mesh", json!({ "path": stl, "overwrite": true })));
+    let _ = ok(call(&mut ctx, "new_project", json!({})));
+    let mesh = ok(call(&mut ctx, "import_mesh", json!({ "path": stl })));
+    let body = ok(call(&mut ctx, "recognise_mesh", json!({ "body": { "body": mesh["bodies"][0]["id"] } })));
+    let listed = ok(call(&mut ctx, "recognise_all", json!({ "body": { "body": body["body"] }, "then": "list" })));
+    let kinds: Vec<&str> = listed["groups"].as_array().expect("groups").iter().filter_map(|g| g["kind"].as_str()).collect();
+    assert_eq!(kinds, ["hole", "rounding"], "{listed}");
+}
