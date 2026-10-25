@@ -250,7 +250,8 @@ mod tests {
 
     /// EVERY LAYOUT OF THE MOUSE KEEPS ITS VIEW OVER A PART: the turn and the move of each, begun on a part with its
     /// own one button, move the view and leave the part (a chord of two buttons, or a movement with no button, is
-    /// passed over). Ours alone takes the part with Shift and the left button; every other layout is the one of its
+    /// passed over). Ours alone, with or without the middle button moving the view, takes the part with Shift and the left
+    /// button; every other layout is the one of its
     /// own program, which has no such gesture, and leaves the part where it stands.
     #[test]
     fn every_layout_keeps_its_view_over_a_part_and_takes_it_with_shift() {
@@ -296,7 +297,8 @@ mod tests {
             let was = origin_of(&app, comp);
             lead(&mut app, &ctx, at, egui::PointerButton::Primary, true, 6);
             let moved = origin_of(&app, comp) != was;
-            if moved != (nav == qymcad_ui_state::MouseNav::QymCad) {
+            // ours, and ours with the middle button, which keeps the rest of ours
+            if moved != matches!(nav, qymcad_ui_state::MouseNav::QymCad | qymcad_ui_state::MouseNav::QymCadMiddle) {
                 problems.push(format!("{nav:?}: Shift and the left button on a part {} it", if moved { "took" } else { "did not take" }));
             }
         }
