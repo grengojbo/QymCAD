@@ -762,7 +762,8 @@ pub(crate) fn feature_props(pr: &mut qymcad_ui_state::PropsCtx, ui: &mut egui::U
         ui.label(egui::RichText::new(crate::i18n::tr("fp-params")).strong());
         for qymcad_core::model::Dim { key, .. } in dims {
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(key.as_ref()).weak());
+                // the key a formula names stands in the hint; a person reads the words of the number
+                ui.label(egui::RichText::new(qymcad_i18n::dim_words::dim_word(&key)).weak()).on_hover_text(key.as_ref());
             });
             qymcad_ui_state::dim_expr_field_in(&mut pr.rebuild(), ui, fid, &key, "");
         }

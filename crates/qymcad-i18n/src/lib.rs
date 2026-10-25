@@ -416,6 +416,7 @@ macro_rules! t {
 /// THE RATCHET, and not only under `cfg(test)`. A crate compiled as a DEPENDENCY is built without that
 /// flag, so a helper hidden behind it is invisible to the guards of every other crate - and four of them
 /// read source through `working_part`.
+pub mod dim_words;
 pub mod error_words;
 pub mod keys;
 pub mod ratchet;
