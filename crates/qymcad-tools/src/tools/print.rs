@@ -147,7 +147,7 @@ fn said(v: qymcad_doc::print::checks::Verdict) -> &'static str {
 
 pub const CHECK_PRINTABILITY: Tool = Tool {
     name: "check_printability",
-    description: "Whether a body prints as it lies, read where a slicer drops it - onto the bed through its lowest point: closed (no hole, no edge of three triangles; mesh_repair mends one brought in), valid (the kernel finds a body of faces sound), bed (it fits the room the printer builds in as it lies, or only turned a quarter about Z), contact (the area of its faces flat on the bed - none is a body on an edge or a point), overhang (the area facing down past overhang deg from the upright, 45 by default, the bottom left out, and up to 10 places it hangs at, the widest first - give them to render marks to see them), walls (the thinnest wall read by rays from 20 000 points into the material, against wall - two lines of nozzle, 0.8 for the nozzle of 0.4 by default - and up to 10 places thinner, the thinnest first). Each check says pass, warn or fail with its numbers; verdict is the worst. printer names a printer by its room (p1s for X1C, P1P, P1S, P2S and A1; a1_mini, h2d for both nozzles, h2d_one, h2s, h2c, x2d; k1c, k2, k1_max, k2_plus, ender3_v3_plus; centauri, neptune4_max; u1), or bed gives the room [x, y, z] mm; with neither 256 x 256 x 256 is taken and said so. Nothing is changed.",
+    description: "Whether a body prints as it lies, read where a slicer drops it - onto the bed through its lowest point: closed (no hole, no edge of three triangles; mesh_repair mends one brought in), valid (the kernel finds a body of faces sound), bed (it fits the room the printer builds in as it lies, or only turned a quarter about Z), contact (the area of its faces flat on the bed - none is a body on an edge or a point), overhang (the area facing down past overhang deg from the upright, 45 by default, the bottom left out, and up to 10 places it hangs at, the widest first - give them to render marks to see them), walls (the thinnest wall read by rays from 20 000 points into the material, against wall - two lines of nozzle, 0.8 for the nozzle of 0.4 by default - and up to 10 places thinner, the thinnest first), small (round faces of a radius under the nozzle's - a hole that closes up, a pin thinner than a line - with their face key, and edges shorter than the nozzle; read on exact faces, null on a mesh brought in, said by the warning small-unread-on-mesh). Each check says pass, warn or fail with its numbers; verdict is the worst. printer names a printer by its room (p1s for X1C, P1P, P1S, P2S and A1; a1_mini, h2d for both nozzles, h2d_one, h2s, h2c, x2d; k1c, k2, k1_max, k2_plus, ender3_v3_plus; centauri, neptune4_max; u1), or bed gives the room [x, y, z] mm; with neither 256 x 256 x 256 is taken and said so. Nothing is changed.",
     schema: || {
         json!({ "type": "object", "properties": {
             "body": body_field(),
@@ -197,7 +197,13 @@ pub const CHECK_PRINTABILITY: Tool = Tool {
         }
         let least = a.wall.unwrap_or(2.0 * a.nozzle);
         let walls = qymcad_doc::print::thickness::thickness(&mesh, &qymcad_doc::print::thickness::Walls { least, samples: WALL_POINTS });
-        let worst = [closed, valid, on.verdict, touch.verdict, hang.verdict, walls.verdict].into_iter().max().unwrap_or(Verdict::Pass);
+        // what is too small is read on exact faces: a mesh brought in has none, and says so
+        let small = ctx.doc.shape(body).map(|shape| qymcad_doc::print::small::small_features(project, shape, body, a.nozzle));
+        if small.is_none() {
+            warnings.push(json!("small-unread-on-mesh"));
+        }
+        let small_verdict = small.as_ref().map_or(Verdict::Pass, |s| s.verdict);
+        let worst = [closed, valid, on.verdict, touch.verdict, hang.verdict, walls.verdict, small_verdict].into_iter().max().unwrap_or(Verdict::Pass);
         let fit = match on.fit {
             Fit::AsItLies => "as_it_lies",
             Fit::Turned => "turned",
@@ -217,6 +223,11 @@ pub const CHECK_PRINTABILITY: Tool = Tool {
                 "bed": { "verdict": said(on.verdict), "fit": fit, "size": on.size.map(round) },
                 "contact": { "verdict": said(touch.verdict), "area": round(touch.area) },
                 "overhang": { "verdict": said(hang.verdict), "angle": a.overhang, "area": round(hang.area), "places": places },
+                "small": small.as_ref().map(|s| json!({
+                    "verdict": said(s.verdict),
+                    "rounds": s.rounds.iter().map(|r| json!({ "at": r.at.map(round), "radius": round(r.radius), "kind": match r.kind { qymcad_doc::print::small::Round::Hole => "hole", qymcad_doc::print::small::Round::Pin => "pin" }, "face": r.face })).collect::<Vec<Value>>(),
+                    "edges": s.edges.iter().map(|e| json!({ "at": e.at.map(round), "length": round(e.length) })).collect::<Vec<Value>>(),
+                })),
                 "walls": {
                     "verdict": said(walls.verdict),
                     "least": if walls.least.is_finite() { json!(round(walls.least)) } else { Value::Null },

@@ -89,3 +89,27 @@ fn a_cup_of_thin_walls_is_too_thin_for_the_nozzle() {
     let fine = ok(call(&mut ctx, "check_printability", json!({ "printer": "p1s", "nozzle": 0.2 })));
     assert_eq!(fine["checks"]["walls"]["verdict"], "pass", "walls of 0.6 do not hold for a nozzle of 0.2: {fine}");
 }
+
+/// A HOLE TOO NARROW CLOSES UP: a hole of 0.2 across in a plate is told as a hole of radius 0.1 for a nozzle of 0.4, with
+/// the key of its face; a mesh brought in has no exact face to read and says so.
+#[test]
+fn a_hole_narrower_than_the_nozzle_is_told() {
+    let mut ctx = Ctx::blank();
+    let _ = ok(call(&mut ctx, "box", json!({ "x": 20, "y": 20, "z": 5 })));
+    let _ = ok(call(&mut ctx, "hole", json!({ "face": "top", "diameter": 0.2, "depth": 5 })));
+    let r = ok(call(&mut ctx, "check_printability", json!({ "printer": "p1s" })));
+    let small = &r["checks"]["small"];
+    assert_eq!(small["verdict"], "warn", "{r}");
+    let rounds = small["rounds"].as_array().expect("the round faces");
+    assert!(rounds.iter().any(|f| f["kind"] == "hole" && near(&f["radius"], 0.1) && f["face"].is_u64()), "the hole of 0.2 is not told: {r}");
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-mcp-small"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let stl = dir.join("plate.stl").to_string_lossy().into_owned();
+    let _ = ok(call(&mut ctx, "export_mesh", json!({ "path": stl })));
+    let _ = ok(call(&mut ctx, "new_project", json!({})));
+    let mesh = ok(call(&mut ctx, "import_mesh", json!({ "path": stl })));
+    let m = ok(call(&mut ctx, "check_printability", json!({ "body": { "body": mesh["bodies"][0]["id"] }, "printer": "p1s" })));
+    assert_eq!(m["checks"]["small"], Value::Null, "{m}");
+    assert!(m["warnings"].as_array().is_some_and(|w| w.contains(&json!("small-unread-on-mesh"))), "{m}");
+}
