@@ -99,6 +99,15 @@ pub enum BodyEdges {
     Hidden,
 }
 
+/// WHETHER THE TRIANGLES OF A MESH ARE DRAWN over the bodies, so a person sees where a mesh stays: every triangle of a
+/// piece of a mesh, and on a recognised body the triangles of the regions no surface fitted. Hidden by default: on a
+/// part of exact faces it draws nothing, on a mesh of a million triangles it is a grey fog.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, serde::Serialize, serde::Deserialize)]
+pub enum MeshLines {
+    Shown,
+    Hidden,
+}
+
 /// A NAVIGATION GESTURE: which buttons are held and which modifiers, to move the view.
 ///
 /// Written as data rather than as a branch per style. With eleven layouts a condition written out at each
@@ -498,6 +507,8 @@ pub struct Settings {
     pub shading: Shading,
     /// Whether the edges of the bodies are drawn.
     pub body_edges: BodyEdges,
+    /// Whether the triangles of a mesh are drawn over the bodies.
+    pub mesh_lines: MeshLines,
     /// THE SHARED TOGGLE FOR SKETCH OUTLINES - FOR THE ASSEMBLY ONLY.
     ///
     /// Inside a Part there is none and there must be none: every sketch has a visibility checkbox of its own there

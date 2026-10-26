@@ -62,6 +62,7 @@ mod tests {
             projection: Projection::Perspective,            // the default is Ortho
             shading: Shading::Flat,                         // the default is Smooth
             body_edges: qymcad_ui_state::BodyEdges::Hidden, // the default is Shown
+            mesh_lines: qymcad_ui_state::MeshLines::Shown,  // the default is Hidden
             show_contours: !d.show_contours,
             show_joints: !d.show_joints,
             show_interference: !d.show_interference,

@@ -3,7 +3,7 @@
 //! the world and in the body's own frame, the one `recognise_feature` and `fit_at_point` take. A place of the model
 //! carried to its pixel and back comes out where it was; the ground answers a refusal, not the nearest body.
 
-use qymcad_mcp::picture::{self, Edges, Lit, Look, Size, View};
+use qymcad_mcp::picture::{Triangles, self, Edges, Lit, Look, Size, View};
 use qymcad_mcp::server::answer;
 use qymcad_mcp::tool::Ctx;
 use serde_json::{json, Value};
@@ -26,7 +26,7 @@ fn block() -> Ctx {
 }
 
 fn look(view: View) -> Look {
-    Look { view, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None }
+    Look { view, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, triangles: Triangles::Left, window: None }
 }
 
 fn point(v: &Value) -> [f64; 3] {

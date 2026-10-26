@@ -81,6 +81,9 @@ pub struct Caches {
     /// The sharp edges of every body, as pairs of its mesh vertices (`Mesh::sharp_edges`), parallel to `project.bodies`
     /// and keyed by the `geom_rev` they were found at: both ways of drawing the view take them from here.
     pub sharp: std::cell::RefCell<Cached<Vec<EdgeList>>>,
+    /// The sides of the triangles "Mesh triangles" draws over every body (`mesh_lines_of`), parallel to `project.bodies`
+    /// and keyed by `geom_rev` as `sharp` is; found only while they are shown.
+    pub mesh_lines: std::cell::RefCell<Cached<Vec<EdgeList>>>,
     /// The key of the scene uploaded into the GPU vertex buffer (re-uploaded only on a change). It does NOT depend on the camera.
     pub gpu_scene_key: std::cell::Cell<u64>,
     /// The pass of egui (`cumulative_pass_nr`) the scene was handed to the card in. A pass that is discarded takes
@@ -155,6 +158,7 @@ impl Default for Caches {
             view: std::cell::RefCell::new(None),
             norm: std::cell::RefCell::new(Cached { rev: u64::MAX, value: Vec::new() }),
             sharp: std::cell::RefCell::new(Cached { rev: u64::MAX, value: Vec::new() }),
+            mesh_lines: std::cell::RefCell::new(Cached { rev: u64::MAX, value: Vec::new() }),
             gpu_scene_key: std::cell::Cell::new(u64::MAX),
             gpu_scene_pass: std::cell::Cell::new(0),
             bounds: std::cell::Cell::new(Cached { rev: u64::MAX, value: None }),

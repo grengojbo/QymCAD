@@ -278,9 +278,10 @@ pub fn gpu_scene_key(pn: &Painting) -> u64 {
     view_rev(pn.regen).hash(&mut h);
     (pn.set.shading == Shading::Smooth).hash(&mut h); // smooth carries a vertex normal, flat carries none - a different buffer
     (pn.set.body_edges == BodyEdges::Shown).hash(&mut h); // the lines of the edges go to the card with the vertices
-                                                          // THE COLOURS ARE NOT HERE ANY MORE, and neither is the highlight. Both live in the look table beside the
-                                                          // vertices: changing a scheme or moving the pointer over the model rewrites two numbers per body instead
-                                                          // of the whole scene. Measured on the reference engine: 739 MB re-uploaded for a change of highlight.
+    (pn.set.mesh_lines == crate::MeshLines::Shown).hash(&mut h); // and so do the lines of the triangles
+                                                                 // THE COLOURS ARE NOT HERE ANY MORE, and neither is the highlight. Both live in the look table beside the
+                                                                 // vertices: changing a scheme or moving the pointer over the model rewrites two numbers per body instead
+                                                                 // of the whole scene. Measured on the reference engine: 739 MB re-uploaded for a change of highlight.
     if let Some((o, n)) = section_eff(&pn.cut()) {
         for v in o.iter().chain(n.iter()) {
             v.to_bits().hash(&mut h); // the section moved or turned, so the buffer is rebuilt
@@ -328,6 +329,7 @@ pub fn view_key(pn: &Painting, rect: Rect, ppp: f32) -> u64 {
     (pn.set.projection == Projection::Perspective).hash(&mut h); // perspective against orthographic changes the projection, so it goes into the raster cache key
     (pn.set.shading == Shading::Smooth).hash(&mut h); // smooth against flat shading changes the vertex colours, so it goes in too
     (pn.set.body_edges == BodyEdges::Shown).hash(&mut h); // the edges drawn or not
+    (pn.set.mesh_lines == crate::MeshLines::Shown).hash(&mut h); // the triangles of a mesh drawn or not
     pn.scheme.pal.fingerprint().hash(&mut h); // the raster is already coloured by the scheme: change the scheme and it is drawn anew
                                               // The selection highlight is painted into the texture, so the WHOLE set of highlighted bodies goes into the
                                               // key - the one both drawing paths colour by (a body lights itself, a component its whole subtree), in a

@@ -94,6 +94,7 @@ impl SettingsSection {
                 "settings-ghost-alpha",
                 "settings-fov",
                 "settings-body-edges",
+                "settings-mesh-lines",
                 "settings-msaa",
                 "settings-window-drawer",
                 "settings-frame-time",
@@ -179,6 +180,7 @@ impl SettingsSection {
                 s.projection = d.projection;
                 s.shading = d.shading;
                 s.body_edges = d.body_edges;
+                s.mesh_lines = d.mesh_lines;
                 s.viewcube_size = d.viewcube_size;
                 s.pick_precision = d.pick_precision;
                 s.mouse_nav = d.mouse_nav;

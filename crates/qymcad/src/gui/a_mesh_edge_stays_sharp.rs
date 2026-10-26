@@ -21,6 +21,8 @@ mod tests {
         Raster,
         Read,
         Rewritten,
+        Triangles,
+        Recognised,
     }
 
     /// The folder the cube of `check` is written to, one per check and run; the cube is `sharp.stl` in it.
@@ -30,11 +32,24 @@ mod tests {
             Check::Raster => "sharp-raster",
             Check::Read => "sharp-read",
             Check::Rewritten => "sharp-rewritten",
+            Check::Triangles => "sharp-triangles",
+            Check::Recognised => "sharp-recognised",
         })
     }
 
     /// A cube from a text STL through the door, seen in 3D: its corners welded, every one shared by three faces.
     fn the_cube(check: Check) -> App {
+        the_cube_running(check).app
+    }
+
+    /// A cube in the window, and the frames it runs in.
+    struct Running {
+        app: App,
+        ctx: egui::Context,
+    }
+
+    /// The same cube, with the frames it runs in.
+    fn the_cube_running(check: Check) -> Running {
         let folder = cube_folder(check);
         let p = folder.file("sharp.stl");
         std::fs::write(&p, cube_stl(10.0)).expect("written");
@@ -46,7 +61,7 @@ mod tests {
         assert_eq!(app.project.bodies.iter().map(|b| b.mesh.verts.len()).collect::<Vec<_>>(), [8], "the cube's corners are not welded");
         app.viewing.mode_3d = true;
         app.viewing.cam.init = true;
-        app
+        Running { app, ctx }
     }
 
     /// THE DEVICE'S SCENE: every corner of a face lit by the face - the 36 corners of the cube's 12 triangles as 24
@@ -76,6 +91,61 @@ mod tests {
         let lit = img.pixels.iter().filter(|c| c.a() == 255).count();
         eprintln!("the cube: {lit} pixels in {} shades", shades.len());
         assert!(lit > 1000 && shades.len() <= 12, "the cube's {lit} pixels are painted in {} shades", shades.len());
+    }
+
+    /// How dark the picture of `app` is at the middle of the cube's top, (5, 5, 10): the darkest pixel within 1 of it,
+    /// its three channels summed. The middle lies on the diagonal the two triangles of the top share, whichever it is.
+    fn the_middle_of_the_top(app: &mut App) -> u32 {
+        let rect = egui::Rect::from_min_size(egui::pos2(0.0, 0.0), egui::vec2(700.0, 600.0));
+        crate::gui::fit3d(&mut app.viewing.cam, &app.project, rect);
+        let basis = app.viewing.cam.basis();
+        let img = qymcad_render::rasterize_3d(&app.painting(), rect, &basis, 1.0, 1.0).expect("a raster");
+        let at = qymcad_ui_state::Screen { cam: &app.viewing.cam, set: &app.set, rect, basis: &basis }.at([5.0, 5.0, 10.0]).0;
+        let mut darkest = u32::MAX;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let (x, y) = ((at.x as i32 + dx) as usize, (at.y as i32 + dy) as usize);
+                if let Some(c) = img.pixels.get(y * img.size[0] + x).filter(|_| x < img.size[0]) {
+                    darkest = darkest.min(c.r() as u32 + c.g() as u32 + c.b() as u32);
+                }
+            }
+        }
+        darkest
+    }
+
+    /// "MESH TRIANGLES" FROM THE VIEW MENU DRAWS THE TRIANGLES OF A MESH: the diagonal across the top of a cube from STL,
+    /// a side two of its triangles share and no edge of the cube, comes out a dark line once it is chosen, and not
+    /// before.
+    #[test]
+    fn the_view_menu_draws_the_triangles_of_a_mesh() {
+        let mut app = the_cube(Check::Triangles);
+        let before = the_middle_of_the_top(&mut app);
+        {
+            let mut hand = crate::gui::hand::Hand::new(&mut app);
+            assert!(hand.press_word(&qymcad_i18n::tr("menu-view"), egui::pos2(0.0, 0.0)), "the bar shows no View menu");
+            assert!(hand.press_word(&qymcad_i18n::tr("menu-mesh-lines"), egui::pos2(0.0, 0.0)), "the View menu shows no mesh triangles");
+        }
+        assert_eq!(app.set.mesh_lines, qymcad_ui_state::MeshLines::Shown, "the menu did not turn the triangles on");
+        let after = the_middle_of_the_top(&mut app);
+        assert!(after + 60 < before, "no dark line along the diagonal of the top: {after} with the triangles, {before} without");
+    }
+
+    /// A CUBE RECOGNISED WHOLE SHOWS NO TRIANGLES: each of its sides an exact plane the kernel meshes as two triangles,
+    /// none a face of one triangle left as mesh.
+    #[test]
+    fn a_cube_recognised_whole_shows_no_triangles() {
+        let Running { mut app, ctx } = the_cube_running(Check::Recognised);
+        let piece = app.project.bodies[0].id;
+        app.project.add_mesh_recognised(piece, 1.0, 30.0, 0.0);
+        // a recognition runs on a worker, as in the window: frames until it lands
+        crate::gui::session::waiting::until("the recognition to land", || {
+            let _ = frame(&mut app, &ctx, Vec::new());
+            app.regen.busy.is_none() && app.project.timeline.iter().all(|n| !n.dirty)
+        });
+        let body = app.project.bodies.iter().find(|b| b.id != piece).expect("the recognised body");
+        assert_eq!(body.faces.len(), 6, "the cube is not recognised as six faces");
+        let lines = qymcad_ui_state::mesh_lines_of(body, qymcad_ui_state::MadeAs::Faces);
+        assert!(lines.is_empty(), "{} lines of a mesh over a cube recognised whole", lines.len());
     }
 
     /// ONE CHECK DOES NOT READ ANOTHER'S FILE. Reported behaviour: the scene check failed once in a whole run and never

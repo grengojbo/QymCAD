@@ -55,13 +55,14 @@ pub struct Size {
     pub height: u32,
 }
 
-/// What to draw: from which side, how large, which bodies to light as selected, whether the edges are drawn, and the
-/// window's eye when there is a window to look through.
+/// What to draw: from which side, how large, which bodies to light as selected, whether the edges and the triangles of
+/// a mesh are drawn, and the window's eye when there is a window to look through.
 pub struct Look {
     pub view: View,
     pub size: Size,
     pub lit: Lit,
     pub edges: Edges,
+    pub triangles: Triangles,
     pub window: Option<Eye>,
 }
 
@@ -75,6 +76,14 @@ pub struct Eye {
 /// Whether the sharp edges of the bodies are drawn over them.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Edges {
+    Drawn,
+    Left,
+}
+
+/// WHETHER THE TRIANGLES OF A MESH ARE DRAWN over the bodies, as the window's View -> Mesh triangles draws them: every
+/// one of a piece of a mesh, and on a recognised body those of the regions no surface fitted.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum Triangles {
     Drawn,
     Left,
 }
@@ -249,7 +258,11 @@ pub fn framed(project: &Project, look: &Look) -> Option<Framed> {
             cam
         }
     };
-    Some(Framed { cam, set: Settings { projection, ..Settings::default() }, rect })
+    let mesh_lines = match look.triangles {
+        Triangles::Drawn => qymcad_ui_state::MeshLines::Shown,
+        Triangles::Left => qymcad_ui_state::MeshLines::Hidden,
+    };
+    Some(Framed { cam, set: Settings { projection, mesh_lines, ..Settings::default() }, rect })
 }
 
 /// WHAT STANDS UNDER A PIXEL OF A PICTURE: the body, the key of its face, and the point hit, in the world.

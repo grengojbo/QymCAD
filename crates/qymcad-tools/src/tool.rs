@@ -253,6 +253,7 @@ pub fn call(ctx: &mut Ctx, tool: &Tool, mut arguments: Value) -> Value {
                     size: crate::picture::Size { width: 800, height: 600 },
                     lit: crate::picture::Lit::Nothing,
                     edges: crate::picture::Edges::Drawn,
+                    triangles: crate::picture::Triangles::Left,
                     window: crate::tools::look::eye(ctx),
                 };
                 if let Ok(picture) = crate::tools::look::picture_answer(ctx, &look) {

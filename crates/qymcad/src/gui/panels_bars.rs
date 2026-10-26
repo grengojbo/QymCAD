@@ -130,6 +130,7 @@ pub(crate) fn action_glyph(action: &crate::gui::menu_model::MenuAction) -> Optio
         A::Paste => Some(ph::CLIPBOARD),
         A::Rebuild => Some(ph::ARROWS_CLOCKWISE),
         A::Orbit3d => Some(ph::CUBE),
+        A::MeshLines => Some(ph::TRIANGLE),
         A::FitView => Some(ph::CORNERS_OUT),
         A::Scheme(s) => Some(match s.look {
             SchemeLook::Light => ph::SUN,

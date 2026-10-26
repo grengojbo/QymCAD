@@ -170,6 +170,32 @@ impl Mesh {
         out
     }
 
+    /// THE SIDES OF THE TRIANGLES `tris` AS LINES, each once, as the ends of each - a vertex of the mesh at either end.
+    /// Matched by where they stand, to `SAME_PLACE` mm, as `sharp_edges` matches them: a side two triangles share is one
+    /// line though each triangle holds vertices of its own there. A triangle past the mesh is passed over.
+    pub fn sides(&self, tris: &[u32]) -> Vec<[u32; 2]> {
+        let place = |vi: u32| -> [i64; 3] {
+            let p = self.verts[vi as usize];
+            [(p.x / SAME_PLACE).round() as i64, (p.y / SAME_PLACE).round() as i64, (p.z / SAME_PLACE).round() as i64]
+        };
+        let mut seen: std::collections::HashSet<[i64; 6]> = std::collections::HashSet::new();
+        let mut out = Vec::new();
+        for tri in tris.iter().filter_map(|&t| self.tris.get(t as usize)) {
+            for k in 0..3 {
+                let (a, b) = (tri[k], tri[(k + 1) % 3]);
+                let (pa, pb) = (place(a), place(b));
+                if pa == pb {
+                    continue;
+                }
+                let key = if pa < pb { [pa[0], pa[1], pa[2], pb[0], pb[1], pb[2]] } else { [pb[0], pb[1], pb[2], pa[0], pa[1], pa[2]] };
+                if seen.insert(key) {
+                    out.push([a, b]);
+                }
+            }
+        }
+        out
+    }
+
     /// Smoothed normals at the corners of the triangles, `3 * t + k` for corner `k` of triangle `t`, smoothed only
     /// where the surface turns by less than `crease_deg` between two triangles. For a mesh that shares its vertices
     /// across its sharp edges too - a mesh from a file - where `vertex_normals` smooths the light over every edge: a

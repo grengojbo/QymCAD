@@ -177,6 +177,7 @@ pub(crate) fn symbol_of(action: &MenuAction) -> Option<&'static str> {
         MenuAction::Paste => Some("doc.on.clipboard"),
         MenuAction::Rebuild => Some("arrow.triangle.2.circlepath"),
         MenuAction::Orbit3d => Some("cube"),
+        MenuAction::MeshLines => Some("triangle"),
         MenuAction::FitView => Some("arrow.up.left.and.arrow.down.right"),
         MenuAction::Scheme(s) => Some(match s.look {
             SchemeLook::Light => "sun.max",

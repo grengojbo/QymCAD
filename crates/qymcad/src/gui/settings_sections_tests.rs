@@ -106,6 +106,7 @@ mod tests {
             projection: Projection::Perspective,
             shading: Shading::Flat,
             body_edges: qymcad_ui_state::BodyEdges::Hidden,
+            mesh_lines: qymcad_ui_state::MeshLines::Shown,
             show_contours: false,
             show_joints: false,
             show_interference: true,

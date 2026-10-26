@@ -221,6 +221,7 @@ pub(crate) fn gpu_scene(pn: &qymcad_ui_state::Painting) -> qymcad_ui_state::GpuS
         pn.set.ghost_alpha.hash(&mut h);
         pn.scheme.pal.fingerprint().hash(&mut h);
         (pn.set.body_edges == qymcad_ui_state::BodyEdges::Shown).hash(&mut h);
+        (pn.set.mesh_lines == qymcad_ui_state::MeshLines::Shown).hash(&mut h);
         // the section cuts the triangles IN THE WORLD, so the block depends on it too
         if let Some((o, n)) = qymcad_ui_state::section_eff(&pn.cut()) {
             for v in o.iter().chain(n.iter()) {

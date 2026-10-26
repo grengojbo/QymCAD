@@ -92,6 +92,16 @@ takes faces is in hand, the face under the pointer lights up before the click: i
 
 To hide the lines: **Settings -> Viewport -> Body edges -> Hidden**.
 
+## Mesh triangles
+
+**View -> Mesh triangles** draws the triangles of a mesh over the bodies as thin lines. On a mesh brought from a file
+(STL, OBJ, 3MF…) every triangle is shown. On a body made by **Recognise** only the places where no plane, cylinder,
+cone or sphere fitted keep their triangles: those are the places to recognise again or to leave as they are. The exact
+faces show no lines.
+
+The same switch is in **Settings -> Viewport -> Mesh triangles**. On a mesh of a million triangles the lines run into a
+grey haze: zoom in on the place you are looking at.
+
 ## Ghosts
 
 A part outside the current context is shown semi-transparent — so that you can refer to it without it

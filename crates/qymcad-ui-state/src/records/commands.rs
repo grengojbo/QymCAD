@@ -651,6 +651,7 @@ impl Default for Settings {
             projection: Projection::Ortho,
             shading: Shading::Smooth,
             body_edges: BodyEdges::Shown,
+            mesh_lines: MeshLines::Hidden,
             show_contours: true,
             show_joints: true,
             show_interference: false,

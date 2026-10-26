@@ -6,7 +6,7 @@
 //! To draw: `cargo test -p qymcad-mcp --test by_eye_shots -- --ignored --nocapture`. The pictures go to
 //! `target/tutorial/29-by-eye/`.
 
-use qymcad_mcp::picture::{self, Edges, Lit, Look, Size, View};
+use qymcad_mcp::picture::{Triangles, self, Edges, Lit, Look, Size, View};
 use qymcad_mcp::server::answer;
 use qymcad_mcp::tool::Ctx;
 use serde_json::{json, Value};
@@ -27,7 +27,7 @@ struct Shots {
 impl Shots {
     /// The picture from iso at 800 x 600 with `marks` on it, written as `NN-name.png`.
     fn take(&mut self, ctx: &Ctx, name: &str, marks: &[[f64; 3]]) {
-        let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+        let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, triangles: Triangles::Left, window: None };
         let shot = picture::png_marked(&ctx.doc, &look, marks).expect("drawn");
         let file = format!("{:02}-{name}.png", self.n);
         self.n += 1;
@@ -81,7 +81,7 @@ fn by_eye_shots() {
     println!("recognise_all list: {}", listed["groups"]);
 
     // the walls of the two holes, as Claude finds them on the picture: a pixel each, read back
-    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, triangles: Triangles::Left, window: None };
     let mut aims = Vec::new();
     for centre in [[-18.0, 0.0, 5.0], [18.0, 0.0, 5.0]] {
         let px = picture::pixel_of(ctx.doc.project(), &look, far_wall(centre, 3.0)).expect("the wall is in the picture");

@@ -523,6 +523,14 @@ pub(crate) fn settings_section_body(wc: &mut qymcad_ui_state::WinCtx, ui: &mut e
                     }
                 });
             }
+            // THE TRIANGLES OF A MESH over the bodies: where a mesh stays, on a mesh from a file and on a recognised body
+            if show("settings-mesh-lines") {
+                ui.horizontal(|ui| {
+                    ui.label(crate::i18n::tr("settings-mesh-lines"));
+                    ui.selectable_value(&mut wc.set.mesh_lines, qymcad_ui_state::MeshLines::Shown, crate::i18n::tr("settings-body-edges-shown"));
+                    ui.selectable_value(&mut wc.set.mesh_lines, qymcad_ui_state::MeshLines::Hidden, crate::i18n::tr("settings-body-edges-hidden"));
+                });
+            }
             if show("settings-msaa") {
                 // ANTIALIASING BELONGS TO THE GPU VIEWPORT ONLY: the software raster draws its own way, and
                 // the wgpu sample count does not affect it at all. On the CPU path the row looked alive.

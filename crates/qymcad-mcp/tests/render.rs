@@ -3,7 +3,7 @@
 //! rectangle from above and a thin band from the front; a lit body is drawn lit; `render: true` on a change hands
 //! the picture back with it; nothing to draw, or a size out of bounds, is refused.
 
-use qymcad_mcp::picture::{self, Edges, Lit, Look, Size, View};
+use qymcad_mcp::picture::{self, Edges, Lit, Look, Size, Triangles, View};
 use qymcad_mcp::server::answer;
 use qymcad_mcp::tool::Ctx;
 use serde_json::{json, Value};
@@ -92,7 +92,7 @@ fn filled(img: &egui::ColorImage) -> Filled {
 }
 
 fn look(view: View, lit: Lit) -> Look {
-    Look { view, size: Size { width: 600, height: 600 }, lit, edges: Edges::Left, window: None }
+    Look { view, size: Size { width: 600, height: 600 }, lit, edges: Edges::Left, triangles: Triangles::Left, window: None }
 }
 
 #[test]
@@ -218,11 +218,51 @@ fn a_mark_tells_the_pixel_it_fell_on() {
     let mut ctx = plate();
     let r = call(&mut ctx, "render", json!({ "view": "top", "width": 600, "height": 600, "marks": [[10, 5, 4], [5000, 0, 0]] }));
     assert_eq!(r["ok"], json!(true), "{r}");
-    let look = Look { view: View::Top, size: Size { width: 600, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+    let look = Look { view: View::Top, size: Size { width: 600, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, triangles: Triangles::Left, window: None };
     let at = picture::pixel_of(ctx.doc.project(), &look, [10.0, 5.0, 4.0]).expect("the place is in the picture");
     assert_eq!(r["marks"][0], json!({ "n": 1, "at": [10.0, 5.0, 4.0], "pixel": [at.x.round(), at.y.round()] }), "{r}");
     assert_eq!(r["marks"][1]["pixel"], Value::Null, "a place off the picture fell on a pixel: {r}");
     let back = call(&mut ctx, "point_at", json!({ "view": "top", "width": 600, "height": 600, "x": at.x, "y": at.y }));
     let world = back["world"].as_array().expect("a place").iter().filter_map(Value::as_f64).collect::<Vec<f64>>();
     assert!((world[0] - 10.0).abs() < 0.2 && (world[1] - 5.0).abs() < 0.2, "the pixel of the mark reads back as {back}");
+}
+
+/// THE TRIANGLES OF A MESH ON A PICTURE: `mesh: true` draws them as the window's View -> Mesh triangles does. A box of
+/// 10 written as STL and brought back is a mesh of 12 triangles; from above, the middle of its top lies on the diagonal
+/// its two triangles share, a dark line with the triangles drawn and none without.
+#[test]
+fn the_triangles_of_a_mesh_are_drawn_when_asked() {
+    let mut ctx = Ctx::blank();
+    let _ = ok(call(&mut ctx, "box", json!({ "x": 10, "y": 10, "z": 10 })));
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-mcp-render-mesh"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let stl = dir.join("box.stl").to_string_lossy().into_owned();
+    let _ = ok(call(&mut ctx, "export_mesh", json!({ "path": stl })));
+    let _ = ok(call(&mut ctx, "new_project", json!({})));
+    let _ = ok(call(&mut ctx, "import_mesh", json!({ "path": stl })));
+    let r = call(&mut ctx, "render", json!({ "view": "top", "mesh": true, "edges": false }));
+    assert_eq!(r["ok"], json!(true), "{r}");
+    // the middle of the top, wherever the box stands: the middle of its corners across, its highest along z
+    let verts = &ctx.doc.project().bodies[0].mesh.verts;
+    let span = |c: fn(&qymcad_core::geom::Point3) -> f64| verts.iter().map(c).fold([f64::MAX, f64::MIN], |s, v| [s[0].min(v), s[1].max(v)]);
+    let across = [span(|p| p.x), span(|p| p.y)];
+    let top = [(across[0][0] + across[0][1]) / 2.0, (across[1][0] + across[1][1]) / 2.0, span(|p| p.z)[1]];
+    let darkest = |triangles: Triangles| {
+        let look = Look { view: View::Top, size: Size { width: 600, height: 600 }, lit: Lit::Nothing, edges: Edges::Left, triangles, window: None };
+        let img = picture::draw(ctx.doc.project(), &look, &[]).expect("a picture");
+        let at = picture::pixel_of(ctx.doc.project(), &look, top).expect("the middle of the top is in the picture");
+        let mut out = u32::MAX;
+        for dy in -1..=1 {
+            for dx in -1..=1 {
+                let (x, y) = ((at.x as i32 + dx) as usize, (at.y as i32 + dy) as usize);
+                let c = img.pixels[y * img.size[0] + x];
+                out = out.min(u32::from(c.r()) + u32::from(c.g()) + u32::from(c.b()));
+            }
+        }
+        out
+    };
+    let with = darkest(Triangles::Drawn);
+    let without = darkest(Triangles::Left);
+    assert!(with + 60 < without, "no dark line along the diagonal of the top: {with} with the triangles, {without} without");
 }

@@ -4,7 +4,7 @@ use serde::Deserialize;
 use serde_json::{json, Value};
 
 use crate::args::BodyRef;
-use crate::picture::{self, Edges, Lit, Look, Size, View};
+use crate::picture::{self, Edges, Lit, Look, Size, Triangles, View};
 use crate::tool::{self, Answer, Ctx, Refusal, Seen, Stage, Tool, PICTURE};
 
 /// The bounds of a side of a picture, in pixels: under 64 nothing can be made out, over 2048 the picture outweighs
@@ -20,6 +20,8 @@ struct RenderArgs {
     highlight: Option<BodyRef>,
     #[serde(default = "drawn")]
     edges: bool,
+    #[serde(default)]
+    mesh: bool,
     #[serde(default)]
     marks: Vec<[f64; 3]>,
 }
@@ -107,7 +109,7 @@ pub fn eye(ctx: &Ctx) -> Option<picture::Eye> {
 
 pub const RENDER: Tool = Tool {
     name: "render",
-    description: "Draw the document as a picture (PNG) to look at the result: view iso (front-right-above), top, bottom, front (-Y), back, left, right, or window - as the person sees it in the open QymCAD window, their camera as it stands (the default there; iso is the default with no window); width and height in pixels (800 x 600 by default, 64..2048); highlight lights a body ({\"body\": key} or {\"part\": key}) as the window lights a selection; edges (true by default) draws the sharp edges of the bodies, hidden ones left out; marks - places in world coordinates, as point_at's world - are drawn as red rings numbered from 1, and the answer tells the pixel each fell on (null off the picture), to see where a point stands before a tool is given it. A side is fitted to the whole model. filled tells the share of the picture the model covers - 0 means nothing is in sight. Sketch lines are not drawn.",
+    description: "Draw the document as a picture (PNG) to look at the result: view iso (front-right-above), top, bottom, front (-Y), back, left, right, or window - as the person sees it in the open QymCAD window, their camera as it stands (the default there; iso is the default with no window); width and height in pixels (800 x 600 by default, 64..2048); highlight lights a body ({\"body\": key} or {\"part\": key}) as the window lights a selection; edges (true by default) draws the sharp edges of the bodies, hidden ones left out; mesh (false by default) draws the triangles of a mesh as thin lines - every one on a body brought in by import_mesh, and on a body made by recognise_mesh only where no surface fitted, so the places left as mesh show; marks - places in world coordinates, as point_at's world - are drawn as red rings numbered from 1, and the answer tells the pixel each fell on (null off the picture), to see where a point stands before a tool is given it. A side is fitted to the whole model. filled tells the share of the picture the model covers - 0 means nothing is in sight. Sketch lines are not drawn.",
     schema: || {
         json!({
             "type": "object",
@@ -117,6 +119,7 @@ pub const RENDER: Tool = Tool {
                 "height": { "type": "integer", "minimum": SIDE.start(), "maximum": SIDE.end(), "default": 600 },
                 "highlight": crate::args::body_schema(),
                 "edges": { "type": "boolean", "default": true },
+                "mesh": { "type": "boolean", "default": false, "description": "Draw the triangles of a mesh: all of a mesh brought in, and on a recognised body where no surface fitted." },
                 "marks": { "type": "array", "maxItems": 99, "items": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3 }, "description": "Places in world coordinates, mm, drawn as numbered rings." },
             },
             "additionalProperties": false
@@ -137,11 +140,12 @@ pub const RENDER: Tool = Tool {
             Some(b) => Lit::Body(b.resolve(ctx.doc.project())?),
         };
         let edges = if a.edges { Edges::Drawn } else { Edges::Left };
+        let triangles = if a.mesh { Triangles::Drawn } else { Triangles::Left };
         let view = a.view.unwrap_or_else(|| default_view(ctx));
         if a.marks.len() > 99 {
             return Err(Refusal::new("too-many-marks", &format!("{} marks: a picture tells 99 apart at most.", a.marks.len()), Stage::Validate));
         }
-        marked_answer(ctx, &Look { view, size, lit, edges, window: eye(ctx) }, &a.marks)
+        marked_answer(ctx, &Look { view, size, lit, edges, triangles, window: eye(ctx) }, &a.marks)
     },
 };
 
@@ -179,7 +183,7 @@ pub const POINT_AT: Tool = Tool {
             return Err(Refusal::new("off-picture", &format!("The pixel {}, {} is off a picture of {} x {}.", a.x, a.y, size.width, size.height), Stage::Validate));
         }
         let view = a.view.unwrap_or_else(|| default_view(ctx));
-        let look = Look { view, size, lit: Lit::Nothing, edges: Edges::Left, window: eye(ctx) };
+        let look = Look { view, size, lit: Lit::Nothing, edges: Edges::Left, triangles: Triangles::Left, window: eye(ctx) };
         drawable(ctx, &look)?;
         let project = ctx.doc.project();
         let hit = picture::under(project, &look, egui::pos2(a.x as f32, a.y as f32))

@@ -33,6 +33,8 @@ pub(crate) enum MenuAction {
     Paste,
     Rebuild,
     Orbit3d,
+    /// The triangles of a mesh drawn over the bodies, or not.
+    MeshLines,
     FitView,
     Scheme(SchemeChoice),
     /// A panel of the window shown or hidden, by its key in the shell.
@@ -252,6 +254,7 @@ pub(crate) struct MenuState {
     pub recent: Vec<String>,
     pub schemes: Vec<SchemeRow>,
     pub orbit: Checked,
+    pub mesh_lines: Checked,
     pub updates: Offered,
     pub panels: Vec<PanelRow>,
 }
@@ -277,6 +280,7 @@ impl MenuState {
             recent: Vec::new(),
             schemes: Vec::new(),
             orbit: Checked::No,
+            mesh_lines: Checked::No,
             updates: Offered::No,
             panels: Vec::new(),
         }
@@ -305,6 +309,7 @@ pub(crate) fn menu_state(bc: &BarCtx) -> MenuState {
         recent: bc.set.recent.clone(),
         schemes,
         orbit: if *bc.mode_3d { Checked::Yes } else { Checked::No },
+        mesh_lines: if bc.set.mesh_lines == qymcad_ui_state::MeshLines::Shown { Checked::Yes } else { Checked::No },
         // CHECK FOR UPDATES is absent where it cannot work: inside Flatpak there is no network, and a build
         // with no release tag has nothing to compare against.
         updates: if crate::gui::update_ui::available() { Offered::Yes } else { Offered::No },
@@ -446,6 +451,8 @@ fn edit_menu(state: &MenuState) -> TopMenu {
 fn view_menu(state: &MenuState) -> TopMenu {
     let mut nodes = vec![
         MenuNode::Check { item: item(MenuAction::Orbit3d, "menu-orbit3d"), checked: state.orbit },
+        // WHERE A MESH STAYS: its triangles over a piece of a mesh, and over the regions of a recognised body no surface fitted
+        MenuNode::Check { item: item(MenuAction::MeshLines, "menu-mesh-lines").hint(qymcad_i18n::tr("menu-mesh-lines-hint")), checked: state.mesh_lines },
         MenuNode::Item(item(MenuAction::FitView, "menu-fit-view")),
         // THE PANELS: a tick for each one a person may hide; hidden, it takes no room
         MenuNode::Sub(SubMenu {
@@ -513,6 +520,12 @@ pub(crate) fn apply_menu_action(action: &MenuAction, bc: &mut BarCtx, ctx: &egui
         MenuAction::Paste => bc.ask.push(BarAsk::Paste),
         MenuAction::Rebuild => bc.ask.push(BarAsk::RebuildEverything),
         MenuAction::Orbit3d => *bc.mode_3d = !*bc.mode_3d,
+        MenuAction::MeshLines => {
+            bc.set.mesh_lines = match bc.set.mesh_lines {
+                qymcad_ui_state::MeshLines::Shown => qymcad_ui_state::MeshLines::Hidden,
+                qymcad_ui_state::MeshLines::Hidden => qymcad_ui_state::MeshLines::Shown,
+            }
+        }
         MenuAction::FitView => {
             bc.view.initialized = false;
             bc.cam.init = false;

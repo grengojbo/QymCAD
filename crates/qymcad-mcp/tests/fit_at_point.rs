@@ -5,7 +5,7 @@
 //! And the way from a picture to a feature, by eye: the hole seen in the picture `render` draws, its wall found under
 //! a pixel by `point_at`, read by `fit_at_point`, made editable by `recognise_feature`.
 
-use qymcad_mcp::picture::{self, Edges, Lit, Look, Size, View};
+use qymcad_mcp::picture::{Triangles, self, Edges, Lit, Look, Size, View};
 use qymcad_mcp::server::answer;
 use qymcad_mcp::tool::Ctx;
 use serde_json::{json, Value};
@@ -73,7 +73,7 @@ fn a_plain_face_is_refused_as_recognise_feature_refuses_it() {
 #[test]
 fn a_hole_seen_in_the_picture_is_made_editable() {
     let Drilled { mut ctx, .. } = drilled();
-    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, triangles: Triangles::Left, window: None };
     // the iso eye stands at +X -Y +Z: the wall it looks into is the one at -X +Y
     let r = 5.0 / std::f64::consts::SQRT_2;
     let px = picture::pixel_of(ctx.doc.project(), &look, [-r, r, 8.0]).expect("the wall is in the picture");
@@ -102,7 +102,7 @@ fn a_hole_seen_on_a_mesh_is_made_editable() {
     let mesh = ok(call(&mut ctx, "import_mesh", json!({ "path": stl })));
     // a mesh is triangles, not a body: made a polyhedron of its flat faces first, as the window's Recognise "as is"
     let _ = ok(call(&mut ctx, "recognise_mesh", json!({ "body": { "body": mesh["bodies"][0]["id"] }, "mode": "as_is" })));
-    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, window: None };
+    let look = Look { view: View::Iso, size: Size { width: 800, height: 600 }, lit: Lit::Nothing, edges: Edges::Drawn, triangles: Triangles::Left, window: None };
     let r = 5.0 / std::f64::consts::SQRT_2;
     let px = picture::pixel_of(ctx.doc.project(), &look, [-r, r, 8.0]).expect("the wall is in the picture");
     let hit = ok(call(&mut ctx, "point_at", json!({ "view": "iso", "x": px.x, "y": px.y })));
