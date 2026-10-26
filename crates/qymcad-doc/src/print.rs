@@ -4,6 +4,7 @@
 pub mod checks;
 pub mod mesh_repair;
 pub mod mesh_report;
+pub mod thickness;
 
 /// The triangles of `body` placed in the world, as its part places it; `None` for a body the document does not hold.
 pub fn world_mesh(project: &qymcad_core::model::Project, body: qymcad_core::model::Id) -> Option<qymcad_core::geom::Mesh> {

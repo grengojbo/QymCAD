@@ -115,11 +115,22 @@ struct CheckArgs {
     bed: Option<[f64; 3]>,
     #[serde(default = "forty_five")]
     overhang: f64,
+    #[serde(default = "point_four")]
+    nozzle: f64,
+    wall: Option<f64>,
 }
 
 fn forty_five() -> f64 {
     45.0
 }
+
+fn point_four() -> f64 {
+    0.4
+}
+
+/// The points the walls are read at: enough for a wall of a few mm^2 to be met, few enough for a mesh of a million
+/// triangles to be read in 0.15 s (measured, release, 20 000 points).
+const WALL_POINTS: usize = 20_000;
 
 /// The room a printer builds in when none is named: the most common room of the printers known.
 const ASSUMED: [f64; 3] = [256.0, 256.0, 256.0];
@@ -136,13 +147,15 @@ fn said(v: qymcad_doc::print::checks::Verdict) -> &'static str {
 
 pub const CHECK_PRINTABILITY: Tool = Tool {
     name: "check_printability",
-    description: "Whether a body prints as it lies, read where a slicer drops it - onto the bed through its lowest point: closed (no hole, no edge of three triangles; mesh_repair mends one brought in), valid (the kernel finds a body of faces sound), bed (it fits the room the printer builds in as it lies, or only turned a quarter about Z), contact (the area of its faces flat on the bed - none is a body on an edge or a point), overhang (the area facing down past overhang deg from the upright, 45 by default, the bottom left out, and up to 10 places it hangs at, the widest first - give them to render marks to see them). Each check says pass, warn or fail with its numbers; verdict is the worst. printer names a printer by its room (p1s for X1C, P1P, P1S, P2S and A1; a1_mini, h2d for both nozzles, h2d_one, h2s, h2c, x2d; k1c, k2, k1_max, k2_plus, ender3_v3_plus; centauri, neptune4_max; u1), or bed gives the room [x, y, z] mm; with neither 256 x 256 x 256 is taken and said so. Nothing is changed.",
+    description: "Whether a body prints as it lies, read where a slicer drops it - onto the bed through its lowest point: closed (no hole, no edge of three triangles; mesh_repair mends one brought in), valid (the kernel finds a body of faces sound), bed (it fits the room the printer builds in as it lies, or only turned a quarter about Z), contact (the area of its faces flat on the bed - none is a body on an edge or a point), overhang (the area facing down past overhang deg from the upright, 45 by default, the bottom left out, and up to 10 places it hangs at, the widest first - give them to render marks to see them), walls (the thinnest wall read by rays from 20 000 points into the material, against wall - two lines of nozzle, 0.8 for the nozzle of 0.4 by default - and up to 10 places thinner, the thinnest first). Each check says pass, warn or fail with its numbers; verdict is the worst. printer names a printer by its room (p1s for X1C, P1P, P1S, P2S and A1; a1_mini, h2d for both nozzles, h2d_one, h2s, h2c, x2d; k1c, k2, k1_max, k2_plus, ender3_v3_plus; centauri, neptune4_max; u1), or bed gives the room [x, y, z] mm; with neither 256 x 256 x 256 is taken and said so. Nothing is changed.",
     schema: || {
         json!({ "type": "object", "properties": {
             "body": body_field(),
             "printer": { "type": "string", "description": "A printer by its room: p1s, a1_mini, h2d, h2d_one, h2s, h2c, x2d, k1c, k2, k1_max, k2_plus, ender3_v3_plus, centauri, neptune4_max, u1, or one of the person's own printers.json." },
             "bed": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 3, "maxItems": 3, "description": "The room the printer builds in, [x, y, z] mm." },
             "overhang": { "type": "number", "minimum": 0, "maximum": 89, "default": 45, "description": "Degrees from the upright a face may turn down unsupported." },
+            "nozzle": { "type": "number", "exclusiveMinimum": 0, "maximum": 2, "default": 0.4, "description": "The nozzle's bore, mm: 0.2, 0.4, 0.6, 0.8." },
+            "wall": { "type": "number", "exclusiveMinimum": 0, "description": "The thinnest wall that prints, mm; two lines of the nozzle when left out." },
         }, "additionalProperties": false })
     },
     call: |ctx: &mut Ctx, arguments: Value| {
@@ -179,7 +192,12 @@ pub const CHECK_PRINTABILITY: Tool = Tool {
         let on = fits(&mesh, &Bed { size: build });
         let touch = contact(&mesh);
         let hang = overhang(&mesh, a.overhang);
-        let worst = [closed, valid, on.verdict, touch.verdict, hang.verdict].into_iter().max().unwrap_or(Verdict::Pass);
+        if !(a.nozzle > 0.0 && a.wall.is_none_or(|w| w > 0.0)) {
+            return Err(Refusal::new("arguments", "A nozzle and a wall are sizes over 0 mm.", Stage::Validate));
+        }
+        let least = a.wall.unwrap_or(2.0 * a.nozzle);
+        let walls = qymcad_doc::print::thickness::thickness(&mesh, &qymcad_doc::print::thickness::Walls { least, samples: WALL_POINTS });
+        let worst = [closed, valid, on.verdict, touch.verdict, hang.verdict, walls.verdict].into_iter().max().unwrap_or(Verdict::Pass);
         let fit = match on.fit {
             Fit::AsItLies => "as_it_lies",
             Fit::Turned => "turned",
@@ -199,6 +217,13 @@ pub const CHECK_PRINTABILITY: Tool = Tool {
                 "bed": { "verdict": said(on.verdict), "fit": fit, "size": on.size.map(round) },
                 "contact": { "verdict": said(touch.verdict), "area": round(touch.area) },
                 "overhang": { "verdict": said(hang.verdict), "angle": a.overhang, "area": round(hang.area), "places": places },
+                "walls": {
+                    "verdict": said(walls.verdict),
+                    "least": if walls.least.is_finite() { json!(round(walls.least)) } else { Value::Null },
+                    "required": least,
+                    "nozzle": a.nozzle,
+                    "places": walls.places.iter().map(|p| json!({ "at": p.at.map(round), "thickness": round(p.thickness) })).collect::<Vec<Value>>(),
+                },
             }),
         );
         if !warnings.is_empty() {

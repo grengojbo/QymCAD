@@ -1,6 +1,7 @@
 //! WHETHER A BODY PRINTS, THROUGH THE SERVER: a cube of 10 passes on the room assumed and says it was assumed; a T on
 //! its stem hangs the two arms of its bar, 100 mm^2 each, over the air; a box of 200 does not fit the room of the
-//! smallest printer named; a printer of no name, and a printer with a room besides, are refused.
+//! smallest printer named; a printer of no name, and a printer with a room besides, are refused; a cup of walls of 0.6 is
+//! too thin for a nozzle of 0.4.
 
 use qymcad_mcp::server::answer;
 use qymcad_mcp::tool::Ctx;
@@ -69,4 +70,22 @@ fn a_printer_of_no_name_or_with_a_room_besides_is_refused() {
     assert!(r["error"]["hint"].as_str().is_some_and(|h| h.contains("p1s")), "the hint does not name the printers known: {r}");
     let r = call(&mut ctx, "check_printability", json!({ "printer": "p1s", "bed": [100, 100, 100] }));
     assert_eq!(r["error"]["code"], "arguments", "{r}");
+}
+
+/// A CUP OF WALLS OF 0.6 IS TOO THIN for two lines of a nozzle of 0.4, and holds for one of 0.2: a box of 20 hollowed
+/// to 0.6, open at the top.
+#[test]
+fn a_cup_of_thin_walls_is_too_thin_for_the_nozzle() {
+    let mut ctx = Ctx::blank();
+    let _ = ok(call(&mut ctx, "box", json!({ "x": 20, "y": 20, "z": 20 })));
+    let _ = ok(call(&mut ctx, "shell", json!({ "thickness": 0.6, "open": "top" })));
+    let r = ok(call(&mut ctx, "check_printability", json!({ "printer": "p1s" })));
+    let walls = &r["checks"]["walls"];
+    assert_eq!(walls["verdict"], "fail", "{r}");
+    assert!(walls["least"].as_f64().is_some_and(|w| (w - 0.6).abs() < 0.05), "walls of 0.6 read {}", walls["least"]);
+    assert_eq!(walls["required"], json!(0.8), "{r}");
+    assert!(!walls["places"].as_array().is_some_and(Vec::is_empty), "no place is told thin: {r}");
+    assert_eq!(r["verdict"], "fail", "{r}");
+    let fine = ok(call(&mut ctx, "check_printability", json!({ "printer": "p1s", "nozzle": 0.2 })));
+    assert_eq!(fine["checks"]["walls"]["verdict"], "pass", "walls of 0.6 do not hold for a nozzle of 0.2: {fine}");
 }
