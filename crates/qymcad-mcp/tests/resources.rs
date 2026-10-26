@@ -70,7 +70,7 @@ fn the_prompts_are_listed_and_filled_with_the_persons_words() {
     let mut ctx = Ctx::blank();
     let listed = ask(&mut ctx, "prompts/list", json!({}));
     let names: Vec<&str> = listed["result"]["prompts"].as_array().expect("prompts").iter().filter_map(|p| p["name"].as_str()).collect();
-    assert_eq!(names, ["design_for_fdm", "edit_stl", "edit_step", "edit_what_i_selected", "recognise_by_eye"], "{listed}");
+    assert_eq!(names, ["design_for_fdm", "edit_stl", "edit_step", "edit_what_i_selected", "recognise_by_eye", "prepare_for_print"], "{listed}");
 
     let got = ask(&mut ctx, "prompts/get", json!({ "name": "design_for_fdm", "arguments": { "part": "a bracket 60 x 40 x 4", "nozzle": "0.6" } }));
     let text = got["result"]["messages"][0]["content"]["text"].as_str().unwrap_or_else(|| panic!("no text in {got}"));
@@ -89,6 +89,19 @@ fn the_prompts_are_listed_and_filled_with_the_persons_words() {
     let stl = ask(&mut ctx, "prompts/get", json!({ "name": "edit_stl", "arguments": { "path": "a.stl", "change": "a wider hole" } }));
     let text = stl["result"]["messages"][0]["content"]["text"].as_str().unwrap_or_else(|| panic!("no text in {stl}"));
     assert!(text.contains("recognise_mesh"), "changing a mesh does not make it a body first: {text}");
+
+    // FOR PRINT: the way goes through every tool of printing, each one this server has, and ends at a 3MF the person
+    // or another server sends to the printer
+    let print = ask(&mut ctx, "prompts/get", json!({ "name": "prepare_for_print", "arguments": { "path": "vase.stl", "printer": "p1s" } }));
+    let text = print["result"]["messages"][0]["content"]["text"].as_str().unwrap_or_else(|| panic!("no text in {print}"));
+    let tools = ask(&mut ctx, "tools/list", json!({}));
+    let have: Vec<&str> = tools["result"]["tools"].as_array().expect("tools").iter().filter_map(|t| t["name"].as_str()).collect();
+    for tool in ["mesh_report", "mesh_repair", "scale", "check_printability", "suggest_orientation", "place_on_face", "split_for_bed", "export_mesh"] {
+        assert!(text.contains(tool), "the way to print does not name {tool}: {text}");
+        assert!(have.contains(&tool), "the way to print names {tool}, which this server does not have");
+    }
+    assert!(text.contains("vase.stl") && text.contains("p1s"), "the file or the printer is not in the prompt: {text}");
+    assert!(text.contains(".3mf"), "the way to print does not end at a 3MF: {text}");
 
     let bare = ask(&mut ctx, "prompts/get", json!({ "name": "edit_step", "arguments": { "path": "a.step" } }));
     assert_eq!(bare["error"]["code"], json!(-32602), "a prompt without its required change went: {bare}");

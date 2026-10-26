@@ -52,7 +52,8 @@ The fork is aimed at parts for FDM printing:
 
 - export to 3MF with the tree of parts and their colours;
 - checks Claude makes before printing: the body is sound, one piece, with no "holes in the air";
-- a ready conversation template, `design_for_fdm`, with the rules of printing: clearances for screws, wall thickness, chamfers at the bottom.
+- a ready conversation template, `design_for_fdm`, with the rules of printing: clearances for screws, wall thickness, chamfers at the bottom;
+- getting a body ready for a printer by asking Claude: a mesh mended and made lighter, a check against the printer (its room, the contact with the bed, overhangs, thin walls, details too small for the nozzle), the best way to lay it, and a part too big for the printer cut into pieces with pegs or dowels across the cuts - the `prepare_for_print` template.
 
 ### 3. Ukrainian language and independence
 

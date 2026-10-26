@@ -1,5 +1,5 @@
 //! THE PROMPTS: ways of working a client offers its person by name - design a part for a printer, change a mesh file,
-//! change an exact one, find features by eye - each the order of tools this server has for it, with the person's own words filled in.
+//! change an exact one, find features by eye, get a body ready for a printer - each the order of tools this server has for it, with the person's own words filled in.
 
 use serde_json::{json, Map, Value};
 
@@ -100,7 +100,23 @@ fn recognise_by_eye(given: &Map<String, Value>) -> String {
     )
 }
 
-const PROMPTS: [Prompt; 5] = [
+fn prepare_for_print(given: &Map<String, Value>) -> String {
+    let path = arg(given, "path", "the body in the document");
+    let printer = arg(given, "printer", "the person's printer");
+    let nozzle = arg(given, "nozzle", "0.4");
+    format!(
+        "Get {path} ready to print on {printer} with a {nozzle} mm nozzle, and write it out for the slicer.\n\n\
+         1. A file not yet in the document comes in with import_mesh (an STL, OBJ, 3MF) or import_cad (a STEP). Read the size it came in at: a mesh written in inches or metres is put right with scale (factor 25.4 or 1000).\n\
+         2. A mesh: read it with mesh_report - holes, edges shared by more than two triangles, triangles wound inward, pieces, its weight in triangles. Mend what it finds with mesh_repair (fill_holes, drop_under for crumbs, simplify for a mesh too heavy), then read mesh_report again: closed, one piece.\n\
+         3. Ask check_printability with printer {printer} and nozzle {nozzle}. Each check has its verdict: the room of the printer, the contact with the bed, the overhangs past the angle, walls thinner than two lines of the nozzle, details too small for it. A warning names the places; tell the person what they mean.\n\
+         4. Overhangs or a small contact: suggest_orientation gives the best ways to lay the body, each with the arguments for place_on_face. Lay it with the first, unless the person wants a face of their own on the bed, then ask check_printability again.\n\
+         5. Too big for the room even turned: split_for_bed with the printer cuts it into pieces that fit, with joints across every cut (a plug, or a dowel printed apart) - the joints' sizes are features, edited with edit_feature. Lay each piece and check it as above.\n\
+         6. Write it out with export_mesh to a .3mf file, quality standard: the pieces of a split and the pins go in one file. Save the document (save_project).\n\
+         7. Tell the person the verdicts, what was mended, turned or cut, and where the .3mf is. Sending it to the printer is for a printer server the person has connected, if any; the print is started by the person."
+    )
+}
+
+const PROMPTS: [Prompt; 6] = [
     Prompt {
         name: "design_for_fdm",
         title: "Design a part for FDM printing",
@@ -138,6 +154,17 @@ const PROMPTS: [Prompt; 5] = [
         description: "Look at a mesh or a STEP in pictures, find its holes, roundings and chamfers by eye, read each by its geometry, and make them features with sizes that can be changed.",
         arguments: &[Arg { name: "path", description: "The file, when it is not in the document yet", need: Need::Optional }],
         text: recognise_by_eye,
+    },
+    Prompt {
+        name: "prepare_for_print",
+        title: "Get a body ready for a printer",
+        description: "Read and mend a mesh, check that a body prints on a printer, lay it the best way, cut it to fit the printer with joints, and write a 3MF for the slicer.",
+        arguments: &[
+            Arg { name: "path", description: "The file, when it is not in the document yet", need: Need::Optional },
+            Arg { name: "printer", description: "The printer by its room, as check_printability names them", need: Need::Optional },
+            Arg { name: "nozzle", description: "Nozzle diameter in mm (0.4 by default)", need: Need::Optional },
+        ],
+        text: prepare_for_print,
     },
 ];
 

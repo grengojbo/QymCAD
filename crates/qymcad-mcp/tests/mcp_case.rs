@@ -1,5 +1,6 @@
 //! THE WHOLE CHAIN THROUGH THE SERVER, as a person asks it in a chat: "a bracket 60 x 40 x 4 with four holes for M3,
-//! countersunk, its corners rounded, export a 3MF", then "make the thickness a parameter and rebuild it at 5".
+//! countersunk, its corners rounded, export a 3MF", then "make the thickness a parameter and rebuild it at 5", then "I
+//! stood it on its end - will it print? lay it the best way".
 //!
 //! After EVERY step the document is checked whole - a chain breaks where a single tool does not: nothing stands red,
 //! a feature that would stand red says why, a part stands as one body, every feature belongs to a part, no hole
@@ -99,12 +100,17 @@ fn run(dir: &std::path::Path) -> Run {
         Step { what: "a look at it", tool: "render", args: json!({ "view": "iso", "width": 320, "height": 240 }) },
         Step { what: "the thickness made 5", tool: "set_parameter", args: json!({ "name": "t", "expr": "5" }) },
         Step { what: "a 3MF for the slicer", tool: "export_mesh", args: json!({ "path": file.to_string_lossy(), "quality": "standard" }) },
+        Step { what: "the bracket stood on its end", tool: "place_on_face", args: json!({ "face": { "extreme": { "axis": "x", "max": true } } }) },
+        Step { what: "whether it prints standing", tool: "check_printability", args: json!({ "printer": "p1s" }) },
+        Step { what: "the best ways to lay it", tool: "suggest_orientation", args: json!({}) },
+        Step { what: "the bracket laid the best way", tool: "place_on_face", args: json!("$lay") },
+        Step { what: "whether it prints laid", tool: "check_printability", args: json!({ "printer": "p1s" }) },
     ];
     let mut last = json!({});
     for Step { what, tool, args } in steps {
         // a step reads the sketch and the body the steps before it made
         let mut text = args.to_string();
-        for key in ["sketch", "body"] {
+        for key in ["sketch", "body", "lay"] {
             if let Some(v) = last.get(key).filter(|v| !v.is_null()) {
                 text = text.replace(&format!("\"${key}\""), &v.to_string());
             }
@@ -123,6 +129,19 @@ fn run(dir: &std::path::Path) -> Run {
                 last[key] = reply[key].clone();
             }
         }
+        // the way ranked first is laid by the arguments it carries
+        if !reply["ways"][0]["lay"].is_null() {
+            last["lay"] = reply["ways"][0]["lay"].clone();
+        }
+        if tool == "check_printability" {
+            r.found.push(format!("{what}: {}", reply["verdict"]));
+        }
+    }
+
+    // STOOD ON ITS END the countersinks hang over the air; laid the best way it is back on its bottom and prints
+    let verdicts: Vec<&String> = r.found.iter().filter(|f| f.starts_with("whether it prints")).collect();
+    if verdicts != ["whether it prints standing: \"warn\"", "whether it prints laid: \"pass\""] {
+        r.wrong.push(format!("the checks of printing read {verdicts:?}, not a warning standing and a pass laid"));
     }
 
     // THE BRACKET AT 5: one sound body 5 high, its corners still rounded 5, its four holes still through
