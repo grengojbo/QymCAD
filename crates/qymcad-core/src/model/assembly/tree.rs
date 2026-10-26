@@ -70,6 +70,33 @@ impl Project {
         true
     }
 
+    /// A PIECE OF A MESH TAKES A MENDED MESH: its mesh is its geometry, kept by the document as the factor of its
+    /// scale is, so a repair writes the new triangles into it - nothing is built again. The colours a file gave its
+    /// triangles follow them through `mended.colours`. Returns whether `body` is a piece of a mesh.
+    pub fn replace_piece_mesh(&mut self, body: Id, mended: crate::model::PieceMesh) -> bool {
+        use crate::feature::FeatureKind;
+        let Some(mi) = self.mesh_index(body) else { return false };
+        let Some(FeatureKind::MeshPiece { mends, .. }) = self.timeline.iter_mut().map(|n| &mut n.kind).find(|k| matches!(k, FeatureKind::MeshPiece { body: b, .. } if *b == body)) else {
+            return false;
+        };
+        *mends += 1;
+        let root = self.lineage_root(body);
+        match mended.colours {
+            crate::model::Colours::From(took) => {
+                if let Some((_, places)) = self.tri_colors.get_mut(&root) {
+                    let old = std::mem::take(places);
+                    *places = took.iter().map(|&t| old.get(t as usize).copied().unwrap_or(0)).collect();
+                }
+            }
+            crate::model::Colours::Dropped => {
+                self.tri_colors.remove(&root);
+            }
+        }
+        self.bodies[mi].mesh = mended.mesh;
+        self.bodies[mi].faces = mended.faces;
+        true
+    }
+
     /// A BODY MADE OF A MESH, with no B-rep anywhere in its making: a piece of a mesh, or a move of one.
     pub fn mesh_born(&self, body: Id) -> bool {
         use crate::feature::FeatureKind;
@@ -229,7 +256,7 @@ impl Project {
                 let part = self.add_part(node.name);
                 // a piece of a mesh is not an imported solid: it has no B-rep to raise again or to export as one
                 let (name, kind) = if node.mesh {
-                    ("name-mesh-piece", FeatureKind::MeshPiece { body, source, piece: node.solid, scale: 1.0 })
+                    ("name-mesh-piece", FeatureKind::MeshPiece { body, source, piece: node.solid, scale: 1.0, mends: 0 })
                 } else {
                     ("name-import", FeatureKind::Import { body, source, solid: node.solid, scale: 1.0 })
                 };

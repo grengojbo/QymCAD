@@ -222,6 +222,8 @@ pub(crate) mod tests {
     use crate::gui::check_folder::tests::CheckFolder;
     use std::time::Duration;
 
+    mod a_mesh_mended_by_claude;
+
     /// The folder of a socket of the check's own, in the temporary folder: a checkout shared into a virtual machine
     /// refuses to hold one. The socket is `SOCKET` in it.
     pub(crate) fn place(name: &str) -> CheckFolder {

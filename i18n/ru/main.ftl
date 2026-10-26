@@ -1212,6 +1212,7 @@ msg-params-on-right = Параметры этой фичи — в панели �
 msg-move-sketch = Переместить эскиз: укажите новую плоскость (XY/XZ/YZ), датум или грань детали (Esc — отмена)
 status-move-component = Перемещение компонента
 status-move-body = Перемещение тела
+status-mesh-repair = Починка сетки
 f-intersection = Пересечение
 f-intersect = Пересечь
 msg-plane-manual = Плоскость задана вручную — правьте координаты в панели справа

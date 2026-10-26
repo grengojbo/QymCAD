@@ -1212,6 +1212,7 @@ msg-params-on-right = The parameters of this feature are in the panel on the rig
 msg-move-sketch = Move the sketch: click the new plane (XY/XZ/YZ), a datum or a face of the part (Esc cancels)
 status-move-component = Moving the component
 status-move-body = Moving the body
+status-mesh-repair = Repairing the mesh
 f-intersection = Intersection
 f-intersect = Intersect
 msg-plane-manual = The plane is set by hand — edit its coordinates in the panel on the right

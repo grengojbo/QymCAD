@@ -57,3 +57,53 @@ fn a_cube_from_stl_short_of_a_triangle_reads_one_hole() {
     assert_eq!(r["open_edges"], json!(3), "{r}");
     assert_eq!(r["closed"], json!(false), "{r}");
 }
+
+/// A server with a mesh brought in, and the body's key.
+struct Brought {
+    ctx: Ctx,
+    body: Value,
+}
+
+/// The cube from STL short of a triangle, brought in.
+fn open_cube(check: &str) -> Brought {
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target")).join(format!("qymcad-mcp-mesh-{check}"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let stl = dir.join("open.stl");
+    std::fs::write(&stl, cube_stl(&[2])).expect("the cube written");
+    let mut ctx = Ctx::blank();
+    let mesh = ok(call(&mut ctx, "import_mesh", json!({ "path": stl.to_string_lossy() })));
+    let body = json!({ "body": mesh["bodies"][0]["id"] });
+    Brought { ctx, body }
+}
+
+/// MENDED AS ONE STEP: the hole of a cube from STL is closed, mesh_report reads the cube whole, and undo brings the
+/// hole back.
+#[test]
+fn a_hole_mended_is_closed_and_undo_opens_it_again() {
+    let Brought { mut ctx, body } = open_cube("repair");
+    let r = ok(call(&mut ctx, "mesh_repair", json!({ "body": body })));
+    assert_eq!(r["closed_holes"], json!(1), "{r}");
+    assert_eq!(r["before"]["holes"], json!(1), "{r}");
+    assert_eq!(r["after"]["closed"], json!(true), "{r}");
+    let read = ok(call(&mut ctx, "mesh_report", json!({ "body": body })));
+    assert_eq!(read["closed"], json!(true), "the document does not hold the mended mesh: {read}");
+    assert!((read["volume"].as_f64().unwrap_or(0.0) - 1000.0).abs() < 1e-3, "{read}");
+    let _ = ok(call(&mut ctx, "undo", json!({})));
+    let back = ok(call(&mut ctx, "mesh_report", json!({ "body": body })));
+    assert_eq!(back["holes"], json!(1), "undo did not bring the hole back: {back}");
+}
+
+/// A BODY OF FACES, OR A MESH ALREADY USED, IS NOT MENDED: refused with its code, the document as it was.
+#[test]
+fn a_body_of_faces_or_a_mesh_used_is_refused() {
+    let mut ctx = Ctx::blank();
+    let _ = ok(call(&mut ctx, "box", json!({ "x": 10, "y": 10, "z": 10 })));
+    let r = call(&mut ctx, "mesh_repair", json!({}));
+    assert_eq!(r["error"]["code"], "not-a-mesh", "{r}");
+    let Brought { mut ctx, body } = open_cube("used");
+    let _ = ok(call(&mut ctx, "recognise_mesh", json!({ "body": body, "mode": "as_is" })));
+    let r = call(&mut ctx, "mesh_repair", json!({ "body": body }));
+    // the step that took it in stands in its place
+    assert_eq!(r["error"]["code"], "consumed-body", "{r}");
+}

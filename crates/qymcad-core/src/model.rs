@@ -629,7 +629,7 @@ impl WorkPlane {
 pub(crate) type EdgeRenames = std::collections::HashMap<Id, std::collections::HashMap<u32, u32>>;
 
 mod assembly;
-pub use assembly::{ExportMesh, ExportNode, FileGroup, ImportNode};
+pub use assembly::{Colours, ExportMesh, ExportNode, FileGroup, ImportNode, PieceMesh};
 pub mod contours;
 mod regen;
 pub use regen::{

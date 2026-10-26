@@ -1195,6 +1195,7 @@ msg-params-on-right = Бұл операцияның параметрлері о�
 msg-move-sketch = Эскизді жылжыту: жаңа жазықтықты (XY/XZ/YZ), датумды не бөлшек бетін шертіңіз (Esc — болдырмау)
 status-move-component = Компонентті жылжыту
 status-move-body = Денені жылжыту
+status-mesh-repair = Торды жөндеу
 f-intersection = Қиылысу
 f-intersect = Қиылыстыру
 msg-plane-manual = Жазықтық қолмен берілген — оның координаталарын оң жақтағы панельде өзгертіңіз

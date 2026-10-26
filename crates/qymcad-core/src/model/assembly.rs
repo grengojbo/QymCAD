@@ -100,6 +100,23 @@ pub struct ExportMesh {
     pub tri_colors: Vec<Option<[u8; 3]>>,
 }
 
+/// A MENDED MESH FOR A PIECE OF A MESH: its triangles, the faces found on them, and where their colours come from.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PieceMesh {
+    pub mesh: crate::geom::Mesh,
+    pub faces: Vec<crate::geom::MeshFace>,
+    pub colours: Colours,
+}
+
+/// Where the colours of a mended mesh's triangles come from.
+#[derive(Clone, Debug, PartialEq)]
+pub enum Colours {
+    /// For every new triangle, the old triangle it came of: it takes that one's colour.
+    From(Vec<u32>),
+    /// The old triangles are no more to be told apart - a mesh made lighter: the piece is shown in its own colour.
+    Dropped,
+}
+
 mod tree;
 mod components;
 mod joints;

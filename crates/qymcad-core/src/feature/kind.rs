@@ -683,6 +683,10 @@ pub enum FeatureKind {
         /// mesh is kept at it, and a new factor is taken from the mesh divided by this one. 1 is the file as it is.
         #[serde(default = "unit_scale")]
         scale: f64,
+        /// How many times its mesh was mended in place (`Project::replace_piece_mesh`). The document's key counts a mesh
+        /// by its size, and a repair that only turns triangles outward keeps the size: counted here, it is a change.
+        #[serde(default)]
+        mends: u32,
     },
 }
 
