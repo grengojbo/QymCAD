@@ -297,3 +297,55 @@ pub const PLACE_ON_FACE: Tool = Tool {
         Ok(out)
     },
 };
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SuggestArgs {
+    body: Option<BodyRef>,
+    #[serde(default = "forty_five")]
+    overhang: f64,
+}
+
+pub const SUGGEST_ORIENTATION: Tool = Tool {
+    name: "suggest_orientation",
+    description: "The best ways to lay a body for printing, the best first, up to 3: each of its 6 broadest flat faces looking down and each way along the world's axes, rated as it would then print - overhang (mm^2 hanging past overhang deg from the upright, 45 by default; least first), contact (mm^2 on the bed; most next), height (mm; lowest last). A way standing on an edge or a point comes last. Each way holds lay: the arguments place_on_face takes to lay it so. as_it_lies rates the body as it stands now. Nothing is changed.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": body_field(),
+            "overhang": { "type": "number", "minimum": 0, "maximum": 89, "default": 45, "description": "Degrees from the upright a face may turn down unsupported." },
+        }, "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        let a: SuggestArgs = tool::args(arguments)?;
+        let project = ctx.doc.project();
+        let body = target(project, a.body)?;
+        let mesh = qymcad_doc::print::world_mesh(project, body)
+            .filter(|m| !m.tris.is_empty())
+            .ok_or_else(|| Refusal::new("no-mesh", &format!("Body {body} has no triangles to read."), Stage::Resolve).with_hint("Rebuild the document, or name another body."))?;
+        let ways = qymcad_doc::print::orient::suggest(project, body, a.overhang);
+        let told: Vec<Value> = ways
+            .iter()
+            .enumerate()
+            .map(|(k, w)| {
+                let lay = match w.face {
+                    Some(key) => json!({ "body": { "body": body }, "face": { "ids": [key] } }),
+                    None => json!({ "body": { "body": body }, "down": w.down.map(round) }),
+                };
+                json!({ "rank": k + 1, "down": w.down.map(round), "face": w.face, "overhang": round(w.overhang), "contact": round(w.contact), "height": round(w.height), "lay": lay })
+            })
+            .collect();
+        let height = mesh.bounds().map_or(0.0, |b| b.max.z - b.min.z);
+        let mut out = Answer::new();
+        out.insert("body".into(), json!(body));
+        out.insert("ways".into(), json!(told));
+        out.insert(
+            "as_it_lies".into(),
+            json!({
+                "overhang": round(qymcad_doc::print::checks::overhang(&mesh, a.overhang).area),
+                "contact": round(qymcad_doc::print::checks::contact(&mesh).area),
+                "height": round(height),
+            }),
+        );
+        Ok(out)
+    },
+};
