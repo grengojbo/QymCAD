@@ -201,6 +201,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::query::INSPECT,
     crate::tools::print::MESH_REPORT,
     crate::tools::print::MESH_REPAIR,
+    crate::tools::exchange::SCALE,
     crate::tools::query::MEASURE,
     crate::tools::selection::GET_SELECTION,
     crate::tools::batch::APPLY_OPS,

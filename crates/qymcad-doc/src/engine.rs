@@ -283,6 +283,36 @@ impl DocEngine {
         Ok(Imported { root: landed.root, bodies: landed.bodies, unitless: landed.unitless, span: landed.span })
     }
 
+    /// TAKE AN IMPORT AT `by` TIMES THE SIZE IT STANDS AT, as one action: every body of its file with it - a piece of a
+    /// mesh scaled by the document, a solid from its shape as the file has it, the parts the file placed about the
+    /// file's zero - as the window's question about the scale takes it (`import::read_again`). Returns the factor it
+    /// then stands at from the file's own numbers. A body built here is refused (`scale-built-body`): its size is in
+    /// its sketches and features, and a factor on top of them would not follow a change of one.
+    pub fn rescale(&mut self, body: Id, by: f64) -> Result<f64, DocError> {
+        use qymcad_core::feature::FeatureKind;
+        if !(by.is_finite() && by > 0.0) {
+            return Err(DocError::Refused("scale-factor".into()));
+        }
+        self.ensure_brep();
+        let node = self.project.timeline.iter().find(|n| matches!(n.kind, FeatureKind::Import { body: b, .. } | FeatureKind::MeshPiece { body: b, .. } if b == body)).map(|n| n.id);
+        let node = node.ok_or_else(|| DocError::Refused("scale-built-body".into()))?;
+        let again = import::read_again(&self.project, &self.shapes, node).map_err(|why| {
+            DocError::Refused(
+                match why {
+                    import::Unread::NotAnImport => "scale-built-body",
+                    import::Unread::Reading => "scale-still-reading",
+                }
+                .into(),
+            )
+        })?;
+        let to = again.was * by;
+        self.history.begin("import-scale-title", &self.project); // a catalogue key: the step is named in the person's language
+        let _ = import::apply_scale(&mut self.project, &mut self.shapes, again.landed.as_read(), to);
+        self.rebuild();
+        self.history.commit();
+        Ok(to)
+    }
+
     /// WRITE `target` AS A MESH FILE at `deflection` mm: every visible body, a live B-rep tessellated to that detail,
     /// a body with none as its stored mesh. glTF and 3MF go out as the tree of parts under the names `shown` gives,
     /// placed, in their colours; the rest flat. The answer tells what went as a mesh only.

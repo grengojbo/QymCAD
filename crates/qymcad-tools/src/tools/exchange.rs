@@ -222,3 +222,38 @@ pub const EXPORT_CAD: Tool = Tool {
         Ok(written(&target_path, &out))
     },
 };
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct ScaleArgs {
+    body: Option<crate::args::BodyRef>,
+    factor: f64,
+}
+
+pub const SCALE: Tool = Tool {
+    name: "scale",
+    description: "Take a body brought in from a file - by import_mesh or import_cad - at factor times the size it stands at, as the window's question about the scale does: every body of that file with it, the parts the file placed about the file's zero. 25.4 takes a file drawn in inches to mm, 0.1 a file read as mm that was cm. One step undo takes back. The answer gives the factor it then stands at from the file's own numbers and its size. A body built in the document is refused: change the sketches and features its size is in, or a parameter they follow.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": crate::tools::features::body_field(),
+            "factor": { "type": "number", "exclusiveMinimum": 0, "maximum": 100000, "description": "Times the size it stands at." },
+        }, "required": ["factor"], "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        let a: ScaleArgs = tool::args(arguments)?;
+        if !(a.factor.is_finite() && a.factor > 0.0) {
+            return Err(tool::Refusal::new("bad-factor", &format!("A factor of {} takes nothing: it is a number over 0.", a.factor), tool::Stage::Validate));
+        }
+        let body = crate::tools::features::target(ctx.doc.project(), a.body)?;
+        if ctx.doc.project().import_scale(body).is_none() {
+            return Err(tool::Refusal::new("scale-built-body", &format!("Body {body} was built in the document, not brought in from a file: it has no factor to take it at."), tool::Stage::Validate)
+                .with_hint("Change the sketches and features its size is in, or a parameter they follow (set_parameter)."));
+        }
+        let to = ctx.doc.rescale(body, a.factor).map_err(tool::doc_refusal)?;
+        let mut out = Answer::new();
+        out.insert("body".into(), json!(body));
+        out.insert("factor".into(), json!(to));
+        out.insert("size".into(), json!(import::world_span(ctx.doc.project(), &[body]).map(crate::tools::query::round)));
+        Ok(out)
+    },
+};
