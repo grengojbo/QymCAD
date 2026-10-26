@@ -199,6 +199,7 @@ pub const ALL: &[Tool] = &[
     crate::tools::query::LIST_EDGES,
     crate::tools::query::RESOLVE,
     crate::tools::query::INSPECT,
+    crate::tools::print::MESH_REPORT,
     crate::tools::query::MEASURE,
     crate::tools::selection::GET_SELECTION,
     crate::tools::batch::APPLY_OPS,

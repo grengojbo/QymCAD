@@ -19,6 +19,7 @@ pub mod import;
 pub mod measure;
 pub mod ops;
 pub mod params;
+pub mod print;
 pub mod regen;
 pub mod report;
 

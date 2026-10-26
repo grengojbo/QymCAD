@@ -9,6 +9,7 @@ pub mod look;
 pub mod modify;
 pub mod params;
 pub mod prim;
+pub mod print;
 pub mod query;
 pub mod recognise;
 pub mod section;

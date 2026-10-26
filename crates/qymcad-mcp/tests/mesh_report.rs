@@ -1,0 +1,59 @@
+//! THE HEALTH OF A MESH THROUGH THE SERVER: a box of faces reads closed, whole and of its volume; a cube from STL short
+//! of one triangle reads open along one hole of three edges, the hole a slicer would meet.
+
+use qymcad_mcp::server::answer;
+use qymcad_mcp::tool::Ctx;
+use serde_json::{json, Value};
+
+fn call(ctx: &mut Ctx, name: &str, arguments: Value) -> Value {
+    let line = json!({ "jsonrpc": "2.0", "id": 1, "method": "tools/call", "params": { "name": name, "arguments": arguments } }).to_string();
+    answer(ctx, &line).expect("a request is answered")["result"]["structuredContent"].clone()
+}
+
+fn ok(reply: Value) -> Value {
+    assert_eq!(reply["ok"], json!(true), "{reply}");
+    reply
+}
+
+/// A cube of side 10 from the origin as a text STL, less the triangles numbered in `left_out`.
+fn cube_stl(left_out: &[usize]) -> String {
+    let c = |i: usize| [(i & 1) as f64 * 10.0, ((i >> 1) & 1) as f64 * 10.0, ((i >> 2) & 1) as f64 * 10.0];
+    let tris = [[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7], [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]];
+    let mut out = String::from("solid cube\n");
+    for (_, t) in tris.iter().enumerate().filter(|(k, _)| !left_out.contains(k)) {
+        out.push_str("facet normal 0 0 0\nouter loop\n");
+        for &i in t {
+            let p = c(i);
+            out.push_str(&format!("vertex {} {} {}\n", p[0], p[1], p[2]));
+        }
+        out.push_str("endloop\nendfacet\n");
+    }
+    out + "endsolid cube\n"
+}
+
+#[test]
+fn a_box_of_faces_reads_closed() {
+    let mut ctx = Ctx::blank();
+    let _ = ok(call(&mut ctx, "box", json!({ "x": 10, "y": 10, "z": 10 })));
+    let r = ok(call(&mut ctx, "mesh_report", json!({})));
+    assert_eq!(r["closed"], json!(true), "{r}");
+    assert_eq!(r["holes"], json!(0), "{r}");
+    assert_eq!(r["pieces"], json!(1), "{r}");
+    assert!((r["volume"].as_f64().unwrap_or(0.0) - 1000.0).abs() < 1e-3, "{r}");
+}
+
+#[test]
+fn a_cube_from_stl_short_of_a_triangle_reads_one_hole() {
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target/qymcad-mcp-mesh-report"));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let stl = dir.join("open.stl");
+    std::fs::write(&stl, cube_stl(&[2])).expect("the cube written");
+    let mut ctx = Ctx::blank();
+    let mesh = ok(call(&mut ctx, "import_mesh", json!({ "path": stl.to_string_lossy() })));
+    let r = ok(call(&mut ctx, "mesh_report", json!({ "body": { "body": mesh["bodies"][0]["id"] } })));
+    assert_eq!(r["triangles"], json!(11), "{r}");
+    assert_eq!(r["holes"], json!(1), "{r}");
+    assert_eq!(r["open_edges"], json!(3), "{r}");
+    assert_eq!(r["closed"], json!(false), "{r}");
+}
