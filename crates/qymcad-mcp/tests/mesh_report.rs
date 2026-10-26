@@ -107,3 +107,46 @@ fn a_body_of_faces_or_a_mesh_used_is_refused() {
     // the step that took it in stands in its place
     assert_eq!(r["error"]["code"], "consumed-body", "{r}");
 }
+
+/// A cube of 10 with a hollow cube of 2 in its middle as a text STL, the hollow's faces looking into the solid.
+fn hollow_cube_stl() -> String {
+    let corner = |side: f64, at: f64, i: usize| [at + (i & 1) as f64 * side, at + ((i >> 1) & 1) as f64 * side, at + ((i >> 2) & 1) as f64 * side];
+    let tris = [[0, 2, 1], [1, 2, 3], [4, 5, 6], [5, 7, 6], [0, 1, 4], [1, 5, 4], [2, 6, 3], [3, 6, 7], [0, 4, 2], [2, 4, 6], [1, 3, 5], [3, 7, 5]];
+    let mut out = String::from("solid hollow\n");
+    for t in tris {
+        let outer = t.map(|i| corner(10.0, 0.0, i));
+        let inner = [t[0], t[2], t[1]].map(|i| corner(2.0, 4.0, i));
+        for tri in [outer, inner] {
+            out.push_str("facet normal 0 0 0\nouter loop\n");
+            for p in tri {
+                out.push_str(&format!("vertex {} {} {}\n", p[0], p[1], p[2]));
+            }
+            out.push_str("endloop\nendfacet\n");
+        }
+    }
+    out + "endsolid hollow\n"
+}
+
+/// A HOLLOW LEFT ON PURPOSE is told as a hollow, not as triangles wound inward, and mesh_repair keeps it: the cube
+/// closes 1 000 - 8 before and after.
+#[test]
+fn a_hollow_is_told_and_kept() {
+    let dir = std::path::PathBuf::from(concat!(env!("CARGO_MANIFEST_DIR"), "/../../target")).join("qymcad-mcp-mesh-hollow");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).expect("a folder for the check");
+    let stl = dir.join("hollow.stl");
+    std::fs::write(&stl, hollow_cube_stl()).expect("the cube written");
+    let mut ctx = Ctx::blank();
+    let mesh = ok(call(&mut ctx, "import_mesh", json!({ "path": stl.to_string_lossy() })));
+    let body = json!({ "body": mesh["bodies"][0]["id"] });
+    let r = ok(call(&mut ctx, "mesh_report", json!({ "body": body })));
+    assert_eq!(r["flipped"], json!(0), "{r}");
+    assert_eq!(r["hollows"], json!(1), "{r}");
+    assert_eq!(r["pieces"], json!(1), "{r}");
+    assert!((r["volume"].as_f64().unwrap_or(0.0) - 992.0).abs() < 1e-3, "{r}");
+    let _ = ok(call(&mut ctx, "mesh_repair", json!({ "body": body, "drop_under": 10 })));
+    let after = ok(call(&mut ctx, "mesh_report", json!({ "body": body })));
+    assert_eq!(after["hollows"], json!(1), "mesh_repair took the hollow away: {after}");
+    assert!((after["volume"].as_f64().unwrap_or(0.0) - 992.0).abs() < 1e-3, "{after}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

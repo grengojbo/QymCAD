@@ -30,6 +30,8 @@ pub struct Prepared {
     pub non_manifold: usize,
     /// Triangles whose winding was turned.
     pub flipped: usize,
+    /// Closed pieces lying inside another closed piece an odd number of times deep: hollows of the solid, wound into it.
+    pub hollows: usize,
     /// Triangles kept although flat, because they close a seam. Their normal means nothing.
     pub slivers: Vec<u32>,
     /// For every triangle kept, its index in the mesh as given: what is found here can be shown on the file.
@@ -169,14 +171,14 @@ pub fn prepare(mesh: &Mesh, weld: f64) -> Prepared {
         }
     }
 
-    let turned = orient(&kept, &tris);
+    let Oriented { turned, hollows } = orient(&kept, &tris);
     let flipped = turned.iter().filter(|&&f| f).count();
     for (t, &f) in tris.iter_mut().zip(&turned) {
         *t = wound(*t, f);
     }
     let (neighbours, border, non_manifold) = adjacency(&tris);
     let normals = tris.iter().map(|t| unit(normal_of(&kept, *t))).collect();
-    Prepared { mesh: Mesh { verts: kept, tris, ..Default::default() }, neighbours, normals, holes: loops(&border), dropped, non_manifold, flipped, slivers, origin }
+    Prepared { mesh: Mesh { verts: kept, tris, ..Default::default() }, neighbours, normals, holes: loops(&border), dropped, non_manifold, flipped, hollows, slivers, origin }
 }
 
 /// Joins corners closer than `tol`. The space is cut into cubes of side `tol`, so a partner can only lie in the
@@ -234,11 +236,21 @@ fn sides_of(tris: &[[u32; 3]]) -> HashMap<(u32, u32), Vec<(u32, u8)>> {
     sides
 }
 
+/// Which triangles to turn, and how many closed pieces are hollows of another.
+struct Oriented {
+    turned: Vec<bool>,
+    hollows: usize,
+}
+
 /// Which triangles to turn. The winding spreads from a seed across every side two triangles share: a neighbour
 /// wound the same way runs the shared side in the opposite direction. Then each connected piece is turned as a
-/// whole if its signed volume is negative, that is, if its normals point in.
-fn orient(verts: &[Point3], tris: &[[u32; 3]]) -> Vec<bool> {
+/// whole if its signed volume is negative, that is, if its normals point in - and a closed piece inside another
+/// closed piece is turned back to point in again: it is a hollow of that solid, a cavity a print program leaves on
+/// purpose. Turned out of itself it became a solid crumb inside the solid; on a part of 4 526 triangles with ten
+/// hollows of 0.1-0.2 mm^3 the 600 triangles round them were counted as wound inward and turned.
+fn orient(verts: &[Point3], tris: &[[u32; 3]]) -> Oriented {
     let sides = sides_of(tris);
+    let mut pieces: Vec<Vec<usize>> = Vec::new();
     let mut turn: Vec<Option<bool>> = vec![None; tris.len()];
     for seed in 0..tris.len() {
         if turn[seed].is_some() {
@@ -271,8 +283,80 @@ fn orient(verts: &[Point3], tris: &[[u32; 3]]) -> Vec<bool> {
                 turn[t] = turn[t].map(|f| !f);
             }
         }
+        pieces.push(piece);
     }
-    turn.into_iter().map(|f| f == Some(true)).collect()
+    // a piece with a border or an edge of three closes nothing and holds nothing
+    let closed: Vec<bool> = pieces.iter().map(|piece| piece.iter().all(|&t| (0..3).all(|k| sides.get(&side_key(tris[t][k], tris[t][(k + 1) % 3])).is_some_and(|l| l.len() == 2)))).collect();
+    let hollow = hollows_of(Pieces { verts, tris, closed: &closed, turn: &turn, pieces: &pieces });
+    for (piece, &h) in pieces.iter().zip(&hollow) {
+        if h {
+            for &t in piece {
+                turn[t] = turn[t].map(|f| !f);
+            }
+        }
+    }
+    Oriented { turned: turn.into_iter().map(|f| f == Some(true)).collect(), hollows: hollow.iter().filter(|&&h| h).count() }
+}
+
+/// The pieces of a mesh, each wound out of itself.
+struct Pieces<'a> {
+    verts: &'a [Point3],
+    tris: &'a [[u32; 3]],
+    closed: &'a [bool],
+    turn: &'a [Option<bool>],
+    pieces: &'a [Vec<usize>],
+}
+
+/// Which pieces are hollows: closed, and inside an odd number of the other closed pieces. Inside is read by the winding number of the other piece about a
+/// point of this one - the solid angle its triangles span, over 4 pi: 1 inside, 0 outside - for the pieces whose box
+/// holds the point.
+fn hollows_of(m: Pieces) -> Vec<bool> {
+    let closed = m.closed;
+    let boxes: Vec<[Point3; 2]> = m
+        .pieces
+        .iter()
+        .map(|piece| {
+            let mut lo = Point3::new(f64::MAX, f64::MAX, f64::MAX);
+            let mut hi = Point3::new(f64::MIN, f64::MIN, f64::MIN);
+            for &t in piece {
+                for &i in &m.tris[t] {
+                    let v = m.verts[i as usize];
+                    lo = Point3::new(lo.x.min(v.x), lo.y.min(v.y), lo.z.min(v.z));
+                    hi = Point3::new(hi.x.max(v.x), hi.y.max(v.y), hi.z.max(v.z));
+                }
+            }
+            [lo, hi]
+        })
+        .collect();
+    let within = |b: &[Point3; 2], q: Point3| b[0].x <= q.x && q.x <= b[1].x && b[0].y <= q.y && q.y <= b[1].y && b[0].z <= q.z && q.z <= b[1].z;
+    (0..m.pieces.len())
+        .map(|i| {
+            if !closed[i] {
+                return false;
+            }
+            // the middle of a triangle of this piece: no corner of another piece, which shares none with it
+            let [a, b, c] = m.tris[m.pieces[i][0]].map(|v| m.verts[v as usize]);
+            let q = Point3::new((a.x + b.x + c.x) / 3.0, (a.y + b.y + c.y) / 3.0, (a.z + b.z + c.z) / 3.0);
+            let around = (0..m.pieces.len()).filter(|&j| j != i && closed[j] && within(&boxes[j], q)).filter(|&j| winding(&m, j, q) > 0.5).count();
+            around % 2 == 1
+        })
+        .collect()
+}
+
+/// How many times piece `j`, wound out of itself, winds about `q`: the solid angle of its triangles seen from `q`
+/// (Van Oosterom and Strackee), over 4 pi.
+fn winding(m: &Pieces, j: usize, q: Point3) -> f64 {
+    let angle: f64 = m.pieces[j]
+        .iter()
+        .map(|&t| {
+            let [a, b, c] = wound(m.tris[t], m.turn[t] == Some(true)).map(|i| sub(m.verts[i as usize], q));
+            let (la, lb, lc) = (len(a), len(b), len(c));
+            let over = dot(a, cross(b, c));
+            let under = la * lb * lc + dot(a, b) * lc + dot(a, c) * lb + dot(b, c) * la;
+            2.0 * over.atan2(under)
+        })
+        .sum();
+    angle / (4.0 * std::f64::consts::PI)
 }
 
 /// The volume a piece encloses, signed by its winding, measured from the mean of its corners. For a piece with a

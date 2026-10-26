@@ -24,8 +24,10 @@ pub struct MeshReport {
     pub non_manifold: usize,
     /// Triangles that were wound inward and are turned back.
     pub flipped: usize,
-    /// Pieces of the mesh no triangle joins, each printed on its own.
+    /// Pieces of the mesh no triangle joins, each printed on its own; the hollows inside them are not counted here.
     pub pieces: usize,
+    /// Closed pieces inside a solid, wound into it: cavities the file leaves on purpose, not triangles wound inward.
+    pub hollows: usize,
     /// No hole and no edge of three: a solid a slicer reads as it is.
     pub closed: bool,
     /// The volume the mesh closes, mm^3, its triangles wound outward; on an open mesh a number of no meaning.
@@ -47,7 +49,8 @@ pub fn mesh_report(mesh: &Mesh) -> MeshReport {
         widest_hole,
         non_manifold: p.non_manifold,
         flipped: p.flipped,
-        pieces: pieces(&p),
+        pieces: pieces(&p) - p.hollows,
+        hollows: p.hollows,
         closed: p.holes.is_empty() && p.non_manifold == 0,
         volume: volume(&p.mesh).abs(),
         area: (0..p.mesh.tris.len()).map(|t| p.mesh.tri_normal_area(t).1).sum(),

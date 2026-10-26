@@ -78,3 +78,23 @@ fn a_cube_with_corners_of_its_own_per_face_is_welded_whole() {
     let r = mesh_report(&apart);
     assert!(r.closed && r.pieces == 1, "{r:?}");
 }
+
+/// A cube of 10 with a hollow cube of 2 in its middle, the hollow's faces looking into the solid.
+fn hollow_cube() -> Mesh {
+    let mut inner = cube(2.0, [4.0; 3]);
+    for t in &mut inner.tris {
+        t.swap(1, 2);
+    }
+    joined(vec![cube(10.0, [0.0; 3]), inner])
+}
+
+/// A HOLLOW INSIDE A SOLID is no triangle wound inward and no piece printed apart: one piece with one hollow, closing
+/// 1 000 - 8 mm^3.
+#[test]
+fn a_hollow_inside_a_cube_is_told_as_a_hollow() {
+    let r = mesh_report(&hollow_cube());
+    assert_eq!(r.flipped, 0, "the hollow's triangles are counted as wound inward: {r:?}");
+    assert_eq!(r.pieces, 1, "{r:?}");
+    assert_eq!(r.hollows, 1, "{r:?}");
+    assert!((r.volume - 992.0).abs() < 1e-9, "{r:?}");
+}

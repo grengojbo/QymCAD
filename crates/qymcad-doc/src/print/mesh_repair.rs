@@ -124,7 +124,9 @@ fn drop_crumbs(mesh: &mut Mesh, took: &mut Vec<u32>, under: f64) -> usize {
         let v = (a.x * (b.y * c.z - b.z * c.y) - a.y * (b.x * c.z - b.z * c.x) + a.z * (b.x * c.y - b.y * c.x)) / 6.0;
         *volume.entry(find(&mut root, t)).or_insert(0.0) += v;
     }
-    let small: std::collections::HashSet<usize> = volume.iter().filter(|(_, v)| v.abs() < under).map(|(&r, _)| r).collect();
+    // a hollow of the solid closes a volume below nothing, wound into the solid: it is no crumb, and dropped it would
+    // fill the cavity the file left
+    let small: std::collections::HashSet<usize> = volume.iter().filter(|(_, v)| (0.0..under).contains(*v)).map(|(&r, _)| r).collect();
     let keep: Vec<bool> = (0..mesh.tris.len()).map(|t| !small.contains(&find(&mut root, t))).collect();
     let mut k = 0;
     mesh.tris.retain(|_| {

@@ -21,6 +21,7 @@ fn report_json(r: &MeshReport) -> Value {
         "non_manifold": r.non_manifold,
         "flipped": r.flipped,
         "pieces": r.pieces,
+        "hollows": r.hollows,
         "closed": r.closed,
         "volume": round(r.volume),
         "area": round(r.area),
@@ -35,7 +36,7 @@ struct BodyArgs {
 
 pub const MESH_REPORT: Tool = Tool {
     name: "mesh_report",
-    description: "The health of a body's mesh as a slicer meets it, before it is printed or repaired: triangles, dropped (of no use - no area, a repeat, a corner that is no number), holes (borders the mesh is open along) with open_edges and widest_hole (the longest border, mm: a hole of 3 edges is a missing triangle, a long one an open side), non_manifold (edges three triangles share), flipped (triangles wound inward), pieces (parts no triangle joins, printed apart), closed (no hole and no edge of three), volume (mm^3, of no meaning when open) and area (mm^2). A body brought in by import_mesh is read as it came; a body of faces as its triangles in the window. Nothing is changed.",
+    description: "The health of a body's mesh as a slicer meets it, before it is printed or repaired: triangles, dropped (of no use - no area, a repeat, a corner that is no number), holes (borders the mesh is open along) with open_edges and widest_hole (the longest border, mm: a hole of 3 edges is a missing triangle, a long one an open side), non_manifold (edges three triangles share), flipped (triangles wound inward), pieces (parts no triangle joins, printed apart), hollows (closed cavities inside a solid, faces looking into it: left by the file on purpose, kept by mesh_repair), closed (no hole and no edge of three), volume (mm^3, of no meaning when open) and area (mm^2). A body brought in by import_mesh is read as it came; a body of faces as its triangles in the window. Nothing is changed.",
     schema: || json!({ "type": "object", "properties": { "body": body_field() }, "additionalProperties": false }),
     call: |ctx: &mut Ctx, arguments: Value| {
         let a: BodyArgs = tool::args(arguments)?;

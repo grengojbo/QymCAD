@@ -109,3 +109,19 @@ fn a_mesh_made_lighter_drops_its_colours() {
     assert!(mesh_report(&r.mesh).closed, "the tube made lighter is open");
     assert_eq!(r.colours, Colours::Dropped, "the colours of triangles that are no more are kept");
 }
+
+/// A HOLLOW IS NO CRUMB: a cube of 10 with a hollow of 8 mm^3 in it, mended with crumbs under 10 mm^3 dropped, keeps its
+/// hollow facing into the solid - the mesh as it came, 1 000 - 8.
+#[test]
+fn a_hollow_is_kept_as_it_is() {
+    let mut inner = cube(2.0, [4.0; 3]);
+    for t in &mut inner.tris {
+        t.swap(1, 2);
+    }
+    let m = joined(vec![cube(10.0, [0.0; 3]), inner]);
+    let r = mesh_repair(&m, &Repair { drop_under: 10.0, ..AS_IS });
+    assert_eq!(r.dropped_pieces, 0, "the hollow was dropped as a crumb");
+    let after = mesh_report(&r.mesh);
+    assert_eq!(after.hollows, 1, "{after:?}");
+    assert!((after.volume - 992.0).abs() < 1e-9, "{after:?}");
+}
