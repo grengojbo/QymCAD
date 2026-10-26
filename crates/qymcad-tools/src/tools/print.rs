@@ -243,3 +243,57 @@ pub const CHECK_PRINTABILITY: Tool = Tool {
         Ok(out)
     },
 };
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct PlaceArgs {
+    body: Option<BodyRef>,
+    face: Option<crate::args::QueryArg>,
+    down: Option<[f64; 3]>,
+}
+
+pub const PLACE_ON_FACE: Tool = Tool {
+    name: "place_on_face",
+    description: "Lay a body on one of its faces for printing: the face turns to look straight down, about the middle of the body, and the body's lowest point goes to z = 0. face is a query finding one flat face (\"bottom\" lays it as it stands; a key from list_faces as {\"ids\": [key]}); or down gives the way the face looks now, in the world - the normal point_at reads off a picture, for a body brought in by import_mesh, whose faces have no keys to query. One move node, as move lays it: a body moved before takes this on top. The answer gives the body's size and lowest point after. suggest_orientation tells which face to lay it on.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": body_field(),
+            "face": crate::args::query_schema(),
+            "down": { "type": "array", "items": { "type": "number" }, "minItems": 3, "maxItems": 3, "description": "The way the face looks now, in the world." },
+        }, "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        let a: PlaceArgs = tool::args(arguments)?;
+        let project = ctx.doc.project();
+        let body = target(project, a.body)?;
+        let down = match (&a.face, a.down) {
+            (Some(query), None) => {
+                let found = crate::args::resolve(project, body, &crate::args::reference(query, crate::args::Expect::One), crate::args::Element::Faces)?;
+                let faces = project.regen_faces.get(&body).map(Vec::as_slice).or_else(|| project.mesh_index(body).map(|i| project.bodies[i].faces.as_slice())).unwrap_or(&[]);
+                let face = faces.iter().find(|f| f.id == found[0]).ok_or_else(|| Refusal::new("no-face", &format!("Face {} of body {body} has no triangles to read its look from.", found[0]), Stage::Resolve))?;
+                qymcad_core::feature::apply12_dir(&project.body_world_transform(body), face.normal)
+            }
+            (None, Some(d)) => d,
+            _ => return Err(Refusal::new("arguments", "Give face or down, one of the two.", Stage::Validate)),
+        };
+        let m = qymcad_doc::print::orient::lay_on(project, body, down).ok_or_else(|| Refusal::new("bad-direction", &format!("The way {down:?} has no length to lay the body by."), Stage::Validate))?;
+        let node = ctx
+            .doc
+            .edit("status-move-body", |p| {
+                // a body standing as a move takes this one on top, so two lays are one node
+                if p.accumulate_move(body, &m) {
+                    Ok(body)
+                } else {
+                    Ok(p.add_move(body, m))
+                }
+            })
+            .map_err(tool::doc_refusal)?;
+        let mut out = crate::tools::modify::laid_node(ctx, node);
+        let now = ctx.doc.project().timeline.iter().find(|n| n.id == node).and_then(|n| n.kind.body()).unwrap_or(body);
+        if let Some(b) = qymcad_doc::print::world_mesh(ctx.doc.project(), now).and_then(|m| m.bounds()) {
+            out.insert("size".into(), json!([b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z].map(round)));
+            out.insert("lowest".into(), json!(round(b.min.z)));
+        }
+        Ok(out)
+    },
+};

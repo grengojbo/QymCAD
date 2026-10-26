@@ -4,6 +4,7 @@
 pub mod checks;
 pub mod mesh_repair;
 pub mod mesh_report;
+pub mod orient;
 pub mod small;
 pub mod thickness;
 
