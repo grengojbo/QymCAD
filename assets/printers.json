@@ -1,0 +1,17 @@
+[
+  { "name": "a1_mini", "printers": ["Bambu Lab A1 mini"], "build": [180, 180, 180] },
+  { "name": "p1s", "printers": ["Bambu Lab X1C", "Bambu Lab X1E", "Bambu Lab P1P", "Bambu Lab P1S", "Bambu Lab P2S", "Bambu Lab A1"], "build": [256, 256, 256] },
+  { "name": "x2d", "printers": ["Bambu Lab X2D"], "build": [256, 256, 260] },
+  { "name": "h2s", "printers": ["Bambu Lab H2S"], "build": [340, 320, 340] },
+  { "name": "h2d", "printers": ["Bambu Lab H2D, both nozzles", "Bambu Lab H2D Pro, both nozzles"], "build": [300, 320, 325] },
+  { "name": "h2d_one", "printers": ["Bambu Lab H2D, one nozzle"], "build": [325, 320, 325] },
+  { "name": "h2c", "printers": ["Bambu Lab H2C, right nozzle"], "build": [305, 320, 325] },
+  { "name": "k1c", "printers": ["Creality K1C", "Creality K1 SE", "Creality Ender-3 V3 SE"], "build": [220, 220, 250] },
+  { "name": "k2", "printers": ["Creality K2"], "build": [260, 260, 260] },
+  { "name": "k1_max", "printers": ["Creality K1 Max", "Creality K2 Pro"], "build": [300, 300, 300] },
+  { "name": "k2_plus", "printers": ["Creality K2 Plus"], "build": [350, 350, 350] },
+  { "name": "ender3_v3_plus", "printers": ["Creality Ender-3 V3 Plus"], "build": [300, 300, 330] },
+  { "name": "centauri", "printers": ["Elegoo Centauri Carbon", "Elegoo Centauri Carbon 2"], "build": [256, 256, 256] },
+  { "name": "neptune4_max", "printers": ["Elegoo Neptune 4 Max"], "build": [420, 420, 480] },
+  { "name": "u1", "printers": ["Snapmaker U1"], "build": [270, 270, 270] }
+]

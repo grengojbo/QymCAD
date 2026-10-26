@@ -106,3 +106,104 @@ pub const MESH_REPAIR: Tool = Tool {
         Ok(out)
     },
 };
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct CheckArgs {
+    body: Option<BodyRef>,
+    printer: Option<String>,
+    bed: Option<[f64; 3]>,
+    #[serde(default = "forty_five")]
+    overhang: f64,
+}
+
+fn forty_five() -> f64 {
+    45.0
+}
+
+/// The room a printer builds in when none is named: the most common room of the printers known.
+const ASSUMED: [f64; 3] = [256.0, 256.0, 256.0];
+
+/// A verdict as the answer tells it.
+fn said(v: qymcad_doc::print::checks::Verdict) -> &'static str {
+    use qymcad_doc::print::checks::Verdict;
+    match v {
+        Verdict::Pass => "pass",
+        Verdict::Warn => "warn",
+        Verdict::Fail => "fail",
+    }
+}
+
+pub const CHECK_PRINTABILITY: Tool = Tool {
+    name: "check_printability",
+    description: "Whether a body prints as it lies, read where a slicer drops it - onto the bed through its lowest point: closed (no hole, no edge of three triangles; mesh_repair mends one brought in), valid (the kernel finds a body of faces sound), bed (it fits the room the printer builds in as it lies, or only turned a quarter about Z), contact (the area of its faces flat on the bed - none is a body on an edge or a point), overhang (the area facing down past overhang deg from the upright, 45 by default, the bottom left out, and up to 10 places it hangs at, the widest first - give them to render marks to see them). Each check says pass, warn or fail with its numbers; verdict is the worst. printer names a printer by its room (p1s for X1C, P1P, P1S, P2S and A1; a1_mini, h2d for both nozzles, h2d_one, h2s, h2c, x2d; k1c, k2, k1_max, k2_plus, ender3_v3_plus; centauri, neptune4_max; u1), or bed gives the room [x, y, z] mm; with neither 256 x 256 x 256 is taken and said so. Nothing is changed.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": body_field(),
+            "printer": { "type": "string", "description": "A printer by its room: p1s, a1_mini, h2d, h2d_one, h2s, h2c, x2d, k1c, k2, k1_max, k2_plus, ender3_v3_plus, centauri, neptune4_max, u1, or one of the person's own printers.json." },
+            "bed": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 3, "maxItems": 3, "description": "The room the printer builds in, [x, y, z] mm." },
+            "overhang": { "type": "number", "minimum": 0, "maximum": 89, "default": 45, "description": "Degrees from the upright a face may turn down unsupported." },
+        }, "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        use qymcad_doc::print::checks::{contact, fits, overhang, Bed, Fit, Verdict};
+        let a: CheckArgs = tool::args(arguments)?;
+        let project = ctx.doc.project();
+        let body = target(project, a.body)?;
+        let mut warnings = Vec::new();
+        let (printer, build) = match (&a.printer, a.bed) {
+            (Some(_), Some(_)) => return Err(Refusal::new("arguments", "Give printer or bed, one of the two.", Stage::Validate)),
+            (Some(name), None) => match crate::printers::named(name) {
+                Some(p) => (json!(p.name), p.build),
+                None => {
+                    let known: Vec<String> = crate::printers::all().into_iter().map(|p| p.name).collect();
+                    return Err(Refusal::new("no-printer", &format!("No printer is known as {name:?}."), Stage::Validate).with_hint(&format!("Name one of {}, or give bed: [x, y, z] mm.", known.join(", "))));
+                }
+            },
+            (None, Some(bed)) => (Value::Null, bed),
+            (None, None) => {
+                warnings.push(json!("bed-assumed"));
+                (Value::Null, ASSUMED)
+            }
+        };
+        let mesh = qymcad_doc::print::world_mesh(project, body)
+            .filter(|m| !m.tris.is_empty())
+            .ok_or_else(|| Refusal::new("no-mesh", &format!("Body {body} has no triangles to read."), Stage::Resolve).with_hint("Rebuild the document, or name another body."))?;
+        let health = mesh_report(&mesh);
+        let closed = if health.closed { Verdict::Pass } else { Verdict::Fail };
+        let sound = ctx.doc.shape(body).map(|s| s.is_valid());
+        let valid = match sound {
+            Some(false) => Verdict::Fail,
+            _ => Verdict::Pass,
+        };
+        let on = fits(&mesh, &Bed { size: build });
+        let touch = contact(&mesh);
+        let hang = overhang(&mesh, a.overhang);
+        let worst = [closed, valid, on.verdict, touch.verdict, hang.verdict].into_iter().max().unwrap_or(Verdict::Pass);
+        let fit = match on.fit {
+            Fit::AsItLies => "as_it_lies",
+            Fit::Turned => "turned",
+            Fit::Not => "no",
+        };
+        let places: Vec<Value> = hang.places.iter().map(|p| json!({ "at": p.at.map(round), "area": round(p.area) })).collect();
+        let mut out = Answer::new();
+        out.insert("body".into(), json!(body));
+        out.insert("verdict".into(), json!(said(worst)));
+        out.insert("printer".into(), printer);
+        out.insert("build".into(), json!(build));
+        out.insert(
+            "checks".into(),
+            json!({
+                "closed": { "verdict": said(closed), "holes": health.holes, "non_manifold": health.non_manifold },
+                "valid": { "verdict": said(valid), "valid": sound },
+                "bed": { "verdict": said(on.verdict), "fit": fit, "size": on.size.map(round) },
+                "contact": { "verdict": said(touch.verdict), "area": round(touch.area) },
+                "overhang": { "verdict": said(hang.verdict), "angle": a.overhang, "area": round(hang.area), "places": places },
+            }),
+        );
+        if !warnings.is_empty() {
+            out.insert("warnings".into(), json!(warnings));
+        }
+        Ok(out)
+    },
+};

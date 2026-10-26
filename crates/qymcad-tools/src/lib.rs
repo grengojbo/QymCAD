@@ -10,6 +10,7 @@ pub mod channel;
 mod paths;
 pub mod person;
 pub mod picture;
+pub mod printers;
 pub mod reading;
 pub mod tool;
 pub mod tools;
