@@ -635,5 +635,6 @@ mod refs;
 mod run;
 mod prep_ops;
 mod prep_bodies;
+mod prep_pegs;
 mod prep_profiles;
 mod apply;

@@ -2222,6 +2222,7 @@ feat-name-remove-face = Удалить грань
 feat-name-thicken = Утолщение
 feat-name-split-face = Разделить грани
 feat-name-split-body = Разделить тело
+feat-name-joined = Соединители разреза
 feat-name-draft = Уклон
 feat-name-linear-array = Лин. массив
 feat-name-circular-array = Круг. массив

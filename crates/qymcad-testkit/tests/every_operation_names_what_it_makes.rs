@@ -136,7 +136,7 @@ struct Row {
     build: fn(&mut Project) -> u64,
 }
 
-const ROWS: [Row; 46] = [
+const ROWS: [Row; 47] = [
     Row { name: "an extruded block", kind: "Extrude", build: extruded_block },
     Row { name: "an extruded ellipse", kind: "Extrude", build: extruded_ellipse },
     Row { name: "an extruded profile closed by a spline", kind: "Extrude", build: extruded_spline },
@@ -452,6 +452,16 @@ const ROWS: [Row; 46] = [
         },
     },
     Row {
+        name: "the lower piece of a split with a peg grown into the upper",
+        kind: "Joined",
+        build: |p| {
+            let b = extruded_block(p);
+            let pieces = p.add_split_body(b, 0, 0, 5.0, 2);
+            let at = qymcad_core::feature::PlaneAt { origin: [20.0, 15.0, 5.0], normal: [0.0, 0.0, 1.0] };
+            p.add_joined([pieces[0], pieces[1]], at, PEG, vec![at.origin])[0]
+        },
+    },
+    Row {
         name: "a block moved",
         kind: "Move",
         build: |p| {
@@ -577,6 +587,10 @@ const NAMED_BY_PLACE: [qymcad_testkit::Uncovered; 3] = [
     qymcad_testkit::Uncovered { kind: "MeshSolid", why: "a solid made of a mesh has faces of triangles and no recipe for them" },
     qymcad_testkit::Uncovered { kind: "MeshRecognised", why: "the faces recognised in a mesh have no recipe of the operations that made it" },
 ];
+
+/// A round peg of 6 x 8, 0.15 of clearance all round its socket.
+const PEG: qymcad_core::feature::PegSpec =
+    qymcad_core::feature::PegSpec { kind: qymcad_core::feature::PegKind::Plug, shape: qymcad_core::feature::PegShape::Round, diameter: 6.0, depth: 4.0, clearance: 0.15, taper: 0.0 };
 
 /// NO OPERATION NAMES WHAT IT MAKES BY PLACE but the bodies with no history: a name by place is the last resort of the
 /// rule for what the history is silent about, and an operation that reaches it lost its history somewhere.

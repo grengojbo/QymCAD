@@ -371,6 +371,59 @@ struct SplitArgs {
     bed: Option<[f64; 3]>,
     #[serde(default = "five")]
     margin: f64,
+    joints: Option<JointsArgs>,
+}
+
+/// The joints asked across every cut.
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct JointsArgs {
+    #[serde(default)]
+    kind: PegKindArg,
+    #[serde(default)]
+    shape: PegShapeArg,
+    #[serde(default = "six")]
+    diameter: f64,
+    #[serde(default = "eight")]
+    depth: f64,
+    #[serde(default = "point_one_five")]
+    clearance: f64,
+    #[serde(default)]
+    taper: f64,
+    #[serde(default = "point_eight")]
+    edge: f64,
+}
+
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum PegKindArg {
+    #[default]
+    Plug,
+    Dowel,
+}
+
+#[derive(Deserialize, Default, Clone, Copy)]
+#[serde(rename_all = "lowercase")]
+enum PegShapeArg {
+    #[default]
+    Round,
+    Hex,
+}
+
+fn six() -> f64 {
+    6.0
+}
+
+fn eight() -> f64 {
+    8.0
+}
+
+fn point_one_five() -> f64 {
+    0.15
+}
+
+fn point_eight() -> f64 {
+    0.8
 }
 
 fn five() -> f64 {
@@ -379,13 +432,22 @@ fn five() -> f64 {
 
 pub const SPLIT_FOR_BED: Tool = Tool {
     name: "split_for_bed",
-    description: "Cut a body too big for the printer into pieces that fit: planes across each side the room does not hold, spaced evenly so every piece is the room less margin mm (5 by default) at most, each plane cutting every piece it runs through. The pieces stay bodies of the one part, as split_body leaves them; the cuts are one step undo takes back. printer or bed as check_printability takes them. A body that fits is left whole. A mesh brought in is cut once it is a body of faces: recognise_mesh first. The answer gives the pieces with their sizes and the cuts.",
+    description: "Cut a body too big for the printer into pieces that fit: planes across each side the room does not hold, spaced evenly so every piece is the room less margin mm (5 by default) at most, each plane cutting every piece it runs through. The pieces stay bodies of the one part, as split_body leaves them; the cuts are one step undo takes back. printer or bed as check_printability takes them. A body that fits is left whole. A mesh brought in is cut once it is a body of faces: recognise_mesh first. joints holds the pieces together again across every cut: kind plug (a peg grown from the piece behind the cut into a socket of the one in front; the default) or dowel (a socket in each and a pin of its own, a piece to print), shape round (two pegs as far apart as the cut holds them, so the pieces cannot turn; the default) or hex (one peg, which cannot turn), diameter (6), depth (8), clearance (0.15 all round - 0.10 for a press fit, 0.15 to glue), taper (deg off the axis, 0), edge (mm of the cut kept between a socket and its rim, 0.8). Each joint is one node whose sizes edit_feature changes. A cut too small for a socket is left without, counted and warned. The answer gives the pieces with their sizes, the joints with their spots.",
     schema: || {
         json!({ "type": "object", "properties": {
             "body": body_field(),
             "printer": { "type": "string", "description": "A printer by its room, as check_printability names them." },
             "bed": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 3, "maxItems": 3, "description": "The room the printer builds in, [x, y, z] mm." },
             "margin": { "type": "number", "minimum": 0, "maximum": 100, "default": 5, "description": "mm a piece keeps clear of the room's sides." },
+            "joints": { "type": "object", "properties": {
+                "kind": { "enum": ["plug", "dowel"], "default": "plug" },
+                "shape": { "enum": ["round", "hex"], "default": "round" },
+                "diameter": { "type": "number", "exclusiveMinimum": 0, "default": 6 },
+                "depth": { "type": "number", "exclusiveMinimum": 0, "default": 8 },
+                "clearance": { "type": "number", "minimum": 0, "maximum": 2, "default": 0.15 },
+                "taper": { "type": "number", "minimum": 0, "maximum": 30, "default": 0 },
+                "edge": { "type": "number", "minimum": 0, "default": 0.8 },
+            }, "additionalProperties": false },
         }, "additionalProperties": false })
     },
     call: |ctx: &mut Ctx, arguments: Value| {
@@ -396,7 +458,40 @@ pub const SPLIT_FOR_BED: Tool = Tool {
             return Err(Refusal::new("split-needs-faces", &format!("Body {body} is a mesh: a cut needs faces to close the pieces with."), Stage::Validate).with_hint("Make it a body of faces with recognise_mesh, then cut it."));
         }
         let bed = qymcad_doc::print::checks::Bed { size: build };
-        let pieces = qymcad_doc::print::split::split_to_fit(&mut ctx.doc, body, &bed, a.margin).map_err(tool::doc_refusal)?;
+        let mut warnings = Vec::new();
+        if assumed {
+            warnings.push(json!("bed-assumed"));
+        }
+        let mut joints = Vec::new();
+        let pieces = match a.joints {
+            None => qymcad_doc::print::split::split_to_fit(&mut ctx.doc, body, &bed, a.margin).map_err(tool::doc_refusal)?,
+            Some(j) => {
+                use qymcad_core::feature::{PegKind, PegShape, PegSpec};
+                if !(j.diameter > 0.0 && j.depth > 0.0) {
+                    return Err(Refusal::new("arguments", "A joint's diameter and depth are sizes over 0 mm.", Stage::Validate));
+                }
+                let spec = PegSpec {
+                    kind: match j.kind {
+                        PegKindArg::Plug => PegKind::Plug,
+                        PegKindArg::Dowel => PegKind::Dowel,
+                    },
+                    shape: match j.shape {
+                        PegShapeArg::Round => PegShape::Round,
+                        PegShapeArg::Hex => PegShape::Hex,
+                    },
+                    diameter: j.diameter,
+                    depth: j.depth,
+                    clearance: j.clearance,
+                    taper: j.taper,
+                };
+                let done = qymcad_doc::print::joints::cut_and_join(&mut ctx.doc, body, &bed, a.margin, &qymcad_doc::print::joints::JointAsk { spec, edge: j.edge }).map_err(tool::doc_refusal)?;
+                if done.left_without > 0 {
+                    warnings.push(json!("joints-left-without"));
+                }
+                joints = done.joints.iter().map(|l| json!({ "feature": l.node, "spots": l.spots.iter().map(|s| s.map(round)).collect::<Vec<_>>() })).collect();
+                done.pieces
+            }
+        };
         let project = ctx.doc.project();
         let told: Vec<Value> = pieces
             .iter()
@@ -410,8 +505,11 @@ pub const SPLIT_FOR_BED: Tool = Tool {
         out.insert("printer".into(), printer);
         out.insert("build".into(), json!(build));
         out.insert("pieces".into(), json!(told));
-        if assumed {
-            out.insert("warnings".into(), json!(["bed-assumed"]));
+        if !joints.is_empty() {
+            out.insert("joints".into(), json!(joints));
+        }
+        if !warnings.is_empty() {
+            out.insert("warnings".into(), json!(warnings));
         }
         Ok(out)
     },

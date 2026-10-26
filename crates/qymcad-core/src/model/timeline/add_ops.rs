@@ -474,6 +474,30 @@ impl Project {
     ///
     /// Returns the ids of every piece, from bottom to top along the normal; the first also serves as the node
     /// id.
+    /// JOINTS ACROSS A CUT between pieces `a` (behind the plane `at`, against its normal) and `b`: at every one of
+    /// `spots`, points on the cut in the frame of the part, as `joint` gives them. The bodies the node makes: `a` and
+    /// `b` as they come out, and the pin of a dowel.
+    pub fn add_joined(&mut self, pieces: [Id; 2], at: crate::feature::PlaneAt, joint: crate::feature::PegSpec, spots: Vec<[f64; 3]>) -> Vec<Id> {
+        use crate::feature::{FeatureKind, FeatureNode, PegKind};
+        let made = match joint.kind {
+            PegKind::Plug => 2,
+            PegKind::Dowel => 3,
+        };
+        let bodies: Vec<Id> = (0..made).map(|_| self.alloc_id()).collect();
+        let parent = Some(self.body_parent());
+        let id = bodies[0];
+        let [a, b] = pieces;
+        self.push_timeline(FeatureNode {
+            id,
+            name: "feat-name-joined".into(),
+            kind: FeatureKind::Joined { a, b, origin: at.origin, normal: at.normal, joint, spots, bodies: bodies.clone() },
+            parent,
+            dirty: true,
+            suppressed: false,
+        });
+        bodies
+    }
+
     pub fn add_split_body(&mut self, src: Id, plane: u8, datum: Id, offset: f64, pieces: usize) -> Vec<Id> {
         use crate::feature::{FeatureKind, FeatureNode};
         assert!(pieces >= 2, "split-single-piece");

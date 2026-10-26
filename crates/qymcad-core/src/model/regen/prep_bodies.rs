@@ -701,6 +701,7 @@ impl Project {
             | FeatureKind::DatumPoint { .. }
             | FeatureKind::DatumAxis { .. }
             | FeatureKind::SplitBody { .. }
+            | FeatureKind::Joined { .. }
             | FeatureKind::Import { .. }
             | FeatureKind::PartInstance { .. }
             | FeatureKind::ComponentPattern { .. }

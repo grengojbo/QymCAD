@@ -32,6 +32,13 @@ pub fn cuts_to_fit(bounds: [[f64; 3]; 2], bed: &Bed, margin: f64) -> Vec<Cut> {
     out
 }
 
+/// The cuts that bring `body` within `bed` less `margin`, read off its mesh.
+pub fn cuts_of(doc: &DocEngine, body: Id, bed: &Bed, margin: f64) -> Result<Vec<Cut>, DocError> {
+    let project = doc.project();
+    let b = project.mesh_index(body).and_then(|i| project.bodies[i].mesh.bounds()).ok_or_else(|| DocError::Refused("split-no-body".into()))?;
+    Ok(cuts_to_fit([[b.min.x, b.min.y, b.min.z], [b.max.x, b.max.y, b.max.z]], bed, margin))
+}
+
 /// The world plane a cut runs in, as a split takes it: its code and its offset along its normal.
 fn plane_of(c: &Cut) -> u8 {
     match c.axis {
@@ -41,18 +48,41 @@ fn plane_of(c: &Cut) -> u8 {
     }
 }
 
+/// What a cut to fit left: the pieces, and the cuts that made them.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Split {
+    pub pieces: Vec<Id>,
+    pub cuts: Vec<Cut>,
+}
+
 /// THE PIECES OF `body` CUT TO FIT `bed` less `margin`, as one step; `body` alone when it fits and nothing is cut.
 pub fn split_to_fit(doc: &mut DocEngine, body: Id, bed: &Bed, margin: f64) -> Result<Vec<Id>, DocError> {
-    let project = doc.project();
-    let b = project.mesh_index(body).and_then(|i| project.bodies[i].mesh.bounds()).ok_or_else(|| DocError::Refused("split-no-body".into()))?;
-    let cuts = cuts_to_fit([[b.min.x, b.min.y, b.min.z], [b.max.x, b.max.y, b.max.z]], bed, margin);
-    if cuts.is_empty() {
+    // nothing to cut is no step: a batch opened and closed empty would leave one
+    if cuts_of(doc, body, bed, margin)?.is_empty() {
         return Ok(vec![body]);
+    }
+    doc.begin_batch("f-operation");
+    match split_in_batch(doc, body, bed, margin) {
+        Ok(s) => {
+            doc.commit_batch();
+            Ok(s.pieces)
+        }
+        Err(e) => {
+            doc.abort_batch();
+            Err(e)
+        }
+    }
+}
+
+/// The same within a batch the caller holds open, with the cuts: the joints laid after it go into the same step.
+pub fn split_in_batch(doc: &mut DocEngine, body: Id, bed: &Bed, margin: f64) -> Result<Split, DocError> {
+    let cuts = cuts_of(doc, body, bed, margin)?;
+    if cuts.is_empty() {
+        return Ok(Split { pieces: vec![body], cuts });
     }
     if doc.shape(body).is_none() {
         return Err(DocError::Refused("split-needs-faces".into()));
     }
-    doc.begin_batch("f-operation");
     let mut pieces = vec![body];
     for cut in &cuts {
         let mut next = Vec::new();
@@ -66,16 +96,9 @@ pub fn split_to_fit(doc: &mut DocEngine, body: Id, bed: &Bed, margin: f64) -> Re
                 next.push(piece);
                 continue;
             }
-            match doc.edit("f-operation", |p| Ok(p.add_split_body(piece, plane_of(cut), 0, cut.at, count))) {
-                Ok(made) => next.extend(made),
-                Err(e) => {
-                    doc.abort_batch();
-                    return Err(e);
-                }
-            }
+            next.extend(doc.edit("f-operation", |p| Ok(p.add_split_body(piece, plane_of(cut), 0, cut.at, count)))?);
         }
         pieces = next;
     }
-    doc.commit_batch();
-    Ok(pieces)
+    Ok(Split { pieces, cuts })
 }

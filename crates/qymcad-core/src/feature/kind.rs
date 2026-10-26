@@ -641,6 +641,11 @@ pub enum FeatureKind {
     /// of a part of its own, in the same place. It reads the body of the part it came from - the named exception to
     /// the isolation of parts - so an edit of the cut rebuilds both; the piece leaves the part it came from.
     Piece { src: Id, body: Id },
+    /// TWO PIECES A CUT LEFT, HELD TOGETHER BY JOINTS in the plane of the cut (`origin`, `normal`): at each of `spots`, a
+    /// point on the cut in the frame of the part, a peg grown from `a` - the piece behind the plane, against its normal -
+    /// into a socket of `b`, or a socket in each and a pin of its own (`joint`). `bodies` are `a` and `b` as they come
+    /// out, and the pin for a dowel. Both pieces are consumed; the sizes of `joint` are the node's numbers.
+    Joined { a: Id, b: Id, origin: [f64; 3], normal: [f64; 3], joint: PegSpec, spots: Vec<[f64; 3]>, bodies: Vec<Id> },
     /// Parametric body-to-body boolean: `op` applied to the B-reps of body `a` (the base) and body `b` (the
     /// tool), producing `body`. `op` is 0 for a cut (a minus b), 1 for a union and 2 for an intersection. Both
     /// input bodies are consumed and hidden.
@@ -735,6 +740,7 @@ impl FeatureKind {
             FeatureKind::Stitch { tol, .. } => vec![("tol", tol)],
             FeatureKind::SplitFace { offset, .. } => vec![("offset", offset)],
             FeatureKind::SplitBody { offset, .. } => vec![("offset", offset)],
+            FeatureKind::Joined { joint, .. } => vec![("diameter", joint.diameter), ("depth", joint.depth), ("clearance", joint.clearance), ("taper", joint.taper)],
             FeatureKind::CircularArray { angle, count, .. } => vec![("angle", angle), ("count", f64::from(count))],
             FeatureKind::LinearArray { dx, dy, dz, count, dx2, dy2, dz2, count2, dx3, dy3, dz3, count3, .. } => {
                 // the step of a direction is the length of its vector: its formula stands on the component it runs along
@@ -801,7 +807,7 @@ impl FeatureKind {
     pub fn body(&self) -> Option<Id> {
         // A split produces several bodies (a `Vec`, which cannot be matched by value here): the first piece
         // counts as primary and the full list is `bodies()`.
-        if let FeatureKind::SplitBody { bodies, .. } = self {
+        if let FeatureKind::SplitBody { bodies, .. } | FeatureKind::Joined { bodies, .. } = self {
             return bodies.first().copied();
         }
         match *self {
@@ -858,7 +864,7 @@ impl FeatureKind {
     /// disappears.
     pub fn bodies(&self) -> Vec<Id> {
         match self {
-            FeatureKind::SplitBody { bodies, .. } | FeatureKind::ComponentPattern { bodies, .. } => bodies.clone(),
+            FeatureKind::SplitBody { bodies, .. } | FeatureKind::ComponentPattern { bodies, .. } | FeatureKind::Joined { bodies, .. } => bodies.clone(),
             _ => self.body().into_iter().chain(self.cut_pieces().iter().skip(1).map(|p| p.body)).collect(),
         }
     }
@@ -909,7 +915,7 @@ impl FeatureKind {
     /// EVERY frame. It showed up as the whole program going sluggish, settings windows included.
     pub fn owns_body(&self, id: Id) -> bool {
         match self {
-            FeatureKind::SplitBody { bodies, .. } | FeatureKind::ComponentPattern { bodies, .. } => bodies.contains(&id),
+            FeatureKind::SplitBody { bodies, .. } | FeatureKind::ComponentPattern { bodies, .. } | FeatureKind::Joined { bodies, .. } => bodies.contains(&id),
             _ => self.body() == Some(id) || self.cut_pieces().iter().any(|p| p.body == id),
         }
     }
@@ -977,7 +983,7 @@ impl FeatureKind {
                 let edges_of = along.as_ref().map_or(0, |a| a.body);
                 [src, sketch, path_sketch, if edges_of == src { 0 } else { edges_of }].into_iter().filter(|id| *id != 0).collect()
             }
-            FeatureKind::BodyBoolean { a, b, .. } => vec![a, b],
+            FeatureKind::BodyBoolean { a, b, .. } | FeatureKind::Joined { a, b, .. } => vec![a, b],
             FeatureKind::Combine { src, sketch, .. } => vec![src, sketch],
             FeatureKind::Redrawn { src, sketch, .. } => vec![src, sketch],
             FeatureKind::Fillet { src, .. }
@@ -1025,7 +1031,7 @@ impl FeatureKind {
             }
         };
         match self {
-            FeatureKind::BodyBoolean { a, b, .. } => {
+            FeatureKind::BodyBoolean { a, b, .. } | FeatureKind::Joined { a, b, .. } => {
                 fix(a);
                 fix(b);
             }
@@ -1224,6 +1230,11 @@ impl FeatureKind {
                 m(b);
                 m(body);
             }
+            FeatureKind::Joined { a, b, bodies, .. } => {
+                m(a);
+                m(b);
+                bodies.iter_mut().for_each(&m);
+            }
             // `source` is the shared embedded file and is not part of the clone map, so it is left alone; the
             // body is remapped.
             FeatureKind::Import { body, .. } | FeatureKind::MeshPiece { body, .. } => m(body),
@@ -1374,7 +1385,7 @@ impl FeatureKind {
             // second body of the part
             | FeatureKind::MeshSolid { src, .. }
             | FeatureKind::MeshRecognised { src, .. } => Some(src),
-            FeatureKind::BodyBoolean { a, .. } => Some(a), // The base is primary, for lineage; `b` is in `consumed()` too.
+            FeatureKind::BodyBoolean { a, .. } | FeatureKind::Joined { a, .. } => Some(a), // The base is primary, for lineage; `b` is in `consumed()` too.
             // For a stitch the lineage follows the first sheet; the rest are in `consumed()` as well.
             FeatureKind::Stitch { ref parts, .. } => parts.first().copied(),
             // A trim carries the trimmed sheet onward; the tool stays where it is and is not consumed.
@@ -1387,7 +1398,7 @@ impl FeatureKind {
     /// is both operands `[a, b]`, so only the result stays visible.
     pub fn consumed(&self) -> Vec<Id> {
         match *self {
-            FeatureKind::BodyBoolean { a, b, .. } => vec![a, b],
+            FeatureKind::BodyBoolean { a, b, .. } | FeatureKind::Joined { a, b, .. } => vec![a, b],
             // A face replacement consumes both the base and the surface; what lives on is the result. Leaving
             // the sheet visible would show the part plus another surface on top of it.
             FeatureKind::SurfaceReplace { src, surface, .. } => vec![src, surface],

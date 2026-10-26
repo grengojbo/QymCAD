@@ -2,6 +2,7 @@
 //! fit. Numbers only: what a reader is told, and in which words, is the caller's.
 
 pub mod checks;
+pub mod joints;
 pub mod mesh_repair;
 pub mod mesh_report;
 pub mod orient;

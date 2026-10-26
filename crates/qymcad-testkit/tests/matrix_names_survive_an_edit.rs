@@ -99,7 +99,7 @@ struct Top {
     z: fn(Size) -> f64,
 }
 
-const ROWS: [Row; 29] = [
+const ROWS: [Row; 30] = [
     // the top edge at the back, carried from the sketch
     Row { name: "the block itself", kind: "Extrude", build: |_, src| src, edge: |s| [s.w / 2.0, 30.0, s.h], top: Some(Top { at: [5.0, 5.0], z: |s| s.h }) },
     // the arc where the rounding of the front right corner meets the top, its middle at 45 deg
@@ -183,6 +183,20 @@ const ROWS: [Row; 29] = [
         build: |p, src| p.add_split_body(src, 0, 0, 3.0, 2)[1],
         edge: |s| [s.w / 2.0, 30.0, s.h],
         top: Some(Top { at: [5.0, 5.0], z: |s| s.h }),
+    },
+    // split by the plane z = 3 and a peg grown up from the lower piece: the top edge at the back of the upper piece,
+    // its socket cut from below
+    Row {
+        name: "the upper piece of a split holding the socket of a peg",
+        kind: "Joined",
+        build: |p, src| {
+            let pieces = p.add_split_body(src, 0, 0, 3.0, 2);
+            let at = qymcad_core::feature::PlaneAt { origin: [10.0, 15.0, 3.0], normal: [0.0, 0.0, 1.0] };
+            let peg = qymcad_core::feature::PegSpec { kind: qymcad_core::feature::PegKind::Plug, shape: qymcad_core::feature::PegShape::Round, diameter: 4.0, depth: 4.0, clearance: 0.15, taper: 0.0 };
+            p.add_joined([pieces[0], pieces[1]], at, peg, vec![at.origin])[1]
+        },
+        edge: |s| [s.w / 2.0, 30.0, s.h],
+        top: Some(Top { at: [30.0, 5.0], z: |s| s.h }),
     },
     // a groove turned into the bottom: a rectangle 10 long and 4 high revolved about a line of its sketch along x at
     // y = 10; the half circle where the groove meets its end at x = 10 tops out at (10, 10, 4)

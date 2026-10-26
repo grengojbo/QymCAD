@@ -93,5 +93,7 @@ mod matrix;
 pub use matrix::*;
 mod op_types;
 pub use op_types::*;
+mod peg;
+pub use peg::*;
 mod kernel;
 pub use kernel::*;

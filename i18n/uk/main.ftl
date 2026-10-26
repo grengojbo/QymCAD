@@ -2214,6 +2214,7 @@ feat-name-remove-face = Видалити грань
 feat-name-thicken = Потовщення
 feat-name-split-face = Розділити грані
 feat-name-split-body = Розділити тіло
+feat-name-joined = З'єднувачі розрізу
 feat-name-draft = Ухил
 feat-name-linear-array = Лін. масив
 feat-name-circular-array = Круг. масив

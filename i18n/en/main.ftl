@@ -2222,6 +2222,7 @@ feat-name-remove-face = Remove face
 feat-name-thicken = Thicken
 feat-name-split-face = Split faces
 feat-name-split-body = Split body
+feat-name-joined = Joints of the cut
 feat-name-draft = Draft
 feat-name-linear-array = Linear pattern
 feat-name-circular-array = Circular pattern

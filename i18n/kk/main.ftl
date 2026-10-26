@@ -2185,6 +2185,7 @@ feat-name-remove-face = Бетті жою
 feat-name-thicken = Қалыңдату
 feat-name-split-face = Беттерді бөлу
 feat-name-split-body = Денені бөлу
+feat-name-joined = Кесік қосқыштары
 feat-name-draft = Еңіс
 feat-name-linear-array = Сызықтық массив
 feat-name-circular-array = Дөңгелек массив

@@ -300,7 +300,7 @@ fn top_rim(p: &mut Project, body: u64) -> u32 {
     rims.max_by(|a, b| a.mid[2].total_cmp(&b.mid[2])).map(|e| e.id).expect("a round edge")
 }
 
-const ON_THE_BLOCK: [OnTheBlock; 44] = [
+const ON_THE_BLOCK: [OnTheBlock; 45] = [
     // a hole 10 across exactly as deep as the block: through, no cap of the bottom left in it
     OnTheBlock {
         name: "a hole exactly as deep as the block",
@@ -340,6 +340,19 @@ const ON_THE_BLOCK: [OnTheBlock; 44] = [
     },
     // the plane of the split lies on the bottom face: there is nothing on one side of it
     OnTheBlock { name: "a split on the plane of the bottom face", kind: "SplitBody", apply: |p, b| p.add_split_body(b, 0, 0, 0.0, 2)[0], expect: Expect::Refused },
+    // a peg of 6 as long as the upper piece of 5 is thick: its socket, 0.15 deeper, goes right through; the lower piece
+    // grows by the peg alone, pi x 3^2 x 5, and gains its side and its top
+    OnTheBlock {
+        name: "a peg as long as the piece it goes into is thick",
+        kind: "Joined",
+        apply: |p, b| {
+            let pieces = p.add_split_body(b, 0, 0, 5.0, 2);
+            let at = qymcad_core::feature::PlaneAt { origin: [0.0, 0.0, 5.0], normal: UP };
+            let peg = qymcad_core::feature::PegSpec { kind: qymcad_core::feature::PegKind::Plug, shape: qymcad_core::feature::PegShape::Round, diameter: 6.0, depth: 5.0, clearance: 0.15, taper: 0.0 };
+            p.add_joined([pieces[0], pieces[1]], at, peg, vec![at.origin])[0]
+        },
+        expect: Expect::Builds { volume: BLOCK_VOLUME / 2.0 + std::f64::consts::PI * 9.0 * 5.0, faces: Some(8) },
+    },
     // a size of zero: nothing to build, for every primitive
     OnTheBlock { name: "a box of no height", kind: "Box3", apply: |p, _| p.add_box(10.0, 10.0, 0.0), expect: Expect::Says(qymcad_core::errors::CoreError::PrimitiveSizeNotAboveZero) },
     OnTheBlock { name: "a cylinder of no radius", kind: "Cylinder", apply: |p, _| p.add_cylinder(0.0, 10.0), expect: Expect::Says(qymcad_core::errors::CoreError::PrimitiveSizeNotAboveZero) },

@@ -301,6 +301,25 @@ impl Project {
                     }
                     continue;
                 }
+                // Suppressed joints leave both pieces as the cut left them: each its own copy, the pin gone.
+                if let FeatureKind::Joined { a, b, ref bodies, .. } = kind {
+                    for (k, &out) in bodies.iter().enumerate() {
+                        let from = [a, b].get(k).copied().filter(|s| !unbuilt.contains(s));
+                        match from {
+                            Some(src) if self_dirty || dirty.contains(&src) => {
+                                let res = kernel.transform_body(out, src, crate::feature::PLACE_IDENTITY);
+                                let _ = self.apply_regen(Landing { node: node_id, dirty: &mut dirty, report: &mut report, kernel, emap: &mut emap }, out, res);
+                            }
+                            Some(_) => {}
+                            None => {
+                                self.drop_body_from_view(out);
+                                unbuilt.insert(out);
+                            }
+                        }
+                    }
+                    self.timeline[i].dirty = false;
+                    continue;
+                }
                 let pass = kind.consumed_body().filter(|s| !unbuilt.contains(s));
                 if let (Some(src), Some(b)) = (pass, kind.body()) {
                     // The source is built, so the modifier is skipped: the output is a copy of `src` and
@@ -596,6 +615,10 @@ impl Project {
                 FeatureKind::SplitBody { src, plane, datum, offset, ref bodies, face } if needs => {
                     let mut p = pass!(node_id);
                     clear = self.regen_splitbody(&mut p, src, self.op_plane(plane, datum, face), offset, bodies);
+                }
+                FeatureKind::Joined { a, b, normal, joint, ref spots, ref bodies, .. } if needs => {
+                    let mut p = pass!(node_id);
+                    clear = self.regen_joined(&mut p, prep_pegs::JoinedPieces { a, b, normal, spots, bodies }, joint);
                 }
                 FeatureKind::Import { body, .. } if needs => {
                     let mut p = pass!(node_id);
