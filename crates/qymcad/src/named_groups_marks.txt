@@ -708,7 +708,7 @@ crates/qymcad/src/gui/import_door/tests.rs 2 9 0
 crates/qymcad/src/gui/import_door/tests/asked_again.rs 0 3 0
 crates/qymcad/src/gui/import_door/tests/chooser.rs 0 3 0
 crates/qymcad/src/gui/import_door/tests/meshes.rs 0 4 0
-crates/qymcad/src/gui/import_scale.rs 1 2 0
+crates/qymcad/src/gui/import_scale.rs 1 0 0
 crates/qymcad/src/gui/input.rs 0 0 1
 crates/qymcad/src/gui/io_jobs.rs 1 21 6
 crates/qymcad/src/gui/joint_creation.rs 0 2 0

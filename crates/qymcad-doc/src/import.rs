@@ -219,6 +219,71 @@ impl Landed {
     }
 }
 
+/// AN IMPORT ASKED ABOUT AGAIN: everything that came in with the file of node `node`, as the file has it - every piece
+/// of a mesh, every solid divided back by the factor it stands at, the components this import alone stands in placed as
+/// the file places them, the box of it all - and the factor it stands at now. The window asks it from the import's
+/// node, and the protocol server's `scale` too: one reading, so the two cannot take a file back differently.
+pub struct Again {
+    pub landed: Landed,
+    pub was: f64,
+    /// The file's name as the document keeps it.
+    pub file: String,
+}
+
+/// Why an import cannot be asked about again.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Unread {
+    /// The node is no import of a file.
+    NotAnImport,
+    /// A solid of it is still being read back from its file after opening: it has no shape to scale yet.
+    Reading,
+}
+
+/// Everything that came in with the file of the import node `node`, as the file has it.
+pub fn read_again(project: &Project, shapes: &HashMap<Id, Shape>, node: Id) -> Result<Again, Unread> {
+    use qymcad_core::feature::FeatureKind;
+    let source_of = |k: &FeatureKind| match *k {
+        FeatureKind::Import { source, .. } | FeatureKind::MeshPiece { source, .. } => Some(source),
+        _ => None,
+    };
+    let source = project.timeline.iter().find(|n| n.id == node).and_then(|n| source_of(&n.kind)).ok_or(Unread::NotAnImport)?;
+    let (file, ext) = project.sources.iter().find(|s| s.id == source).map(|s| (s.name.clone(), s.ext.to_lowercase())).ok_or(Unread::NotAnImport)?;
+    let from_file: Vec<&qymcad_core::feature::FeatureNode> = project.timeline.iter().filter(|n| source_of(&n.kind) == Some(source)).collect();
+    let bodies: Vec<Id> = from_file.iter().filter_map(|n| n.kind.body()).collect();
+    let was = bodies.first().and_then(|&b| project.import_scale(b)).unwrap_or(1.0);
+    let back = 1.0 / was;
+    let mut meshes = Vec::new();
+    let mut solids = Vec::new();
+    for n in &from_file {
+        let Some(b) = n.kind.body() else { continue };
+        if n.kind.waits_for_brep() {
+            // a solid's factor is taken from its live shape; one still being read back from its file has none yet
+            let s = shapes.get(&b).and_then(|s| qymcad_kernel::imports::scaled(s, back)).ok_or(Unread::Reading)?;
+            solids.push((b, s));
+        } else {
+            meshes.push(b);
+        }
+    }
+    // the components this import alone stands in - every body under them came from its file - as the file places them
+    let under = |c: Id| std::iter::once(c).chain(project.descendants(c)).flat_map(|d| project.component_bodies(d)).collect::<Vec<_>>();
+    let places = project
+        .components
+        .iter()
+        .map(|c| c.id)
+        .filter(|&c| c != project.root && !under(c).is_empty() && under(c).iter().all(|b| bodies.contains(b)))
+        .map(|c| {
+            let mut m = project.component_transform(c);
+            for k in [3, 7, 11] {
+                m[k] *= back;
+            }
+            (c, m)
+        })
+        .collect();
+    let span = world_span(project, &bodies).map(|s| s * back);
+    let unitless = matches!(ext.as_str(), "stl" | "obj" | "ply");
+    Ok(Again { landed: Landed { root: None, bodies, unitless, span, meshes, solids, places }, was, file })
+}
+
 /// PUT EVERYTHING THAT CAME IN AT `factor` from the file's own numbers: a piece of a mesh scaled by the document from
 /// the factor it stands at, a solid from its shape as read, with the factor kept by its import node; every component that came in stands at the factor too,
 /// about the file's zero. Returns whether solids changed, which then need a rebuild to be shown.

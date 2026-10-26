@@ -140,53 +140,21 @@ fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
 /// factor it stands at now, and what was read is what stands now divided by that factor. Enter keeps the new factor
 /// as one step of undo; Esc leaves the import as it was.
 pub(crate) fn rescale(wc: &mut WinCtx, nid: Id) {
-    use qymcad_core::feature::FeatureKind;
-    let source_of = |k: &FeatureKind| match *k {
-        FeatureKind::Import { source, .. } | FeatureKind::MeshPiece { source, .. } => Some(source),
-        _ => None,
-    };
-    let Some(source) = wc.project.timeline.iter().find(|n| n.id == nid).and_then(|n| source_of(&n.kind)) else { return };
-    let Some((file, ext)) = wc.project.sources.iter().find(|s| s.id == source).map(|s| (s.name.clone(), s.ext.to_lowercase())) else { return };
-    keep_pending(wc);
-    // every body from the file, and whether it is a piece of a mesh (its own geometry) or a solid (a live shape)
-    let nodes: Vec<(Id, bool)> = wc.project.timeline.iter().filter(|n| source_of(&n.kind) == Some(source)).filter_map(|n| n.kind.body().map(|b| (b, !n.kind.waits_for_brep()))).collect();
-    let was = nodes.first().and_then(|&(b, _)| wc.project.import_scale(b)).unwrap_or(1.0);
-    let back = 1.0 / was;
-    let (mut meshes, mut solids) = (Vec::new(), Vec::new());
-    for &(b, piece) in &nodes {
-        if piece {
-            meshes.push(b);
-        } else {
-            // a solid's factor is taken from its live shape; one still being read back from its file after opening
-            // has none yet
-            let Some(s) = wc.live.shapes.get(&b).and_then(|s| qymcad_kernel::imports::scaled(s, back)) else {
-                *wc.status = Notice::refusal(crate::i18n::tr("import-scale-wait"));
-                return;
-            };
-            solids.push((b, s));
+    let again = match qymcad_doc::import::read_again(wc.project, &wc.live.shapes, nid) {
+        Ok(again) => again,
+        Err(qymcad_doc::import::Unread::NotAnImport) => return,
+        Err(qymcad_doc::import::Unread::Reading) => {
+            keep_pending(wc);
+            *wc.status = Notice::refusal(crate::i18n::tr("import-scale-wait"));
+            return;
         }
-    }
-    let bodies: Vec<Id> = nodes.iter().map(|&(b, _)| b).collect();
-    // the components this import alone stands in - every body under them came from its file - as the file places them
-    let project = &*wc.project;
-    let under = |c: Id| std::iter::once(c).chain(project.descendants(c)).flat_map(|d| project.component_bodies(d)).collect::<Vec<_>>();
-    let places: Vec<(Id, [f64; 12])> = project
-        .components
-        .iter()
-        .map(|c| c.id)
-        .filter(|&c| c != project.root && !under(c).is_empty() && under(c).iter().all(|b| bodies.contains(b)))
-        .map(|c| {
-            let mut m = project.component_transform(c);
-            for k in [3, 7, 11] {
-                m[k] *= back;
-            }
-            (c, m)
-        })
-        .collect();
-    let span = world_span(project, &bodies).map(|s| s * back);
+    };
+    keep_pending(wc);
+    let qymcad_doc::import::Again { landed, was, file } = again;
     let format = qymcad_io::Format::of_path(&file).map(|f| f.name()).unwrap_or_default().to_string();
     qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr("import-scale-title"));
-    wc.win.import_scale = Some(ImportScale { file, format, unitless: matches!(ext.as_str(), "stl" | "obj" | "ply"), factor: was, applied: was, span, meshes, solids, places, again: Some(was) });
+    let qymcad_doc::import::Landed { unitless, span, meshes, solids, places, .. } = landed;
+    wc.win.import_scale = Some(ImportScale { file, format, unitless, factor: was, applied: was, span, meshes, solids, places, again: Some(was) });
     wc.edits.open_kind = qymcad_ui_state::OpenEdit::Asking;
 }
 
