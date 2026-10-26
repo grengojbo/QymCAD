@@ -6,6 +6,7 @@ pub mod mesh_repair;
 pub mod mesh_report;
 pub mod orient;
 pub mod small;
+pub mod split;
 pub mod thickness;
 
 /// The triangles of `body` placed in the world, as its part places it; `None` for a body the document does not hold.

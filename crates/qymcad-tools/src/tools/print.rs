@@ -135,6 +135,30 @@ const WALL_POINTS: usize = 20_000;
 /// The room a printer builds in when none is named: the most common room of the printers known.
 const ASSUMED: [f64; 3] = [256.0, 256.0, 256.0];
 
+/// The room a print is laid in: the printer named, if one was, and the room it builds in.
+struct Room {
+    printer: Value,
+    build: [f64; 3],
+    /// No printer and no room was given: `ASSUMED` is taken.
+    assumed: bool,
+}
+
+/// The room of the printer named, or the room given, or the one assumed; both at once are refused.
+fn room(printer: Option<&str>, bed: Option<[f64; 3]>) -> Result<Room, Refusal> {
+    match (printer, bed) {
+        (Some(_), Some(_)) => Err(Refusal::new("arguments", "Give printer or bed, one of the two.", Stage::Validate)),
+        (Some(name), None) => match crate::printers::named(name) {
+            Some(p) => Ok(Room { printer: json!(p.name), build: p.build, assumed: false }),
+            None => {
+                let known: Vec<String> = crate::printers::all().into_iter().map(|p| p.name).collect();
+                Err(Refusal::new("no-printer", &format!("No printer is known as {name:?}."), Stage::Validate).with_hint(&format!("Name one of {}, or give bed: [x, y, z] mm.", known.join(", "))))
+            }
+        },
+        (None, Some(build)) => Ok(Room { printer: Value::Null, build, assumed: false }),
+        (None, None) => Ok(Room { printer: Value::Null, build: ASSUMED, assumed: true }),
+    }
+}
+
 /// A verdict as the answer tells it.
 fn said(v: qymcad_doc::print::checks::Verdict) -> &'static str {
     use qymcad_doc::print::checks::Verdict;
@@ -164,21 +188,10 @@ pub const CHECK_PRINTABILITY: Tool = Tool {
         let project = ctx.doc.project();
         let body = target(project, a.body)?;
         let mut warnings = Vec::new();
-        let (printer, build) = match (&a.printer, a.bed) {
-            (Some(_), Some(_)) => return Err(Refusal::new("arguments", "Give printer or bed, one of the two.", Stage::Validate)),
-            (Some(name), None) => match crate::printers::named(name) {
-                Some(p) => (json!(p.name), p.build),
-                None => {
-                    let known: Vec<String> = crate::printers::all().into_iter().map(|p| p.name).collect();
-                    return Err(Refusal::new("no-printer", &format!("No printer is known as {name:?}."), Stage::Validate).with_hint(&format!("Name one of {}, or give bed: [x, y, z] mm.", known.join(", "))));
-                }
-            },
-            (None, Some(bed)) => (Value::Null, bed),
-            (None, None) => {
-                warnings.push(json!("bed-assumed"));
-                (Value::Null, ASSUMED)
-            }
-        };
+        let Room { printer, build, assumed } = room(a.printer.as_deref(), a.bed)?;
+        if assumed {
+            warnings.push(json!("bed-assumed"));
+        }
         let mesh = qymcad_doc::print::world_mesh(project, body)
             .filter(|m| !m.tris.is_empty())
             .ok_or_else(|| Refusal::new("no-mesh", &format!("Body {body} has no triangles to read."), Stage::Resolve).with_hint("Rebuild the document, or name another body."))?;
@@ -346,6 +359,60 @@ pub const SUGGEST_ORIENTATION: Tool = Tool {
                 "height": round(height),
             }),
         );
+        Ok(out)
+    },
+};
+
+#[derive(Deserialize)]
+#[serde(deny_unknown_fields)]
+struct SplitArgs {
+    body: Option<BodyRef>,
+    printer: Option<String>,
+    bed: Option<[f64; 3]>,
+    #[serde(default = "five")]
+    margin: f64,
+}
+
+fn five() -> f64 {
+    5.0
+}
+
+pub const SPLIT_FOR_BED: Tool = Tool {
+    name: "split_for_bed",
+    description: "Cut a body too big for the printer into pieces that fit: planes across each side the room does not hold, spaced evenly so every piece is the room less margin mm (5 by default) at most, each plane cutting every piece it runs through. The pieces stay bodies of the one part, as split_body leaves them; the cuts are one step undo takes back. printer or bed as check_printability takes them. A body that fits is left whole. A mesh brought in is cut once it is a body of faces: recognise_mesh first. The answer gives the pieces with their sizes and the cuts.",
+    schema: || {
+        json!({ "type": "object", "properties": {
+            "body": body_field(),
+            "printer": { "type": "string", "description": "A printer by its room, as check_printability names them." },
+            "bed": { "type": "array", "items": { "type": "number", "exclusiveMinimum": 0 }, "minItems": 3, "maxItems": 3, "description": "The room the printer builds in, [x, y, z] mm." },
+            "margin": { "type": "number", "minimum": 0, "maximum": 100, "default": 5, "description": "mm a piece keeps clear of the room's sides." },
+        }, "additionalProperties": false })
+    },
+    call: |ctx: &mut Ctx, arguments: Value| {
+        let a: SplitArgs = tool::args(arguments)?;
+        let body = target(ctx.doc.project(), a.body)?;
+        let Room { printer, build, assumed } = room(a.printer.as_deref(), a.bed)?;
+        if ctx.doc.shape(body).is_none() {
+            return Err(Refusal::new("split-needs-faces", &format!("Body {body} is a mesh: a cut needs faces to close the pieces with."), Stage::Validate).with_hint("Make it a body of faces with recognise_mesh, then cut it."));
+        }
+        let bed = qymcad_doc::print::checks::Bed { size: build };
+        let pieces = qymcad_doc::print::split::split_to_fit(&mut ctx.doc, body, &bed, a.margin).map_err(tool::doc_refusal)?;
+        let project = ctx.doc.project();
+        let told: Vec<Value> = pieces
+            .iter()
+            .map(|&p| {
+                let size = qymcad_doc::print::world_mesh(project, p).and_then(|m| m.bounds()).map(|b| [b.max.x - b.min.x, b.max.y - b.min.y, b.max.z - b.min.z].map(round));
+                json!({ "body": p, "size": size })
+            })
+            .collect();
+        let mut out = Answer::new();
+        out.insert("body".into(), json!(body));
+        out.insert("printer".into(), printer);
+        out.insert("build".into(), json!(build));
+        out.insert("pieces".into(), json!(told));
+        if assumed {
+            out.insert("warnings".into(), json!(["bed-assumed"]));
+        }
         Ok(out)
     },
 };
