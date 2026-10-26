@@ -2,6 +2,7 @@
 //! lines of a nozzle of 0.4 and is told where; of wall 2 it is not; a solid cube is as thick as its side; the same body
 //! reads the same twice.
 use qymcad_core::geom::{Mesh, Point3};
+use qymcad_core::time_budget::{cost_of, holds, over, Doer};
 use qymcad_doc::print::checks::Verdict;
 use qymcad_doc::print::thickness::{thickness, Walls};
 
@@ -111,10 +112,10 @@ fn a_mesh_of_a_million_triangles_is_read_within_two_seconds() {
     }
     let m = ball(1000);
     assert!(m.tris.len() >= 1_000_000, "{} triangles", m.tris.len());
-    let start = std::time::Instant::now();
-    let t = thickness(&m, &WALLS);
-    let took = start.elapsed();
-    eprintln!("{} triangles, {} points: {took:?}, least {}", m.tris.len(), t.samples, t.least);
+    let read = cost_of(Doer::Process, || thickness(&m, &WALLS));
+    let t = read.out;
+    eprintln!("{} triangles, {} points: {}, least {}", m.tris.len(), t.samples, read.cost, t.least);
     assert!((t.least - 40.0).abs() < 1.0 || t.least < 40.0, "{t:?}");
-    assert!(took < std::time::Duration::from_secs(2), "a mesh of a million triangles took {took:?}");
+    let budget = std::time::Duration::from_secs(2);
+    assert!(holds(read.cost, budget), "{}", over("reading a mesh of a million triangles", read.cost, budget));
 }
