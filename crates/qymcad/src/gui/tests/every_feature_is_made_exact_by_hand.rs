@@ -172,8 +172,11 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     assert_eq!(groups(&h).len(), 3, "the list reopened holds not the node's three groups");
 }
 
-/// How long a trial of the recognised block is waited for.
-const HEAVY_TRIAL: std::time::Duration = std::time::Duration::from_secs(480);
+/// How long a trial of the recognised block is waited for. The second trial - the whole node, then the node without the
+/// first group - took 77 s in a debug build on an arm64 Mac, 349 s on an x86 runner of 4 threads at rest (149 + 199),
+/// and past 480 s there under a load of 8, where the check went red on every run: the kernel's work, every trial
+/// answered, none run again.
+const HEAVY_TRIAL: std::time::Duration = std::time::Duration::from_secs(900);
 
 /// A printer's file of `s`, written as a person's printer writes it.
 fn printed(s: &Shape, name: &str) -> Written {
@@ -203,7 +206,7 @@ fn a_group_that_does_not_lay_is_left_out_with_its_reason_and_the_rest_is_laid() 
     // the trial answers, and the popup reads its answer as it is drawn: a group refused is left out, and the rest is
     // tried again, until it lays. A trial refused on this body of 755 faces rebuilds it to the group that refuses:
     // measured 15 to 45 s in a debug build alone, and past the 120 s of an event on a runner of 4 threads under a load
-    // of 11 - the kernel's own work, so the trial is given 480 s
+    // of 11 - the kernel's own work, so the trial is given `HEAVY_TRIAL`
     let mut said = Vec::new();
     for _ in 0..8 {
         let Some(words) = h.trial_says_within(HEAVY_TRIAL) else { break };
