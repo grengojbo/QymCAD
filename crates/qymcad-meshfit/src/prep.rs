@@ -114,6 +114,10 @@ pub fn prepare(mesh: &Mesh, weld: f64) -> Prepared {
     // gears 14 and 15 of `cube_gears` four such, and the body a shell. One that cannot be mended so - its partner flat
     // too, its middle corner off the side - stays a sliver as before.
     let mut gone = vec![false; woven.len()];
+    // the sides are gathered once and kept up as triangles change: gathered for every seam they cost a printed lamp
+    // module of 161 048 triangles 72.5 s, and a strip of 4 000 seams 69.9 s
+    let mut sides = sides_of(&woven);
+    let flat_ones: HashSet<u32> = slivers.iter().copied().collect();
     for &s in &slivers {
         let s = s as usize;
         let t = woven[s];
@@ -125,17 +129,28 @@ pub fn prepare(mesh: &Mesh, weld: f64) -> Prepared {
         if !(0.0 < along && along < 1.0) {
             continue;
         }
-        let sides = sides_of(&woven);
         let Some(on) = sides.get(&side_key(a, b)).filter(|l| l.len() == 2) else { continue };
         let Some(partner) = on.iter().map(|&(u, _)| u as usize).find(|&u| u != s && !gone[u]) else { continue };
-        if slivers.contains(&(partner as u32)) {
+        if flat_ones.contains(&(partner as u32)) {
             continue;
         }
         let q = woven[partner];
         let Some(k) = (0..3).find(|&k| q[k] != a && q[k] != b) else { continue };
         let (r, u, w) = (q[k], q[(k + 1) % 3], q[(k + 2) % 3]);
+        // the partner as it was leaves the sides and its two halves join them; the flat one stays on its sides, gone,
+        // as it stood when the sides were gathered anew for every seam
+        for k in 0..3 {
+            if let Some(l) = sides.get_mut(&side_key(q[k], q[(k + 1) % 3])) {
+                l.retain(|&(u, _)| u as usize != partner);
+            }
+        }
         woven[partner] = [r, u, m];
         woven.push([r, m, w]);
+        for t in [partner, woven.len() - 1] {
+            for k in 0..3 {
+                sides.entry(side_key(woven[t][k], woven[t][(k + 1) % 3])).or_default().push((t as u32, k as u8));
+            }
+        }
         origin.push(origin[partner]);
         gone.push(false);
         gone[s] = true;
