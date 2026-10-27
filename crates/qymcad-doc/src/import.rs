@@ -309,6 +309,34 @@ pub fn apply_scale(project: &mut Project, shapes: &mut HashMap<Id, Shape>, read:
     !read.solids.is_empty()
 }
 
+/// LAY WHAT CAME IN ON THE BED: everything moved down as one, by the components the file came in under, until its lowest
+/// point stands on z = 0 - a slicer drops a part so, and a module of a lamp drawn 75 mm up where it stands in its
+/// assembly came in floating. The shapes and the parts' own coordinates stay as the file has them. Returns how far it
+/// went down. A component placed under another that came in is moved with it, not on its own.
+pub fn lay_on_bed(project: &mut Project, read: AsRead) -> f64 {
+    let bodies: Vec<Id> = read.meshes.iter().copied().chain(read.solids.iter().map(|s| s.0)).collect();
+    let mut low = f64::MAX;
+    for &id in &bodies {
+        let Some(b) = project.mesh_index(id).and_then(|i| project.bodies[i].mesh.bounds()) else { continue };
+        let w = project.body_world_transform(id);
+        for corner in 0..8 {
+            let p = [if corner & 1 == 0 { b.min.x } else { b.max.x }, if corner & 2 == 0 { b.min.y } else { b.max.y }, if corner & 4 == 0 { b.min.z } else { b.max.z }];
+            low = low.min(w[8] * p[0] + w[9] * p[1] + w[10] * p[2] + w[11]);
+        }
+    }
+    if !low.is_finite() || low.abs() < 1e-12 {
+        return 0.0;
+    }
+    let came: Vec<Id> = read.places.iter().map(|p| p.0).collect();
+    let tops: Vec<Id> = came.iter().copied().filter(|&c| !came.iter().any(|&d| d != c && project.descendants(d).contains(&c))).collect();
+    for c in tops {
+        let mut m = project.component_transform(c);
+        m[11] -= low;
+        project.set_component_transform(c, m);
+    }
+    low
+}
+
 /// No part a person imports is this size: under `SMALLEST_MM` or over `LARGEST_MM` on its largest side.
 pub fn out_of_size(span: [f64; 3]) -> bool {
     let largest = span.iter().copied().fold(0.0, f64::max);

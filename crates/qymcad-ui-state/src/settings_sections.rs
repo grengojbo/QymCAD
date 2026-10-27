@@ -154,6 +154,7 @@ impl SettingsSection {
                 s.show_start_screen = d.show_start_screen;
                 s.menu_place = d.menu_place;
                 s.import_ask_always = d.import_ask_always;
+                s.import_bed = d.import_bed;
                 s.import_units = d.import_units.clone();
                 s.autosave_secs = d.autosave_secs;
                 s.undo_cap = d.undo_cap;

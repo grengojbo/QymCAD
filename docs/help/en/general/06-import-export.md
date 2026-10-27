@@ -44,6 +44,10 @@ by what factor to take it. The model in the view changes with the answer at once
 so as one step of undo; **Esc** cancels the import altogether. A file with units is asked about only when the model
 comes out under 1 mm or over 10 m - or always, when the settings say "Ask for units and scale on every import".
 
+**Where it stands** chooses where the model lands: **As in the file**, or **On the bed** - moved down as one until
+its lowest point is on the floor of the view (z = 0), as a slicer places a part. A part drawn high up in its own
+assembly comes in floating otherwise. The choice is kept for the next file, the one that is not asked about too.
+
 To change the scale of a file already in the document, double-click its node in the tree - **Import: file name**
 or **Mesh from a file: file name** - choose **Edit** in the node's menu, or press **Edit** in its properties. The
 node lies in the part the file came into: if it does not show, step into the part with a double click first. The

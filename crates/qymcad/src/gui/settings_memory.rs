@@ -79,6 +79,7 @@ mod tests {
             recent_limit: 3,
             pick_precision: 2,
             import_ask_always: !d.import_ask_always,
+            import_bed: qymcad_ui_state::ImportBed::OnBed,                              // the default is as in the file
             import_units: [("STL".to_string(), "m".to_string())].into_iter().collect(), // the factory value is empty
             active_icon_packs: vec!["custom-theme".into()],
             inactive_icon_packs: vec!["old-theme".into()],
@@ -96,6 +97,7 @@ mod tests {
         assert_eq!(a.language, b.language, "the language of the interface");
         assert_eq!(a.import_ask_always, b.import_ask_always, "asking for units on every import");
         assert_eq!(a.import_units, b.import_units, "the unit last chosen for a format without units");
+        assert_eq!(a.import_bed, b.import_bed, "where a file brought in stands");
         assert_eq!(a.scheme, b.scheme, "the colour scheme");
         assert_eq!(a.viewcube_size, b.viewcube_size, "the size of the navigation cube");
         assert_eq!(a.gpu_viewport, b.gpu_viewport, "the engine of the viewport");

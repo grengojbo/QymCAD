@@ -680,6 +680,7 @@ impl Default for Settings {
             zoom_editing: default_zoom_editing(),
             orbit_about: default_orbit_about(),
             import_ask_always: false,
+            import_bed: ImportBed::AsInFile,
             import_units: Default::default(),
             active_icon_packs: Vec::new(),
             inactive_icon_packs: Vec::new(),

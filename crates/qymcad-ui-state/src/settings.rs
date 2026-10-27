@@ -108,6 +108,28 @@ pub enum MeshLines {
     Hidden,
 }
 
+/// WHERE A FILE BROUGHT IN STANDS: where the file draws it, or moved down as one until its lowest point is on the bed
+/// (z = 0), as a slicer drops a part. A part drawn where it stands in an assembly - a module of a lamp 75 mm up - comes
+/// in floating as the file has it.
+#[derive(Clone, Copy, PartialEq, Eq, Debug, Default, serde::Serialize, serde::Deserialize)]
+pub enum ImportBed {
+    #[default]
+    AsInFile,
+    OnBed,
+}
+
+impl ImportBed {
+    pub const ALL: [ImportBed; 2] = [ImportBed::AsInFile, ImportBed::OnBed];
+
+    /// The words of the choice in the window of the units and the scale.
+    pub fn key(self) -> &'static str {
+        match self {
+            ImportBed::AsInFile => "import-bed-as-file",
+            ImportBed::OnBed => "import-bed-on-bed",
+        }
+    }
+}
+
 /// A NAVIGATION GESTURE: which buttons are held and which modifiers, to move the view.
 ///
 /// Written as data rather than as a branch per style. With eleven layouts a condition written out at each
@@ -607,6 +629,9 @@ pub struct Settings {
     /// for a model under 1 mm or over 10 m.
     #[serde(default)]
     pub import_ask_always: bool,
+    /// WHERE A FILE BROUGHT IN STANDS, as chosen last in the window of the units and the scale (see `ImportBed`).
+    #[serde(default)]
+    pub import_bed: ImportBed,
     /// Active icon theme packs in descending order of priority.
     #[serde(default)]
     pub active_icon_packs: Vec<String>,

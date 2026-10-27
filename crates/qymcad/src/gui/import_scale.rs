@@ -12,7 +12,7 @@ use super::ph;
 use qymcad_core::model::Id;
 use qymcad_doc::import::{world_span, AsRead, LARGEST_MM, SMALLEST_MM};
 use qymcad_io::FileUnit;
-use qymcad_ui_state::{ImportScale, MeshFormat, WinCtx};
+use qymcad_ui_state::{ImportBed, ImportScale, MeshFormat, WinCtx};
 
 /// The factors offered as buttons, beside the field for any other.
 const FACTORS: [f64; 7] = [0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0];
@@ -30,7 +30,9 @@ pub(crate) fn land_mesh(wc: &mut WinCtx, path: String, format: MeshFormat, piece
     came_in(wc, &landed);
     *wc.status = Notice::info(said);
     let qymcad_doc::import::Landed { unitless, span, meshes, solids, places, .. } = landed;
-    let ask = ImportScale { file: super::file_name(&path), format: super::mesh_entry(format).name().to_string(), unitless, factor: 1.0, applied: 1.0, span, meshes, solids, places, again: None };
+    let (bed, laid) = (wc.set.import_bed, ImportBed::AsInFile);
+    let ask =
+        ImportScale { file: super::file_name(&path), format: super::mesh_entry(format).name().to_string(), unitless, factor: 1.0, applied: 1.0, span, meshes, solids, places, again: None, bed, laid };
     ask_or_keep(wc, ask);
 }
 
@@ -83,7 +85,8 @@ pub(crate) fn land_exact(
     // the size as it stands in the world after the rebuild: a body alone is in its part's coordinates
     let span = world_span(wc.project, &landed.bodies);
     let qymcad_doc::import::Landed { solids, places, .. } = landed;
-    let ask = ImportScale { file: super::file_name(&path), format: named.to_string(), unitless: false, factor: 1.0, applied: 1.0, span, meshes: Vec::new(), solids, places, again: None };
+    let (bed, laid) = (wc.set.import_bed, ImportBed::AsInFile);
+    let ask = ImportScale { file: super::file_name(&path), format: named.to_string(), unitless: false, factor: 1.0, applied: 1.0, span, meshes: Vec::new(), solids, places, again: None, bed, laid };
     ask_or_keep(wc, ask);
 }
 
@@ -99,6 +102,10 @@ fn keep_pending(wc: &mut WinCtx) {
 /// otherwise keep it as it came, as one step of undo. A format without units starts at the unit chosen for it last.
 fn ask_or_keep(wc: &mut WinCtx, mut ask: ImportScale) {
     if !(ask.unitless || wc.set.import_ask_always || qymcad_doc::import::out_of_size(ask.span)) {
+        // not asked, it still stands where it was chosen last to stand
+        if ask.bed != ask.laid {
+            apply(wc, &mut ask);
+        }
         qymcad_ui_state::commit_edit(&mut wc.rebuild());
         return;
     }
@@ -113,7 +120,7 @@ fn ask_or_keep(wc: &mut WinCtx, mut ask: ImportScale) {
 }
 
 /// Put every body that came in at `ask.factor` from the file's own numbers: a mesh scaled by the document from the factor
-/// it stands at, a solid from its shape as read, with the factor kept by its import node.
+/// it stands at, a solid from its shape as read, with the factor kept by its import node; then, asked, laid on the bed.
 fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
     let f = ask.factor;
     // every component that came in stands at the factor too: the whole import is scaled about the file's zero, not
@@ -129,6 +136,11 @@ fn apply(wc: &mut WinCtx, ask: &mut ImportScale) {
         // now, not when the edit closes: the answer has to show while the window is still asking
         qymcad_ui_state::regenerate_now(&mut wc.rebuild());
     }
+    if ask.bed == ImportBed::OnBed {
+        // the scale above put the components back where the file places them; from there it goes down onto the bed
+        let _ = qymcad_doc::import::lay_on_bed(wc.project, AsRead { meshes: &ask.meshes, solids: &ask.solids, places: &ask.places });
+    }
+    ask.laid = ask.bed;
     qymcad_ui_state::invalidate(wc.regen);
     wc.view.initialized = false;
     wc.cam.init = false;
@@ -154,7 +166,8 @@ pub(crate) fn rescale(wc: &mut WinCtx, nid: Id) {
     let format = qymcad_io::Format::of_path(&file).map(|f| f.name()).unwrap_or_default().to_string();
     qymcad_ui_state::begin_edit(wc.edits, wc.project, crate::i18n::tr("import-scale-title"));
     let qymcad_doc::import::Landed { unitless, span, meshes, solids, places, .. } = landed;
-    wc.win.import_scale = Some(ImportScale { file, format, unitless, factor: was, applied: was, span, meshes, solids, places, again: Some(was) });
+    let (bed, laid) = (ImportBed::AsInFile, ImportBed::AsInFile);
+    wc.win.import_scale = Some(ImportScale { file, format, unitless, factor: was, applied: was, span, meshes, solids, places, again: Some(was), bed, laid });
     wc.edits.open_kind = qymcad_ui_state::OpenEdit::Asking;
 }
 
@@ -189,6 +202,12 @@ pub(crate) fn import_scale_window(wc: &mut WinCtx, ctx: &egui::Context) {
                     }
                 }
                 ui.add(egui::DragValue::new(&mut ask.factor).speed(0.01).range(1e-6..=1e6));
+            });
+            ui.horizontal(|ui| {
+                ui.label(crate::i18n::tr("import-scale-bed"));
+                for b in ImportBed::ALL {
+                    ui.selectable_value(&mut ask.bed, b, crate::i18n::tr(b.key()));
+                }
             });
             ui.label(crate::i18n::tr1("import-scale-in-file", "size", &sides(ask.span, 1.0)));
             ui.label(crate::i18n::tr1("import-scale-lands", "size", &sides(ask.span, ask.factor)));
@@ -226,10 +245,13 @@ pub(crate) fn import_scale_window(wc: &mut WinCtx, ctx: &egui::Context) {
         *wc.status = Notice::info(crate::i18n::tr(if ask.again.is_some() { "import-scale-kept" } else { "import-scale-cancelled" }));
         return;
     }
-    if (ask.factor - ask.applied).abs() > 1e-12 && ask.factor > 0.0 {
+    if ((ask.factor - ask.applied).abs() > 1e-12 || ask.bed != ask.laid) && ask.factor > 0.0 {
         apply(wc, &mut ask);
     }
     if keep {
+        if ask.again.is_none() {
+            wc.set.import_bed = ask.bed; // the next file comes in standing where this one was asked to
+        }
         if let Some(u) = FileUnit::ALL.into_iter().find(|u| ask.unitless && same(ask.factor, u.mm())) {
             wc.set.import_units.insert(ask.format.clone(), u.code().to_string());
         }

@@ -323,3 +323,59 @@ fn a_mesh_part_brought_back_by_undo_is_not_rebuilt() {
     assert!(dirty.is_empty(), "the mesh piece brought back is marked for a rebuild: {dirty:?}");
     assert!(app.regen.busy.is_none(), "a rebuild of nothing is running after the undo: {}", app.status);
 }
+
+/// The lowest point of everything that came in after the first `before` bodies, as it stands in the world.
+fn lowest_after(app: &App, before: usize) -> f64 {
+    let mut low = f64::MAX;
+    for b in app.project.bodies.iter().skip(before) {
+        let Some(bb) = b.mesh.bounds() else { continue };
+        let w = app.project.body_world_transform(b.id);
+        for corner in 0..8 {
+            let q = [if corner & 1 == 0 { bb.min.x } else { bb.max.x }, if corner & 2 == 0 { bb.min.y } else { bb.max.y }, if corner & 4 == 0 { bb.min.z } else { bb.max.z }];
+            low = low.min(w[8] * q[0] + w[9] * q[1] + w[10] * q[2] + w[11]);
+        }
+    }
+    low
+}
+
+/// A cube of 10 standing from z = 75, as a program without units writes it.
+fn lifted_cube_stl() -> String {
+    cube_stl(10.0)
+        .lines()
+        .map(|l| match l.strip_prefix("vertex ") {
+            Some(xyz) => {
+                let v: Vec<f64> = xyz.split_whitespace().filter_map(|n| n.parse().ok()).collect();
+                format!("vertex {} {} {}\n", v[0], v[1], v[2] + 75.0)
+            }
+            None => format!("{l}\n"),
+        })
+        .collect()
+}
+
+/// A FILE DRAWN UP IN THE AIR IS LAID ON THE BED WHEN ASKED: "On the bed" in the window of the units and the scale moves
+/// it down until its lowest point stands on z = 0, Enter keeps it so as one step of undo, and the next file comes in
+/// standing where this one was asked to. Reported behaviour: a module of a lamp drawn 75 mm up, where it stands in its
+/// assembly, came in floating above the bed.
+#[test]
+fn a_file_drawn_up_in_the_air_is_laid_on_the_bed_when_asked() {
+    let p = scale_file("lifted-cube.stl");
+    std::fs::write(&p, lifted_cube_stl()).expect("written");
+    let (mut app, ctx) = running();
+    let (before, steps) = (app.project.bodies.len(), app.disk.edits.undo.len());
+    let texts = read_and_look(&mut app, &ctx, &p);
+    assert!((lowest_after(&app, before) - 75.0).abs() < 1e-9, "setup: the cube does not stand from 75 as the file draws it");
+    let on_bed = spot(&texts, &crate::i18n::tr("import-bed-on-bed")).unwrap_or_else(|| panic!("the window offers no place on the bed; the screen shows: {:?}", names(&texts)));
+    let _ = frame(&mut app, &ctx, click(on_bed));
+    assert!(lowest_after(&app, before).abs() < 1e-9, "the cube asked onto the bed stands from {}", lowest_after(&app, before));
+    assert!((size_after(&app, before) - 10.0).abs() < 1e-9, "laid on the bed the cube is no longer 10: {}", size_after(&app, before));
+    let _ = frame(&mut app, &ctx, key(egui::Key::Enter));
+    let _ = frame(&mut app, &ctx, Vec::new());
+    assert_eq!(app.disk.edits.undo.len(), steps + 1, "the import laid on the bed is not one step of undo");
+    assert!(lowest_after(&app, before).abs() < 1e-9, "Enter did not keep the cube on the bed: it stands from {}", lowest_after(&app, before));
+    // the next file comes in on the bed as the window last chose, the window still asking its unit
+    let again = scale_file("lifted-cube-2.stl");
+    std::fs::write(&again, lifted_cube_stl()).expect("written");
+    let next = app.project.bodies.len();
+    let _ = read_and_look(&mut app, &ctx, &again);
+    assert!(lowest_after(&app, next).abs() < 1e-9, "the next file did not come in on the bed: it stands from {}", lowest_after(&app, next));
+}

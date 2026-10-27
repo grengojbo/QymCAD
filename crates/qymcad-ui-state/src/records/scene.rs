@@ -42,6 +42,9 @@ pub struct ImportScale {
     /// The factor the import stood at when it was asked about again from its node; `None` for a file just read. The
     /// window then applies a new factor rather than bringing a file in, and Esc puts this one back.
     pub again: Option<f64>,
+    /// Where it is asked to stand, and where the bodies in the document stand now.
+    pub bed: crate::ImportBed,
+    pub laid: crate::ImportBed,
 }
 
 /// THE SKETCH WORKING SESSION: which one is open for editing and which one was the last. Kept apart,
