@@ -15,7 +15,8 @@ use std::time::{Duration, Instant};
 #[cfg(test)]
 pub(crate) const EVENT_LIMIT: Duration = Duration::from_secs(120);
 
-/// THE LONGEST A WAIT GOES ON, the queue of the kernel counted too: past it the queue itself is the fault.
+/// THE LONGEST A WAIT GOES ON, the queue of the kernel counted too: past it the queue itself is the fault. A limit of a
+/// check past it raises it to that limit.
 const CEILING: Duration = Duration::from_secs(600);
 
 /// How often the event is looked for.
@@ -76,13 +77,26 @@ pub(crate) fn waited(limit: Duration, mut look: impl FnMut() -> bool) -> Result<
         }
         looked = now;
         let waited = began.elapsed();
-        if waited.saturating_sub(queued) >= limit || waited >= CEILING {
+        if past(Spent { waited, queued }, limit) {
             let words =
                 format!("waited {waited:.1?}, {queued:.1?} of it with the kernel held by the work of other checks; {}; {}", qymcad_core::time_budget::Machine::now(), qymcad_kernel::gate_now());
             return Err(Late { words });
         }
     }
     Ok(())
+}
+
+/// HOW LONG A WAIT HAS GONE ON: all of it, and the part of it the kernel was held by the work of other checks.
+#[derive(Clone, Copy)]
+struct Spent {
+    waited: Duration,
+    queued: Duration,
+}
+
+/// Whether a wait that has gone on `spent` is past `limit` of its own time, or past `CEILING` with the queue counted -
+/// the ceiling never below the limit, or a limit past it is cut to it.
+fn past(spent: Spent, limit: Duration) -> bool {
+    spent.waited.saturating_sub(spent.queued) >= limit || spent.waited >= CEILING.max(limit)
 }
 
 #[cfg(test)]
@@ -92,6 +106,17 @@ mod tests {
     /// The words a wait failed with, or nothing when it did not fail.
     fn failed_with(work: impl FnOnce() + std::panic::UnwindSafe) -> String {
         std::panic::catch_unwind(work).err().and_then(|e| e.downcast_ref::<String>().cloned()).unwrap_or_default()
+    }
+
+    /// A LIMIT PAST THE CEILING IS THE LIMIT: a trial given 900 s on an x86 runner that takes it 349 s at rest and past
+    /// 480 s under load is not cut at 600 s by the ceiling of the queue.
+    #[test]
+    fn a_limit_past_the_ceiling_is_kept() {
+        let limit = Duration::from_secs(900);
+        let spent = super::Spent { waited: Duration::from_secs(700), queued: Duration::ZERO };
+        assert!(!super::past(spent, limit), "a wait of 700 s of its own time is cut before its limit of 900 s");
+        let spent = super::Spent { waited: Duration::from_secs(900), queued: Duration::ZERO };
+        assert!(super::past(spent, limit), "a wait of 900 s is not past its limit of 900 s");
     }
 
     /// AN EVENT THAT NEVER COMES is named, with the words a red of time is told by.
