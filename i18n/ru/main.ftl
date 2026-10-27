@@ -2748,6 +2748,7 @@ msg-recognise-all = Щёлкните тело, чтобы найти его от
 msg-recognise-all-found = Взято: отверстий { $holes }, фасок { $chamfers }, скруглений { $rounds }. Щёлкните элемент, чтобы не брать его или взять снова; Enter делает взятые точными
 msg-recognise-all-unfound = Кривые грани остаются как были: { $n }
 msg-recognise-all-none = На этом теле не найдено ни отверстия, ни скругления, ни фаски
+msg-recognise-all-searching = Поиск отверстий, скруглений и фасок тела...
 msg-recognise-all-nothing-taken = Ничего не взято: нажмите название группы или щёлкните элемент
 msg-recognise-all-left-out = { $group } не ставится: { $why }. Её не взяли; остальное становится точным
 msg-all-hole-through = Отверстия Ø{ $d } насквозь: { $n }

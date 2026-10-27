@@ -288,6 +288,10 @@ fn every_feature_of_a_step_is_made_exact(hand: &mut crate::gui::hand::Hand, prob
     hand.look_at([630.0, 20.0, 5.0], 6.0);
     hand.tool(qymcad_ui_state::PartTool::RecogniseAll).frame(Vec::new());
     hand.click([640.0, 32.0, 10.0]).frame(Vec::new());
+    crate::gui::session::waiting::until("the search of Recognise all to land", || {
+        hand.frame(Vec::new());
+        hand.app.params.recognise.all_asked.is_none()
+    });
     let groups = hand.app.params.recognise.all.as_ref().map_or(0, |a| a.groups.len());
     if groups != 5 {
         problems.push(format!("\"Recognise all\" on the plate of the STEP found {groups} groups, not 5: {}", hand.app.status));

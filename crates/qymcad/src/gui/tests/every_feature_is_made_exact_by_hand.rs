@@ -88,6 +88,14 @@ struct Row {
     taking: Taking,
 }
 
+/// Frames run until the search the click on the body started has landed: it runs beside the frames, not on them.
+fn found(h: &mut Hand) {
+    crate::gui::session::waiting::until("the search of Recognise all to land", || {
+        h.frame(Vec::new());
+        h.app.params.recognise.all_asked.is_none()
+    });
+}
+
 fn groups(h: &Hand) -> Vec<Row> {
     h.app.params.recognise.all.as_ref().map(|all| all.groups.iter().map(|g| Row { told: qymcad_part::group_told(g), taking: g.taking.clone() }).collect()).unwrap_or_default()
 }
@@ -106,6 +114,7 @@ fn a_plate_clicked_gives_its_groups_and_enter_makes_the_ticked_exact_in_one_node
     worked_on(&mut h);
     h.look_at([30.0, 20.0, 5.0], 6.0).frame(Vec::new());
     h.tool(qymcad_ui_state::PartTool::RecogniseAll).click([40.0, 32.0, 10.0]).frame(Vec::new());
+    found(&mut h);
     let found = groups(&h);
     assert_eq!(found.len(), 5, "the plate clicked gives not its five groups: {found:?}; the program says {}", h.app.status);
     // THE GROUPS AS A DRAWING LISTS THEM: the holes from the largest down, then the chamfer, then the rounding, a whole
@@ -189,6 +198,7 @@ fn a_group_that_does_not_lay_is_left_out_with_its_reason_and_the_rest_is_laid() 
     h.enter();
     at_rest(&mut h);
     h.tool(qymcad_ui_state::PartTool::RecogniseAll).click([30.0, 20.0, 10.0]).frame(Vec::new());
+    found(&mut h);
     assert!(groups(&h).len() >= 2, "the recognised block gives no groups: {:?}; the program says {}", groups(&h), h.app.status);
     // the trial answers, and the popup reads its answer as it is drawn: a group refused is left out, and the rest is
     // tried again, until it lays. A trial refused on this body of 755 faces rebuilds it to the group that refuses:
@@ -209,4 +219,27 @@ fn a_group_that_does_not_lay_is_left_out_with_its_reason_and_the_rest_is_laid() 
     assert_eq!(h.app.project.timeline.len(), nodes + 1, "Enter laid not one node: {}", h.app.status);
     let node = h.app.project.timeline.last().expect("the node");
     assert!(!h.app.project.regen_errors.contains_key(&node.id), "the node laid went red: {:?}", h.app.project.regen_errors.get(&node.id));
+}
+
+/// THE SEARCH RUNS BESIDE THE FRAMES: the frame of the click on the body ends with nothing found yet and the status line
+/// saying the search is on, and the groups come on a frame after. Reported behaviour: on a recognised STL of 78 644
+/// triangles the window stood still for seconds after the click, with no sign whether it hung or worked - the search
+/// ran on the frame of the click.
+#[test]
+fn the_search_of_recognise_all_runs_beside_the_frames() {
+    let mut app = App::default();
+    let folder = crate::gui::check_folder::tests::CheckFolder::new("recognise-all-beside");
+    let file = Written { path: folder.file("plate.step").to_string_lossy().into_owned(), _folder: folder };
+    qymcad_kernel::write_step_of(&plate(), &file.path).expect("the STEP is written");
+    let mut h = Hand::new(&mut app);
+    h.import(&file.path);
+    h.press_word(&crate::i18n::tr("import-scale-import"), egui::pos2(700.0, 450.0));
+    at_rest(&mut h);
+    worked_on(&mut h);
+    h.look_at([30.0, 20.0, 5.0], 6.0).frame(Vec::new());
+    h.tool(qymcad_ui_state::PartTool::RecogniseAll).click([40.0, 32.0, 10.0]);
+    assert!(h.app.params.recognise.all.is_none(), "the groups were found on the frame of the click: the search stood the window still");
+    assert_eq!(h.app.status.words, crate::i18n::tr("msg-recognise-all-searching"), "the status line does not say the search is on");
+    found(&mut h);
+    assert_eq!(groups(&h).len(), 5, "the search landed without the plate's five groups; the program says {}", h.app.status);
 }

@@ -17,6 +17,7 @@ pub fn start_recognise_all_cmd(pc: &mut PartCtx) {
     pc.gsel.faces.clear();
     pc.gsel.faces_body = None;
     pc.recognise.all = None;
+    pc.recognise.all_asked = None;
     pc.cmd.params = Vec::new();
     pc.cmd.focus = false;
     *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-all"));
@@ -35,6 +36,9 @@ pub fn recognise_all_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
     if pc.cmd.edit.is_some() {
         return; // a node reopened changes its sizes; what it holds was chosen when it was laid
     }
+    if pc.recognise.all_asked == Some(body) {
+        return; // the body is being searched: a click on it waits for what is found
+    }
     if pc.recognise.all.as_ref().is_some_and(|all| all.body == body) {
         let id = face.and_then(|fi| b.faces.get(fi)).map(|f| f.id);
         let still = pc.recognise.all.as_mut().is_some_and(|all| id.is_some_and(|id| switch_feature(all, id)) && all.groups.iter().any(|gr| taken(gr).next().is_some()));
@@ -46,17 +50,42 @@ pub fn recognise_all_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
         say_found(pc);
         return;
     }
-    let everything = features_of(&b.mesh, &b.faces, 1.0);
-    let groups = grouped(&everything.found, &b.faces);
-    if groups.is_empty() {
-        pc.recognise.all = None;
-        pc.cmd.params = Vec::new();
-        pc.gsel.faces.clear();
+    // THE SEARCH RUNS BESIDE THE FRAMES: on a recognised STL of 78 644 triangles it takes 4-8 s, and run on the click it
+    // stood the window still that long with no sign whether it hung or worked
+    let (mesh, faces) = (b.mesh.clone(), b.faces.clone());
+    pc.recognise.all = None;
+    pc.cmd.params = Vec::new();
+    pc.gsel.faces.clear();
+    pc.recognise.all_asked = Some(body);
+    *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-all-searching"));
+    let slot = pc.recognise.all_found.clone();
+    std::thread::spawn(move || {
+        let everything = features_of(&mesh, &faces, 1.0);
+        let groups = grouped(&everything.found, &faces).into_iter().map(|g| GroupInHand { items: g.items, off: Vec::new(), taking: Taking::In }).collect();
+        if let Ok(mut found) = slot.lock() {
+            *found = Some(AllInHand { body, groups, unfound: everything.unfound.len() });
+        }
+    });
+}
+
+/// WHAT THE SEARCH FOUND, taken on the frame it lands: its groups listed, lit and told; none found, said so. A search of
+/// a body let go meanwhile is dropped. Until it lands the frames keep coming to look for it.
+pub fn recognise_all_landed(pc: &mut PartCtx, ctx: &egui::Context) {
+    let Some(asked) = pc.recognise.all_asked else { return };
+    let Some(all) = pc.recognise.all_found.lock().ok().and_then(|mut found| found.take()) else {
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        return;
+    };
+    if all.body != asked {
+        ctx.request_repaint_after(std::time::Duration::from_millis(100));
+        return;
+    }
+    pc.recognise.all_asked = None;
+    if all.groups.is_empty() {
         *pc.status = qymcad_ui_state::Notice::info(qymcad_i18n::tr("msg-recognise-all-none"));
         return;
     }
-    let groups = groups.into_iter().map(|g| GroupInHand { items: g.items, off: Vec::new(), taking: Taking::In }).collect();
-    pc.recognise.all = Some(AllInHand { body, groups, unfound: everything.unfound.len() });
+    pc.recognise.all = Some(all);
     pc.cmd.params = fields_of(pc.recognise.all.as_ref());
     light(pc);
     say_found(pc);
@@ -65,6 +94,7 @@ pub fn recognise_all_at(pc: &mut PartCtx, mesh: usize, face: Option<usize>) {
 /// The body let go: the tool waits for a click on a body again.
 fn let_go(pc: &mut PartCtx) {
     pc.recognise.all = None;
+    pc.recognise.all_asked = None;
     pc.cmd.params = Vec::new();
     pc.gsel.faces.clear();
     pc.gsel.faces_body = None;

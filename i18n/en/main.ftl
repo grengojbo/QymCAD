@@ -2748,6 +2748,7 @@ msg-recognise-all = Click a body to find its holes, roundings and chamfers; Esc 
 msg-recognise-all-found = Taken: holes { $holes }, chamfers { $chamfers }, roundings { $rounds }. Click a feature to leave it out or take it back; Enter makes the taken ones exact
 msg-recognise-all-unfound = Curved faces left as they are: { $n }
 msg-recognise-all-none = No hole, rounding or chamfer was found on this body
+msg-recognise-all-searching = Looking for the holes, roundings and chamfers of the body...
 msg-recognise-all-nothing-taken = Nothing is taken: press the name of a group or click a feature
 msg-recognise-all-left-out = { $group } does not lay: { $why }. It is left out; the rest is made exact
 msg-all-hole-through = Holes Ø{ $d } through: { $n }

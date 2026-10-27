@@ -2606,6 +2606,7 @@ msg-recognise-all = Тесіктерін, дөңгелектеулерін жә�
 msg-recognise-all-found = Алынды: тесік { $holes }, фаска { $chamfers }, дөңгелектеу { $rounds }. Элементті алмау не қайта алу үшін оны шертіңіз; Enter алынғандарды дәл етеді
 msg-recognise-all-unfound = Қисық беттер бұрынғыдай қалады: { $n }
 msg-recognise-all-none = Бұл денеде тесік те, дөңгелектеу де, фаска да табылмады
+msg-recognise-all-searching = Дененің тесіктерін, дөңгелектеулерін және фаскаларын іздеу...
 msg-recognise-all-nothing-taken = Ештеңе алынбаған: топты белгілеңіз не элементті шертіңіз
 msg-recognise-all-left-out = { $group } қойылмайды: { $why }. Ол алынбады; қалғаны дәл болады
 msg-all-hole-through = Тесіктер Ø{ $d } тесіп өтетін: { $n }

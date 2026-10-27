@@ -294,6 +294,9 @@ pub struct RecogniseTool {
     pub section: Option<SectionInHand>,
     /// What "Recognise all" found on the body it took.
     pub all: Option<AllInHand>,
+    /// The body "Recognise all" is searching, beside the frames, until what it found lands in `all_found`.
+    pub all_asked: Option<Id>,
+    pub all_found: std::sync::Arc<std::sync::Mutex<Option<AllInHand>>>,
 }
 
 /// THE FEATURES "RECOGNISE ALL" FOUND ON A BODY, in groups of one size, held until Enter: the groups, the curved faces

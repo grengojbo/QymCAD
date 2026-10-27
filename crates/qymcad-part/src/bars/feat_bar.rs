@@ -69,6 +69,8 @@ pub(crate) fn command_step(pc: &mut qymcad_ui_state::PartCtx, ctx: &egui::Contex
         }
         // WHAT WAS FOUND, before Enter: the regions by kind, and those that fit no surface
         Some(qymcad_ui_state::PartTool::Recognise) => recognise_preview(pc, ctx),
+        // WHAT "RECOGNISE ALL" FOUND, taken on the frame its search lands
+        Some(qymcad_ui_state::PartTool::RecogniseAll) => crate::recognise_all::recognise_all_landed(pc, ctx),
         // THE PATH OF A SWEEP is the last one picked: edges of a body clicked in the view let go of a path sketch, and a
         // sketch is taken from the tree selection while the pick is active (as for a hole driven by a sketch)
         Some(qymcad_ui_state::PartTool::Sweep) => {
