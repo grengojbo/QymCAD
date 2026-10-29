@@ -26,13 +26,24 @@ fn the_volume_read_is_exact_and_the_volume_checked_is_to_a_percent() {
 
 /// THE VOLUME CHECKED IS COUNTED ONCE TOO: asked again of the same body it answers from what it knows - a blend asked
 /// it of its body and the door of its result, 20-50 ms a time on a body of 80 faces.
+///
+/// A call of microseconds is read on the wall, the least of five: a load only lengthens a call, so the least is the
+/// call's own. Its time less its wait, read to a tick of the scheduler, came out 0 ns for the first call on a runner
+/// under a load of 7.7 on 4 threads, and 9 runs of 60 went red beside 12 spinning threads.
 #[test]
 fn the_volume_checked_is_counted_once() {
+    use qymcad_core::time_budget::{cost_of, Doer};
+    const TIMES: usize = 5;
     // the body as it comes back from its bytes, as a trial build reads it: nothing known of it yet
     let bytes = a_rounded_block().to_brep_bytes().expect("the rounded block has no bytes");
-    let rounded = crate::specimen::read(&bytes).expect("the rounded block does not read back");
-    let first = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || rounded.rough_volume());
-    let second = qymcad_core::time_budget::cost_of(qymcad_core::time_budget::Doer::Thread, || rounded.rough_volume());
-    assert_eq!(first.out, second.out, "the volume checked again is another: {} then {}", first.out, second.out);
-    assert!(second.cost.work * 10 <= first.cost.work, "the volume checked was counted again: {:?} the first time, {:?} the second", first.cost.work, second.cost.work);
+    let fresh = || crate::specimen::read(&bytes).expect("the rounded block does not read back");
+    let first = (0..TIMES).map(|_| fresh()).map(|rounded| cost_of(Doer::Thread, || rounded.rough_volume())).collect::<Vec<_>>();
+    let rounded = fresh();
+    let volume = rounded.rough_volume();
+    let again = (0..TIMES).map(|_| cost_of(Doer::Thread, || rounded.rough_volume())).collect::<Vec<_>>();
+    for t in first.iter().chain(&again) {
+        assert_eq!(t.out, volume, "the volume checked again is another: {volume} then {}", t.out);
+    }
+    let least = |ts: &[qymcad_core::time_budget::Timed<f64>]| ts.iter().map(|t| t.cost.wall).min().unwrap_or_default();
+    assert!(least(&again) * 10 <= least(&first), "the volume checked was counted again: {:?} the first time, {:?} again, the least of {TIMES} each", least(&first), least(&again));
 }
