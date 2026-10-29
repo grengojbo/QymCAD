@@ -18,6 +18,7 @@ pub fn release() -> String {
 }
 pub mod engine;
 mod prompts;
+mod queue;
 mod resources;
 pub mod rpc;
 pub mod server;

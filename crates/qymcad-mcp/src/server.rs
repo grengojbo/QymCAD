@@ -5,10 +5,10 @@ use std::io::{BufRead, Write};
 
 use serde_json::{json, Value};
 
-use crate::engine::{Engine, Looked, Window};
+use crate::engine::{Cut, Engine, Looked, Window};
 use crate::rpc::{self, Fault, Incoming};
 use qymcad_tools::reading::{self, Unread};
-use qymcad_tools::tool::{self, Ctx, Refusal};
+use qymcad_tools::tool::{self, After, Ctx, Refusal};
 
 /// The revisions of the protocol this server speaks, newest first. A client asking for one of them gets it
 /// back; a client asking for anything else gets the newest, and decides itself whether to go on.
@@ -18,29 +18,14 @@ pub const PROTOCOL_VERSIONS: [&str; 3] = ["2025-11-25", "2025-06-18", "2025-03-2
 ///
 /// The output carries the protocol and nothing else: a stray line there is a message the client cannot read,
 /// so what the server has to say about itself goes to stderr.
-pub fn serve(input: impl BufRead, output: impl Write) -> std::io::Result<()> {
-    serve_engine(Engine::Here(Box::new(Ctx::blank())), input, output)
+pub fn serve(input: impl BufRead + Send, output: impl Write + Send) -> std::io::Result<()> {
+    serve_engine(Engine::Here(Box::new(Ctx::blank())), input, output, crate::queue::ANSWER_WITHIN)
 }
 
-/// Answers every line of `input` on `output` until the input ends, the calls going where `engine` sends them.
-pub fn serve_engine(mut engine: Engine, mut input: impl BufRead, mut output: impl Write) -> std::io::Result<()> {
-    let mut line = Vec::new();
-    loop {
-        line.clear();
-        if input.read_until(b'\n', &mut line)? == 0 {
-            return Ok(());
-        }
-        // bytes that are not UTF-8 are still a line, and the parse answers it as one that is not JSON
-        let text = String::from_utf8_lossy(&line);
-        if text.trim().is_empty() {
-            continue;
-        }
-        if let Some(reply) = answer_engine(&mut engine, &text) {
-            serde_json::to_writer(&mut output, &reply)?;
-            output.write_all(b"\n")?;
-            output.flush()?;
-        }
-    }
+/// Answers every line of `input` on `output` until the input ends, the calls going where `engine` sends them, each
+/// answered within `answer_within` (see `queue`).
+pub fn serve_engine(engine: Engine, input: impl BufRead + Send, output: impl Write + Send, answer_within: std::time::Duration) -> std::io::Result<()> {
+    crate::queue::serve(engine, input, output, answer_within)
 }
 
 /// The reply to one line, or nothing when the line is owed none.
@@ -63,13 +48,23 @@ pub fn answer_window(window: &mut Window, line: &str) -> Option<Value> {
 pub fn answer_engine(engine: &mut Engine, line: &str) -> Option<Value> {
     let looked = if reaches_a_document(line) { engine.decide() } else { Looked::Decided };
     let reply = match (&mut *engine, looked) {
-        (Engine::Undecided { .. }, Looked::Refused(refusal)) => answer_to(Target::Refused(refusal), line),
+        (Engine::Undecided { .. }, Looked::Refused(refusal)) => answer_to(Target::Refused(Cut { refusal, after: After::Untouched }), line),
         (Engine::Here(ctx), _) => answer(ctx, line),
         (Engine::Window(window), _) => answer_window(window, line),
         (Engine::Undecided { own, .. }, _) => answer(own, line),
     };
     engine.settle();
     reply
+}
+
+/// The reply to a line that reaches no document - the handshake, a ping, the lists - which needs none.
+pub(crate) fn answer_alone(line: &str) -> Option<Value> {
+    answer_to(Target::Alone, line)
+}
+
+/// The reply to `line` when it reaches a document and is not taken there: refused with `cut`.
+pub(crate) fn answer_refused(line: &str, cut: Cut) -> Option<Value> {
+    answer_to(Target::Refused(cut), line)
 }
 
 /// Whether `line` asks for a document: a call of a tool or the reading of an address. The handshake and the lists do
@@ -83,8 +78,10 @@ fn reaches_a_document(line: &str) -> bool {
 enum Target<'a> {
     Here(&'a mut Ctx),
     Window(&'a mut Window),
-    /// A window listens and could not be reached: every request that reaches a document is refused with this.
-    Refused(Refusal),
+    /// The request is not taken where the document is: every request that reaches one is refused with this.
+    Refused(Cut),
+    /// No document at hand: the request reaches none.
+    Alone,
 }
 
 fn answer_to(target: Target<'_>, line: &str) -> Option<Value> {
@@ -92,8 +89,8 @@ fn answer_to(target: Target<'_>, line: &str) -> Option<Value> {
     match rpc::parse(line) {
         Incoming::Request { id, method, params } => Some(request(target, &id, &method, params)),
         Incoming::Notification { method } => {
-            // `notifications/initialized` and `notifications/cancelled` need no work here: requests are
-            // answered one at a time, so one being cancelled has already been answered
+            // `notifications/initialized` and `notifications/cancelled` need no work here: a call cancelled is still
+            // answered, and the protocol lets the client drop a reply that comes after its cancel
             eprintln!("qymcad-mcp: notification {method}");
             None
         }
@@ -121,7 +118,8 @@ fn request(target: Target<'_>, id: &Value, method: &str, params: Value) -> Value
                     Ok(answer) => reading::answer_as_read(answer),
                     Err(cut) => Err(Unread::Nothing(format!("{} {}", cut.refusal.message, cut.refusal.hint.unwrap_or_default()))),
                 },
-                Target::Refused(refusal) => Err(Unread::Nothing(format!("{} {}", refusal.message, refusal.hint.unwrap_or_default()))),
+                Target::Refused(cut) => Err(Unread::Nothing(format!("{} {}", cut.refusal.message, cut.refusal.hint.unwrap_or_default()))),
+                Target::Alone => Err(Unread::Nothing("No document is at hand for this request.".into())),
             };
             match read {
                 Ok(contents) => rpc::success(id, contents),
@@ -156,7 +154,8 @@ fn call(target: Target<'_>, id: &Value, mut params: Value) -> Value {
             Ok(answer) => rpc::success(id, answer),
             Err(cut) => rpc::success(id, tool::refused_reply(&name, &cut.refusal, cut.after)),
         },
-        Target::Refused(refusal) => rpc::success(id, tool::refused_reply(&name, &refusal, qymcad_tools::tool::After::Untouched)),
+        Target::Refused(cut) => rpc::success(id, tool::refused_reply(&name, &cut.refusal, cut.after)),
+        Target::Alone => rpc::success(id, tool::refused_reply(&name, &Refusal::new("no-document", "No document is at hand for this call.", qymcad_tools::tool::Stage::Validate), After::Untouched)),
     }
 }
 

@@ -43,15 +43,19 @@ pub struct Start {
     pub mode: Mode,
     pub socket: Option<PathBuf>,
     pub late: Duration,
+    /// How long a request waits for its answer at most (see `queue`).
+    pub answer_within: Duration,
 }
 
-/// READ THE COMMAND LINE (without the program's own name): `--live`, `--headless` or `--auto`, and `--socket <path>`.
+/// READ THE COMMAND LINE (without the program's own name): `--live`, `--headless` or `--auto`, `--socket <path>`, and
+/// `--answer-within <s>`, how long a request waits for its answer at most (45 s by default).
 ///
 /// # Errors
 /// The words for a person: an argument the program does not know, two modes at once, a socket with no path.
 pub fn parse(args: &[String]) -> Result<Start, String> {
     let mut mode = None;
     let mut socket = None;
+    let mut answer_within = crate::queue::ANSWER_WITHIN;
     let mut rest = args.iter();
     while let Some(a) = rest.next() {
         let asked = match a.as_str() {
@@ -62,14 +66,19 @@ pub fn parse(args: &[String]) -> Result<Start, String> {
                 socket = Some(PathBuf::from(rest.next().ok_or("--socket wants a path")?));
                 continue;
             }
-            other => return Err(format!("unknown argument {other}; the program takes --live, --headless, --auto and --socket <path>")),
+            "--answer-within" => {
+                let s = rest.next().and_then(|s| s.parse::<f64>().ok()).filter(|s| s.is_finite() && *s > 0.0).ok_or("--answer-within wants a number of seconds above 0")?;
+                answer_within = Duration::from_secs_f64(s);
+                continue;
+            }
+            other => return Err(format!("unknown argument {other}; the program takes --live, --headless, --auto, --socket <path> and --answer-within <s>")),
         };
         if mode.is_some_and(|m| m != asked) {
             return Err("one of --live, --headless and --auto, not two".into());
         }
         mode = Some(asked);
     }
-    Ok(Start { mode: mode.unwrap_or(Mode::Auto), socket, late: LATE })
+    Ok(Start { mode: mode.unwrap_or(Mode::Auto), socket, late: LATE, answer_within })
 }
 
 /// WHERE THE CALLS GO for the whole run.

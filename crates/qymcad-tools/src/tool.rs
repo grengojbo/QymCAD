@@ -84,6 +84,8 @@ pub enum Stage {
     Kernel,
     /// The call did not reach the window's document, or its answer did not come back.
     Window,
+    /// The call was not done within the time a client waits for its answer.
+    Time,
 }
 
 impl Stage {
@@ -95,6 +97,7 @@ impl Stage {
             Stage::Resolve => "resolve",
             Stage::Kernel => "kernel",
             Stage::Window => "window",
+            Stage::Time => "time",
         }
     }
 }
