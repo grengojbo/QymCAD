@@ -1,7 +1,6 @@
 //! The egui interface: the operation tree, the tool library, the 2D backplot, the projects.
 //!
-//! The model is `qymcad_core::model::Project`. A 2D top view (an egui `Painter`) with panning, zooming and
-//! contour selection by click.
+//! The model is `qymcad_core::model::Project`. A 2D top view (an egui `Painter`) with panning, zooming and contour selection by click.
 
 use eframe::egui;
 use egui::{Color32, Pos2, Rect, Sense, Stroke};
@@ -2002,6 +2001,7 @@ mod a_boss_is_redrawn_from_its_face;
 mod a_face_and_its_node_light_each_other;
 mod a_size_is_set_between_two_faces;
 mod the_sketch_of_the_report_takes_a_line;
+mod an_array_laid_by_hand_sharing_sides_keeps_every_side_on_the_loops;
 mod a_big_sketch_selected_keeps_the_3d_frame;
 mod a_dimension_past_its_field_is_left_as_it_stands;
 mod the_point_numbers_wait_for_their_setting;
